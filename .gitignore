@@ -37,6 +37,25 @@ extracted-audio/
 # Private avatar experiments (licensed/public-demo assets must replace these)
 research-assets/private-avatar-tests/
 
+# Internal research docs and unlicensed/portrait assets not distributed
+# with the open-source release (kept on disk locally, never committed here)
+docs/GPT-Voice/
+docs/digital-human/
+docs/references/
+docs/superpowers/
+docs/specs/
+public/digital-human/*
+!public/digital-human/README.md
+research-assets/digital-human-videos/
+research-assets/digital-human-avatar-clips/
+research-assets/minimax-action-review/
+research-assets/cyber-girlfriend-v1-comparison/
+research-assets/ltx-action-review/
+research-assets/liveportrait-action-review/
+research-assets/liveportrait-driving-selection/
+research-assets/musetalk-source-clips/
+research-assets/avatar-evaluation/
+
 # Node / Next.js
 node_modules/
 .next/
