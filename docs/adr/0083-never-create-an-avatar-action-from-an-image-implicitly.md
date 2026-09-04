@@ -1,0 +1,3 @@
+# Never create an Avatar Action from an image implicitly
+
+Saving or selecting an Avatar source image never creates a static, generated, or hidden Avatar Action. Segmented rendering may bind the accepted image directly and create model-specific Renderer assets from it, but those technical derivatives never receive an `avatar_action_id`; an action-bound choice exists only after the user deliberately creates or uploads an action, previews its actual effect, and explicitly accepts it. An Avatar with no actions remains usable through its image and shows the informational prompt `尚未创建动作` rather than an error-like `未配置` state.

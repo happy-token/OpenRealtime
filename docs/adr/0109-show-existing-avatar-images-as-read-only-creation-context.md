@@ -1,0 +1,3 @@
+# Show existing Avatar images as read-only creation context
+
+In the existing-Avatar action path, Avatar Studio retains `数字人形象` as the first process-rail stage but marks it completed and renders the chosen name and immutable image read-only, with no save-image command. `更换选择` returns to the asset picker and changes only the target Avatar; entering from an Avatar detail skips that picker and starts at action creation. The persistent preview continues to show the selected likeness and each generated motion candidate, preserving spatial context without implying that the source image can be replaced.

@@ -1,0 +1,7 @@
+---
+status: superseded by ADR-0044
+---
+
+# ToolCallingBrain supports exactly one tool call per turn
+
+Tool Normalization (ADR-0001) normalizes MCP servers, function-calling declarations, and skills into one Canonical Tool Schema, but ADR-0001 doesn't specify how many tool calls a single turn may make once that schema reaches a Brain. We decided `ToolCallingBrain` supports exactly one: it asks the LLM client for a result, and if that result is a tool call, it executes the tool and makes exactly one more call to produce final text — never a chained or multi-step agentic loop. We rejected a general multi-step loop (repeatedly calling the LLM client until it stops requesting tools): our own research reference (qwen-audio-agent) keeps its realtime/Brain-equivalent layer to small, single-shot local tools and pushes anything requiring multi-step or session-level orchestration into whole-agent delegation instead — which this project already has, fully built, as Agent Session Protocol. Building a second multi-step orchestration path inside Tool Normalization would duplicate what Agent Session Protocol already does, and blur the two-layer split ADR-0001 establishes between "one normalized tool call" and "delegate the whole turn." This is hard to reverse once callers depend on `ToolCallingBrain.respond()` completing in a bounded two-round-trip shape, and a future reader extending it would otherwise wonder why it doesn't just loop until `FinalText`, so it's recorded here.

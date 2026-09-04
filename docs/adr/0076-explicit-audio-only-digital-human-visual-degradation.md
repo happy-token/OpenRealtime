@@ -1,0 +1,3 @@
+# Keep audio explicitly available when digital-human visuals fail
+
+When an active Digital Human Session loses Avatar Renderer output but retains a safe ordinary speech path, it enters a declared audio-only visual degradation with the selected identity held as a static surface and bounded Renderer recovery. We rejected silently switching to Orb, another person, or another rendering path because Presentation Mode is session-bound and such substitution would conceal both a service failure and a change in embodiment; failing the entire Voice Session would also discard a still-usable conversation path.

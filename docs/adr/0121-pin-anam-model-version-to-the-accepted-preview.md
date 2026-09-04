@@ -1,0 +1,3 @@
+# Pin the Anam model version to the accepted preview
+
+An accepted Anam realtime binding is the inseparable pair of `provider_avatar_id` and the public `avatar_model` version used to produce the reviewed preview. The home Session Configuration Workbench uses that pair and exposes no ad hoc Anam-model selector, ensuring live output matches the accepted evidence. Changing models is an Avatar-detail operation that creates or prepares a new candidate, preserves the currently accepted pair throughout preview and review, and atomically replaces it only after another `确认实时驱动效果`; newly released provider models never silently alter existing bindings.

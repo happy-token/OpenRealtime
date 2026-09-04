@@ -1,0 +1,3 @@
+# Delete unrelated legacy Avatar records during migration
+
+The unified Avatar migration relies only on existing authoritative relationships among tenant, owner, `visual_identity_id`, source imagery, and motion assets. Records that resolve are consolidated into one Avatar and its child actions; records that cannot be associated are deleted with their exclusively owned derivatives instead of generating a source image from a video, creating a placeholder Avatar, or asking users to repair an obsolete structure. Before applying deletion, the migration emits an exact orphan report so transient lookup or deployment errors cannot be mistaken for genuinely unrelated data.

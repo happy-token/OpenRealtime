@@ -1,0 +1,3 @@
+# Sync Avatar display names to Anam without blocking local renames
+
+OpenRealtime's Avatar Display Name is authoritative and changes immediately. A background task best-effort updates only the currently accepted Anam resource through its display-name update API, using `user label · short Avatar ID` for organization-level disambiguation while the OpenRealtime UI continues to show only the user label. Provider failure never rolls back the local rename or disables realtime use; the Avatar detail reports `Provider 名称待同步` and offers retry. Historical, failed, rejected, and superseded Provider Avatar IDs are not renamed, and Avatar renames never modify Persona identity, ownership, media, or IDs.

@@ -1,0 +1,3 @@
+# Require preview acceptance before using a custom Anam binding
+
+An Anam `201` response and Provider Avatar ID make a custom binding durable but not session-ready. Avatar Studio polls the provider after creation, shows `生成预览中` while `videoUrl` is absent, presents the eventual preview in the persistent preview area, and enables the binding only when the user clicks `确认实时驱动效果`; the command itself is the acceptance act and no checkbox is added. Polling, failure state, and retry survive navigation, while failed or unaccepted bindings stay out of the home Session Configuration Workbench. Provider stock Avatars are treated as platform-accepted Shared Avatars.

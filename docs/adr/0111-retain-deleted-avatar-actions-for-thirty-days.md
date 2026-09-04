@@ -1,0 +1,3 @@
+# Retain deleted Avatar Actions for thirty days
+
+Deleting one Avatar Action moves it into an `已删除动作` area within its parent Avatar for 30 days instead of destroying completed generation and preparation work immediately. The action disappears at once from ordinary action lists and new session choices, but restoration reuses the same `avatar_action_id`, accepted video, and existing Renderer assets; expiry permanently removes that action's media and derivatives without affecting its parent or siblings. Deletion during a live binding follows Active Avatar Revocation and moves the conversation to explicitly labeled audio-only output.

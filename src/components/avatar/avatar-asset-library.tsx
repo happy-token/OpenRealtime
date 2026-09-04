@@ -1,0 +1,532 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, Film, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
+import type { AvatarAction, AvatarAsset } from "@/lib/avatar-catalog";
+import { summarizeAvatarCapabilities } from "@/lib/avatar-catalog";
+import { isSegmentedAvatarAsset } from "@/lib/avatar-library-catalog-client";
+import { hideIdentityAsset, hideMotionAsset } from "@/lib/digital-human-asset-management";
+import { AvatarMediaCoverflow } from "./avatar-media-coverflow";
+import styles from "./avatar-asset-library.module.css";
+
+export type AvatarLibraryScope = "realtime" | "internal-preset";
+export type RealtimeAvatarScope = "custom" | "built-in";
+
+type PendingAssetDeletion =
+  | { kind: "avatar"; avatarId: string; displayName: string }
+  | { kind: "action"; avatarId: string; avatarActionId: string; displayName: string };
+
+export function shouldAutoAdvanceAvatarCardMedia({
+  segmentedAsset,
+  expanded,
+  previewingAction,
+  menuOpen,
+  playableActionCount,
+}: {
+  segmentedAsset: boolean;
+  expanded: boolean;
+  previewingAction: boolean;
+  menuOpen: boolean;
+  playableActionCount: number;
+}) {
+  return segmentedAsset
+    && !expanded
+    && !previewingAction
+    && !menuOpen
+    && playableActionCount > 0;
+}
+
+export function AvatarAssetLibrary({
+  avatars,
+  internalPresetIds,
+  initialScope = "realtime",
+  initialRealtimeScope = "custom",
+  loading = false,
+}: {
+  avatars: AvatarAsset[];
+  internalPresetIds: readonly string[];
+  initialScope?: AvatarLibraryScope;
+  initialRealtimeScope?: RealtimeAvatarScope;
+  loading?: boolean;
+}) {
+  const router = useRouter();
+  const [scope, setScope] = useState(initialScope);
+  const [realtimeScope, setRealtimeScope] = useState(initialRealtimeScope);
+  const [query, setQuery] = useState("");
+  const [activeActionAvatarId, setActiveActionAvatarId] = useState<string | null>(null);
+  const [hiddenAvatarIds, setHiddenAvatarIds] = useState<Set<string>>(() => new Set());
+  const [hiddenActionIds, setHiddenActionIds] = useState<Set<string>>(() => new Set());
+  const [pendingDeletion, setPendingDeletion] = useState<PendingAssetDeletion | null>(null);
+  const internalPresetIdSet = useMemo(() => new Set(internalPresetIds), [internalPresetIds]);
+  const libraryAvatars = useMemo(() => avatars
+    .filter((avatar) => !hiddenAvatarIds.has(avatar.avatarId))
+    .map((avatar) => ({
+      ...avatar,
+      actions: avatar.actions.filter((action) => !hiddenActionIds.has(action.avatarActionId)),
+    })), [avatars, hiddenActionIds, hiddenAvatarIds]);
+  const realtimeCount = useMemo(
+    () => libraryAvatars.filter((avatar) => Boolean(avatar.realtimeBinding) && !avatar.deletedAt).length,
+    [libraryAvatars],
+  );
+  const customRealtimeCount = useMemo(
+    () => libraryAvatars.filter((avatar) => Boolean(avatar.realtimeBinding) && avatar.visibility === "private" && !avatar.deletedAt).length,
+    [libraryAvatars],
+  );
+  const builtInRealtimeCount = realtimeCount - customRealtimeCount;
+  const segmentedAvatarCount = useMemo(
+    () => libraryAvatars.filter((avatar) => isSegmentedAvatarAsset(avatar, internalPresetIdSet)).length,
+    [libraryAvatars, internalPresetIdSet],
+  );
+  const visibleAvatars = useMemo(() => libraryAvatars.filter((avatar) => {
+    const inScope = scope === "realtime"
+      ? Boolean(avatar.realtimeBinding) && (
+        realtimeScope === "custom" ? avatar.visibility === "private" : avatar.visibility === "shared"
+      )
+      : isSegmentedAvatarAsset(avatar, internalPresetIdSet);
+    if (!inScope || avatar.deletedAt) return false;
+    const needle = query.trim().toLocaleLowerCase();
+    return !needle
+      || avatar.displayName.toLocaleLowerCase().includes(needle)
+      || avatar.avatarId.toLocaleLowerCase().includes(needle);
+  }), [internalPresetIdSet, libraryAvatars, query, realtimeScope, scope]);
+
+  useEffect(() => {
+    const activeAvatar = visibleAvatars.find((avatar) => avatar.avatarId === activeActionAvatarId);
+    if (activeActionAvatarId && (!activeAvatar || !activeAvatar.actions.some((action) => action.state === "available" && action.videoUrl))) {
+      setActiveActionAvatarId(null);
+    }
+  }, [activeActionAvatarId, visibleAvatars]);
+
+  useEffect(() => {
+    if (!pendingDeletion) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPendingDeletion(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [pendingDeletion]);
+
+  function confirmAssetDeletion() {
+    if (!pendingDeletion) return;
+    if (pendingDeletion.kind === "avatar") {
+      hideIdentityAsset(pendingDeletion.avatarId);
+      setHiddenAvatarIds((current) => new Set(current).add(pendingDeletion.avatarId));
+    } else {
+      hideMotionAsset(pendingDeletion.avatarActionId);
+      setHiddenActionIds((current) => new Set(current).add(pendingDeletion.avatarActionId));
+    }
+    setActiveActionAvatarId(null);
+    setPendingDeletion(null);
+  }
+
+  function selectScope(nextScope: AvatarLibraryScope) {
+    setActiveActionAvatarId(null);
+    setScope(nextScope);
+    const params = new URLSearchParams();
+    params.set("scope", nextScope);
+    if (nextScope === "realtime") params.set("realtime_scope", realtimeScope);
+    router.replace(`/avatars?${params.toString()}`, { scroll: false });
+  }
+
+  function selectRealtimeScope(nextScope: RealtimeAvatarScope) {
+    setRealtimeScope(nextScope);
+    router.replace(`/avatars?scope=realtime&realtime_scope=${nextScope}`, { scroll: false });
+  }
+
+  return (
+    <section className={styles.library} aria-label="数字人资产" aria-busy={loading || undefined}>
+      <header className={styles.header}>
+        <div className={styles.toolbar}>
+          <div className={styles.scopeSwitch} aria-label="Avatar 分类">
+            <span className={styles.scopeSwitchTrack} data-scope={scope} aria-hidden="true" />
+            <button type="button" data-active={scope === "realtime"} aria-pressed={scope === "realtime"} onClick={() => selectScope("realtime")}>
+              <Sparkles aria-hidden="true" />实时驱动 <em>{loading ? "…" : realtimeCount}</em>
+            </button>
+            <button type="button" data-active={scope === "internal-preset"} aria-pressed={scope === "internal-preset"} onClick={() => selectScope("internal-preset")}>
+              <UserRound aria-hidden="true" />内部预制 <em>{loading ? "…" : segmentedAvatarCount}</em>
+            </button>
+          </div>
+          <label className={styles.search}>
+            <Search aria-hidden="true" />
+            <span className="sr-only">搜索 Avatar</span>
+            <input
+              value={query}
+              disabled={loading}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索名称或 ID"
+            />
+          </label>
+          <Link className={styles.trashLink} href="/avatars/trash"><Trash2 />回收站</Link>
+          <Link className={styles.createButton} href="/avatars/create">
+            <Plus aria-hidden="true" />
+            创建数字人
+          </Link>
+        </div>
+      </header>
+
+      {!loading && scope === "realtime" ? (
+        <div className={styles.realtimeScope} aria-label="实时驱动分类">
+          <div className={styles.realtimeScopeSwitch}>
+            <span className={styles.realtimeScopeTrack} data-scope={realtimeScope} aria-hidden="true" />
+            <button type="button" data-active={realtimeScope === "custom"} aria-pressed={realtimeScope === "custom"} onClick={() => selectRealtimeScope("custom")}>
+              自定义 Avatar <em>{customRealtimeCount}</em>
+            </button>
+            <button type="button" data-active={realtimeScope === "built-in"} aria-pressed={realtimeScope === "built-in"} onClick={() => selectRealtimeScope("built-in")}>
+              官方内置 Avatar <em>{builtInRealtimeCount}</em>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className={styles.loadingGrid} role="status" aria-live="polite">
+          <span className="sr-only">正在加载数字人资产</span>
+          {[0, 1, 2, 3].map((index) => <i key={index} aria-hidden="true" />)}
+        </div>
+      ) : visibleAvatars.length ? (
+        <div className={styles.grid}>
+          {visibleAvatars.map((avatar) => (
+            <AvatarCard
+              key={avatar.avatarId}
+              avatar={avatar}
+              internalPreset={internalPresetIdSet.has(avatar.avatarId)}
+              segmentedAsset={isSegmentedAvatarAsset(avatar, internalPresetIdSet)}
+              expanded={activeActionAvatarId === avatar.avatarId}
+              onExpandedChange={(active) => setActiveActionAvatarId(active ? avatar.avatarId : null)}
+              onDeleteAvatar={() => setPendingDeletion({
+                kind: "avatar",
+                avatarId: avatar.avatarId,
+                displayName: avatar.displayName,
+              })}
+              onDeleteAction={(action) => setPendingDeletion({
+                kind: "action",
+                avatarId: avatar.avatarId,
+                avatarActionId: action.avatarActionId,
+                displayName: action.displayName,
+              })}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className={styles.empty}>
+          <Sparkles aria-hidden="true" />
+          <h2>{query ? "没有匹配的 Avatar" : scope === "realtime" ? realtimeScope === "custom" ? "暂无自定义实时 Avatar" : "暂无官方内置 Avatar" : "暂无内部预制形象"}</h2>
+          <p>{query ? "尝试搜索其他名称或 ID。" : scope === "realtime" ? realtimeScope === "custom" ? "创建或接入实时驱动 Avatar 后会显示在这里。" : "供应商内置 Avatar 加载后会显示在这里。" : "内部预制形象加载后会显示在这里。"}</p>
+          {!query && scope === "realtime" ? <Link href="/avatars/create">开始创建</Link> : null}
+        </div>
+      )}
+
+      {pendingDeletion && typeof document !== "undefined" ? createPortal(
+        <div
+          className={styles.deleteDialogBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPendingDeletion(null);
+          }}
+        >
+          <section className={styles.deleteDialog} role="dialog" aria-modal="true" aria-labelledby="delete-avatar-asset-title">
+            <span className={styles.deleteDialogIcon}><Trash2 aria-hidden="true" /></span>
+            <div>
+              <p>{pendingDeletion.kind === "avatar" ? "DELETE AVATAR" : "DELETE ACTION"}</p>
+              <h2 id="delete-avatar-asset-title">{pendingDeletion.kind === "avatar" ? "删除数字人形象？" : "删除数字人动作？"}</h2>
+              <span>
+                {pendingDeletion.kind === "avatar"
+                  ? `删除“${pendingDeletion.displayName}”后，这个形象及其动作会从内部预置资产中移除。`
+                  : `删除动作“${pendingDeletion.displayName}”后，数字人形象和其他动作不受影响。`}
+              </span>
+            </div>
+            <footer>
+              <button type="button" onClick={() => setPendingDeletion(null)}>取消</button>
+              <button type="button" data-danger="true" onClick={confirmAssetDeletion}>确认删除</button>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      ) : null}
+    </section>
+  );
+}
+
+function AvatarCard({
+  avatar,
+  internalPreset,
+  segmentedAsset,
+  expanded,
+  onExpandedChange,
+  onDeleteAvatar,
+  onDeleteAction,
+}: {
+  avatar: AvatarAsset;
+  internalPreset: boolean;
+  segmentedAsset: boolean;
+  expanded: boolean;
+  onExpandedChange: (active: boolean) => void;
+  onDeleteAvatar: () => void;
+  onDeleteAction: (action: AvatarAction) => void;
+}) {
+  const summary = summarizeAvatarCapabilities(avatar);
+  const startHref = `/?avatar_id=${encodeURIComponent(avatar.avatarId)}&experience=avatar`;
+  const detailQuery = segmentedAsset
+    ? "return_scope=internal-preset"
+    : `return_scope=realtime&return_realtime_scope=${avatar.visibility === "private" ? "custom" : "built-in"}`;
+  const detailHref = `/avatars/${encodeURIComponent(avatar.avatarId)}?${detailQuery}`;
+  const playableActions = useMemo(
+    () => avatar.actions.filter((action) => action.state === "available" && Boolean(action.videoUrl)),
+    [avatar.actions],
+  );
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [previewAction, setPreviewAction] = useState<AvatarAction | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const detailLinkRef = useRef<HTMLAnchorElement>(null);
+  const activeAction = activeMediaIndex > 0 ? playableActions[activeMediaIndex - 1] ?? null : null;
+
+  function openDetailFromCard(event: ReactMouseEvent<HTMLElement>) {
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("a, button, input, textarea, select, video")) return;
+    detailLinkRef.current?.click();
+  }
+
+  useEffect(() => {
+    if (activeMediaIndex <= playableActions.length) return;
+    setActiveMediaIndex(0);
+  }, [activeMediaIndex, playableActions.length]);
+
+  useEffect(() => {
+    if (!shouldAutoAdvanceAvatarCardMedia({
+      segmentedAsset,
+      expanded,
+      previewingAction: Boolean(previewAction),
+      menuOpen,
+      playableActionCount: playableActions.length,
+    })) return;
+    const timer = window.setTimeout(() => {
+      setActiveMediaIndex((current) => (current + 1) % (playableActions.length + 1));
+    }, 3_000);
+    return () => window.clearTimeout(timer);
+  }, [activeMediaIndex, expanded, menuOpen, playableActions.length, previewAction, segmentedAsset]);
+
+  useEffect(() => {
+    if (!previewAction && !menuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPreviewAction(null);
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [menuOpen, previewAction]);
+
+  return (
+    <>
+      <article
+        className={styles.card}
+        data-source={avatar.source.kind}
+        data-internal-preset={internalPreset}
+        data-preview-kind={activeAction ? "action" : "image"}
+        data-expanded={expanded}
+        data-clickable={!expanded}
+        onClick={expanded ? undefined : openDetailFromCard}
+      >
+        <div className={styles.visual}>
+          {internalPreset && expanded && playableActions.length ? (
+            <AvatarMediaCoverflow
+              avatarId={avatar.avatarId}
+              avatarName={avatar.displayName}
+              imageUrl={avatar.source.imageUrl}
+              actions={playableActions}
+              activeIndex={activeMediaIndex}
+              active={!previewAction}
+              size="workbench"
+              onActiveIndexChange={setActiveMediaIndex}
+              onCurrentActionClick={setPreviewAction}
+            />
+          ) : (
+            <div
+              className={styles.media}
+              data-has-actions={internalPreset && playableActions.length > 0}
+              data-preview-kind={activeAction ? "action" : "image"}
+            >
+              {activeAction?.videoUrl ? (
+                <>
+                  <Image
+                    className={styles.collapsedActionBackdrop}
+                    src={avatar.source.imageUrl}
+                    alt=""
+                    aria-hidden="true"
+                    fill
+                    sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    unoptimized
+                  />
+                  <video
+                    key={activeAction.avatarActionId}
+                    className={styles.collapsedActionVideo}
+                    src={activeAction.videoUrl}
+                    poster={avatar.source.imageUrl}
+                    aria-label={`${avatar.displayName} · ${activeAction.displayName}`}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                  />
+                </>
+              ) : (
+                <>
+                  <Image
+                    className={styles.portraitBackdrop}
+                    src={avatar.source.imageUrl}
+                    alt=""
+                    aria-hidden="true"
+                    fill
+                    sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    unoptimized
+                  />
+                  <Image
+                    className={styles.portraitImage}
+                    src={avatar.source.imageUrl}
+                    alt={`${avatar.displayName} 形象`}
+                    fill
+                    sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    unoptimized
+                  />
+                </>
+              )}
+            </div>
+          )}
+          <div className={styles.mediaMeta}>
+            {internalPreset && playableActions.length ? (
+              <button type="button" aria-label={`管理 ${avatar.displayName} 的 ${playableActions.length} 个动作`} onClick={() => onExpandedChange(true)}>
+                {playableActions.length} 个动作
+              </button>
+            ) : (
+              <span data-muted={internalPreset && !playableActions.length}>
+                {internalPreset ? "未创建动作" : summary.realtimeLabel || summary.actionLabel}
+              </span>
+            )}
+            {!internalPreset && summary.realtimeLabel && avatar.canCreateActions && avatar.actions.length
+              ? <span>{summary.actionLabel}</span>
+              : null}
+            {!internalPreset && summary.pendingActionCount > 0 ? <span data-progress="true">{summary.pendingActionCount} 个动作待适配</span> : null}
+          </div>
+          <div className={styles.body}>
+            <div className={styles.titleRow}>
+              <div className={styles.titleBlock}>
+                <h2>
+                  <Link
+                    ref={detailLinkRef}
+                    className={styles.titleLink}
+                    href={detailHref}
+                    aria-label={`查看 ${avatar.displayName} 详情`}
+                  >
+                    {avatar.displayName}
+                  </Link>
+                </h2>
+                {!expanded && segmentedAsset && activeAction ? <small>{`动作 · ${activeAction.displayName}`}</small> : null}
+              </div>
+              {expanded ? <div className={styles.actions}>
+                <Link className={styles.primaryAction} href={startHref} aria-label={`与 ${avatar.displayName} 对话`}><MessageCircle aria-hidden="true" />对话</Link>
+                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`} aria-label={`为 ${avatar.displayName} 创建动作`} title="创建动作"><Plus aria-hidden="true" /></Link>
+                <Link className={styles.detailLink} href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`} title="查看详情"><ArrowUpRight aria-hidden="true" /></Link>
+                {internalPreset && expanded && activeAction ? (
+                  <>
+                    <button
+                      className={`${styles.secondaryAction} ${styles.iconAction}`}
+                      type="button"
+                      aria-label={`放大预览：${activeAction.displayName}`}
+                      title="放大预览"
+                      onClick={() => setPreviewAction(activeAction)}
+                    >
+                      <Maximize2 aria-hidden="true" />
+                    </button>
+                    <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除动作：${activeAction.displayName}`} title="删除动作" onClick={() => onDeleteAction(activeAction)}>
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </>
+                ) : internalPreset ? (
+                  <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除形象：${avatar.displayName}`} title="删除形象" onClick={onDeleteAvatar}>
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                ) : null}
+                {internalPreset && expanded ? (
+                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={`收起 ${avatar.displayName} 的形象和动作`} title="收起预览" onClick={() => onExpandedChange(false)}>
+                    <Minimize2 aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div> : (
+                <button className={styles.moreButton} type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                  <MoreHorizontal aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+          {!expanded ? (
+            <div className={styles.actionMenu} aria-label={`${avatar.displayName} 操作菜单`} hidden={!menuOpen}>
+              <Link href={startHref} aria-label={`与 ${avatar.displayName} 对话`}>开始对话</Link>
+              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`} aria-label={`为 ${avatar.displayName} 创建动作`}>创建动作</Link> : null}
+              <Link href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`}>查看详情</Link>
+              {internalPreset ? <button type="button" aria-label={`删除形象：${avatar.displayName}`} onClick={onDeleteAvatar}>删除 Avatar</button> : null}
+            </div>
+          ) : null}
+        </div>
+      </article>
+
+      {previewAction && typeof document !== "undefined" ? createPortal(
+        <div
+          className={styles.actionModalBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPreviewAction(null);
+          }}
+        >
+          <section
+            className={styles.actionModal}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${previewAction.displayName} 动作预览`}
+          >
+            <Image className={styles.actionModalBackdropImage} src={avatar.source.imageUrl} alt="" aria-hidden="true" fill sizes="100vw" unoptimized />
+            <span className={styles.actionModalScrim} aria-hidden="true" />
+            <header>
+              <div className={styles.actionModalTitle}>
+                <span><Film aria-hidden="true" /></span>
+                <div>
+                  <p>{avatar.displayName} · 动作预览</p>
+                  <h2>{previewAction.displayName}</h2>
+                </div>
+              </div>
+              <button type="button" aria-label="关闭动作预览" onClick={() => setPreviewAction(null)}>
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <div className={styles.actionModalMedia}>
+              <div className={styles.actionModalStage}>
+                {previewAction.videoUrl ? (
+                  <video
+                    src={previewAction.videoUrl}
+                    aria-label={`${avatar.displayName} · ${previewAction.displayName}`}
+                    controls
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="auto"
+                  />
+                ) : (
+                  <span className={styles.actionModalFallback}><Film aria-hidden="true" />暂无可预览视频</span>
+                )}
+              </div>
+            </div>
+            <footer className={styles.actionModalFooter}>
+              <span><Film aria-hidden="true" />当前动作</span>
+              <p>自动循环播放 · 可使用播放器控制进度、音量和全屏显示</p>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      ) : null}
+    </>
+  );
+}

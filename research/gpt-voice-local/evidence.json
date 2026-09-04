@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "scope": "Codex desktop Voice implementation; not the full consumer ChatGPT Voice source",
+  "application": {
+    "path": "/Applications/ChatGPT.app",
+    "bundle_id": "com.openai.codex",
+    "display_name": "ChatGPT",
+    "short_version": "26.803.41515",
+    "build_version": "6321"
+  },
+  "resources": [
+    {
+      "path": "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "size_bytes": 223450200,
+      "sha256": "5f6e773aafd542d3cf09e10b5dca6cabd301d0a155f4b8ce870e3915fc3da25e",
+      "identifiers": [
+        "AudioWorkletNode",
+        "RTCPeerConnection",
+        "codex_delegation",
+        "end_realtime_voice_call",
+        "item/tool/call",
+        "oai-events",
+        "realtime_delegation",
+        "response.create",
+        "send_realtime_voice_feedback",
+        "session.update",
+        "speak_to_user",
+        "thread/realtime/appendSpeech",
+        "thread/realtime/appendText",
+        "thread/realtime/listVoices",
+        "thread/realtime/start",
+        "thread/realtime/stop"
+      ]
+    },
+    {
+      "path": "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "size_bytes": 218437552,
+      "sha256": "e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b",
+      "identifiers": [
+        "/realtime/calls",
+        "conversation.handoff.append",
+        "conversation.item.create",
+        "delegation.context.append",
+        "input_audio_buffer.append",
+        "item/tool/call",
+        "realtime_delegation",
+        "response.create",
+        "session.context.append",
+        "session.update",
+        "thread/realtime/appendSpeech",
+        "thread/realtime/appendText",
+        "thread/realtime/listVoices",
+        "thread/realtime/start",
+        "thread/realtime/stop"
+      ]
+    },
+    {
+      "path": "/Applications/ChatGPT.app/Contents/Resources/codex-code-mode-host",
+      "size_bytes": 49992576,
+      "sha256": "04072c54b21ba46e8b8cc0534941ba4cbb640770b978f1a3b32a3b3bdc7ae693",
+      "identifiers": []
+    },
+    {
+      "path": "/Applications/ChatGPT.app/Contents/Resources/codex-notification.wav",
+      "size_bytes": 164492,
+      "sha256": "1f3b1f99a9f02cce85a3401d8a73985ae550693d33bf9bf0fe9483d6454048f7",
+      "identifiers": []
+    }
+  ],
+  "extracted_voice_assets": [
+    {
+      "path": ".vite/build/child-process-snapshot-worker.js",
+      "size_bytes": 696081,
+      "sha256": "4aee2a398ac231c31eb400fdecf9c2446261d7622862e5e44cc8eeab644fe912",
+      "identifiers": [
+        "thread/realtime/start"
+      ]
+    },
+    {
+      "path": ".vite/build/main-DJC9FKq9.js",
+      "size_bytes": 2518502,
+      "sha256": "50447c9fc326227f57bd61931cf3fa5f11de4bc6187ded5063f175e9d933fdd9",
+      "identifiers": [
+        "codex_delegation",
+        "thread/realtime/start",
+        "thread/realtime/stop"
+      ]
+    },
+    {
+      "path": ".vite/build/src-Cz_uUmVl.js",
+      "size_bytes": 1466854,
+      "sha256": "b8efa5cab5b8d8bf76176ce1c080fd910cc9c5b43c4aeea37bd74bdbf2d9841c",
+      "identifiers": [
+        "item/tool/call",
+        "thread/realtime/start"
+      ]
+    },
+    {
+      "path": ".vite/build/window-all-closed-9IR0zY5D.js",
+      "size_bytes": 4369334,
+      "sha256": "eb7373b18d29bbebbbce415fdcb90eb56e7a86111b1e2ca32c7e5c2cdc7680d4",
+      "identifiers": [
+        "response.create"
+      ]
+    },
+    {
+      "path": ".vite/build/worker.js",
+      "size_bytes": 1828249,
+      "sha256": "482baf4f1849e0c8c51aad9f3fe9965063e16d24c76afeb17dfa6e6773476672",
+      "identifiers": [
+        "response.create",
+        "thread/realtime/start"
+      ]
+    },
+    {
+      "path": "webview/assets/app-initial-Biw83Aiz.js",
+      "size_bytes": 13189138,
+      "sha256": "f1cbce63c08511b2724c159e83ecb83f2b8885df8d571239e68468579ca4cd3a",
+      "identifiers": [
+        "AudioWorkletNode",
+        "RTCPeerConnection",
+        "codex_delegation",
+        "end_realtime_voice_call",
+        "item/tool/call",
+        "oai-events",
+        "realtime_delegation",
+        "send_realtime_voice_feedback",
+        "session.update",
+        "speak_to_user",
+        "thread/realtime/appendSpeech",
+        "thread/realtime/appendText",
+        "thread/realtime/listVoices",
+        "thread/realtime/start",
+        "thread/realtime/stop"
+      ]
+    },
+    {
+      "path": "webview/assets/realtime-buffered-audio-worklet-BMQFp1I8.js",
+      "size_bytes": 1964,
+      "sha256": "da830c0583306fd7f4c0f5bda28827e33b84d282448bdbe306a1c5b38bc07b87",
+      "identifiers": []
+    },
+    {
+      "path": "webview/assets/realtime-voice-handoff-target-Ce_7VxNr.js",
+      "size_bytes": 2563,
+      "sha256": "6dbfdeabda1c42dfcaa944de0b3f68be9c701262f1c6a227792a09dffeb59cc5",
+      "identifiers": []
+    },
+    {
+      "path": "webview/assets/realtime-voice-home-announcement-DT9Gm39o.js",
+      "size_bytes": 2202,
+      "sha256": "38a8b383c0f2df8e39137bddb96d184df144f3a7f1f9eddd1a30c804871ea74e",
+      "identifiers": []
+    },
+    {
+      "path": "webview/assets/realtime-voice-launch-surface-9lzpNAg8.js",
+      "size_bytes": 4948,
+      "sha256": "56c1d9c5795ee78fbb0e02c9bdf36138a899ed055e2be830a5c6f383d507bea9",
+      "identifiers": []
+    },
+    {
+      "path": "webview/assets/realtime-voice-stage-layout-DFO1jj5F.js",
+      "size_bytes": 4434,
+      "sha256": "cd9743f5cf93fba64b1c7f38dc46a721daff265598492b18ba6e0e1f65c81b7d",
+      "identifiers": []
+    },
+    {
+      "path": "webview/assets/use-avatar-overlay-selection-D5JQNFwx.js",
+      "size_bytes": 26784,
+      "sha256": "3e94d27b580b700467fcaa748d1624fb6b0c5ea640293f49f7bb2f8da8a9de29",
+      "identifiers": [
+        "RTCPeerConnection"
+      ]
+    },
+    {
+      "path": "webview/assets/use-realtime-voice-native-overlay-transition-enabled-DLP6Jx_K.js",
+      "size_bytes": 427,
+      "sha256": "53a9b364db08f75329037398d5d0c0062acd64eb6cd6e7997a3bc1cb2f9f5601",
+      "identifiers": []
+    }
+  ],
+  "protocol_identifiers": {
+    "/realtime/calls": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "AudioWorkletNode": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "RTCPeerConnection": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js",
+      "app.asar:webview/assets/use-avatar-overlay-selection-D5JQNFwx.js"
+    ],
+    "codex_delegation": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:.vite/build/main-DJC9FKq9.js",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "conversation.handoff.append": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "conversation.item.create": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "delegation.context.append": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "end_realtime_voice_call": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "input_audio_buffer.append": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "item/tool/call": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:.vite/build/src-Cz_uUmVl.js",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "oai-events": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "realtime_delegation": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "response.create": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:.vite/build/window-all-closed-9IR0zY5D.js",
+      "app.asar:.vite/build/worker.js"
+    ],
+    "send_realtime_voice_feedback": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "session.context.append": [
+      "/Applications/ChatGPT.app/Contents/Resources/codex"
+    ],
+    "session.update": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "speak_to_user": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "thread/realtime/appendSpeech": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "thread/realtime/appendText": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "thread/realtime/listVoices": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "thread/realtime/start": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:.vite/build/child-process-snapshot-worker.js",
+      "app.asar:.vite/build/main-DJC9FKq9.js",
+      "app.asar:.vite/build/src-Cz_uUmVl.js",
+      "app.asar:.vite/build/worker.js",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ],
+    "thread/realtime/stop": [
+      "/Applications/ChatGPT.app/Contents/Resources/app.asar",
+      "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "app.asar:.vite/build/main-DJC9FKq9.js",
+      "app.asar:webview/assets/app-initial-Biw83Aiz.js"
+    ]
+  },
+  "limitations": [
+    "The renderer bundle is minified and ships without source maps.",
+    "Cloud-side routing and model implementation are not present locally.",
+    "Hashes identify the inspected build and will change after an app update.",
+    "No proprietary bundle contents are copied by this extractor."
+  ]
+}

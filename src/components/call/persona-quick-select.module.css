@@ -1,0 +1,87 @@
+.chip {
+  min-width: 0;
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 9px 0 6px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .03);
+}
+
+.chipIcon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--accent-surface);
+}
+.chipIcon svg { width: 13px; height: 13px; }
+
+.chipBody { min-width: 0; flex: 1 1 auto; display: grid; gap: 1px; }
+
+.chipBody > small {
+  display: block;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: .48rem;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.chipBody :global(.select-menu) { width: 100%; }
+
+.chipBody :global(.select-menu-trigger) {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  font-size: .6rem !important;
+  font-weight: 610 !important;
+}
+
+.chipBody :global(.select-menu-trigger):hover,
+.chipBody :global(.select-menu-trigger[aria-expanded="true"]) {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--accent) !important;
+}
+
+.chipBody :global(.select-menu-trigger):focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.chipBody :global(.select-menu-trigger) svg {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+}
+
+.chipBody :global(.select-menu-trigger) span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chipBody :global(.select-menu-popover) {
+  font-size: 0.68rem;
+}
+
+.notice {
+  color: var(--faint, var(--text-faint));
+  font-size: 0.5rem;
+}

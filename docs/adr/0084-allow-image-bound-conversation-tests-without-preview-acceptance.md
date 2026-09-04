@@ -1,0 +1,3 @@
+# Allow image-bound conversation tests without preview acceptance
+
+An accepted Avatar source image may start a segmented conversation test directly without first creating an Avatar Action or requiring a separate offline effect-preview confirmation. Session startup prepares only the selected Lip-sync Model, reuses a matching cached Renderer asset when available, and automatically starts the conversation after just-in-time preparation; unselected models do not block the test. These derivatives remain implementation material identified by `renderer_asset_id`; they do not become user-authored actions or replace the stricter all-required-model gate for accepted Avatar Actions.

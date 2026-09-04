@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "source_build": "26.803.41515",
+  "media": {
+    "transport": "webrtc",
+    "data_channel": "oai-events",
+    "microphone_constraints": {
+      "channelCount": 1,
+      "noiseSuppression": true
+    },
+    "audio_worklet": {
+      "capacity_seconds": 30,
+      "leading_silence_threshold": 0.003,
+      "pre_roll_milliseconds": 100,
+      "phases": [
+        "buffering",
+        "replaying",
+        "live"
+      ]
+    }
+  },
+  "app_server_requests": [
+    "thread/realtime/start",
+    "thread/realtime/stop",
+    "thread/realtime/appendText",
+    "thread/realtime/appendSpeech",
+    "thread/realtime/listVoices"
+  ],
+  "app_server_notifications": [
+    "thread/realtime/started",
+    "thread/realtime/itemAdded",
+    "thread/realtime/transcript/delta",
+    "thread/realtime/transcript/done",
+    "thread/realtime/outputAudio/delta",
+    "thread/realtime/sdp",
+    "thread/realtime/error",
+    "thread/realtime/closed"
+  ],
+  "reverse_requests": [
+    "item/tool/call"
+  ],
+  "sideband_event_identifiers": [
+    "input_audio_buffer.append",
+    "conversation.item.create",
+    "conversation.handoff.append",
+    "delegation.context.append",
+    "session.context.append",
+    "response.create",
+    "session.update"
+  ],
+  "startup_barriers": [
+    "app_server_start_accepted",
+    "remote_sdp_applied",
+    "app_server_started",
+    "webrtc_connected",
+    "session_initialized"
+  ],
+  "voice_tools": [
+    "get_app_state",
+    "end_realtime_voice_call",
+    "send_realtime_voice_feedback",
+    "speak_to_user",
+    "navigate_to_codex_page",
+    "create_thread",
+    "list_threads",
+    "wait_threads",
+    "send_message_to_thread"
+  ],
+  "orchestration_modes": [
+    {
+      "name": "converse_here",
+      "reference_action": "Speak",
+      "blocking": false
+    },
+    {
+      "name": "quick_check_here",
+      "reference_action": "CallTool",
+      "blocking": true
+    },
+    {
+      "name": "delegate_blocking_mechanics",
+      "reference_action": "DelegateTask",
+      "blocking": false
+    }
+  ],
+  "correlation_ids": [
+    "realtimeSessionId",
+    "threadId",
+    "turnId",
+    "call_id",
+    "handoff_id",
+    "worker_id",
+    "confirmation_id"
+  ]
+}

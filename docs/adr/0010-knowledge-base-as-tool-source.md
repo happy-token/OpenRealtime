@@ -1,0 +1,9 @@
+---
+status: accepted
+---
+
+# Knowledge Base: RAG/知识库 retrieval as a ToolSource, not a new Seam
+
+PRD point 8 asks for RAG/knowledge-base/MCP external knowledge injection. MCP-as-a-tool-mechanism is already solved by the Tool Normalization layer (ADR-0001) — `McpToolSource`, `FunctionCallingToolSource`, and `SkillToolSource` all adapt into one `CanonicalTool` shape consumed by `ToolCallingBrain`. The remaining gap is retrieval itself: a way for a Brain to search a knowledge base and get grounding passages back. We modeled this as *another* `ToolSource` — `KnowledgeBaseToolSource`, wrapping a small `KnowledgeBase` retrieval Protocol (plus an `InMemoryKnowledgeBase` deterministic default) and exposing it as a single `search_knowledge_base` `CanonicalTool`. This reuses the existing Tool Normalization layer and `ToolCallingBrain` with zero core changes — a Brain that already knows how to call any other tool needs no new code path to call `search_knowledge_base` too.
+
+We considered giving Knowledge Base its own dedicated Seam, the way Device Fleet (ADR-0003) got one. We rejected this: Device Fleet needed a Seam because activation/OTA/inventory are device-lifecycle operations that don't fit the tool-call shape — they're not "answer a question," they're verbs with their own state (activate a device, check firmware, list devices). Knowledge-base search is exactly a tool call: given arguments (a query), return text (grounding passages). Minting a new Seam for something that already fits an existing contract would duplicate machinery `ToolRegistry`/`ToolCallingBrain` already provide, for no behavioral gain. The retrieval contract itself still gets its own package (`voiceagent/knowledge_base/`), independent of the Tool Normalization layer, mirroring how `device_fleet/protocol.py` stays independent of the tool-announcement concern it doesn't own — but the *exposure* to a Brain is a ToolSource, not a Seam.

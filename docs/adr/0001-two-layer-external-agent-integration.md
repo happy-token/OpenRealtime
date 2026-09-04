@@ -1,0 +1,9 @@
+---
+status: accepted
+---
+
+# Two-layer external agent/tool integration: Tool Normalization + Agent Session Protocol
+
+External connectivity is split into two independent layers rather than one. **Tool Normalization** adapts MCP servers, function-calling declarations, and skills into a single Canonical Tool Schema before anything reaches a Brain — from the Brain's perspective there is exactly one tool shape, regardless of where a tool came from. **Agent Session Protocol** is a separate concern for delegating a whole turn to an external Agent process (not a single tool call): one shared session/prompt/resume/cancel protocol, with per-backend Drivers reduced to launch command, auth, and workspace quirks only — no backend re-implements session or streaming logic. Delegation through either layer is always async (fire-and-forget with a returned handle); results are matched against the Generation-lease before injection, so a stale delegation from a superseded turn is discarded rather than spoken.
+
+We considered treating MCP as the sole integration mechanism, since it's the emerging de facto standard, and requiring function-calling/skills authors to wrap themselves as MCP servers. We rejected this: our own research reference (qwen-audio-agent) and LiveKit's agents framework both independently converged on normalizing multiple tool-declaration styles into one internal shape rather than picking a single external standard as the only door in — and collapsing "whole external agent" delegation into the same abstraction as "single tool call" (which an MCP-only design would push toward) loses the session/streaming/cancellation semantics that whole-agent delegation actually needs. This is hard to reverse once backend Drivers and Brain-facing tool schemas are built against it, and the split is not the obvious first design a reader would guess at, so it's recorded here.

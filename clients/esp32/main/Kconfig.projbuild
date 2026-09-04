@@ -1,0 +1,19 @@
+menu "OpenRealtime ESP32 Client Configuration"
+
+    config VOICEAGENT_WIFI_SSID
+        string "Wi-Fi SSID"
+        default "myssid"
+
+    config VOICEAGENT_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default "mypassword"
+
+    config VOICEAGENT_SERVER_URI
+        string "OpenRealtime WebSocket server URI"
+        default "ws://192.168.1.100:8765"
+        help
+            Host:port that examples/server.py or examples/voice_web_server.py
+            binds to (run_app()'s default port is 8765 — see
+            voiceagent/cli/harness.py).
+
+endmenu

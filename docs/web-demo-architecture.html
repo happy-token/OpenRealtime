@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenRealtime — architecture</title>
+    <style>
+      :root {
+        --color-bg: oklch(16% 0.015 260);
+        --color-surface: oklch(21% 0.02 260);
+        --color-border: oklch(30% 0.02 260);
+        --color-text: oklch(92% 0.01 260);
+        --color-text-dim: oklch(65% 0.01 260);
+        --color-accent: oklch(72% 0.16 190);
+
+        --font-display: "Iowan Old Style", "Georgia", serif;
+        --font-mono: "SF Mono", "Menlo", "Consolas", monospace;
+
+        --space-md: clamp(1rem, 0.9rem + 0.4vw, 1.5rem);
+        --space-lg: clamp(1.5rem, 1.2rem + 1vw, 3rem);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-family: var(--font-mono);
+      }
+
+      header {
+        padding: var(--space-md) var(--space-lg) 0;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      h1 {
+        font-family: var(--font-display);
+        font-weight: 400;
+        font-size: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
+        letter-spacing: -0.01em;
+        margin: 0;
+      }
+
+      .subtitle {
+        color: var(--color-text-dim);
+        font-size: 0.85rem;
+        margin: 0.25rem 0 0;
+      }
+
+      a.back-link {
+        color: var(--color-accent);
+        text-decoration: none;
+        font-size: 0.85rem;
+      }
+
+      a.back-link:hover {
+        text-decoration: underline;
+      }
+
+      main {
+        padding: var(--space-md) var(--space-lg) var(--space-lg);
+      }
+
+      .panel {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px -12px oklch(0% 0 0 / 0.6);
+        padding: var(--space-lg);
+        overflow-x: auto;
+      }
+
+      .mermaid {
+        display: flex;
+        justify-content: center;
+      }
+
+      #status-line {
+        color: var(--color-text-dim);
+        font-size: 0.8rem;
+        margin: 0 0 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Architecture</h1>
+        <p class="subtitle">One turn, end to end — rendered from docs/ARCHITECTURE.md</p>
+      </div>
+      <a class="back-link" href="index.html">&larr; Back to demo</a>
+    </header>
+    <main>
+      <p id="status-line">Rendering diagram&hellip;</p>
+      <section class="panel" aria-label="Voice interaction flow diagram">
+        <pre class="mermaid">
+flowchart TD
+    A["User speaks"] --> B["Mic capture&lt;br/&gt;(browser AudioWorklet / client script)"]
+    B --> C["InputEpochStarted / InputAudioFrame&lt;br/&gt;via WebSocket v2 Transport"]
+    C --> D["Conversation Kernel"]
+    D --> E["EnergyVad&lt;br/&gt;(silence-timer VAD)"]
+    E -->|"still speaking"| D
+    E -->|"USER_EOT_CONFIRMED"| F{"EotClassifier&lt;br/&gt;optional, gated at Kernel"}
+    F -->|"INCOMPLETE"| D
+    F -->|"COMPLETE / UNCERTAIN / unregistered"| G["Turn Policy FSM&lt;br/&gt;5 states / 11 transitions"]
+
+    D -->|"streamed while listening"| H["AsrEngine / AsrSession&lt;br/&gt;push_audio / consume_transcript"]
+    H --> G
+
+    G --> I{"Assistant currently speaking?&lt;br/&gt;barge-in check"}
+    I -->|"no, fresh turn"| J["Committed user turn"]
+    I -->|"yes, overlap detected"| K["DualIntentClassifier&lt;br/&gt;duration default or LLM content-aware"]
+    K -->|"FLOOR_CLAIM"| L["Cancel in-flight response&lt;br/&gt;bump Generation Lease"]
+    L --> J
+    K -->|"BACKCHANNEL"| M["Ignore overlap&lt;br/&gt;assistant keeps speaking"]
+    M --> D
+
+    J --> N["Router"]
+    N --> O{"DelegationPolicy"}
+    O -->|"answer locally"| P["ChatBrain / ToolCallingBrain&lt;br/&gt;+ Tool Sources"]
+    O -->|"delegate"| Q["Agent Session Protocol&lt;br/&gt;Driver: InMemoryDriver / AcpDriver"]
+    P --> R["BrainResponse&lt;br/&gt;text + optional ActionOutput"]
+    Q --> R
+
+    R --> S["Response Scheduler"]
+    S --> T{"Generation Lease&lt;br/&gt;still current?"}
+    T -->|"superseded"| D
+    T -->|"current"| U["TtsEngine / StreamingTtsEngine&lt;br/&gt;synthesize audio"]
+    U --> V["AssistantTextFrame /&lt;br/&gt;AssistantAudioFrame(Chunk)"]
+    V --> W["Transport Adapter sends frame"]
+    W --> X["User hears reply"]
+    X -.->|"barge-in mid-playback"| A
+
+    Y["Event Ledger&lt;br/&gt;async Observer fan-out"]
+    Y -.-> D
+    Y -.-> G
+    Y -.-> N
+    Y -.-> S
+        </pre>
+      </section>
+    </main>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+      const statusLine = document.getElementById("status-line");
+
+      mermaid.initialize({ startOnLoad: false, theme: "dark" });
+
+      try {
+        await mermaid.run({ querySelector: ".mermaid" });
+        statusLine.remove();
+      } catch (error) {
+        statusLine.textContent = `Failed to render diagram: ${error.message}`;
+      }
+    </script>
+  </body>
+</html>

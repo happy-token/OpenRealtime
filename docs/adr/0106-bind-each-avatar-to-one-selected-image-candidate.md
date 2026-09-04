@@ -1,0 +1,3 @@
+# Bind each Avatar to one selected image candidate
+
+When HappyImage returns multiple images, Avatar Studio presents them as candidates but one Avatar draft may select and save exactly one source image. Saving creates one new `avatar_id` bound to that immutable image; unselected candidates remain only in HappyImage history and never enter the Avatar library automatically. A user who wants another candidate chooses `基于此候选创建新 Avatar`, which opens a separate draft and creates another Avatar ID. We reject multiple interchangeable likeness images inside one Avatar because Avatar Actions, provider resources, Renderer assets, and session choices require an unambiguous source identity.

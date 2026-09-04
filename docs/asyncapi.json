@@ -1,0 +1,2280 @@
+{
+  "asyncapi": "2.6.0",
+  "info": {
+    "title": "OpenRealtime Wire Protocol",
+    "version": "0.1.0",
+    "description": "Frame protocol spoken over the Transport Adapter Seam (server/transport/). Generated from server/transport/frames.py by scripts/generate_asyncapi.py \u2014 do not hand-edit."
+  },
+  "channels": {
+    "session": {
+      "description": "A single logical session over one Endpoint Session (see\nendpoint_session/registry.py and ADR-0019). The client sends\n`session_hello` first on any new physical connection, optionally with\n`resume_session_id` to reattach to a session that survived a prior\ndisconnect within its grace period. The server always replies with\n`session_ack`, carrying the `session_id` to use going forward and whether\nit was resumed or freshly minted. All other frames may flow in either\ndirection after that handshake completes; the server may push\n`assistant_text` / `assistant_audio` / `assistant_audio_chunk` frames\nunprompted, mid-turn, independent of client input.",
+      "publish": {
+        "summary": "Frames a client sends to the server.",
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "#/components/messages/InputAudioFrame"
+            },
+            {
+              "$ref": "#/components/messages/InputEpochStarted"
+            },
+            {
+              "$ref": "#/components/messages/InputCaptureDiagnostic"
+            },
+            {
+              "$ref": "#/components/messages/PlaybackProgressV2"
+            },
+            {
+              "$ref": "#/components/messages/SessionHelloFrame"
+            },
+            {
+              "$ref": "#/components/messages/UserTextFrame"
+            },
+            {
+              "$ref": "#/components/messages/SessionHeartbeatFrame"
+            },
+            {
+              "$ref": "#/components/messages/PlaybackProgressFrame"
+            },
+            {
+              "$ref": "#/components/messages/PlaybackQualityFrame"
+            },
+            {
+              "$ref": "#/components/messages/ClientConnectionQualityFrame"
+            },
+            {
+              "$ref": "#/components/messages/TtsConfigFrame"
+            },
+            {
+              "$ref": "#/components/messages/ConfirmationDecisionFrame"
+            }
+          ]
+        }
+      },
+      "subscribe": {
+        "summary": "Frames the server sends to the client.",
+        "message": {
+          "oneOf": [
+            {
+              "$ref": "#/components/messages/AudioGap"
+            },
+            {
+              "$ref": "#/components/messages/SessionAckFrame"
+            },
+            {
+              "$ref": "#/components/messages/InputAudioAck"
+            },
+            {
+              "$ref": "#/components/messages/UserTranscriptFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantTextFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantSpeechTextFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantAudioFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantAudioChunkFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantResponseCompletedFrame"
+            },
+            {
+              "$ref": "#/components/messages/AssistantSpeechCancelledFrame"
+            },
+            {
+              "$ref": "#/components/messages/SessionPongFrame"
+            },
+            {
+              "$ref": "#/components/messages/SessionCapabilitiesFrame"
+            },
+            {
+              "$ref": "#/components/messages/TtsConfigAckFrame"
+            },
+            {
+              "$ref": "#/components/messages/VoiceSessionFailureFrame"
+            },
+            {
+              "$ref": "#/components/messages/VoiceSessionPhaseChangedFrame"
+            },
+            {
+              "$ref": "#/components/messages/VoiceSessionReadyFrame"
+            },
+            {
+              "$ref": "#/components/messages/VoiceSessionSnapshotFrame"
+            },
+            {
+              "$ref": "#/components/messages/VoiceSessionEventTailFrame"
+            },
+            {
+              "$ref": "#/components/messages/ConfirmationRequestedFrame"
+            },
+            {
+              "$ref": "#/components/messages/ConfirmationResolutionFrame"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "InputAudioFrame": {
+        "name": "input_audio_frame",
+        "title": "InputAudioFrame",
+        "payload": {
+          "$ref": "#/components/schemas/InputAudioFrame"
+        }
+      },
+      "InputEpochStarted": {
+        "name": "input_epoch_started",
+        "title": "InputEpochStarted",
+        "payload": {
+          "$ref": "#/components/schemas/InputEpochStarted"
+        }
+      },
+      "InputCaptureDiagnostic": {
+        "name": "input_capture_diagnostic",
+        "title": "InputCaptureDiagnostic",
+        "payload": {
+          "$ref": "#/components/schemas/InputCaptureDiagnostic"
+        }
+      },
+      "PlaybackProgressV2": {
+        "name": "playback_progress_v2",
+        "title": "PlaybackProgressV2",
+        "payload": {
+          "$ref": "#/components/schemas/PlaybackProgressV2"
+        }
+      },
+      "SessionHelloFrame": {
+        "name": "session_hello",
+        "title": "SessionHelloFrame",
+        "payload": {
+          "$ref": "#/components/schemas/SessionHelloFrame"
+        }
+      },
+      "UserTextFrame": {
+        "name": "user_text",
+        "title": "UserTextFrame",
+        "payload": {
+          "$ref": "#/components/schemas/UserTextFrame"
+        }
+      },
+      "SessionHeartbeatFrame": {
+        "name": "session_heartbeat",
+        "title": "SessionHeartbeatFrame",
+        "payload": {
+          "$ref": "#/components/schemas/SessionHeartbeatFrame"
+        }
+      },
+      "PlaybackProgressFrame": {
+        "name": "playback_progress",
+        "title": "PlaybackProgressFrame",
+        "payload": {
+          "$ref": "#/components/schemas/PlaybackProgressFrame"
+        }
+      },
+      "PlaybackQualityFrame": {
+        "name": "playback_quality",
+        "title": "PlaybackQualityFrame",
+        "payload": {
+          "$ref": "#/components/schemas/PlaybackQualityFrame"
+        }
+      },
+      "ClientConnectionQualityFrame": {
+        "name": "client_connection_quality",
+        "title": "ClientConnectionQualityFrame",
+        "payload": {
+          "$ref": "#/components/schemas/ClientConnectionQualityFrame"
+        }
+      },
+      "TtsConfigFrame": {
+        "name": "tts_config",
+        "title": "TtsConfigFrame",
+        "payload": {
+          "$ref": "#/components/schemas/TtsConfigFrame"
+        }
+      },
+      "ConfirmationDecisionFrame": {
+        "name": "confirmation_decision",
+        "title": "ConfirmationDecisionFrame",
+        "payload": {
+          "$ref": "#/components/schemas/ConfirmationDecisionFrame"
+        }
+      },
+      "AudioGap": {
+        "name": "audio_gap",
+        "title": "AudioGap",
+        "payload": {
+          "$ref": "#/components/schemas/AudioGap"
+        }
+      },
+      "SessionAckFrame": {
+        "name": "session_ack",
+        "title": "SessionAckFrame",
+        "payload": {
+          "$ref": "#/components/schemas/SessionAckFrame"
+        }
+      },
+      "InputAudioAck": {
+        "name": "input_audio_ack",
+        "title": "InputAudioAck",
+        "payload": {
+          "$ref": "#/components/schemas/InputAudioAck"
+        }
+      },
+      "UserTranscriptFrame": {
+        "name": "user_transcript",
+        "title": "UserTranscriptFrame",
+        "payload": {
+          "$ref": "#/components/schemas/UserTranscriptFrame"
+        }
+      },
+      "AssistantTextFrame": {
+        "name": "assistant_text",
+        "title": "AssistantTextFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantTextFrame"
+        }
+      },
+      "AssistantSpeechTextFrame": {
+        "name": "assistant_speech_text",
+        "title": "AssistantSpeechTextFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantSpeechTextFrame"
+        }
+      },
+      "AssistantAudioFrame": {
+        "name": "assistant_audio",
+        "title": "AssistantAudioFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantAudioFrame"
+        }
+      },
+      "AssistantAudioChunkFrame": {
+        "name": "assistant_audio_chunk",
+        "title": "AssistantAudioChunkFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantAudioChunkFrame"
+        }
+      },
+      "AssistantResponseCompletedFrame": {
+        "name": "assistant_response_completed",
+        "title": "AssistantResponseCompletedFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantResponseCompletedFrame"
+        }
+      },
+      "AssistantSpeechCancelledFrame": {
+        "name": "assistant_speech_cancelled",
+        "title": "AssistantSpeechCancelledFrame",
+        "payload": {
+          "$ref": "#/components/schemas/AssistantSpeechCancelledFrame"
+        }
+      },
+      "SessionPongFrame": {
+        "name": "session_pong",
+        "title": "SessionPongFrame",
+        "payload": {
+          "$ref": "#/components/schemas/SessionPongFrame"
+        }
+      },
+      "SessionCapabilitiesFrame": {
+        "name": "session_capabilities",
+        "title": "SessionCapabilitiesFrame",
+        "payload": {
+          "$ref": "#/components/schemas/SessionCapabilitiesFrame"
+        }
+      },
+      "TtsConfigAckFrame": {
+        "name": "tts_config_ack",
+        "title": "TtsConfigAckFrame",
+        "payload": {
+          "$ref": "#/components/schemas/TtsConfigAckFrame"
+        }
+      },
+      "VoiceSessionFailureFrame": {
+        "name": "voice_session_failed",
+        "title": "VoiceSessionFailureFrame",
+        "payload": {
+          "$ref": "#/components/schemas/VoiceSessionFailureFrame"
+        }
+      },
+      "VoiceSessionPhaseChangedFrame": {
+        "name": "voice_session_phase_changed",
+        "title": "VoiceSessionPhaseChangedFrame",
+        "payload": {
+          "$ref": "#/components/schemas/VoiceSessionPhaseChangedFrame"
+        }
+      },
+      "VoiceSessionReadyFrame": {
+        "name": "voice_session_ready",
+        "title": "VoiceSessionReadyFrame",
+        "payload": {
+          "$ref": "#/components/schemas/VoiceSessionReadyFrame"
+        }
+      },
+      "VoiceSessionSnapshotFrame": {
+        "name": "voice_session_snapshot",
+        "title": "VoiceSessionSnapshotFrame",
+        "payload": {
+          "$ref": "#/components/schemas/VoiceSessionSnapshotFrame"
+        }
+      },
+      "VoiceSessionEventTailFrame": {
+        "name": "voice_session_event_tail",
+        "title": "VoiceSessionEventTailFrame",
+        "payload": {
+          "$ref": "#/components/schemas/VoiceSessionEventTailFrame"
+        }
+      },
+      "ConfirmationRequestedFrame": {
+        "name": "confirmation_requested",
+        "title": "ConfirmationRequestedFrame",
+        "payload": {
+          "$ref": "#/components/schemas/ConfirmationRequestedFrame"
+        }
+      },
+      "ConfirmationResolutionFrame": {
+        "name": "confirmation_resolution",
+        "title": "ConfirmationResolutionFrame",
+        "payload": {
+          "$ref": "#/components/schemas/ConfirmationResolutionFrame"
+        }
+      }
+    },
+    "schemas": {
+      "InputAudioFrame": {
+        "$defs": {
+          "CaptureMode": {
+            "enum": [
+              "prebuffer",
+              "live"
+            ],
+            "title": "CaptureMode",
+            "type": "string"
+          }
+        },
+        "properties": {
+          "type": {
+            "const": "input_audio_frame",
+            "default": "input_audio_frame",
+            "title": "Type",
+            "type": "string"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "start_sample": {
+            "minimum": 0,
+            "title": "Start Sample",
+            "type": "integer"
+          },
+          "sample_count": {
+            "exclusiveMinimum": 0,
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "capture_mode": {
+            "$ref": "#/$defs/CaptureMode"
+          },
+          "pcm16_base64": {
+            "minLength": 1,
+            "title": "Pcm16 Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_epoch",
+          "sequence",
+          "start_sample",
+          "sample_count",
+          "capture_mode",
+          "pcm16_base64"
+        ],
+        "title": "InputAudioFrame",
+        "type": "object"
+      },
+      "InputEpochStarted": {
+        "$defs": {
+          "AudioFormat": {
+            "properties": {
+              "format_id": {
+                "minLength": 1,
+                "title": "Format Id",
+                "type": "string"
+              },
+              "encoding": {
+                "const": "pcm_s16le",
+                "default": "pcm_s16le",
+                "title": "Encoding",
+                "type": "string"
+              },
+              "sample_rate_hz": {
+                "default": 16000,
+                "exclusiveMinimum": 0,
+                "title": "Sample Rate Hz",
+                "type": "integer"
+              },
+              "channels": {
+                "default": 1,
+                "maximum": 2,
+                "minimum": 1,
+                "title": "Channels",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "format_id"
+            ],
+            "title": "AudioFormat",
+            "type": "object"
+          },
+          "DeviceCaptureConstraints": {
+            "properties": {
+              "echo_cancellation": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Echo Cancellation"
+              },
+              "noise_suppression": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Noise Suppression"
+              },
+              "auto_gain_control": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Auto Gain Control"
+              }
+            },
+            "title": "DeviceCaptureConstraints",
+            "type": "object"
+          },
+          "DeviceCaptureEffectOwners": {
+            "properties": {
+              "echo_cancellation": {
+                "default": "none",
+                "enum": [
+                  "device",
+                  "none"
+                ],
+                "title": "Echo Cancellation",
+                "type": "string"
+              },
+              "noise_suppression": {
+                "default": "none",
+                "enum": [
+                  "device",
+                  "none"
+                ],
+                "title": "Noise Suppression",
+                "type": "string"
+              },
+              "auto_gain_control": {
+                "default": "none",
+                "enum": [
+                  "device",
+                  "none"
+                ],
+                "title": "Auto Gain Control",
+                "type": "string"
+              }
+            },
+            "title": "DeviceCaptureEffectOwners",
+            "type": "object"
+          },
+          "DeviceCaptureProfile": {
+            "properties": {
+              "profile_version": {
+                "default": 1,
+                "minimum": 1,
+                "title": "Profile Version",
+                "type": "integer"
+              },
+              "max_buffer_ms": {
+                "default": 30000,
+                "exclusiveMinimum": 0,
+                "title": "Max Buffer Ms",
+                "type": "integer"
+              },
+              "silence_threshold": {
+                "default": 0.003,
+                "maximum": 1,
+                "minimum": 0,
+                "title": "Silence Threshold",
+                "type": "number"
+              },
+              "pre_roll_ms": {
+                "default": 100,
+                "minimum": 0,
+                "title": "Pre Roll Ms",
+                "type": "integer"
+              },
+              "frame_duration_ms": {
+                "default": 32,
+                "exclusiveMinimum": 0,
+                "title": "Frame Duration Ms",
+                "type": "integer"
+              },
+              "max_replay_rate": {
+                "default": 2.0,
+                "maximum": 2,
+                "minimum": 1,
+                "title": "Max Replay Rate",
+                "type": "number"
+              },
+              "catchup_deadline_ms": {
+                "default": 30000,
+                "exclusiveMinimum": 0,
+                "title": "Catchup Deadline Ms",
+                "type": "integer"
+              },
+              "queue_low_watermark": {
+                "default": 8,
+                "minimum": 0,
+                "title": "Queue Low Watermark",
+                "type": "integer"
+              },
+              "queue_high_watermark": {
+                "default": 32,
+                "exclusiveMinimum": 0,
+                "title": "Queue High Watermark",
+                "type": "integer"
+              }
+            },
+            "title": "DeviceCaptureProfile",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "type": {
+            "const": "input_epoch_started",
+            "default": "input_epoch_started",
+            "title": "Type",
+            "type": "string"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/$defs/AudioFormat"
+          },
+          "requested_profile": {
+            "$ref": "#/$defs/DeviceCaptureProfile"
+          },
+          "effective_profile": {
+            "$ref": "#/$defs/DeviceCaptureProfile"
+          },
+          "timeline_origin_ms": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Timeline Origin Ms",
+            "type": "number"
+          },
+          "requested_constraints": {
+            "$ref": "#/$defs/DeviceCaptureConstraints"
+          },
+          "effective_constraints": {
+            "$ref": "#/$defs/DeviceCaptureConstraints"
+          },
+          "effect_owners": {
+            "$ref": "#/$defs/DeviceCaptureEffectOwners"
+          }
+        },
+        "required": [
+          "input_epoch",
+          "format",
+          "requested_profile",
+          "effective_profile"
+        ],
+        "title": "InputEpochStarted",
+        "type": "object"
+      },
+      "InputCaptureDiagnostic": {
+        "additionalProperties": false,
+        "description": "Content-free client evidence for a failed capture epoch.",
+        "properties": {
+          "type": {
+            "const": "input_capture_diagnostic",
+            "default": "input_capture_diagnostic",
+            "title": "Type",
+            "type": "string"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "overflow",
+              "catchup_deadline",
+              "audio_gap",
+              "worklet_failure"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "buffered_frames": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Buffered Frames",
+            "type": "integer"
+          },
+          "buffered_duration_ms": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Buffered Duration Ms",
+            "type": "integer"
+          },
+          "aggregate_energy": {
+            "default": 0,
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Aggregate Energy",
+            "type": "number"
+          }
+        },
+        "required": [
+          "input_epoch",
+          "outcome"
+        ],
+        "title": "InputCaptureDiagnostic",
+        "type": "object"
+      },
+      "PlaybackProgressV2": {
+        "properties": {
+          "type": {
+            "const": "playback_progress_v2",
+            "default": "playback_progress_v2",
+            "title": "Type",
+            "type": "string"
+          },
+          "output_epoch": {
+            "minLength": 1,
+            "title": "Output Epoch",
+            "type": "string"
+          },
+          "speech_id": {
+            "minLength": 1,
+            "title": "Speech Id",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "started",
+              "stopped",
+              "finished"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "played_position_samples": {
+            "minimum": 0,
+            "title": "Played Position Samples",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "output_epoch",
+          "speech_id",
+          "generation",
+          "phase",
+          "played_position_samples"
+        ],
+        "title": "PlaybackProgressV2",
+        "type": "object"
+      },
+      "SessionHelloFrame": {
+        "$defs": {
+          "PlaybackResumeState": {
+            "properties": {
+              "generation": {
+                "minimum": 0,
+                "title": "Generation",
+                "type": "integer"
+              },
+              "played_position_samples": {
+                "minimum": 0,
+                "title": "Played Position Samples",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "generation",
+              "played_position_samples"
+            ],
+            "title": "PlaybackResumeState",
+            "type": "object"
+          }
+        },
+        "description": "First frame a client sends on any new physical connection. See\nendpoint_session/registry.py \u2014 CONTEXT.md \u2014 Endpoint Session.\n\n``tenant_id``/``user_id``/``device_id`` are retained only for wire\ncompatibility and have no authorization power. v2 identity comes from the\nauthenticated physical Transport Adapter.",
+        "properties": {
+          "type": {
+            "const": "session_hello",
+            "default": "session_hello",
+            "title": "Type",
+            "type": "string"
+          },
+          "resume_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resume Session Id"
+          },
+          "resume_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resume Token"
+          },
+          "protocol_version": {
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "supported_protocol_versions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Supported Protocol Versions"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seq"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tenant Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User Id"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Device Id"
+          },
+          "requested_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Thread Id"
+          },
+          "previous_voice_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previous Voice Session Id"
+          },
+          "last_session_sequence": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Last Session Sequence",
+            "type": "integer"
+          },
+          "last_journal_sequence": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Last Journal Sequence",
+            "type": "integer"
+          },
+          "playback": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PlaybackResumeState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "heartbeat_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Heartbeat Interval Ms"
+          },
+          "timestamp_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timestamp Ms"
+          }
+        },
+        "title": "SessionHelloFrame",
+        "type": "object"
+      },
+      "UserTextFrame": {
+        "properties": {
+          "type": {
+            "const": "user_text",
+            "default": "user_text",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seq"
+          },
+          "timestamp_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timestamp Ms"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "UserTextFrame",
+        "type": "object"
+      },
+      "SessionHeartbeatFrame": {
+        "properties": {
+          "type": {
+            "const": "session_heartbeat",
+            "default": "session_heartbeat",
+            "title": "Type",
+            "type": "string"
+          },
+          "heartbeat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Heartbeat Id"
+          },
+          "timestamp_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timestamp Ms"
+          }
+        },
+        "title": "SessionHeartbeatFrame",
+        "type": "object"
+      },
+      "PlaybackProgressFrame": {
+        "description": "Client-reported playback truth for one generation's assistant audio.\n\n`finished=True` means the client's last scheduled audio source actually\nended \u2014 the only real end-of-playback signal in the system. A client that\nsends this opts the session into client-reported playback truth;\n`finished=False` is reserved for\nmid-playback position reporting and is currently ignored.\n\nUntrusted input like any other inbound frame: see\nthe realtime transport bridge checks the generation so a stale report\ncannot end the current turn. See ADR-0037.",
+        "properties": {
+          "type": {
+            "const": "playback_progress",
+            "default": "playback_progress",
+            "title": "Type",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "finished": {
+            "title": "Finished",
+            "type": "boolean"
+          },
+          "started": {
+            "default": false,
+            "title": "Started",
+            "type": "boolean"
+          },
+          "stopped": {
+            "default": false,
+            "title": "Stopped",
+            "type": "boolean"
+          },
+          "played_audio_end_us": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Played Audio End Us"
+          }
+        },
+        "required": [
+          "generation",
+          "finished"
+        ],
+        "title": "PlaybackProgressFrame",
+        "type": "object"
+      },
+      "PlaybackQualityFrame": {
+        "description": "Aggregated terminal playback diagnostics for one Generation.\n\nContains timing counters only. Raw audio, transcript text, and per-chunk\nsamples are intentionally excluded so diagnostics remain bounded and safe.",
+        "properties": {
+          "type": {
+            "const": "playback_quality",
+            "default": "playback_quality",
+            "title": "Type",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "arrival_jitter_ms": {
+            "maximum": 60000,
+            "minimum": 0,
+            "title": "Arrival Jitter Ms",
+            "type": "number"
+          },
+          "max_chunk_gap_ms": {
+            "maximum": 60000,
+            "minimum": 0,
+            "title": "Max Chunk Gap Ms",
+            "type": "number"
+          },
+          "underrun_count": {
+            "maximum": 100000,
+            "minimum": 0,
+            "title": "Underrun Count",
+            "type": "integer"
+          },
+          "underrun_total_ms": {
+            "maximum": 3600000,
+            "minimum": 0,
+            "title": "Underrun Total Ms",
+            "type": "number"
+          },
+          "chunk_count": {
+            "maximum": 1000000,
+            "minimum": 0,
+            "title": "Chunk Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation",
+          "arrival_jitter_ms",
+          "max_chunk_gap_ms",
+          "underrun_count",
+          "underrun_total_ms",
+          "chunk_count"
+        ],
+        "title": "PlaybackQualityFrame",
+        "type": "object"
+      },
+      "ClientConnectionQualityFrame": {
+        "description": "One completed browser-to-OpenRealtime transport outage.",
+        "properties": {
+          "type": {
+            "const": "client_connection_quality",
+            "default": "client_connection_quality",
+            "title": "Type",
+            "type": "string"
+          },
+          "reconnect_count": {
+            "maximum": 100000,
+            "minimum": 1,
+            "title": "Reconnect Count",
+            "type": "integer"
+          },
+          "last_disconnect_ms": {
+            "maximum": 3600000,
+            "minimum": 0,
+            "title": "Last Disconnect Ms",
+            "type": "number"
+          },
+          "max_disconnect_ms": {
+            "maximum": 3600000,
+            "minimum": 0,
+            "title": "Max Disconnect Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reconnect_count",
+          "last_disconnect_ms",
+          "max_disconnect_ms"
+        ],
+        "title": "ClientConnectionQualityFrame",
+        "type": "object"
+      },
+      "TtsConfigFrame": {
+        "description": "Updates speech synthesis presentation for the current session.",
+        "properties": {
+          "type": {
+            "const": "tts_config",
+            "default": "tts_config",
+            "title": "Type",
+            "type": "string"
+          },
+          "voice": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Voice",
+            "type": "string"
+          },
+          "speech_rate": {
+            "default": 0,
+            "maximum": 100,
+            "minimum": -50,
+            "title": "Speech Rate",
+            "type": "integer"
+          },
+          "dialect": {
+            "default": "",
+            "enum": [
+              "",
+              "dongbei",
+              "shaanxi",
+              "sichuan"
+            ],
+            "title": "Dialect",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voice"
+        ],
+        "title": "TtsConfigFrame",
+        "type": "object"
+      },
+      "ConfirmationDecisionFrame": {
+        "properties": {
+          "type": {
+            "const": "confirmation_decision",
+            "default": "confirmation_decision",
+            "title": "Type",
+            "type": "string"
+          },
+          "confirmation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation Id",
+            "type": "string"
+          },
+          "action_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Action Digest",
+            "type": "string"
+          },
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirmation_id",
+          "action_digest",
+          "approved"
+        ],
+        "title": "ConfirmationDecisionFrame",
+        "type": "object"
+      },
+      "AudioGap": {
+        "properties": {
+          "type": {
+            "const": "audio_gap",
+            "default": "audio_gap",
+            "title": "Type",
+            "type": "string"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          },
+          "expected_sequence": {
+            "minimum": 0,
+            "title": "Expected Sequence",
+            "type": "integer"
+          },
+          "received_sequence": {
+            "minimum": 0,
+            "title": "Received Sequence",
+            "type": "integer"
+          },
+          "expected_start_sample": {
+            "minimum": 0,
+            "title": "Expected Start Sample",
+            "type": "integer"
+          },
+          "received_start_sample": {
+            "minimum": 0,
+            "title": "Received Start Sample",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input_epoch",
+          "expected_sequence",
+          "received_sequence",
+          "expected_start_sample",
+          "received_start_sample"
+        ],
+        "title": "AudioGap",
+        "type": "object"
+      },
+      "SessionAckFrame": {
+        "description": "Server's reply to SessionHelloFrame, confirming the session id to use\ngoing forward and whether it was resumed or freshly minted.",
+        "properties": {
+          "type": {
+            "const": "session_ack",
+            "default": "session_ack",
+            "title": "Type",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "resumed": {
+            "title": "Resumed",
+            "type": "boolean"
+          },
+          "resume_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resume Token"
+          },
+          "protocol_version": {
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "server_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Server Time Ms"
+          },
+          "heartbeat_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Heartbeat Interval Ms"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thread Id"
+          },
+          "previous_voice_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Previous Voice Session Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "session_id",
+          "resumed"
+        ],
+        "title": "SessionAckFrame",
+        "type": "object"
+      },
+      "InputAudioAck": {
+        "properties": {
+          "type": {
+            "const": "input_audio_ack",
+            "default": "input_audio_ack",
+            "title": "Type",
+            "type": "string"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          },
+          "highest_contiguous_sequence": {
+            "minimum": 0,
+            "title": "Highest Contiguous Sequence",
+            "type": "integer"
+          },
+          "next_start_sample": {
+            "minimum": 0,
+            "title": "Next Start Sample",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input_epoch",
+          "highest_contiguous_sequence",
+          "next_start_sample"
+        ],
+        "title": "InputAudioAck",
+        "type": "object"
+      },
+      "UserTranscriptFrame": {
+        "description": "Echoes the client's own ASR-derived transcript back to it, mirroring\nhow a client doing its own ASR already sees its UserTextFrame locally\nbefore sending. The Realtime WebSocket bridge emits this from transcript\nevents.",
+        "properties": {
+          "type": {
+            "const": "user_transcript",
+            "default": "user_transcript",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Generation"
+          },
+          "is_final": {
+            "default": true,
+            "title": "Is Final",
+            "type": "boolean"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Turn Id"
+          },
+          "transcript_revision": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transcript Revision"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "UserTranscriptFrame",
+        "type": "object"
+      },
+      "AssistantTextFrame": {
+        "properties": {
+          "type": {
+            "const": "assistant_text",
+            "default": "assistant_text",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Emotion"
+          },
+          "gesture": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gesture"
+          }
+        },
+        "required": [
+          "text",
+          "generation"
+        ],
+        "title": "AssistantTextFrame",
+        "type": "object"
+      },
+      "AssistantSpeechTextFrame": {
+        "description": "Cumulative text actually submitted to the speech/TTS path.",
+        "properties": {
+          "type": {
+            "const": "assistant_speech_text",
+            "default": "assistant_speech_text",
+            "title": "Type",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "text",
+          "generation"
+        ],
+        "title": "AssistantSpeechTextFrame",
+        "type": "object"
+      },
+      "AssistantAudioFrame": {
+        "properties": {
+          "type": {
+            "const": "assistant_audio",
+            "default": "assistant_audio",
+            "title": "Type",
+            "type": "string"
+          },
+          "pcm16_base64": {
+            "title": "Pcm16 Base64",
+            "type": "string"
+          },
+          "sample_rate_hz": {
+            "title": "Sample Rate Hz",
+            "type": "integer"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pcm16_base64",
+          "sample_rate_hz",
+          "generation"
+        ],
+        "title": "AssistantAudioFrame",
+        "type": "object"
+      },
+      "AssistantAudioChunkFrame": {
+        "properties": {
+          "type": {
+            "const": "assistant_audio_chunk",
+            "default": "assistant_audio_chunk",
+            "title": "Type",
+            "type": "string"
+          },
+          "pcm16_base64": {
+            "title": "Pcm16 Base64",
+            "type": "string"
+          },
+          "sample_rate_hz": {
+            "title": "Sample Rate Hz",
+            "type": "integer"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "speech_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Speech Id"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "is_final": {
+            "title": "Is Final",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pcm16_base64",
+          "sample_rate_hz",
+          "generation",
+          "sequence",
+          "is_final"
+        ],
+        "title": "AssistantAudioChunkFrame",
+        "type": "object"
+      },
+      "AssistantResponseCompletedFrame": {
+        "description": "Marks the response boundary independently from its audio segments.",
+        "properties": {
+          "type": {
+            "const": "assistant_response_completed",
+            "default": "assistant_response_completed",
+            "title": "Type",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "title": "AssistantResponseCompletedFrame",
+        "type": "object"
+      },
+      "AssistantSpeechCancelledFrame": {
+        "description": "Sent the instant \u03c49 confirms a barge-in: stop playing `generation`'s\naudio and drop whatever is still buffered for it.\n\nThe client must also drop any `assistant_audio_chunk` for this generation\nthat arrives *after* this frame. Cancellation takes effect at a chunk\nboundary, so one more chunk can already be in flight \u2014 and with the frame\nloop and the turn task both able to call `transport.send` concurrently\n(ADR-0036), their relative wire order isn't guaranteed. That late-chunk\ncase is why this frame carries a generation rather than being a bare\nsignal. See ADR-0036.",
+        "properties": {
+          "type": {
+            "const": "assistant_speech_cancelled",
+            "default": "assistant_speech_cancelled",
+            "title": "Type",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "reason": {
+            "default": "interrupted",
+            "enum": [
+              "interrupted",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "title": "AssistantSpeechCancelledFrame",
+        "type": "object"
+      },
+      "SessionPongFrame": {
+        "properties": {
+          "type": {
+            "const": "session_pong",
+            "default": "session_pong",
+            "title": "Type",
+            "type": "string"
+          },
+          "heartbeat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Heartbeat Id"
+          },
+          "timestamp_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timestamp Ms"
+          },
+          "server_timestamp_ms": {
+            "title": "Server Timestamp Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "server_timestamp_ms"
+        ],
+        "title": "SessionPongFrame",
+        "type": "object"
+      },
+      "SessionCapabilitiesFrame": {
+        "description": "Advertises live speech/text capabilities after the session handshake.",
+        "properties": {
+          "type": {
+            "const": "session_capabilities",
+            "default": "session_capabilities",
+            "title": "Type",
+            "type": "string"
+          },
+          "server_asr": {
+            "title": "Server Asr",
+            "type": "boolean"
+          },
+          "server_tts": {
+            "title": "Server Tts",
+            "type": "boolean"
+          },
+          "assistant_text_streaming": {
+            "default": true,
+            "title": "Assistant Text Streaming",
+            "type": "boolean"
+          },
+          "user_transcript_streaming": {
+            "default": false,
+            "title": "User Transcript Streaming",
+            "type": "boolean"
+          },
+          "tts_configurable": {
+            "default": false,
+            "title": "Tts Configurable",
+            "type": "boolean"
+          },
+          "tts_preview": {
+            "default": false,
+            "title": "Tts Preview",
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
+          },
+          "heartbeat_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Heartbeat Interval Ms"
+          }
+        },
+        "required": [
+          "server_asr",
+          "server_tts"
+        ],
+        "title": "SessionCapabilitiesFrame",
+        "type": "object"
+      },
+      "TtsConfigAckFrame": {
+        "properties": {
+          "type": {
+            "const": "tts_config_ack",
+            "default": "tts_config_ack",
+            "title": "Type",
+            "type": "string"
+          },
+          "voice": {
+            "title": "Voice",
+            "type": "string"
+          },
+          "speech_rate": {
+            "title": "Speech Rate",
+            "type": "integer"
+          },
+          "dialect": {
+            "default": "",
+            "enum": [
+              "",
+              "dongbei",
+              "shaanxi",
+              "sichuan"
+            ],
+            "title": "Dialect",
+            "type": "string"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "voice",
+          "speech_rate",
+          "applied"
+        ],
+        "title": "TtsConfigAckFrame",
+        "type": "object"
+      },
+      "VoiceSessionFailureFrame": {
+        "properties": {
+          "type": {
+            "const": "voice_session_failed",
+            "default": "voice_session_failed",
+            "title": "Type",
+            "type": "string"
+          },
+          "error_id": {
+            "minLength": 1,
+            "title": "Error Id",
+            "type": "string"
+          },
+          "code": {
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "phase": {
+            "minLength": 1,
+            "title": "Phase",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retry After Ms"
+          },
+          "session_disposition": {
+            "enum": [
+              "keep_reconnecting",
+              "close",
+              "continuation_required"
+            ],
+            "title": "Session Disposition",
+            "type": "string"
+          },
+          "safe_message": {
+            "minLength": 1,
+            "title": "Safe Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "phase",
+          "retryable",
+          "session_disposition",
+          "safe_message"
+        ],
+        "title": "VoiceSessionFailureFrame",
+        "type": "object"
+      },
+      "VoiceSessionPhaseChangedFrame": {
+        "properties": {
+          "type": {
+            "const": "voice_session_phase_changed",
+            "default": "voice_session_phase_changed",
+            "title": "Type",
+            "type": "string"
+          },
+          "session_sequence": {
+            "minimum": 1,
+            "title": "Session Sequence",
+            "type": "integer"
+          },
+          "from_phase": {
+            "enum": [
+              "inactive",
+              "starting",
+              "active",
+              "reconnecting",
+              "stopping",
+              "closed"
+            ],
+            "title": "From Phase",
+            "type": "string"
+          },
+          "to_phase": {
+            "enum": [
+              "inactive",
+              "starting",
+              "active",
+              "reconnecting",
+              "stopping",
+              "closed"
+            ],
+            "title": "To Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_sequence",
+          "from_phase",
+          "to_phase"
+        ],
+        "title": "VoiceSessionPhaseChangedFrame",
+        "type": "object"
+      },
+      "VoiceSessionReadyFrame": {
+        "properties": {
+          "type": {
+            "const": "voice_session_ready",
+            "default": "voice_session_ready",
+            "title": "Type",
+            "type": "string"
+          },
+          "session_sequence": {
+            "minimum": 1,
+            "title": "Session Sequence",
+            "type": "integer"
+          },
+          "input_epoch": {
+            "minLength": 1,
+            "title": "Input Epoch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_sequence",
+          "input_epoch"
+        ],
+        "title": "VoiceSessionReadyFrame",
+        "type": "object"
+      },
+      "VoiceSessionSnapshotFrame": {
+        "description": "Bounded semantic state used when the client's event cursor has a gap.",
+        "properties": {
+          "type": {
+            "const": "voice_session_snapshot",
+            "default": "voice_session_snapshot",
+            "title": "Type",
+            "type": "string"
+          },
+          "session_sequence": {
+            "minimum": 0,
+            "title": "Session Sequence",
+            "type": "integer"
+          },
+          "journal_sequence": {
+            "minimum": 0,
+            "title": "Journal Sequence",
+            "type": "integer"
+          },
+          "generation": {
+            "minimum": 0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "inactive",
+              "starting",
+              "active",
+              "reconnecting",
+              "stopping",
+              "closed"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "active_work_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Active Work Refs",
+            "type": "array"
+          },
+          "pending_confirmation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Confirmation Id"
+          },
+          "playback_generation": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Playback Generation"
+          },
+          "played_position_samples": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Played Position Samples"
+          }
+        },
+        "required": [
+          "session_sequence",
+          "journal_sequence",
+          "generation",
+          "phase"
+        ],
+        "title": "VoiceSessionSnapshotFrame",
+        "type": "object"
+      },
+      "VoiceSessionEventTailFrame": {
+        "$defs": {
+          "VoiceSessionPhaseChangedFrame": {
+            "properties": {
+              "type": {
+                "const": "voice_session_phase_changed",
+                "default": "voice_session_phase_changed",
+                "title": "Type",
+                "type": "string"
+              },
+              "session_sequence": {
+                "minimum": 1,
+                "title": "Session Sequence",
+                "type": "integer"
+              },
+              "from_phase": {
+                "enum": [
+                  "inactive",
+                  "starting",
+                  "active",
+                  "reconnecting",
+                  "stopping",
+                  "closed"
+                ],
+                "title": "From Phase",
+                "type": "string"
+              },
+              "to_phase": {
+                "enum": [
+                  "inactive",
+                  "starting",
+                  "active",
+                  "reconnecting",
+                  "stopping",
+                  "closed"
+                ],
+                "title": "To Phase",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_sequence",
+              "from_phase",
+              "to_phase"
+            ],
+            "title": "VoiceSessionPhaseChangedFrame",
+            "type": "object"
+          },
+          "VoiceSessionReadyFrame": {
+            "properties": {
+              "type": {
+                "const": "voice_session_ready",
+                "default": "voice_session_ready",
+                "title": "Type",
+                "type": "string"
+              },
+              "session_sequence": {
+                "minimum": 1,
+                "title": "Session Sequence",
+                "type": "integer"
+              },
+              "input_epoch": {
+                "minLength": 1,
+                "title": "Input Epoch",
+                "type": "string"
+              }
+            },
+            "required": [
+              "session_sequence",
+              "input_epoch"
+            ],
+            "title": "VoiceSessionReadyFrame",
+            "type": "object"
+          }
+        },
+        "description": "Contiguous visible lifecycle events after a client resume cursor.",
+        "properties": {
+          "type": {
+            "const": "voice_session_event_tail",
+            "default": "voice_session_event_tail",
+            "title": "Type",
+            "type": "string"
+          },
+          "resume_from_sequence": {
+            "minimum": 0,
+            "title": "Resume From Sequence",
+            "type": "integer"
+          },
+          "through_sequence": {
+            "minimum": 0,
+            "title": "Through Sequence",
+            "type": "integer"
+          },
+          "events": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VoiceSessionPhaseChangedFrame"
+                },
+                {
+                  "$ref": "#/$defs/VoiceSessionReadyFrame"
+                }
+              ]
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resume_from_sequence",
+          "through_sequence"
+        ],
+        "title": "VoiceSessionEventTailFrame",
+        "type": "object"
+      },
+      "ConfirmationRequestedFrame": {
+        "properties": {
+          "type": {
+            "const": "confirmation_requested",
+            "default": "confirmation_requested",
+            "title": "Type",
+            "type": "string"
+          },
+          "confirmation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation Id",
+            "type": "string"
+          },
+          "action_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Action Digest",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "required_channel": {
+            "enum": [
+              "voice",
+              "strong"
+            ],
+            "title": "Required Channel",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 0,
+            "title": "Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confirmation_id",
+          "action_digest",
+          "summary",
+          "required_channel",
+          "expires_at",
+          "generation"
+        ],
+        "title": "ConfirmationRequestedFrame",
+        "type": "object"
+      },
+      "ConfirmationResolutionFrame": {
+        "properties": {
+          "type": {
+            "const": "confirmation_resolution",
+            "default": "confirmation_resolution",
+            "title": "Type",
+            "type": "string"
+          },
+          "confirmation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation Id",
+            "type": "string"
+          },
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "message": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "confirmation_id",
+          "applied",
+          "approved",
+          "success",
+          "message"
+        ],
+        "title": "ConfirmationResolutionFrame",
+        "type": "object"
+      }
+    }
+  }
+}

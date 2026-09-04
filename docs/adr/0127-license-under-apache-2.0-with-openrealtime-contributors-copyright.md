@@ -1,0 +1,3 @@
+# License under Apache-2.0 with "OpenRealtime Contributors" copyright
+
+OpenRealtime is released under Apache-2.0, copyright held by "OpenRealtime Contributors" rather than a named individual or company. MIT was considered and rejected: MIT has no patent grant, while Apache-2.0's explicit patent grant and retaliation clause protect the project and downstream commercial adopters — the deciding factor given the stated intent to keep a path open to future commercialization. This mirrors Physical Intelligence's `openpi` (Apache-2.0, also a commercializing AI agent project), whereas hobby-scale tools like `openclaw` use MIT. Relicensing after external contributions land is impractical, so this is treated as effectively permanent.

@@ -1,0 +1,3 @@
+# Use one canonical Avatar route family
+
+Avatar pages use `/avatars` for asset management, `/avatars/create` for new creation, `/avatars/{avatar_id}` for aggregate detail, `/avatars/{avatar_id}/actions/create` for Avatar Studio prebound to an existing parent, and `/avatars/trash` for the recycle bin. Product and API documentation uses braces to denote a dynamic segment; real URLs contain the concrete identifier and Next.js implements the segment as `[avatarId]`. The action route reuses the same Studio rather than becoming another primary destination, so shared Avatar navigation still contains only `资产管理` and `创建数字人`.

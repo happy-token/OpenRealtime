@@ -1,0 +1,18 @@
+materials:
+  warm_gentle_smile:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/style-1-ready/musetalk_style1_warm_gentle_smile_5p0s.mp4
+    recommended_for: first_girlfriend_style_test
+    strict_idle_base: true
+    loop_recommended: true
+
+  clean_elegant_idle:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/style-1-ready/musetalk_style1_clean_elegant_idle_7p5s.mp4
+    recommended_for: lip_sync_quality_baseline
+    strict_idle_base: true
+    loop_recommended: true
+
+  soft_indoor_neutral:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/style-1-ready/musetalk_style1_soft_indoor_neutral_3p0s.mp4
+    recommended_for: short_visual_ab_test
+    strict_idle_base: true
+    loop_recommended: false

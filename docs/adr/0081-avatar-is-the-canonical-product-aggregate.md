@@ -1,0 +1,5 @@
+# Avatar is the canonical product aggregate
+
+The product uses `Avatar` and `avatar_id` for the top-level asset containing one name, source image, provider bindings, and zero or more actions; `Digital Human` and separately identified `Visual Identity` are not parallel product aggregates. Unqualified `avatar_id` is reserved for this stable product identity, while external hosted resources use `provider_avatar_id`, model-specific prepared material uses `renderer_asset_id`, and upstream adapters may translate their original `avatar_id` fields only at the integration boundary. Migration preserves identifier values: each resolved `visual_identity_id` value becomes the canonical `avatar_id`, and each `motion_base_id` value becomes `avatar_action_id`, rather than creating replacement identities.
+
+English code, types, components, APIs, and routes use `Avatar` and `/avatars`; user-facing Chinese keeps the familiar term `数字人`. Because the product is still under development, the rename is a direct cutover: legacy `/digital-human-*` routes, field aliases, types, and new links are removed rather than redirected or supported through a compatibility window.

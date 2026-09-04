@@ -1,0 +1,50 @@
+{
+  "attempted_turns": 200,
+  "groups": [
+    {
+      "abnormal_terminal_rate": 0.0,
+      "attempted_turns": 200,
+      "barge_in_stop_p95_ms": null,
+      "browser": "chrome",
+      "browser_version": "151.0.7922.170 ",
+      "capture_profile": "desktop-web-phase1-v1",
+      "correctness_violation_count": 0,
+      "engine": "cascaded",
+      "eot_to_playback_p50_ms": 635.726458,
+      "eot_to_playback_p95_ms": 1035.804458,
+      "evidence": "live",
+      "network": "cn-local",
+      "provider": "doubao-asr+deepseek+doubao-tts",
+      "reconnect_p95_ms": null,
+      "result_type": "ordinary",
+      "slo_passed": true
+    }
+  ],
+  "live_attempted_turns": 200,
+  "minimum_attempted_turns_per_profile": 200,
+  "profiles": [
+    {
+      "capture_profile": "desktop-web-phase1-v1",
+      "engine": "cascaded",
+      "live_attempted_turns": 200,
+      "missing_required_browsers": [],
+      "observed_browsers": [
+        "chrome"
+      ],
+      "provider": "doubao-asr+deepseek+doubao-tts",
+      "sample_coverage_passed": true
+    }
+  ],
+  "required_browsers": [
+    "chrome"
+  ],
+  "slo_thresholds": {
+    "abnormal_terminal_rate": 0.005,
+    "barge_in_stop_p95_ms": 200,
+    "correctness_violation_count": 0,
+    "eot_to_playback_p50_ms": 800,
+    "eot_to_playback_p95_ms": 1500,
+    "reconnect_p95_ms": 1000
+  },
+  "status": "passed"
+}

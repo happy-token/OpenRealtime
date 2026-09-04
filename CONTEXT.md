@@ -1,0 +1,1021 @@
+# OpenRealtime
+
+A universal, extensible voice-interaction agent framework: a runtime that owns the voice interface (listening/speaking/dialogue-state) and delegates conversational intelligence to a built-in or external Brain, over a vendor-neutral transport.
+
+## Language
+
+**Seam**:
+An architectural extension point in the framework's backbone — a place where a module has a defined contract and can be replaced or extended without touching the rest of the system. Backbone Seams: Voice Session Runtime, Endpoint Session/Transport Adapter, Realtime Engine, Turn Manager, speech capabilities, fast-tool execution, Agent Task Supervisor/Store, Conversation Journal, Artifact Store, and Event Ledger. Each Seam's directory holds its `Protocol` plus the framework's zero-config default; a Seam with a real, vendor-backed conformer nests it under that directory's own `plugins/` subfolder (e.g. `speech/plugins/`, `brain/plugins/`) — that's where a real integration physically lives.
+_Avoid_: Layer, component (too generic — use Seam when referring to one of the defined extension points specifically)
+
+**Brain**:
+The unit that decides what to say next in a turn — either the framework's built-in default Chat Brain (simple, local, handles natural conversation) or a user-registered external Agent (handles complex/delegated tasks). Brain is deliberately architecture-agnostic about where the intelligence lives.
+_Avoid_: Agent (reserve "Agent" for an external Brain specifically, not the concept generally), Model, LLM
+
+**Personal Voice Assistant**:
+A persistent user-facing assistant with a stable persona and an ongoing relationship with its user across conversations. It can hold natural voice dialogue and coordinate work without being identified with any one Brain, Agent, voice, or visual embodiment.
+_Avoid_: Brain, Agent, Avatar, Voice Session
+
+**Voice Session Runtime**:
+The live-session boundary that keeps one Voice Session coherent from opening through recovery and closure, including realtime interaction, transport continuity, trusted control coordination, context projection, playback truth, and operational state. It does not own durable persona or memory, external Agent execution, Avatar rendering, or any specific transport provider.
+_Avoid_: Voice Runtime (ambiguous), Realtime Engine (only one part of the Runtime), Application Control Plane, product backend
+
+**Realtime Engine**:
+The replaceable, stateful execution boundary for one live voice conversation. It owns conversational intelligence and realtime speech interaction as one capability, whether realized by a Native Realtime Engine or assembled as a Cascaded Realtime Engine; callers do not depend on that choice.
+_Avoid_: Realtime module (too vague), Conversation Engine (legacy narrower term), RealtimeSession (conflicts with Endpoint Session), Voice model, LLM pipeline
+
+**Realtime Conversation**:
+The stateful interaction handle opened by a Realtime Engine for one Voice Session. It accepts correlated realtime commands and emits one ordered event stream for its lifetime, including input understanding, dialogue state, response output, tool requests, cancellation, and closure.
+_Avoid_: Realtime Session (conflicts with Endpoint Session and Voice Session), response stream (only one response within the conversation), connection (transport-specific)
+
+**Realtime Reconfiguration Barrier**:
+The explicit boundary for replacing a bound Realtime Engine or cascaded capability implementation during an ongoing Voice Session. It stabilizes transcript and playback facts, completes or cancels active work, closes the old Realtime Conversation, rebuilds context from Conversation Journal, and opens a replacement without pretending stateful providers were hot-swapped.
+_Avoid_: Hot reload, provider fallback (a policy that may request this barrier), session reconnect (transport continuity only)
+
+**Capability Failure Policy**:
+The explicit configured response to failure of a bound realtime capability or plugin: fail, bounded restart of the same implementation, safe bypass, migration through a Reconfiguration Barrier, or a declared degraded mode. Every non-fatal transition is observable; silent provider fallback is forbidden.
+_Avoid_: Retry flag, best effort, automatic fallback
+
+**Plugin Manifest**:
+The versioned, declarative identity and capability description of a registered realtime extension, including its typed slot, contract version, configuration schema, placement, media formats, latency budget, data access, and failure policy. Runtime configuration selects a manifest identity rather than an implementation import path.
+_Avoid_: Python package metadata, arbitrary plugin config, provider credentials
+
+**Capability Context**:
+The minimum pseudonymous identity, correlation, and timing envelope exposed to one capability or audio plugin according to its approved Data Grants. The Realtime Engine reattaches full Interaction Context to accepted plugin events after the plugin boundary.
+_Avoid_: Interaction Context, request context, plugin metadata
+
+**Data Grant**:
+A registry-approved permission for one plugin identity and placement to receive a specific class of audio, transcript, speaker reference, artifact, or network access. A Realtime Profile may reduce but never expand these permissions.
+_Avoid_: Plugin config flag, OAuth scope, user consent (a separate policy input)
+
+**Capability Bridge**:
+An adapter that presents a sidecar or remote implementation as the same Cascaded Capability Session used by an in-process binding. It translates transport and serialization without exposing those details or the full public Realtime Event stream to the plugin.
+_Avoid_: Realtime Engine Adapter, Sideband Connection, remote plugin protocol
+
+**Realtime Requirements**:
+The required, preferred, and optional capabilities requested before opening a Realtime Conversation. Required capabilities must be satisfied before media starts; preferred capabilities may use an explicitly observable degradation, while optional capabilities may remain disabled.
+_Avoid_: Feature flags, provider config, optimistic capability probing
+
+**Realtime Engine Capabilities**:
+The versioned declaration of commands, events, media formats, context modes, speech-input behavior, delivery precision, audio taps, turn-management form, and safe configuration updates supported by one Engine binding. It is matched against Realtime Requirements before opening the conversation.
+_Avoid_: Provider documentation, runtime feature detection, Plugin Manifest
+
+**Realtime Profile**:
+The versioned user-facing declaration selecting a Native or Cascaded Realtime Engine, typed capability and audio-plugin identities, safe configuration, requirements, and failure policies. It references server-resolved secrets and registered plugin identities rather than implementation imports or credentials.
+_Avoid_: Environment-variable bundle, provider settings, resolved runtime wiring
+
+**Resolved Realtime Profile**:
+The validated, immutable session binding produced from a Realtime Profile after schema, capability, media-graph, permission, and dependency checks. It records exact implementation versions and a diagnostic digest so a Voice Session's behavior is reproducible.
+_Avoid_: Realtime Profile, mutable session config, plugin registry
+
+**Realtime Engine Contract Suite**:
+The executable behavioral specification every Native and Cascaded Realtime Engine binding must pass for command idempotency, event ordering, context visibility, speech delivery, interruption, control correlation, recovery, capability negotiation, and closure. Type conformance alone never establishes compatibility.
+_Avoid_: Unit tests, provider smoke test, interface type checking
+
+**Capability Contract Suite**:
+The typed behavioral specification a VAD, ASR, Turn Manager, TTS, Speech Renderer, Audio Processor, Analyzer, or Sink plugin must pass before the registry may advertise it as compatible. Each suite tests only the permissions and semantics of its declared slot.
+_Avoid_: Realtime Engine Contract Suite, plugin certification claim, import test
+
+**Realtime Command**:
+An explicit, correlated intent sent into an active Realtime Conversation, such as adding input or context, requesting a response, supplying tool output, updating configuration, cancelling work, or closing the conversation. A command is not evidence that the requested transition or delivery occurred.
+_Avoid_: Client event (one possible source), provider event, Conversation Action, command string
+
+**Realtime Event**:
+An immutable, strongly typed fact emitted by a Realtime Conversation through its single ordered public stream. Lifecycle, input, dialogue, response, and control-request events share Interaction Context, event identity, conversation sequence, timestamp, schema version, and applicable correlation identities.
+_Avoid_: Voice Event and Conversation Action (legacy split types), provider event, Transport Frame, Event Ledger entry, string event
+
+**Voice Session Event**:
+An immutable, runtime-owned fact about Voice Session lifecycle, readiness, recovery, or closure that may exist before, between, or after Realtime Conversations. Voice Session Events and Realtime Events may share one client control channel, but retain distinct ownership and ordering identities.
+_Avoid_: Realtime Event, Transport Frame, connection event, Dialogue State
+
+**Semantic Session Resume**:
+Recovery of a detached Voice Session from authoritative lifecycle, Conversation Journal, work, and playback facts plus an ordered event tail, never by replaying stale wire frames or media chunks. A resumed connection may reuse the Voice Session identity only after the recovery barriers pass.
+_Avoid_: Frame replay, reconnect, Engine restart, conversation replay
+
+**Voice Session Resume Token**:
+A high-entropy, short-lived bearer proof issued for one Voice Session and accepted only together with matching authenticated endpoint identity while that Session is detached within grace. The owner Registry stores only its hash, rotates it after successful resume, and never treats it as user login or Thread authorization.
+_Avoid_: Voice Session ID, API key, login session, reconnect URL parameter
+
+**Voice Session Continuation**:
+The explicit relationship by which a new Voice Session continues the same persistent thread after an earlier live session can no longer be resumed. It receives a new `voice_session_id`, references the previous Voice Session, and rebuilds semantic context and durable work from their authorities.
+_Avoid_: Semantic Session Resume, reconnect, same session, thread fork
+
+**Voice Session Snapshot**:
+A server-authored, sequence-bounded projection of the current Voice Session phase, visible conversation state, active work, and playback facts used when an incremental resume tail is unavailable or incomplete.
+_Avoid_: Conversation Journal, database backup, client cache, Realtime Profile
+
+**Voice Session Admission**:
+The server-authoritative capacity decision made before a starting Voice Session may become active or release device prebuffer. It accounts for live-session, event-loop, memory, audio-queue, and provider capacity, returns an explicit retryable rejection when unavailable, and never treats device identity as an exclusive media lease.
+_Avoid_: Authentication, rate limiting alone, WebSocket acceptance, provider connection pool
+
+**Voice Session Failure**:
+A safe, versioned failure envelope carrying stable machine-readable code, lifecycle phase, retryability, optional retry delay, session disposition, user-safe message, and diagnostic error identity. Clients act on these fields rather than parsing text, while sensitive provider or resource-existence details remain server-side.
+_Avoid_: Exception string, Realtime Capability Failure, HTTP status alone, UI toast
+
+**Model Context Restoration Barrier**:
+The recovery boundary that prevents a Voice Session from becoming active or requesting a new model response until authoritative Conversation Journal history, corrected by speech-delivery facts, is visible to the current Realtime Engine through a declared thread sequence.
+_Avoid_: Prompt injection, chat-history string, Session Snapshot, Memory retrieval
+
+**Response Stream**:
+The ordered, cancelable subset of Realtime Events emitted while one Realtime Engine resolves a response. It may interleave response lifecycle markers, display/spoken/audio deltas, control requests, and terminal outcome, all correlated by Interaction Context, `response_id`, and sequence. A Response Stream may buffer only to reach a meaningful protocol boundary—such as one speakable text segment or a complete tool-argument object—never the entire ordinary reply.
+_Avoid_: SSE stream, audio stream (both are provider- or media-specific subsets), complete response
+
+**Realtime Session Plane**:
+The latency-critical, client-facing path that carries live audio and realtime session events through Endpoint Session, Transport Adapter, and the active Realtime Engine. It owns media delivery and connection continuity, but never trusted business authorization, tool execution, Agent delegation, or long-lived provider credentials.
+_Avoid_: Media server (one possible implementation), RTC plane (WebSocket is supported too), Control Plane
+
+**Application Control Plane**:
+The trusted server-side path that owns identity binding, policy, permissions, budgets, Fast Tool Loop execution, confirmation, Work Registry, and named-Agent delegation. It observes and controls the Realtime Session Plane through canonical Realtime Commands and Realtime Events; it may run in the same process initially without collapsing the logical boundary.
+_Avoid_: Backend (too generic), tool server, Sideband (a provider-specific connection pattern into this plane)
+
+**Sideband Connection**:
+A provider-specific server connection attached to the same native realtime session as a client media connection, allowing Application Control Plane to monitor the session, update it, and answer tool calls without exposing trusted logic to the client. It is one Native Realtime Engine deployment mechanism, not the universal internal protocol.
+_Avoid_: Control Plane, second Voice Session, media connection
+
+**Conversation Journal**:
+The server-owned, append-only semantic history for one persistent thread and the only authoritative source used to restore or project conversation context. It records committed user/assistant items, tool calls/results, delegation outcomes, confirmations, and session boundaries at meaningful protocol boundaries—not raw provider events or every streaming delta. Provider sessions, model prompts, and Agent histories are rebuildable projections of it.
+_Avoid_: Event Ledger (operational observation), provider conversation, transcript (only one content view), memory (too broad)
+
+**Conversation Item**:
+One versioned semantic record in Conversation Journal, identified by `item_id` and ordered by a server-assigned thread sequence. It carries Interaction Context, typed content, causal correlation, visibility, and terminal status; later corrections or redactions are new records rather than silent mutation.
+_Avoid_: Realtime Event (a runtime fact), message (not every item is dialogue), provider item
+
+**Spoken Content**:
+The text intentionally submitted for voice delivery during a live conversation. It may be a concise spoken projection of a richer Conversation Item, remains causally correlated to its source when one exists, and is distinct from both display content and an observed audio transcript.
+_Avoid_: TTS text (one implementation), transcript (an observation of audio), assistant message (one possible contextual projection)
+
+**Semantic Content**:
+The complete meaning and structured result carried by a Conversation Item for durable history and model projection. It may contain detail or structure unsuitable for direct display or speech.
+_Avoid_: Display Content, Spoken Content, raw Agent payload
+
+**Display Content**:
+The user-interface representation of a Conversation Item, including rich text, Markdown, code, lists, and artifact references. It may be more detailed and differently formatted than Spoken Content without becoming a separate conversational turn.
+_Avoid_: Semantic Content, transcript, assistant message
+
+**Delivered Speech Transcript**:
+The best known text projection of Spoken Content that was actually delivered to the listener, bounded by acknowledged playback progress and any truncation or Barge-in. It is a delivery fact used for context reconciliation and diagnostics, not a new Conversation Item.
+_Avoid_: Spoken Content (intended speech), output transcript (may include unplayed generated audio), playback buffer
+
+**Interrupted Context Policy**:
+The configurable rule for projecting an interrupted assistant delivery into subsequent realtime model context. It defaults to `DELIVERED_ONLY`; any policy that includes full intended content must also preserve the interrupted state and delivered range rather than implying the listener heard everything.
+_Avoid_: Keep-full-text boolean, truncation flag, Conversation Journal retention policy
+
+**Playback Progress**:
+The playback endpoint's correlated report of audio actually rendered for one speech output, expressed on the negotiated media timeline by speech identity, audio sequence, and played samples. Generated, sent, or buffered audio is not delivered speech; missing acknowledgements produce estimated rather than exact delivery facts.
+_Avoid_: Audio sent, TTS completed, browser clock, speaking duration estimate
+
+**Device Audio Output Runtime**:
+The single device-side playback boundary that converts received assistant Audio Frames into generation-aware rendered audio and Playback Progress. It owns local decode/resample, the playback clock and bounded queue, output-device routing, volume, immediate cancel/clear, and played-position observation; WebSocket scheduling and future RTC remote-track playback are conformers to the same behavior.
+_Avoid_: TTS, Speech Lane, Transport Adapter, browser audio element, Delivery Record
+
+**Client Voice Session Controller**:
+The device-side coordinator that follows server Voice Session Events and binds Endpoint Transport, Device Audio Input Runtime, Device Audio Output Runtime, and UI state for the current session/epoch. It executes correlated `release/reset/cancel/clear` locally but never becomes authority for Voice Session Phase, policy, Journal, or durable work.
+_Avoid_: Voice Session Runtime, client state store, media player, Transport Adapter
+
+**Agent Result Item**:
+A durable, idempotently appended Conversation Item containing the correlated outcome of one Delegated Task, including its worker, source turn, result version, structured content, artifacts, and completion status. It is not an assistant message and does not imply that the result has been displayed or spoken.
+_Avoid_: Agent reply, callback payload, assistant message, tool result
+
+**Item Delivery**:
+The separately scheduled act of presenting a committed Conversation Item through model-generated response, direct speech, display-only notification, or no immediate presentation. Delivery timing and priority never determine whether the authoritative item is committed to Conversation Journal.
+_Avoid_: Append Item, Agent callback, immediate notification
+
+**Append Speech Text**:
+A stateful Realtime Engine input that incrementally adds externally authored Spoken Content to one correlated speech output. Its context policy is explicit and defaults to making the completed speech available to subsequent model reasoning.
+_Avoid_: Append Text (ambiguous about speech), Speak (suggests a complete one-shot utterance), TTS request (not valid for Native Realtime Engine)
+
+**Speech Output**:
+One explicitly identified, append-only voice delivery lifecycle opened, incrementally supplied, committed, cancelled, or failed through Realtime Commands. Text increments are idempotently ordered by `speech_id` and text sequence; committing closes text input, while cancellation also reconciles unplayed audio and delivery state.
+_Avoid_: TTS request (one implementation), audio response (only one output representation), assistant message
+
+**Speech Draft**:
+The recoverable, append-only working state of a Speech Output before final settlement. Accepted text may be batch-checkpointed outside Conversation Journal; commit, cancellation, failure, or recovery resolves the draft into correlated Spoken Content, conversation context according to policy, and a Delivery Record.
+_Avoid_: Conversation Item, text buffer (not recoverable or correlated), TTS session
+
+**Speech Lane**:
+The single ordered delivery channel for one playback endpoint. Multiple Speech Outputs may prepare or wait concurrently, but ordinary assistant audio is never mixed; a scheduler chooses the sole active speech by timing, priority, preemption, user-floor, and supersession policy.
+_Avoid_: Audio track (transport-specific), TTS queue (Native engines also conform), response stream
+
+**Speech Context Policy**:
+The rule governing how completed Spoken Content enters conversation context. `AUTO` attaches it to its source Conversation Item when present or creates an assistant item otherwise; `APPEND` always creates a new assistant item; `NONE` excludes it from model context while retaining delivery diagnostics.
+_Avoid_: Persist flag (context and persistence are different), write-to-history boolean (cannot express source-item correlation)
+
+**Audio Frame**:
+A timestamped, sequenced unit of audio carried across a negotiated media stream. Its encoding, sample rate, channels, and duration are explicit directly or through its epoch's immutable format descriptor; no public Realtime Engine or cascaded capability contract assumes PCM16, 16 kHz, or a fixed packet duration.
+_Avoid_: PCM chunk (one encoding), WebSocket packet (one transport), 32ms frame (one configuration)
+
+**Input Epoch**:
+A single uninterrupted device-capture timeline with one immutable effective Device Capture Profile and audio format. Its frame sequence and sample position start at zero; device/graph/format replacement, reconnect reset, overflow, or explicit stop closes it, and frames from a closed or different `input_epoch` cannot be joined into the current user Turn.
+_Avoid_: Voice Session, Generation, WebSocket connection, utterance
+
+**Device Audio Input Runtime**:
+The single device-side boundary that turns microphone capture into epoch-bound, timestamped Audio Frames for one Voice Session. It owns the local capture graph, format conversion, framing, bounded prebuffer, `release/reset/mute`, and capture-health telemetry; the desktop-Web conformer is centered on AudioWorklet, while native and embedded clients implement the same behavioral contract with platform audio primitives.
+_Avoid_: AudioWorklet (one browser mechanism), Transport Adapter, server Audio Graph, VAD, ASR
+
+**Device Capture Profile**:
+The versioned device-side configuration applied by Device Audio Input Runtime, including capture constraints, negotiated output format, frame duration, preprocessing ownership, prebuffer limits, energy threshold, pre-roll, and overflow policy. Runtime observations report the effective profile and browser/device overrides rather than assuming requested constraints were honored; each AEC, noise-suppression, or gain effect has at most one effective owner across device and server.
+_Avoid_: Realtime Profile, Audio Graph configuration, browser defaults, microphone permission
+
+**Audio Graph**:
+The Cascaded Realtime Engine facility that negotiates audio capabilities and performs shared decoding, resampling, channel conversion, and reframing on one common media timeline. VAD, ASR, TTS, playback, and network packet sizes may each have different preferred frame durations without defining separate clocks.
+_Avoid_: Audio plugin (the graph coordinates plugins), codec adapter (only one responsibility), media transport
+
+**Audio Gap**:
+An explicit interval on the common media timeline for which one required consumer did not receive valid audio. VAD, ASR, and Turn Manager must observe relevant gaps; sampling or dropped frames in optional Analyzer and Sink branches remain measured rather than silently affecting the critical path.
+_Avoid_: Silence, packet loss estimate, empty frame
+
+**Realtime Backpressure Policy**:
+The bounded queue, buffer-duration, latency-budget, and overflow rules assigned to each realtime data edge. Critical audio, speech text, and semantic events cannot be silently dropped or placed in unbounded queues; optional analysis and sink branches may use declared sampling or drop policies with observable gaps.
+_Avoid_: Queue size alone, best effort, retry policy
+
+**Cascaded Capability Session**:
+A stateful, asynchronous command/event handle opened for one bound VAD, ASR, Turn Manager, or TTS capability inside a Cascaded Realtime Engine. Capability Sessions never call each other directly; the Engine owns bounded routing, ordering, backpressure, cancellation, and lifecycle.
+_Avoid_: Plugin callback, service client (one implementation), Realtime Conversation (the public aggregate)
+
+**Audio Processor Plugin**:
+An ordered Audio Graph extension that transforms Audio Frames while preserving their media timeline. Noise suppression, echo cancellation, gain control, and similar effects belong here and must declare format, latency, side-input, and bypass capabilities.
+_Avoid_: Audio Analyzer Plugin, codec utility, arbitrary middleware
+
+**Audio Analyzer Plugin**:
+A read-only Audio Graph extension that observes Audio Frames and emits correlated evidence without changing the media stream. Voiceprint, speaker change, acoustic-scene, and quality analysis belong here; their evidence is not execution authority.
+_Avoid_: Audio Processor Plugin, identity provider, Turn Manager
+
+**Audio Sink Plugin**:
+A non-authoritative Audio Graph extension that consumes correlated audio or media events for storage, forwarding, monitoring, or diagnostics without modifying audio or deciding dialogue state.
+_Avoid_: Audio Processor Plugin, Event Ledger, transport
+
+**Avatar Renderer**:
+The optional session-scoped presentation capability that turns OpenRealtime-authored Spoken Content or speech audio and non-verbal actions into a synchronized visual embodiment. A Renderer may own managed TTS when its declared input is text, but OpenRealtime remains the authority for dialogue, cancellation, intended speech, and delivery reconciliation. A Renderer may be browser-native, hosted, or self-managed, but never becomes the character's Brain or memory authority.
+_Avoid_: Digital Human (too broad), Avatar Agent, video player, Brain
+
+**Avatar Renderer Stability Evidence**:
+Long-running evidence that one pinned Hosted Avatar and Renderer continue producing timely renderer updates under a repeated speech stimulus. It does not establish visible speaking-frame latency, lip-sync accuracy, AV drift, interruption behavior, queue health, thermal safety, or end-to-end realtime readiness.
+_Avoid_: Realtime acceptance, digital-human stability, successful callback count
+
+**Persona**:
+The editable behavioral identity of a Personal Voice Assistant, including its governing prompt, identity, personality, language, and memory instructions. A Persona is independent of the selected Voice and Avatar, so naming a Persona does not create, select, or authorize use of a matching person's likeness.
+_Avoid_: Avatar, Voice, model configuration, provider context
+
+**Avatar**:
+The top-level managed representation of one person's or character's visual likeness, identified by one stable Avatar ID and containing a display name, authorized source imagery, mode-specific provider bindings, and zero or more Avatar Actions. Multiple actions never create duplicate Avatars.
+_Avoid_: Persona, Hosted Avatar, provider resource, Renderer asset, preview image
+
+**Private Avatar**:
+An Avatar owned by the authenticated user who explicitly saved it, visible and mutable only to that owner and authorized administrators. User-generated images, actions, and Renderer assets remain private by default even when HappyImage generation used the owner's account quota.
+_Avoid_: personal browser draft, shared catalog entry, anonymous asset, unpublished Hosted Avatar
+
+**Shared Avatar**:
+An administrator-provided built-in Avatar, a synchronized provider stock Avatar, or a Private Avatar explicitly published into the workspace catalog. An Anam stock item receives an OpenRealtime Avatar ID and binds its Provider Avatar ID plus platform-accepted model, but its provider preview remains display metadata and grants only realtime use—not source-image reuse, action creation, duplication, or segmented rendering. Publishing a Private Avatar is a separate authorized action and never occurs automatically because an image was generated, an action became ready, or an administrator can technically read the asset.
+_Avoid_: Private Avatar, automatic publication, provider official label, public object URL
+
+**Avatar Owner**:
+The authenticated user identified by the authoritative account subject recorded when an Avatar is saved. Ownership governs management, deletion, model backfill, and private media access and is not inferred from a HappyImage task, browser, display name, or provider account.
+_Avoid_: task submitter metadata, current browser, provider account owner, Avatar display name
+
+**HappyImage Identity Delegation**:
+The seamless server-to-server authorization used when an OpenRealtime-authenticated user generates an Avatar image through HappyImage. OpenRealtime signs a short-lived, audience-bound, replay-resistant assertion carrying the verified Casdoor subject and minimum generation/result scopes; HappyImage trusts only the registered OpenRealtime service, maps the subject to its own user and quota record, and provisions that record on first use when absent. The browser neither opens a HappyImage authorization flow nor receives or shares either application's session cookie, API key, or long-lived token.
+_Avoid_: shared cookie or session store, forwarded browser cookie, iframe session, browser API key, arbitrary user impersonation
+
+**HappyImage Generation Availability**:
+The external capability state shown inside Avatar Studio for the authenticated user's HappyImage generation account. It reports remaining quota separately from service availability: insufficient quota disables only AI generation and links to HappyImage account management in a new page, while a provider or integration outage reports `服务不可用`; neither condition blocks local upload or choosing an existing Avatar source. The system never substitutes anonymous, administrator, or shared OpenRealtime quota.
+_Avoid_: Avatar processing billing, shared quota, anonymous fallback, whole-studio unavailable state
+
+**Avatar Recycle Bin**:
+The 30-day recoverable deletion state for one complete Avatar aggregate. Entering it immediately removes the Avatar and all of its actions from catalogs, new session choices, direct tests, and ordinary management while retaining its private source image, actions, Renderer assets, and bindings for whole-aggregate restoration; expiry permanently removes OpenRealtime-owned records and media. HappyImage source records remain independent, and an external provider resource is destroyed only when it is exclusively owned by the Avatar and the provider confirms deletion capability—otherwise permanent deletion only removes the binding and reports the retained external resource.
+_Avoid_: archived Avatar, hidden catalog filter, immediate hard delete, HappyImage deletion
+
+**Avatar Action Deletion**:
+The independent 30-day recoverable deletion of one Avatar Action without deleting, disabling, or recreating the parent Avatar or sibling actions. The action immediately leaves normal lists and new session choices but retains its original Avatar Action ID, video, and Renderer assets in the parent Avatar's `已删除动作` area until restoration or expiry; permanent expiry removes its media and derivatives. A deleted action cannot become an orphaned top-level asset, and deleting one that is live triggers Active Avatar Revocation.
+_Avoid_: Avatar deletion, image deletion, action unbinding, readiness reset, immediate hard delete
+
+**Active Avatar Revocation**:
+The immediate withdrawal of a deleted Avatar or Avatar Action from every live session using it. After an impact-aware confirmation reports the affected session count, the Avatar Renderer stops and each conversation continues in an explicitly labeled audio-only state; the runtime never substitutes another Avatar, image, or action, and restoring the asset never silently rebinds an existing session.
+_Avoid_: conversation deletion, automatic Avatar fallback, deferred visual deletion, restore-and-resume
+
+**Avatar ID**:
+The canonical stable identifier for one Avatar across management, creation, and session selection. Unqualified `avatar_id` always means this product aggregate; provider and Renderer identifiers must use qualified names.
+_Avoid_: Digital Human ID, Visual Identity ID, Provider Avatar ID, Renderer Asset ID
+
+**Avatar Routes**:
+The canonical page family rooted at `/avatars`: `/avatars` for asset management, `/avatars/create` for a new Avatar draft, `/avatars/{avatar_id}` for detail, `/avatars/{avatar_id}/actions/create` for the same Studio prebound to an existing parent, and `/avatars/trash` for recoverable deletion. Braces denote a dynamic value in product and API documentation only; a real URL contains the concrete ID, while Next.js source uses `[avatarId]` according to framework convention. Only management and creation appear as primary Avatar navigation destinations.
+_Avoid_: `/digital-human-*`, literal colon or braces in a URL, separate action-creation product page
+
+**Avatar MVP Baseline**:
+The frozen first-release scope covering the unified Avatar aggregate and routes, separate management and Studio pages on the shared glass visual shell, private upload/existing/HappyImage source acquisition, optional manually accepted Anam realtime binding, repeatable manually accepted LivePortrait actions, required Lip-sync Model preparation plus demand-driven session-start preparation, private/built-in library scopes, durable jobs, direct home-workbench launch handoff, recoverable deletion, and direct legacy-name migration with preserved ID values. It explicitly excludes image quality/face/safety gates, Avatar-processing billing, single-frame pose editing, automatic action creation or switching, multiple session-bound actions, non-Anam provider selection, HappyImage iframe/shared Cookie integration, and runtime compatibility aliases or routes.
+_Avoid_: post-MVP wishlist, implicit provider expansion, hidden compatibility layer, unconfirmed scope
+
+**Provider Avatar ID**:
+The provider-scoped identifier of one hosted avatar resource linked to an Avatar. It is never used as the Avatar ID, even when an upstream API names its field `avatar_id`.
+_Avoid_: Avatar ID, unqualified avatar_id, Renderer Asset ID
+
+**Visual Identity** (legacy):
+The removed name for the former separately identified likeness aggregate, now represented by an Avatar and its authorized source imagery. The one-time migration reads `visual_identity_id` only from the pre-migration schema and preserves its value as Avatar ID; no post-migration field, API alias, type, or route uses this term.
+_Avoid_: runtime alias, new domain field, second identity record, provider resource ID
+
+**Legacy Avatar Asset Migration**:
+The one-time consolidation of existing source-image and motion records through their authoritative tenant, owner, and `visual_identity_id` relationships into Avatar aggregates and child Avatar Actions. Resolved records preserve identifier values while the canonical field names change: the former `visual_identity_id` value becomes `avatar_id`, and the former `motion_base_id` value becomes `avatar_action_id`, so sessions, object paths, and Renderer assets require no identity remapping. Only records whose existing relationships resolve are migrated; the migration never fabricates a source image from a video or presents placeholder/orphan cards. Unresolved legacy records and their exclusively owned derivatives are listed by a pre-apply audit and then deleted rather than carried into the new domain.
+_Avoid_: face matching, name matching, extracted-frame source, orphan Avatar, silent best-effort merge
+
+**Avatar Display Name**:
+The user-editable, non-unique authoritative label used to recognize one Avatar throughout OpenRealtime. New Avatars suggest a numbered suffix when the same label already exists, while the stable Avatar ID remains authoritative. Renaming updates OpenRealtime immediately and best-effort synchronizes only the currently accepted Anam binding as `user label · short Avatar ID`; provider failure leaves the local name and realtime capability intact, exposes `Provider 名称待同步`, and can be retried. Historical, rejected, failed, and superseded provider attempts are never renamed, and the operation never changes Persona name, linked media, ownership, or identifiers.
+_Avoid_: Persona name, Provider as naming authority, Avatar ID, character identity, rename rollback
+
+**Avatar Image Candidate**:
+One uploaded, generated, or edited image being reviewed in the Avatar creation workspace before it becomes authorized source material. A HappyImage generation may show a candidate grid, but the active Avatar draft selects exactly one image; a result remains a candidate until the user names it and explicitly saves it to an Avatar, and saving another candidate requires a separate draft and `avatar_id`. Generation success, account quota use, or preview selection never creates a formal asset by itself.
+_Avoid_: Identity Source Image, Avatar, saved gallery image, automatic asset
+
+**Avatar Source Image**:
+The immutable, private master image copied into Avatar-owned object storage when the user explicitly saves an Avatar. OpenRealtime imports the bytes through an authorized server-to-server path and records its content hash and provenance such as the HappyImage task/result identifier without retaining a runtime dependency on the HappyImage URL or object lifecycle. One saved Avatar ID remains bound to this master for its lifetime: a new likeness creates a new Avatar ID rather than replacing the image beneath existing actions, provider bindings, Renderer assets, or session references. The MVP adds no product-level face, quality, compatibility, or safety-check step before save; ordinary transport and object-storage constraints are implementation boundaries, not a user-facing approval flow. Deleting or expiring the HappyImage result cannot break the Avatar, and deleting the Avatar does not implicitly delete its HappyImage source.
+_Avoid_: HappyImage URL, remote image reference, public source image, browser-uploaded result URL, in-place image replacement
+
+**Identity Source Image**:
+An uploaded or AI-generated image accepted as authorized source material for one Avatar. Saving it does not create a provider resource or Avatar Action: realtime providers initialize it on demand from an explicit home-workbench session start, while reusable actions require the separate manual preview-and-acceptance flow.
+_Avoid_: Hosted Avatar, Motion Base Video, automatic generation input, preview-only image
+
+**Create Avatar Entry** (legacy, removed):
+The former first-card creation affordance inside the Hosted Realtime catalog. Creation now belongs to the primary `创建数字人` destination and an Avatar detail's scoped action command, never to a fake selectable catalog card.
+_Avoid_: new navigation entry, selected identity, inline provider task
+
+**Hosted Avatar**:
+A provider-specific, runnable resource belonging to one Avatar and identified by a Provider Avatar ID. It is selectable only for a compatible Hosted Realtime Renderer; synchronization links it to the Avatar but does not turn it into a Motion Base Video.
+_Avoid_: Avatar, stock person, provider profile, product aggregate
+
+**Realtime Avatar Binding Creation**:
+The explicit, optional Avatar Studio stage that uploads the saved private Avatar Source Image through OpenRealtime's server to a supported realtime provider and records the returned Provider Avatar ID. The MVP has only Anam, so the stage is labeled `实时驱动（Anam）` and shows no one-item provider selector. The server calls `POST /v1/avatars` with the image file, display name, and an organization-available Avatar model; a one-item model set is selected silently, while multiple authorized models expose a selector with the recommended version preselected. One `avatar_id + provider + avatar_model` admits at most one unfinished candidate, and a persisted idempotency key makes double-click, refresh recovery, and network retry return that same task. Abandoning stops local waiting but reconciles any provider-accepted result into attempt history before another candidate may start. Creation and preview state remain durable across navigation. After Anam returns an ID, the binding remains `生成预览中` until a preview is available and the user clicks `确认实时驱动效果`; no checkbox is required, and only the accepted state is selectable in the home workbench. Skipping, failing, or leaving a binding unaccepted never invalidates the Avatar image or segmented sources.
+_Avoid_: automatic save-time upload, session-start provider creation, browser API key, whole-Avatar readiness
+
+**Realtime Avatar Binding Acceptance**:
+The user's explicit `确认实时驱动效果` command after Anam creation and preview. Acceptance pins the exact Provider Avatar ID and public Avatar model version shown by that preview as one binding; the home workbench cannot switch either component. The returned Provider Avatar ID is durable before acceptance, but the binding cannot enter a session choice until a preview is available and the user accepts it; preview polling and failures continue across navigation. Re-creation or model replacement produces a candidate under the same product Avatar while the currently accepted binding stays usable, and only accepting the new candidate atomically replaces it for future sessions; rejected, failed, and superseded Provider Avatar IDs remain provider-attempt history rather than independent Avatars. Official provider built-ins are treated as platform-accepted Shared Avatars.
+_Avoid_: API 201 response as acceptance, checkbox, preview URL presence alone, automatic enablement
+
+**Realtime Provider Initialization** (legacy, removed):
+The superseded proposal to create a provider resource during home-workbench session startup. Realtime provider resources are now created explicitly in Avatar Studio or from an Avatar detail before they can be selected for a conversation.
+_Avoid_: new implementation, hidden upload during startup, automatic provider binding
+
+**Hosted Avatar Preview Image**:
+Provider-supplied display metadata used only to recognize a Hosted Avatar in the unified Avatar catalog. It is not an Identity Source Image and cannot be downloaded, duplicated, or submitted to LivePortrait or another renderer; a provider stock Avatar is labeled `Anam 内置 · 仅实时驱动`, while segmented creation requires a separately owned authorized source image.
+_Avoid_: Identity Source Image, reusable provider asset, source master, cross-provider input
+
+**Avatar Provider Connection**:
+A connection to one commercial Avatar Renderer provider whose credentials, service readiness, and shared built-in catalog are administered by authenticated administrators or the administrator-equivalent Local Avatar Test Mode. Ordinary authenticated users may request Realtime Avatar Binding Creation for their own Avatar only through this server-managed connection; provider credentials are never user-facing configuration.
+_Avoid_: API Key field, Hosted Avatar, user integration, renderer selection
+
+**Provider Generation Entitlement**:
+The server-authoritative permission to create a cost-bearing asset through a shared commercial provider account. In the first release, Vidu generation, credit balance, and task lookup require an authenticated administrator or the administrator-equivalent Local Avatar Test Mode; a client checkbox or published request header can acknowledge cost but can never grant this permission.
+_Avoid_: credits confirmation, API Key ownership, frontend feature flag, workspace membership
+
+**Vidu Generation Submission Lock**:
+The server-owned first-release rule that permits at most one unfinished Vidu task for the shared provider account. Creation requires an idempotency key; duplicate clicks, refresh recovery, and network retries return the existing task instead of creating another billable task, and client button state is only a secondary guard.
+_Avoid_: frontend busy flag, credits checkbox, unlimited test concurrency, provider task ID
+
+**Vidu Queue Policy**:
+The first-release default of submitting Vidu generation with `off_peak=true` to prioritize discounted cost while continuously disclosing that the task may wait up to 48 hours. An administrator or Local Avatar Test Mode may explicitly disable off-peak for a faster test; normal-queue submission is never an invisible fallback.
+_Avoid_: free API generation, automatic priority upgrade, hidden queue choice, fixed off-peak only
+
+**Vidu Submission Lock Release**:
+The rule that an unfinished Vidu task releases the shared-account submission lock only after Vidu explicitly reports a terminal success, failure, or reliable cancellation. Hiding, abandoning, timing out, or deleting the local task view never proves remote cancellation and never permits a second billable submission.
+_Avoid_: local abandon, UI cancel, timeout unlock, parallel priority task
+
+**Local Avatar Test Mode**:
+An explicit administrator-equivalent bypass for the current single-tester phase that is valid only when enabled in a non-production environment and the request resolves to localhost. It may access all avatar management and provider operations without a login; production must reject or ignore the flag and require normal administrator authentication.
+_Avoid_: anonymous production access, development default, client header, public demo mode
+
+**Avatar Catalog Synchronization**:
+A read-only reconciliation that imports or refreshes Hosted Avatar metadata from one Avatar Provider Connection and links it to local Visual Identities. It never creates provider assets, transfers assets between providers, or generates Motion Base Videos.
+_Avoid_: Avatar creation, cross-provider migration, asset upload, video generation
+
+**Workspace Hosted Avatar Catalog**:
+The set of Shared Hosted Avatars synchronized through an administrator-managed Avatar Provider Connection. Private user Avatars never enter it without explicit publication; provider labels such as personally created and official describe asset provenance, not application-user ownership or privacy.
+_Avoid_: personal avatar library, per-user provider connection, public catalog, Visual Identity catalog
+
+**Anonymous Avatar Consumer**:
+A first-release test-phase visitor without an application account who may browse, select, and use only assets explicitly published for consumption. Anonymous access never grants provider credentials, generation entitlement, upload, acceptance, synchronization, catalog management, or access to private source and candidate media.
+_Avoid_: workspace member, administrator, public asset owner, authenticated user
+
+**Hosted Avatar Unavailability**:
+The explicit blocked state of a previously selected Hosted Avatar that the provider has deleted, disabled, or made inaccessible. The local record and reason remain visible for diagnosis, but Hosted Realtime cannot start until the user synchronizes or selects another asset; the system never silently changes the person or rendering mode.
+_Avoid_: automatic fallback avatar, audio-only fallback, catalog deletion, renderer retry
+
+**Avatar Provider Linking**:
+The reconciliation of a provider-specific resource with its Avatar. An existing Provider Avatar ID updates its current link; an unseen resource creates a separate Avatar unless a user explicitly merges it, and names or visual similarity never authorize automatic merging.
+_Avoid_: Name matching, face recognition, catalog synchronization, automatic deduplication
+
+**Mode-specific Avatar Selection** (legacy, removed):
+The former independently persisted current asset for each Avatar Rendering Mode, replaced by a temporary Avatar Session Choice in Preflight and the complete Last Successful Avatar Session Choice after startup. Asset management now records availability and compatibility rather than a hidden current-session default.
+_Avoid_: using this term for current session selection, automatic cross-mode switch, renderer fallback
+
+**Avatar Rendering Mode**:
+The first configuration decision for a digital-human experience, labeled `数字人渲染模式` in the product UI. Its values are `实时托管` (a Hosted Avatar rendered by a compatible commercial provider) and `分段式合成` (an Avatar, Avatar Action, and Lip-sync Model pipeline); it is not called a generation mode because Hosted Realtime does not pre-generate a video.
+_Avoid_: digital-human generation mode, avatar type, display mode, model choice
+
+**Avatar Asset Management**:
+The independent management surface labeled `数字人资产管理`, whose catalog presents one top-level card per Avatar and manages its source image, provider bindings, child actions, and model-readiness state within that Avatar's detail. A top scope switch defaults to `我的 Avatar` and offers `内置 Avatar`; search by display name or Avatar ID applies within the active scope. Private cards expose authorized creation, rename, and deletion commands, while built-ins expose only detail and supported conversation entry instead of disabled owner-only controls. It never splits images and actions into unrelated top-level libraries, creates another page for built-ins, owns creation drafts, or embeds the creation workspace inside a management dialog.
+_Avoid_: Avatar Session Preflight, current-session selector, Avatar Studio, asset creation dialog, Digital Human Asset Configuration
+
+**Avatar Conversation Launch Handoff**:
+The navigation from an Avatar card's `开始对话` command to the existing home Session Configuration Workbench with that `avatar_id` fixed as the initial selection. The workbench expands its Avatar configuration and prefills the Avatar's Last Successful Avatar Session Choice when one exists, while keeping rendering mode, image/action source, and compatible Lip-sync Model editable; only the workbench's existing final `开始对话` command starts services. It is not a new dialog, a third Avatar page, or permission to start from hidden defaults.
+_Avoid_: conversation launch panel, direct card startup, Avatar Studio preview, automatic session
+
+**Avatar Session-start Preparation**:
+The explicit, one-source/one-model preparation started by the home Session Configuration Workbench when the user presses `开始对话` with an image or accepted action that lacks a ready Renderer asset for the selected Lip-sync Model. The chosen configuration remains intact while a minimizable waiting dialog reports stage, expected time, and failure details. The durable job continues after minimization or navigation: success automatically continues startup only while the user remains in the workbench, otherwise it emits a completion notice and requires a new user start command; cancellation abandons the requested startup but retains any valid derived result already committed. It is demand-driven preparation for the current choice, not automatic fleet backfill.
+_Avoid_: bulk model backfill, disabled action, hidden fallback, offline preview
+
+**Avatar Availability Summary**:
+The capability summary shown on one Avatar card: its source image is usable, whether a realtime provider binding exists, its accepted action count, any actions awaiting model adaptation, and any currently running creation or preparation jobs. It is not a single aggregate ready/unready flag. Having zero actions appears only as the informational `尚未创建动作`, and a provider-, action-, or model-level failure remains attached to that capability instead of making the image-capable Avatar look unavailable.
+_Avoid_: Avatar readiness, unconfigured Avatar, unavailable Avatar, aggregate failure badge
+
+**Avatar Session Preflight**:
+The pre-session selection and confirmation step entered from the `数字人模式` home card. It previews an already available Avatar choice and verifies readiness, but starts its Avatar Renderer and model services only after explicit confirmation; creation and detailed asset administration remain in Avatar Studio and Avatar Asset Management.
+_Avoid_: Avatar Studio, automatic session start, Persona selection, Page Form
+
+**Avatar Session Choice**:
+The complete runnable binding selected in Avatar Session Preflight: one Avatar, Avatar Rendering Mode, a compatible Avatar Visual Source or Hosted Avatar, and the required Renderer and model-service readiness. Selecting one never changes Persona, Voice, or Brain and never silently substitutes another Avatar or rendering path.
+_Avoid_: Avatar alone, Persona, preview card, automatic renderer fallback
+
+**Last Successful Avatar Session Choice**:
+The Avatar Session Choice committed only after its model services, Avatar Renderer, audio binding, and Voice Session have all become ready. It is the shared default shown by later Preflight and settings; preview browsing, cancellation, and failed startup never replace it.
+_Avoid_: Preflight draft, highlighted card, configured asset alone, last attempted choice
+
+**Avatar Visual Degraded Mode**:
+The explicit active-session state entered when the bound Avatar Renderer loses visual output but the ordinary speech path remains safe. It retains the chosen Avatar as a static surface, reports bounded recovery, and may continue as visibly labeled audio-only interaction without switching to Orb or another Avatar Session Choice.
+_Avoid_: Orb fallback, silent audio fallback, automatic avatar substitution, infinite reconnect
+
+**Avatar Studio**:
+The independent Avatar-creation workspace labeled `创建数字人`. It supports authorized source-image creation and reusable action creation. Uploading or saving a new generated candidate creates a new Avatar, while choosing an existing Avatar from the asset library targets that same `avatar_id` and adds actions beneath it without copying the source image or aggregate. Accepted-asset maintenance remains in Avatar Asset Management and realtime experience selection remains outside the workspace.
+_Avoid_: asset manager, asset-management dialog, Avatar Session Preflight, provider console
+
+**Existing Avatar Action Creation**:
+The Avatar Studio path entered by selecting an existing Avatar source image from the library or using `创建动作` from its detail. It fixes the parent `avatar_id`, shows the Avatar name and immutable source image as a completed read-only first stage, and places focus directly on action creation; changing the selection returns to the library and targets another Avatar without mutating either asset. Entry from an Avatar detail bypasses the picker, and the persistent preview continues to show the chosen likeness and generated motion. This path creates only new child Avatar Actions and never a duplicate Avatar. `创建副本` is a separate explicit command that creates a new Avatar ID from a new draft and never copies actions automatically.
+_Avoid_: image reuse as new identity, implicit Avatar copy, action library import, source-image replacement
+
+**Avatar Studio Draft**:
+One identified unsaved Avatar creation state. A tool may retain multiple drafts but exposes only one Active Studio Draft at a time; saving, clearing, or expiring one draft never changes another draft or implies asset acceptance.
+_Avoid_: saved asset, shared workspace state, sidebar selection, generation task authority
+
+**Avatar Studio Completion**:
+The explicit `完成` command available after a new source image has been saved and received its Avatar ID, regardless of whether the user created any actions or whether accepted-action preparation is still running. Completion navigates to that Avatar's detail, where `尚未创建动作`, background progress, `创建动作`, and `开始对话` are presented as applicable; it never starts a conversation or drops the user at an unscoped catalog.
+_Avoid_: automatic conversation start, asset-list redirect, implicit action creation, preparation wait gate
+
+**Active Studio Draft**:
+The one Avatar Studio Draft currently open for editing in a selected tool. Switching tools or activating another draft preserves it without confirmation, while leaving the workspace with any non-empty draft requires a leave-or-discard decision.
+_Avoid_: only tool draft, saved asset, current catalog selection, generation task
+
+**Studio Draft Display Name**:
+The user-editable label used only to recognize one Avatar Studio Draft. It is suggested from the Avatar, action preset, and creation time, while changing it never renames an Avatar, action, candidate, or other accepted asset.
+_Avoid_: Avatar Display Name, asset name, immutable draft ID, generation task name
+
+**Full Studio Draft Recovery**:
+Restoration of every retained Avatar Studio Draft after refresh or reopening in the same browser, including each tool's Active Studio Draft, text, selections, current step, privately staged local media, upload progress, unfinished generation work, and current candidate preview. Staged media remains an unsaved draft asset and never enters a formal catalog without explicit acceptance.
+_Avoid_: form-only recovery, saved asset, browser file handle, automatic asset acceptance
+
+**Studio Draft Retention**:
+The rolling seven-day lifetime of each Avatar Studio Draft after its own last edit. The workspace exposes the Active Studio Draft's expiry and an immediate-clear command; expiry or manual clearing removes only that draft's staged media and unsaved candidates, never accepted assets or any other draft.
+_Avoid_: permanent draft, asset retention, shared expiry, browser cache lifetime
+
+**Studio Draft Limit**:
+The maximum of ten retained Avatar Studio Drafts per creation tool. Reaching the limit blocks new drafts until the user saves or clears one; the workspace never auto-deletes an unexpired draft to make room.
+_Avoid_: shared workspace limit, automatic oldest-draft eviction, accepted asset limit, generation concurrency
+
+**Motion Base Studio**:
+The action-creation stage inside Avatar Studio: a guided, revisable journey with a persistent Avatar library, continuous Driving Performance selection, a Motion Creation configuration area, and a result preview. It creates only loopable video candidates that may become Avatar Actions; single-frame pose editing, provider diagnostics, future-model catalogs, and model benchmark experiments are not part of it.
+_Avoid_: internal lab, model evaluation page, provider console, digital-human video factory
+
+**Avatar Library**:
+The persistent Avatar catalog available to creation flows. It combines accepted Avatars, curated references, OpenTalking source materials, search, category filtering, and authorized upload; selecting an entry changes only the current Studio Draft until the user explicitly saves or applies a resulting asset.
+_Avoid_: workbench tool navigation, on-demand identity drawer, Motion Base catalog, automatic asset selection
+
+**Motion Creation Service**:
+A currently available, user-selectable service that creates a Motion Base Candidate from an Identity Source Image and service-specific creative input. Its selection card identifies the product capability and actual service together with suitability, limits, expected completion time, estimated charge, and current availability. The user explicitly chooses among available services such as generative image-to-video or motion-driven portrait animation; the product never silently routes the request to another service or displays unavailable future services as choices.
+_Avoid_: automatic provider routing, TODO model card, generation method without a runnable service, provider diagnostic
+
+**Initial Motion Creation Scope**:
+The first user-facing Motion Base Studio offers only `自然交互动作复刻` through LivePortrait, driven by one continuous Natural Interaction Performance rather than a mutually exclusive single-action preset. LivePortrait creates non-verbal motion only; speech audio and lip synthesis remain exclusively downstream, while `智能生成`, Vidu, service selection, provider credits, prompts, future-service entries, and lip-sync evaluation are absent until a later product decision introduces another complete service.
+_Avoid_: single-action preset picker, hidden Vidu path, disabled intelligent-generation card, future-model teaser, automatic service choice
+
+**Motion Base Upload**:
+The Motion Base Studio input path that ingests an existing authorized silent video as a Motion Base Candidate for the draft's selected Avatar. It creates an unsaved candidate for review and never changes Avatar Asset Management until the user explicitly saves and applies it.
+_Avoid_: video generation service, third creation method, Provider generation, automatic Motion Base selection
+
+**Avatar Action**:
+A named reusable action belonging to exactly one Avatar and identified by its own stable Avatar Action ID. An Avatar may have zero or many actions; each action owns one accepted motion video and its independent Lip-sync Model Preparation state without creating another Avatar.
+_Avoid_: Avatar, action preset, Driving Performance, finished speaking video
+
+**Avatar Action Acceptance**:
+The user's explicit `确认并创建动作` command after previewing a generated or uploaded action's identity stability, motion quality, closed-mouth behavior, camera stability, and loop. The command itself is the acceptance act and requires no redundant confirmation checkbox; deterministic media failures block it, while visible quality risks remain part of the user's preview judgment. Selecting or saving an Avatar source image never creates, accepts, or silently derives an Avatar Action.
+_Avoid_: automatic static action, image acceptance, generation success, implicit segmented readiness
+
+**Avatar Action ID**:
+The stable identifier of one Avatar Action, exposed as `avatar_action_id` in APIs and storage and `avatarActionId` in TypeScript. It remains stable across preparation retries and media renditions and is never inferred from an action name or array position.
+_Avoid_: action index, Motion Base ID, Renderer Asset ID, Avatar ID
+
+**Avatar Action Display Name**:
+The user-editable, non-empty label used to recognize an Avatar Action within its parent Avatar. A template suggests its plain-language name, a custom driver suggests a numbered `自定义动作`, and duplicate labels receive a numbered suggestion; renaming never changes the Avatar Action ID or retriggers model preparation.
+_Avoid_: Avatar Display Name, action type, Avatar Action ID, model preparation key
+
+**Avatar Session Action**:
+The single Avatar Action bound by one first-release Avatar Session Choice. An Avatar may offer many actions for preview and selection, but the session never switches between them automatically; semantic action routing requires a separate future Renderer contract.
+_Avoid_: action set, automatic state mapping, all actions on an Avatar, Driving Performance
+
+**Avatar Visual Source**:
+The explicit segmented-rendering source selected for one Avatar Session Choice: either the Avatar's accepted Identity Source Image or one accepted Avatar Action. Renderer-specific image derivatives may be created during model preparation, but they never become or receive the identity of an Avatar Action.
+_Avoid_: automatic action, Hosted Avatar, Renderer Asset, implicit fallback source
+
+**Image-bound Avatar Conversation Test**:
+A user-started segmented conversation test that binds an Avatar's accepted source image directly, without requiring an offline effect preview, action creation, or action acceptance. It prepares only the Lip-sync Model selected for that test, reuses a matching cached Renderer asset when available, and starts automatically when just-in-time preparation succeeds; other models never delay the current test.
+_Avoid_: Avatar Action preview, image acceptance flow, automatic action, offline lip-sync comparison
+
+**Motion Base Video**:
+A silent, naturally closed-mouth reusable video belonging to one Avatar Action and prepared for segmented lip-sync rendering. It may be built in, uploaded, or generated, but it contains no synthesized speech mouth motion, is not a Hosted Avatar, and does not define the character's Persona.
+_Avoid_: Hosted Avatar, source image, finished speaking video, Avatar Identity
+
+**Built-in Avatar Pack**:
+A curated set of example Avatars available without user upload. Every entry includes recognizable source imagery and may include an Avatar Action paired only with that same Avatar; a paired video is never a cross-Avatar action template.
+_Avoid_: generic action library, shared driving-video pack, processed avatar cache, Hosted Avatar catalog
+
+**Motion Base Candidate**:
+A generated, uploaded, or provider-hosted video awaiting identity, closed-mouth, camera, format, and rights review. It is previewable but not selectable as a Motion Base Video, and its provider URL may be temporary until the user explicitly accepts and durably saves it.
+_Avoid_: Motion Base Video, automatically imported asset, selected avatar, Lip-sync Test Preview
+
+**Current Motion Base Candidate**:
+The single unsaved generation result shown in Motion Base Studio. A regeneration keeps the current preview visible until the replacement succeeds, replaces it only on success, and retains it when regeneration fails; the product does not expose candidate history or multi-result comparison.
+_Avoid_: candidate gallery, generation history, three-result comparison, automatic saved asset
+
+**Motion Base Acceptance**:
+The explicit approval of one Motion Base Candidate that copies its original provider or uploaded media into configured object storage as an immutable source master, together with its metadata, source, content hash, and Avatar link. Acceptance never destructively normalizes or overwrites that master and does not imply an Avatar Session Choice; Preflight state and any playback rendition remain separately recorded even when one workflow proceeds directly to experience.
+_Avoid_: generation success, upload completion, automatic catalog entry, current selection
+
+**Save and Experience Motion Base**:
+The user-facing command labeled `保存并体验` that approves the current Motion Base Candidate, completes required media preparation, and opens Avatar Session Preflight with the resulting Avatar Action as a temporary choice. It never starts services or commits the Last Successful Avatar Session Choice; `仅保存到动作库` performs the same acceptance while remaining in Motion Base Studio.
+_Avoid_: Save and Use, automatic selection, automatic session start, generation success
+
+**Motion Base Source Master**:
+The immutable original media retained when a Motion Base Candidate is accepted, preserving its provider or upload duration, aspect ratio, frame rate, codec, and audio facts. Mobile and desktop presentation requirements never overwrite the master; any derived playback media remains separately traceable to it.
+_Avoid_: playback rendition, normalized five-second clip, temporary provider URL, current selection
+
+**Motion Base Rendition Profile**:
+One target-specific playback derivative linked to a Motion Base Source Master. The first release requires independently previewed and stored Mobile Fullscreen (720x1280) and Desktop Fullscreen (1280x720) profiles, both 25 fps, H.264, and silent, each with its own administrator-approved crop position; neither profile overwrites or becomes the source master.
+_Avoid_: source master, responsive CSS only, second Motion Base Video, destructive normalization
+
+**Motion Base Readiness**:
+The state in which at least one Mobile Fullscreen or Desktop Fullscreen Rendition Profile has passed acceptance, making the Motion Base Video selectable. If the current device lacks its accepted profile, the player applies Rendition Fit Policy temporarily and labels the result as a temporary aspect adaptation rather than blocking selection or pretending a stored profile exists.
+_Avoid_: both-renditions gate, silent fallback, persisted temporary rendition, source-only readiness
+
+**Required Lip-sync Model Set**:
+The versioned set of currently enabled, deployed, and compatible Lip-sync Models that a newly created motion asset must prepare before becoming available. Catalog-only experiments, unavailable runtimes, and models requiring incompatible source material are excluded; later additions create maintenance work for existing assets without revoking their previously established availability.
+_Avoid_: every catalog entry, preferred model, evaluation candidate, permanent global list
+
+**Lip-sync Model Preparation**:
+The model-specific processing of one Avatar Visual Source into reusable renderer material, tracked independently for each source, model, and model version. Successful work is retained across retries, and preparing an image or one model never creates an Avatar Action or stands in for another model's readiness.
+_Avoid_: Wav2Lip preparation, runtime session startup, Lip-sync Test Preview, whole-asset readiness
+
+**Avatar Action Readiness**:
+The lifecycle assigned after one motion asset receives its stable action ID: `processing` while its Required Lip-sync Model Set is being prepared, `needs-attention` when any required preparation fails, and `available` only when every required preparation succeeds. Failed preparation retains the accepted video and successful model outputs, while a later model addition appears as pending maintenance rather than invalidating models that were already available.
+_Avoid_: Motion Base Readiness, generation task state, all-or-nothing retry, automatic invalidation
+
+**Avatar Model Backfill**:
+The user-triggered preparation of one newly enabled Lip-sync Model for selected compatible existing Avatar Actions from Avatar Asset Management. Enabling a model marks eligible actions `待适配` without automatically consuming compute or revoking existing model readiness; individual and bulk jobs remain independently observable and retryable after navigation. This maintenance operation is distinct from the explicit one-source/one-model preparation authorized when a user starts a conversation with a currently unprepared image or action. Avatar action generation, preparation, and backfill expose state and expected time but have no paid/free classification or charge authorization in the current product scope.
+_Avoid_: automatic fleet migration, image test preparation, action regeneration, readiness invalidation
+
+**Rendition Fit Policy**:
+The first-release rule for adapting a Motion Base Source Master into a target Rendition Profile: preserve the detected person safe area, use an administrator-adjustable crop when sufficient scene area exists, and otherwise fill missing canvas with a blurred copy or configured solid color. Forced face/body clipping and generative video outpainting are not first-release behavior.
+_Avoid_: CSS cover, black bars, AI outpainting, destructive crop
+
+**Motion Base Playback Duration Policy**:
+The rule that an accepted Motion Base Rendition preserves its Source Master's duration and loops during segmented rendering. A Lip-sync Comparison Run may temporarily trim or repeat that rendition to a fixed five-second test window, but the temporary window is not saved as another Motion Base Video.
+_Avoid_: fixed five-second asset, duration rejection, persisted test clip, source overwrite
+
+**Motion Base Loop Window**:
+The administrator-approved loop start, loop end, and short crossfade duration stored independently on each Motion Base Rendition Profile. The system may suggest values, but acceptance requires continuous-loop preview and adjustment; hard end-to-start jumps and ping-pong reversal are not the default.
+_Avoid_: source trim, video duration, CSS loop flag, ping-pong playback
+
+**Avatar Artifact Object Store**:
+The S3-compatible durable blob store for Identity Source Images, Driving Performances, Motion Base Candidates pending retention, Motion Base Source Masters, derived playback media, and Lip-sync Test Previews. The first deployment uses Cloudflare R2 through a provider-neutral adapter; object metadata never replaces authoritative application records.
+_Avoid_: local Artifact Store, database blob column, R2-specific domain API, temporary provider URL
+
+**Avatar Media Access Grant**:
+A short-lived signed object-store URL issued only after the server authorizes the current principal or verifies that one asset is explicitly published for anonymous consumption. The R2 bucket remains private, permanent public URLs are forbidden, and ordinary playback does not proxy all media bytes through the application server.
+_Avoid_: public bucket URL, application authentication token, permanent CDN link, media proxy endpoint
+
+**Avatar Asset Registry**:
+The PostgreSQL authority for Visual Identities, mode-specific assets, generation tasks, ownership category, rights status, content hashes, acceptance decisions, availability, and object-store references. R2 stores media bytes only; object paths or object metadata never become authoritative application state.
+_Avoid_: R2 metadata, JSON catalog, filesystem manifest, provider task list
+
+**Generative Image-to-Video (I2V)**:
+A Motion Base Video creation method labeled `智能生成` in the product UI, asking a generative video model to evolve one identity image into motion from a text prompt or preset. The model invents motion and pixels probabilistically; it does not copy a specific performance and its result must be normalized and accepted before becoming a Motion Base Video.
+_Avoid_: Motion-driven Portrait Animation, image animation, lip-sync, finished speaking video
+
+**Motion-driven Portrait Animation**:
+A Motion Base Video creation method labeled `动作复刻` in the product UI, also called portrait reenactment or motion transfer, that applies facial expression, head pose, or body motion extracted from a Driving Performance to an Avatar source image. LivePortrait is one implementation of this method, not the name of the product capability.
+_Avoid_: Generative Image-to-Video, LivePortrait generation, lip-sync, prompt-generated motion
+
+**Driving Performance**:
+A user-uploaded or curated video, pose sequence, or privacy-preserving motion template whose movement controls Motion-driven Portrait Animation. It supplies motion rather than identity and is not itself the resulting Motion Base Video.
+_Avoid_: Motion Base Video, identity image, prompt template, finished speaking video
+
+**Natural Interaction Performance**:
+A continuous non-verbal Driving Performance for conversational presentation that coherently combines blinking, gaze changes, subtle head pose, breathing presence, micro-expression, and restrained body movement. It is transferred as one timed performance and previewed as a loop, never decomposed into a mutually exclusive blink, nod, or smile preset and never treated as lip-sync input.
+_Avoid_: single-action preset, gesture clip, finished talking video, random motion collection
+
+**Motion Base Mouth Neutrality**:
+The requirement that a Motion Base Candidate and accepted Motion Base Video remain naturally closed-mouth, contain no synthesized speech mouth motion, and carry no audible source track. LivePortrait owns non-verbal motion creation only; the selected downstream Lip-sync Model exclusively creates mouth motion from actual reply audio.
+_Avoid_: LivePortrait lip-sync, talking driving output, muted speech mouth motion, source audio retention
+
+**Speaking-mouth Reference Rejection**:
+The server-authoritative refusal of a custom Natural Interaction Performance containing sustained mouth opening, visible speech articulation, or large mouth motion. The user must replace or re-record it as a closed-mouth non-verbal performance; automatic mouth erasure never converts a failing reference into an accepted input.
+_Avoid_: warning-only check, silent lip transfer, automatic mouth suppression, downstream Wav2Lip validation
+
+**Natural Interaction Performance Duration Policy**:
+The first-release duration contract requiring curated Natural Interaction Performances to last eight to ten seconds and custom uploads or recordings to be trimmed to five to fifteen seconds. Advanced configuration tests use a disposable three-second excerpt, while a full Motion Base Candidate preserves and loop-previews the complete selected performance duration.
+_Avoid_: fixed three-second asset, unlimited reference video, silent duration truncation, test-preview duration
+
+**Motion Transfer Profile**:
+A reproducible, capability-valid set of motion region, amplitude, stabilization, compositing, crop, and output controls applied while transferring one Driving Performance to an Avatar. A recommended profile calibrates a specific reference performance, while an advanced custom profile lets a user override supported controls without redefining the performance's semantic interaction style.
+_Avoid_: Driving Performance, interaction style, raw provider config, lip-sync model config
+
+**Advanced Motion Configuration**:
+The user-facing expansion of a Motion Transfer Profile beyond its reference-specific recommended values. Its main controls expose only parameters that the bound Motion Creation Service declares effective for the current input form, while imported inactive or unknown fields remain visible only through Motion Parameter Compatibility details. It records every override and compatibility state with the candidate and requires a short test preview before full generation.
+_Avoid_: always-visible model console, unsupported control, global default, provider debug form
+
+**Offline Motion Generation Priority**:
+The product priority for Motion-driven Portrait Animation as asynchronous asset creation: motion naturalness, identity stability, reproducibility, and parameter preservation take precedence over completion latency. It defines no realtime-generation expectation and allows the user to leave Avatar Studio while the server-owned task continues.
+_Avoid_: realtime preview SLA, browser-bound generation, speed-first parameter removal, synchronous page request
+
+**Motion Parameter Compatibility**:
+The capability status recorded for every field in an OpenTalking-compatible Motion Transfer Profile: `native` fields execute directly in the bound runtime; first-release `offline extension` fields are explicitly experimental OpenRealtime motion-template transformations that do not claim numeric equivalence to another runtime and require a newly confirmed three-second Test Preview before full generation; `retained inactive` fields are preserved but prohibited by the current non-verbal Motion Base boundary; and `unknown` fields are preserved losslessly without execution. Only effective fields appear as editable creation controls; all others remain auditable in read-only compatibility details and survive supported import-export round trips.
+_Avoid_: silent field deletion, stored-means-effective, fake supported control, provider-config passthrough
+
+**Motion Profile Interchange**:
+The YAML or JSON import and export boundary for an OpenTalking-compatible Motion Transfer Profile. Import first produces a non-mutating Parameter Mapping Report that groups every field as native effective, experimental effective, retained inactive, or unknown; only explicit confirmation applies effective fields to the draft and attaches the remaining compatibility data. It preserves source format, version, inactive fields, unknown names, and original values; raw configuration remains read-only, and only typed controls may change an effective profile before it is saved or applied.
+_Avoid_: raw configuration editor, lossy import, partial parse overwrite, untyped provider passthrough
+
+**Parameter Mapping Report**:
+The review state created before an imported Motion Transfer Profile can change a Studio Draft. It shows each source field and value, its mapped user-facing control or inactivity reason, and one of the four Motion Parameter Compatibility states; parsing, viewing, canceling, or closing the report never mutates the draft, while explicit confirmation applies the complete reviewed result atomically.
+_Avoid_: import log, partial configuration application, silent compatibility warning, post-apply summary
+
+**Saved Motion Transfer Profile**:
+A user-named reusable Motion Transfer Profile that can be applied across compatible Avatar Studio drafts. Applying it copies a parameter snapshot into the draft, so later profile edits or deletion never mutate existing drafts, tasks, candidates, or accepted assets; incompatible profiles are blocked with explicit reasons.
+_Avoid_: live-linked global config, draft state, provider preset, candidate metadata only
+
+**Workspace Motion Transfer Profile Catalog**:
+The shared set of Saved Motion Transfer Profiles published and maintained by authenticated administrators or Local Avatar Test Mode. Ordinary creators may apply a profile and make draft-local overrides, but cannot overwrite, rename, copy, or delete a shared profile.
+_Avoid_: personal preset library, provider configuration, draft-local overrides, anonymous profile publishing
+
+**Driving Performance Catalog**:
+The set of curated Natural Interaction Performances plus upload or recording of a custom continuous performance within Motion-driven Portrait Animation. Its initial entries are `自然交流`, `亲和陪伴`, and `稳重讲解`, each backed by a distinct performance and recommended Motion Transfer Profile; each entry is previewed as a whole timed performance with its interaction character, duration, and loop behavior. Individual blinks, nods, gaze shifts, or smiles are descriptive ingredients rather than separate choices, and every output still enters the catalog as a Motion Base Candidate rather than inheriting approval from its driver.
+_Avoid_: single-action catalog, Motion Base Video catalog, prompt templates, public stock-video library, automatic approval
+
+**Motion Generation Worker**:
+An OpenRealtime-managed asynchronous server worker that runs Motion-driven Portrait Animation and reports the same submitted, queued, processing, failed, and candidate-ready lifecycle used by commercial generation providers. Development may bind LivePortrait to Mac MPS or CPU while deployment may replace it with a remote GPU worker; browsers never install or execute the model.
+_Avoid_: browser inference, external generation link, Realtime Renderer, Vidu adapter
+
+**Avatar Generation Coordinator**:
+The PostgreSQL-backed server coordinator that owns Vidu and LivePortrait task state independently of any browser page, schedules serial provider polling or worker execution, and resumes unfinished work after process restart. Pages observe its durable state; they never become the authority for task lifetime, locks, or terminal transitions.
+_Avoid_: browser polling owner, localStorage task, Provider webhook only, overlapping interval polling
+
+**Lip-sync Test Preview**:
+A short, disposable speaking preview produced by applying one Lip-sync Model to a Motion Base Video and test audio. It is comparison evidence only: it neither replaces the Motion Base Video nor becomes an exported finished speaking video.
+_Avoid_: Motion Base Video, production render, published video, renderer session
+
+**Lip-sync Comparison Run**:
+A controlled evaluation that applies the same Motion Base Video and fixed test audio to at least two Lip-sync Models and presents their Lip-sync Test Previews side by side. The first release compares Wav2Lip 96 with DH_live_mini; MuseTalk remains a later candidate.
+_Avoid_: finished speaking video, single-model preview, voice comparison, production render
+
+**Lip-sync Comparison Input**:
+The administrator-selected primary Motion Base Rendition used once as the shared visual input for a Lip-sync Comparison Run. Wav2Lip 96 and DH_live_mini both consume that exact rendition and fixed five-second audio; another device aspect is temporarily adapted after lip-sync rather than triggering a second pair of model runs.
+_Avoid_: Source Master, four-preview aspect matrix, per-model crop, production input
+
+**End-to-End Realtime Avatar Rendering**:
+The hosted rendering path from accepting OpenRealtime-authored Spoken Content or streaming speech audio through producing synchronized, interruptible avatar media on the client. Its end-to-end boundary covers optional managed TTS, avatar inference, transport, playback, and cleanup only; it excludes user speech recognition, Brain reasoning, persona, memory, and tool execution.
+_Avoid_: End-to-End Digital Human, Full Agent, Turnkey Avatar Agent, full conversational pipeline
+
+**Managed Speech Avatar Rendering**:
+A hosted Avatar Renderer mode that accepts OpenRealtime-authored streaming Spoken Content, performs TTS and face generation as one provider pipeline, and returns synchronized audio and video. OpenRealtime supplies the Brain output and retains correlation and interruption authority; the provider voice is part of presentation configuration rather than character intelligence.
+_Avoid_: Turnkey Persona (would include provider Brain), Audio Passthrough (accepts audio instead of text), native Realtime Engine
+
+**Avatar Surface**:
+The client presentation boundary that displays one Avatar Renderer's output, such as a WebRTC video track or a browser-rendered Live2D/VRM scene. It owns visual attachment and cleanup but not dialogue, speech generation, or provider credentials.
+_Avoid_: Avatar Renderer (the rendering capability), video element (one implementation), page layout
+
+**Experience Surface**:
+The single client presentation instance bound to one active Presentation Mode: the configured Orb visual in `对话模式` or the bound Avatar Surface in `数字人模式`. Page Forms arrange this instance without replacing or restarting it, so Renderer, audio ownership, dialogue visualization, and current semantic state remain continuous.
+_Avoid_: Page Form, duplicated preview, remounted renderer, layout panel
+
+**Presentation Mode**:
+The session-start choice of Experience Surface: `对话模式` binds the configured Orb visual theme, while `数字人模式` starts and binds the configured Avatar Renderer and model services. It is independent of Page Form but remains immutable for an active Voice Session; selecting another Presentation Mode requires ending that Session and starting another.
+_Avoid_: Experience Mode, Chat Mode, Avatar Mode, Character selection, Brain mode, Realtime Profile
+
+**Page Form**:
+The independently selected spatial form of a live experience: Fullscreen Form, Sidecar Form, or Content Form. It determines the prominence and placement of historical conversation content and the active Experience Surface, while either Presentation Mode may use any Page Form.
+_Avoid_: Presentation Mode, Avatar Surface, six combined experience modes
+
+**Fullscreen Form**:
+A Page Form in which the Experience Surface is the primary full-window visual and historical conversation content is not shown. The current user or assistant semantic unit may appear transiently, but the form is not a conversation-history browser.
+_Avoid_: Stage, kiosk mode, Presentation Mode
+
+**Sidecar Form**:
+A Page Form with historical conversation content on the left and the active Experience Surface on the right.
+_Avoid_: split Presentation Mode, companion mode, Content Form
+
+**Content Form**:
+A Page Form in which conversation content is primary and the active Experience Surface remains visible in a small companion window. Activating that surface enters Fullscreen Form without opening another Voice Session.
+_Avoid_: Chat Mode, picture-in-picture mode, Sidecar Form
+
+**Speaker Evidence**:
+A time-bounded, model-versioned voiceprint or speaker-analysis observation with confidence and provenance. It may inform Turn Manager or Control Plane policy but never replaces authenticated user identity or independently authorizes a protected action.
+_Avoid_: User identity, voice authentication, speaker truth
+
+**Speech Renderer**:
+The replaceable Cascaded Realtime Engine capability that derives Spoken Content from Semantic or Display Content when no explicit Spoken Content was supplied. The default renderer is deterministic and formatting-aware but never summarizes or invents facts; any model-backed summarizing renderer is an explicit, separately metered choice.
+_Avoid_: TTS (synthesis only), text cleaner (too narrow), Brain (owns conversational intelligence rather than speech presentation)
+
+**Conversation Projection**:
+A derived, provider- or Agent-specific context view built from Conversation Journal for a bounded model context window. It may summarize, filter, redact, or translate canonical Conversation Items but never becomes authoritative and can be rebuilt after reconnect, provider replacement, or process restart.
+_Avoid_: Conversation Journal, prompt, provider history
+
+**Context Budget**:
+The versioned token allowance within which one Conversation Projection must fit after reserving capacity for model output, tools, governing instructions, current input, and safety margin. Every projected section reports its measured or conservatively estimated cost and priority.
+_Avoid_: Model context window (the provider ceiling), character limit, truncation length
+
+**Context Policy**:
+The versioned Application Control Plane policy that defines Context Budget allocation, projection priority, summary compatibility, and the independently selected Context Compressor. It applies consistently across Realtime Engines and is not inherited implicitly from a Realtime Profile or chat model.
+_Avoid_: Realtime Profile, prompt template, model settings, Memory policy
+
+**Conversation Summary Checkpoint**:
+A versioned, derived Conversation Item that compresses an exact source sequence range while preserving provenance, unresolved work, material decisions, and invalidation metadata. It can replace its covered raw items only inside a Conversation Projection; it never replaces or rewrites them in Conversation Journal.
+_Avoid_: Memory, Conversation Projection, chat title, destructive compaction
+
+**Context Compressor**:
+The background derivation capability that combines deterministic extraction of typed work and references with model-assisted narrative compression to produce a validated Conversation Summary Checkpoint. It cannot mutate authoritative Journal, task, confirmation, or artifact state.
+_Avoid_: Conversation Projector, Memory extractor, Brain, summarizing Speech Renderer
+
+**Context Visibility Barrier**:
+A minimum committed thread sequence that a Realtime Conversation must successfully project before it may execute a dependent response request. It orders Agent-result and other Journal-first injections against generation without making a provider conversation authoritative.
+_Avoid_: Database lock, response delay, provider item ID
+
+**Event Ledger**:
+The best-effort operational fan-out used by read-only Observers for logs, metrics, and diagnostics. It may contain high-volume runtime events and may be lossy depending on its conformer; it is never the durable conversation history, an ordering authority, or a message bus.
+_Avoid_: Conversation Journal, event store, command bus
+
+**Persistence Unit of Work**:
+The transaction boundary that atomically coordinates PostgreSQL-backed Conversation Journal, Agent Task Store, tool/confirmation state, Workspace Leases, delivery state, and Transactional Outbox. It preserves modular repository Protocols while preventing cross-store dual writes inside one database.
+_Avoid_: database session (implementation detail), Conversation Kernel transaction, distributed transaction
+
+**Transactional Outbox**:
+PostgreSQL rows written in the same transaction as authoritative state and later claimed for at-least-once delivery with idempotent consumers. It is the only supported bridge from committed database state to asynchronous dispatch; publishing directly before commit is forbidden.
+_Avoid_: Event Ledger, task queue (a downstream transport), Agent Task Store
+
+**Artifact Store**:
+The S3-compatible object-storage Seam for raw audio when retention permits, generated media, large Agent results, archives, patches, and other blobs. PostgreSQL owns artifact metadata/lifecycle; conversation/task records refer only to opaque `artifact_id`, never public URLs or provider-specific bucket keys.
+_Avoid_: Conversation Journal, filesystem workspace, S3 bucket (one implementation)
+
+**Artifact Reference**:
+An immutable, tenant-scoped reference containing `artifact_id`, media type, size, digest, classification, and lifecycle/retention metadata. Resolving it to a short-lived download/upload URL is an authorized Artifact Store operation; the URL itself is not durable conversation content.
+_Avoid_: URL, file path, inline blob
+
+**Native Realtime Engine** / **Cascaded Realtime Engine**:
+The two supported Realtime Engine forms. A Native Realtime Engine uses an end-to-end realtime voice model; a Cascaded Realtime Engine composes independently replaceable speech, dialogue, and Brain capabilities behind the same stateful session contract.
+_Avoid_: Pipeline Engine, RealtimeSession, legacy engine, fallback engine
+
+**Conversation Kernel** (legacy, removed):
+The former per-connection coordinator, removed in the Phase 1 M6 replacement. New code uses Voice Session Runtime for lifecycle/recovery and Realtime Engine for live conversational execution; the term remains only in historical ADRs.
+_Avoid_: using this term for current runtime code
+
+**Router**:
+The framework Seam that decides, per turn, whether to answer via the built-in default Chat Brain or delegate to a registered external Agent. Ships with a default policy and is itself user-customizable/replaceable.
+_Avoid_: Delegation logic, dispatcher
+
+**Endpoint Session**:
+The Seam owning logical transport continuity independent of any one physical Transport Adapter connection. `EndpointSession` conforms to the Transport Adapter contract (`receive`/`send`/`close`), while `EndpointSessionRegistry` owns protocol negotiation, authenticated hello/resume, rotating single-use resume tokens, attach/detach, and the grace timer. It does not restore semantic Journal, model, Work, or confirmation state; the Voice Session Runtime recovery barrier owns that. `InMemoryEndpointSession` is single-process only. See [ADR-0019](docs/adr/0019-endpoint-session-reconnect-resume.md) and [Voice Runtime Alignment](docs/VOICE-RUNTIME-ALIGNMENT.md).
+_Avoid_: Session (too generic), Connection (a physical Transport Adapter instance, not the logical session that outlives it)
+
+**Transport Adapter**:
+A pluggable implementation of the Endpoint Session's wire protocol (e.g. Raw WebSocket, LiveKit/RTC, MQTT, raw UDP) behind one protocol-agnostic contract. v1 ships Raw WebSocket + raw UDP; LiveKit/MQTT remain contract-only, since a generic stub would be indistinguishable from the existing `FakeTransport` test double — each needs either a live external service or a new SDK dependency, a decision deferred rather than papered over. `UdpTransportAdapter` demultiplexes the connectionless socket by peer address to preserve the same per-connection adapter shape as WebSocket.
+_Avoid_: Protocol handler, connector
+
+**Turn Manager**:
+The sole replaceable Seam in a Cascaded Realtime Engine that owns Dialogue State, end-of-turn decisions, turn admission, and conversational-floor arbitration. It consumes VAD, ASR, playback, timing, and semantic signals; only the Turn Manager may commit or reject a user turn or declare a Barge-in.
+_Avoid_: Turn Policy (legacy narrower term), dialogue-state module (does not express turn authority), VAD module, ASR endpointing
+
+**Dialogue State**:
+One of five states — IDLE (no active stream), LISTEN (user speaking, assistant silent), SPEAK (assistant speaking, user silent), WAIT (assistant paused mid-turn after user hesitation, monitoring before resuming — not the same as IDLE), DUAL (both streams active with genuine mutual integration, not just simultaneous audio). Canonical model adopted from the full-duplex survey (arXiv 2606.19453) §6. See [full-duplex-survey.md](docs/full-duplex-survey.md) for the full state/transition reference.
+_Avoid_: Turn phase, conversation state (project uses "Dialogue State" specifically for this 5-value FSM)
+
+**Voice Session Phase**:
+The lifecycle of one live voice interaction: INACTIVE, STARTING, ACTIVE, RECONNECTING, STOPPING, or CLOSED. It is independent of Dialogue State and says whether the session can accept work, not who currently holds the conversational floor.
+_Avoid_: Session state, Dialogue State, connection state
+
+**Voice Session**:
+One user-facing live voice interaction, identified by `voice_session_id`, that owns its phase, dialogue state, work registry, and conversation correlation across reconnects. It is distinct from an Endpoint Session, which provides transport continuity, and from a persistent thread, which may outlive a live voice interaction.
+_Avoid_: Session (too generic), Endpoint Session, thread
+
+**Interaction Context**:
+The immutable identity and correlation envelope carried across every Seam. It identifies tenant, user, device, Voice Session, thread, turn, generation, and—when applicable—the correlated tool call, Delegated Task, confirmation, or handoff.
+_Avoid_: Metadata, request context, tracing context
+
+**Turn ID**:
+The stable identity of one accepted user turn. It remains unchanged while that turn produces tools, delegated work, and results; Generation is a separate monotonic supersession token that may invalidate output without changing identity semantics.
+_Avoid_: Generation, request ID
+
+**Work Registry**:
+The live, session-local projection of active fast-tool calls, Delegated Tasks, and pending confirmations for one voice interaction. It supports fast orchestration queries but is not restart authority: Agent Task Store and other execution backends own durable lifecycle, while Conversation Journal owns semantic history. Independent work may coexist and complete out of order.
+_Avoid_: Work state, task state machine, pending work flag
+
+**L0/L1/L2/L3 (Architectural Hierarchy)**:
+Classification of WHERE a duplex/turn-taking decision is computed, from the full-duplex survey §4. L0 = external module pipeline (VAD/EoT/turn-classifier feeding a text LLM) — this project's Cascaded Turn Manager is L0 by construction, since it is a pluggable-module framework, not an end-to-end trained duplex model (L1 = hidden-state predictor, L2 = token-level, L3 = shared-latent, unrealized by any system). The project explicitly accepts the "L0 ceiling": DUAL-state discrimination (backchannel vs. barge-in vs. third-party) is achieved via bolt-on classifier plugins, not native architectural integration. See [full-duplex-survey.md](docs/full-duplex-survey.md).
+_Avoid_: Duplex level, tier (use "L0/L1/L2/L3" verbatim — it's the paper's own notation and cross-references it directly)
+
+**Backchannel**:
+A short listener-support utterance from the user during assistant SPEAK (e.g. "嗯"/"对") that must NOT stop the assistant. Corresponds to survey ontology cell (T3,I2,R1) — DUAL→SPEAK via τ8 then τ10, continue. See [full-duplex-survey.md](docs/full-duplex-survey.md).
+_Avoid_: Interruption (backchannel is explicitly not an interruption — conflating the two is the single most-cited failure mode in the survey)
+
+**Barge-in**:
+The user reclaiming the floor while the assistant is speaking, requiring the assistant to stop within ~200ms. Corresponds to survey ontology cell (T3,I4,R2) — DUAL→LISTEN via τ8 then τ9, yield. See [full-duplex-survey.md](docs/full-duplex-survey.md).
+_Avoid_: Interruption (use Barge-in when specifically meaning cooperative floor-reclaiming; "interruption" is not a canonical term in this project)
+
+**Third-party speech**:
+Audio detected during assistant SPEAK that is not addressed to the assistant (e.g. user talking to a colleague) and must be ignored. Corresponds to survey ontology cell (T3,I7,R5) — DUAL→SPEAK via τ8 then τ11, ignore. Same destination state as Backchannel but driven by a different intent classification. See [full-duplex-survey.md](docs/full-duplex-survey.md).
+_Avoid_: Noise, off-topic speech
+
+**Canonical Tool Schema**:
+The single versioned internal description of a tool. MCP servers, function-calling declarations, skills, and Agent permission requests are normalized into this shape before policy or model exposure. Its public Tool Descriptor is separate from its private Tool Binding/executor, so models see schemas and approved metadata but never handlers, credentials, or authority. See [ADR-0001](docs/adr/0001-two-layer-external-agent-integration.md) and [ADR-0051](docs/adr/0051-server-authoritative-tool-policy-gateway-and-bound-confirmation.md).
+_Avoid_: Tool schema, function schema (use "Canonical Tool Schema" specifically for the normalized, post-adaptation shape)
+
+**Tool Request**:
+An untrusted, correlated request to invoke one versioned Canonical Tool with proposed arguments. It may originate from a Realtime Engine, MCP provider, external Agent, or application code, but carries no execution authority until Tool Policy Gateway returns an Execution Grant.
+_Avoid_: Tool call (ambiguous between request and execution), command, permission
+
+**Tool Policy Gateway**:
+The sole Application Control Plane authority that validates a Tool Request, resolves its Tool Descriptor, evaluates identity/policy/risk/budget, obtains confirmation when required, and returns allow, confirmation, background-delegation, or deny. Provider adapters and Agent Drivers cannot bypass or duplicate it.
+_Avoid_: Tool Registry (discovery/binding only), Tool Executor, confirmation handler
+
+**Execution Grant**:
+A short-lived, single-purpose authorization produced by Tool Policy Gateway and bound to subject, Voice Session, tool name/version, canonical argument digest, scopes, budget, expiry, and idempotency key. Tool Executor accepts a grant rather than trusting a model- or client-originated request directly.
+_Avoid_: API key, permission boolean, confirmation result
+
+**Bound Confirmation**:
+A user approval decision tied to one exact action digest, subject, prompt, expiry, and `confirmation_id`. It can satisfy only the matching pending Tool Request; a generic or replayed spoken "yes" has no authority over another action.
+_Avoid_: Consent (too broad), voice authentication, permission policy
+
+**Fast Tool Loop**:
+The bounded sequence of Canonical Tool calls a Realtime Engine may request while resolving one response. It is constrained by call count, elapsed time, cost, permissions, and cancellation; work that cannot stay within those bounds belongs in background delegation.
+_Avoid_: Agent loop, unlimited tool loop, single tool call
+
+**Agent Driver Protocol**:
+The universal capability/lifecycle contract Agent Task Supervisor uses for every external Agent backend: start idempotently, resume/reattach, query status, stream typed events, provide input, cancel, and close. Each backend Driver translates its native thread/run/session protocol into this contract and declares unsupported capabilities explicitly. See [ADR-0053](docs/adr/0053-isolated-agent-execution-sessions-and-codex-first-driver.md).
+_Avoid_: Agent Session Protocol (legacy v1), ACP, delegation protocol
+
+**Agent Session Protocol** (legacy v1):
+The existing `create_session`/`send_turn`/`latest_update`/`cancel`/`result` interface used by current ACP and in-memory Drivers. It remains a migration adapter but is too weak for durable deduplication, resume, capability negotiation, status reconciliation, and multi-backend supervision; new production work targets Agent Driver Protocol.
+_Avoid_: Agent Driver Protocol (the accepted target), Conversation Session
+
+**Delegated Task**:
+A durable background unit of work assigned to one named external Agent through Agent Task Supervisor and tracked by `worker_id`. Multiple Delegated Tasks may coexist; each has one strict lifecycle, stable idempotency identity, progress, cancellation, result, and budget. Reconnect, replay, or duplicate callbacks must resolve to the existing record rather than spawn again.
+_Avoid_: Turn task (a local coroutine for one conversational turn), Agent worker, pending delegation
+
+**Agent Task Supervisor**:
+The Application Control Plane authority for accepting, deduplicating, starting, observing, cancelling, recovering, and completing Delegated Tasks across named Agent Drivers. It persists state before side effects, owns concurrency/lease/fan-out budgets, and is the only module allowed to create an Agent execution.
+_Avoid_: Work Registry (live projection), Agent Session Protocol (backend contract), Router, worker pool
+
+**Agent Task Store**:
+The durable, revisioned store of Agent Task Records and dispatch state. It provides atomic create-or-get, lifecycle compare-and-swap, lease/fencing, idempotent callback ingestion, and restart reconciliation; it is not the semantic Conversation Journal.
+_Avoid_: Work Registry, Conversation Journal, queue
+
+**Delegation Request ID**:
+The stable idempotency identity of one requested Agent execution, preserved across provider retries, reconnects, and delivery retries. Within its tenant/thread scope, identical ID plus identical canonical request returns the existing `worker_id`; identical ID with changed content is a conflict.
+_Avoid_: `worker_id` (identity of the accepted task), task fingerprint (best-effort duplicate hint), Turn ID
+
+**Agent Selection Plan**:
+The immutable, policy-produced plan for one Delegated Task: primary Agent, ordered explicitly allowed fallbacks, required capabilities, cost/latency limits, workspace/security constraints, and confirmation rules. It is evaluated against BackendCatalog and health before backend start; no Driver may invent an unlisted fallback.
+_Avoid_: Agent name, Router result, load-balancer policy
+
+**Agent Backend Health**:
+A time-bounded capability/auth/runtime assessment of one BackendCatalog entry: AVAILABLE, DEGRADED, UNAVAILABLE, or UNKNOWN, with reason and observed Driver/model/schema versions. It informs pre-start selection but is never proof that a previously issued start did not execute.
+_Avoid_: process alive, circuit breaker (one input), Agent task state
+
+**Backend Commit Point**:
+The irreversible orchestration boundary at which Supervisor issues the first backend start side effect for a `worker_id`. Before it, an allowed fallback may be selected within the same task; after it, target Agent is locked and any migration requires a new `worker_id` plus explicit Handoff Package.
+_Avoid_: task accepted, AgentRunStarted callback (may arrive after the side effect), result commit
+
+**Result Delivery Policy**:
+The policy that decides when and how a completed Delegated Task becomes user-visible: announce when idle, queue a notification, remain silent until asked, or—only with server-authorized urgency—preempt. Agent callbacks can report results but cannot speak directly or mark themselves urgent.
+_Avoid_: Response Scheduler (delivery mechanism), Generation lease, Agent callback
+
+**Agent Execution Session**:
+The isolated logical backend conversation owned by exactly one `worker_id` while a Delegated Task runs. A shared CLI process, daemon, or connection pool may host many Agent Execution Sessions, but their history, permissions, workspace lease, backend IDs, and event streams cannot leak across tasks.
+_Avoid_: Driver process, Voice Session, provider thread (one backend representation)
+
+**Agent Capability Descriptor**:
+The versioned facts a Driver reports about its backend—resume, status lookup, idempotent start, event streaming, steering/input, cancellation, permission bridge, workspace isolation, structured result, and artifact support. Supervisor plans only from declared capabilities and fails explicitly when a required one is absent.
+_Avoid_: Tool Descriptor, feature flags, BackendCatalog config
+
+**Workspace Lease**:
+A time-bounded, task-scoped grant describing which workspace an Agent Execution Session may access and in what mode: read-only, private writable worktree/copy, or explicitly exclusive shared workspace. It carries a fencing token and is released/reconciled by Agent Task Supervisor.
+_Avoid_: `cwd` string, sandbox profile, repository lock
+
+**Handoff Package**:
+The explicit, immutable context passed when work moves between Agents: objective, constraints, selected Conversation Item references, artifact references, source `worker_id`, unresolved questions, permissions, and remaining budget. Hidden backend session memory and mutable shared cwd are never treated as handoff context.
+_Avoid_: Prompt, Conversation Projection, shared memory
+
+**Driver** (backend driver):
+The backend-specific conformer registered against Agent Driver Protocol. It translates native thread/run/session identifiers, streaming events, permission requests, resume/status, cancellation, and result shapes without owning orchestration policy, deduplication, budgets, or delivery. Agent Task Supervisor—not Router—invokes named Drivers selected through BackendCatalog. `InMemoryDriver` remains deterministic/test-only; `CodexAppServerDriver` is the first selected full-conformance target.
+_Avoid_: Transport Adapter, Agent Task Supervisor, backend policy
+
+**BackendCatalog**:
+A declarative name-to-versioned-backend-config mapping from an Agent name to Driver kind, launch/endpoint/auth profile, capability requirements, workspace policy, and version constraints. A Driver Factory builds heterogeneous Agent Driver Protocol conformers such as Codex App Server, ACP/Hermes, or Claude stream-json. It no longer assumes every entry is one `AcpDriver`. See [ADR-0031](docs/adr/0031-backend-catalog-and-delegation-policy-agent-selection.md) and [ADR-0053](docs/adr/0053-isolated-agent-execution-sessions-and-codex-first-driver.md).
+_Avoid_: Backend registry, agent registry (use "BackendCatalog" for this specific name→launch-config mapping)
+
+**Observer**:
+An async, read-only subscriber to the Event Ledger's fan-out — used for logging, analytics, and other side effects. Cannot mutate the pipeline. See [ADR-0002](docs/adr/0002-dual-hook-mechanism.md).
+_Avoid_: Listener, Hook (reserve "Hook" for the general concept; "Observer" specifically means the read-only, async variant)
+
+**Hook Point**:
+A named, synchronous, in-line interception point inside a Seam's default implementation (e.g. `asr.before_turn_policy`) where user middleware may transform or veto a value in flight. Default behavior is a no-op passthrough. Distinct from Observer, which cannot mutate. See [ADR-0002](docs/adr/0002-dual-hook-mechanism.md).
+_Avoid_: Middleware (use "Hook Point" for the named site; middleware is what a user attaches to one), Filter
+
+**Device Fleet**:
+The Seam owning device activation, OTA firmware distribution, and device inventory for multi-device ecosystems (e.g. Xiaozhi-style hardware). The framework defines and ships only the standardized contract (`activate`/`checkFirmware`/`listDevices`) plus a minimal in-memory default — never a production-grade fleet-management implementation. Distinct from Transport Adapter (wire protocol) and Tool Normalization (device-side tool announcement), which are separate Seams covering the other two device-ecosystem concerns. `InMemoryDeviceFleet` is its first implementation — deterministic and test/demo-controllable only, not a real backend integration. See [ADR-0003](docs/adr/0003-device-fleet-as-standardized-seam.md).
+_Avoid_: Device management, fleet manager (use "Device Fleet" for the Seam specifically)
+
+**Knowledge Base**:
+The retrieval contract (`search(query, top_k) -> list[str]`) for grounding a Brain's answer with external passages (PRD point 8: RAG/知识库/MCP等外部知识注入). Deliberately not a Seam — retrieval is exposed to Brains via `KnowledgeBaseToolSource`, a `ToolSource` adapting it into the existing Canonical Tool Schema, since search is exactly a tool call (arguments in, text out). `InMemoryKnowledgeBase` is its first implementation — deterministic, in-process, case-insensitive substring match, never a real vector-search/RAG backend. See [ADR-0010](docs/adr/0010-knowledge-base-as-tool-source.md).
+_Avoid_: RAG (reserve for the general technique; "Knowledge Base" is this project's specific retrieval contract), vector store (an implementation detail a real `KnowledgeBase` backend might use, not the contract itself)
+
+**WebSearch**:
+The retrieval contract (`search(query, top_k) -> LookupEvidence`) for grounding a Brain's answer with live, external web results. Each result keeps title, URL, summary, source, optional publication time, and retrieval time; the evidence projection is always marked `untrusted`, while provider errors use one typed failure vocabulary. It is exposed both through `WebSearchToolSource` (`search_web`) and through the read-only per-turn Grounder used by the default ChatBrain. It remains separate from `KnowledgeBase`, whose documents have different trust/freshness semantics. `DeterministicWebSearch` is the no-network test conformer; `ByteWebSearch` is the real conformer. See [Realtime Grounding](docs/REALTIME-GROUNDING.md), [ADR-0014](docs/adr/0014-web-search-and-clock-as-tool-sources.md), and [ADR-0059](docs/adr/0059-speculative-realtime-date-and-search-grounding.md).
+_Avoid_: Knowledge Base (a distinct retrieval contract grounded in deployer-registered documents, not the live web — see Knowledge Base)
+
+**Turn Grounder**:
+The read-only Brain-layer seam that resolves one stable transcript into explicit trusted clock context plus optional untrusted web evidence. `RealtimeGroundingCoordinator` owns the respond/clock/lookup plan, one frozen wall-clock instant, bounded provider call, and safe failure context; it does not execute arbitrary tools or Agent tasks. In the Voice Web Demo it runs inside the same speculative response producer started at SentenceEnd, so a stable commit reuses the work and candidate invalidation cancels it. See [Realtime Grounding](docs/REALTIME-GROUNDING.md) and [ADR-0059](docs/adr/0059-speculative-realtime-date-and-search-grounding.md).
+_Avoid_: Combined Brain (the Grounder does not own the main reply, Turn Manager, or tool execution)
+
+**Turn Content**:
+The multimodal content bundle assembled per turn and passed to the Brain Gateway/Router — text (ASR transcript), audio metadata, and optional vision content (periodic snapshot or async vision-model text description). Vision is content on this bundle, never a Turn Manager input signal. Wired end-to-end as `TurnContent.vision_text` via an optional `VisionSource` plugin (`NoVisionSource` default), same Protocol/no-op shape as Voiceprint — no built-in Brain reads it; that's a Brain author's choice.
+_Avoid_: Prompt, context (too generic — use "Turn Content" for this specific per-turn bundle)
+
+**Action Output**:
+An optional Brain metadata contract for non-verbal action/gesture instructions (for example `emotion="smile"`, `gesture="wave"`). It is not projected by the Phase 1 production Voice Session transport; digital-human integration must define an explicit Avatar Renderer event contract before this becomes a live output path.
+_Avoid_: Gesture output, animation trigger
+
+**AddresseeClassifier**:
+The single plugin interface that gates both τ1 (IDLE→LISTEN, user-onset) and τ11 (DUAL→SPEAK, third-party-speech ignore) in Turn Manager, deciding whether detected speech is addressed to the assistant. Default (unregistered) behavior treats all speech as addressed to the assistant. See [ADR-0004](docs/adr/0004-unified-addressee-classifier.md).
+_Avoid_: Addressee detection (reserve for the general problem; "AddresseeClassifier" is the specific plugin interface), wake word (a distinct, separately-gating optional plugin — see Wake Word)
+
+**Wake Word** (plugin):
+An optional Hook Point on τ1 (IDLE→LISTEN): with a Wake Word plugin registered, the absence of a wake event keeps Turn Manager in IDLE. Independent of and stacks with AddresseeClassifier. Default (unregistered) behavior allows entry to LISTEN. See [ADR-0005](docs/adr/0005-voiceprint-informational-wakeword-gating.md).
+_Avoid_: Wake gate (use "Wake Word" for the plugin concept itself)
+
+**Voiceprint** (plugin):
+An optional plugin that attaches a speaker-match result (`match`/`no_match`/`unavailable`/`adaptive`) to Turn Content as metadata. Informational only — never silently blocks a turn; the Brain or deployer decides how to act on the result. Explicitly not identity authentication. `server/voiceprint/` supplies embedding, repository, matching, and enrollment conformers. It is not wired into the Phase 1 production Voice Session runtime by default; a future composition may feed device audio into it explicitly. See [ADR-0005](docs/adr/0005-voiceprint-informational-wakeword-gating.md), [ADR-0022](docs/adr/0022-voiceprint-embedding-matching-enrollment-service.md), and [ADR-0023](docs/adr/0023-opt-in-voiceprint-manual-confirm-gate.md).
+_Avoid_: Speaker verification, voice biometric authentication (voiceprint here is a filtering signal, not an auth mechanism)
+
+**DualIntentClassifier**:
+The plugin interface that disambiguates τ9 (floor-claim, assistant yields) from τ10 (backchannel, assistant continues) once Turn Manager is in DUAL and `AddresseeClassifier` has ruled out third-party speech. `classify()` takes the overlap duration and (when an `AsrEngine` is configured) the peeked, non-destructive transcript accumulated during SPEAK/DUAL. Default (unregistered, or no ASR configured) behavior is a duration-threshold heuristic — sustained overlap reads as a floor-claim, brief overlap reads as a backchannel — see [ADR-0007](docs/adr/0007-duration-threshold-dual-intent-classifier.md). `LlmDualIntentClassifier` is a content-aware conformer built on the existing `LlmClient` Protocol, falling back to the duration heuristic on empty/ambiguous/unparseable replies. See [ADR-0015](docs/adr/0015-content-aware-dual-intent-classifier.md). `LlmDualIntentClassifier` also checks a bilingual `stop_phrases` set before ever calling the LLM (an obvious match returns `FLOOR_CLAIM` immediately, skipping the network round-trip), and parses a confidence value alongside the label — a reply below `confidence_threshold` (default 0.8) demotes to the same duration-heuristic fallback used for unparseable replies, rather than manufacturing a `FLOOR_CLAIM` from a low-confidence signal. See [ADR-0020](docs/adr/0020-rules-first-confidence-threshold-dual-intent-classifier.md).
+_Avoid_: Intent classifier (too generic — use "DualIntentClassifier" for this specific DUAL-state plugin interface), AddresseeClassifier (a distinct, earlier-gating plugin that rules out third-party speech before this one runs — see AddresseeClassifier)
+
+**Semantic Interruption Gate**:
+The provider-neutral deep module that observes cumulative ASR revisions only while assistant playback is being arbitrated. It classifies six labels (`stop`, `correction`, `interrupt`, `backchannel`, `ignore`, `uncertain`), runs exact local rules before the model, debounces partials at five appended characters or 100ms idle, and owns the single latest-wins model task. `stop/correction/interrupt` project onto existing Turn Manager τ9 and Generation cancellation; only `correction/interrupt` are admitted as a Brain/Agent turn after the independent Semantic Endpoint Gate commits EOT. The live conformer is `LlmSemanticInterruptionClassifier`; `DualIntentClassifier` remains the empty-ASR/disabled compatibility fallback. See [Semantic Interruption](docs/SEMANTIC-INTERRUPTION.md) and [ADR-0060](docs/adr/0060-latest-wins-semantic-interruption-gate.md).
+_Avoid_: Semantic EOT (it decides when the user is done), DualIntentClassifier (the older quiet-boundary binary fallback), playback cancellation (Generation owns the cancellation mechanism)
+
+**EotClassifier**:
+The provider-neutral semantic-completeness plugin used by `SemanticEndpointGate`. It returns `EotClassification(decision, confidence, wait_ms, source)` for a frozen `(generation, transcript_revision, text)` candidate. A provider SentenceEnd starts this classifier and the side-effect-free main-response prefetch, but cannot commit a turn by itself. The Gate independently waits for `EndpointStop`, supplied by acoustic VAD stop or a revision-bound 1000ms ASR-idle fallback. New VAD speech, an ASR increment, or Generation supersession invalidates the candidate before Turn Manager sees `USER_EOT_CONFIRMED`. The live conformer is LLM-only `LlmEotClassifier`, built on `LlmClient` and strict JSON; punctuation/`EnsembleEotClassifier` is not part of live composition. `INCOMPLETE` is classified once and uses a positive model `wait_ms` within the runtime's 300–5000ms stability range, falling back to the ceiling when the hint is absent; `UNCERTAIN` uses model `wait_ms` or 300ms. Classifier errors degrade to the same bounded uncertain path rather than `COMPLETE`. See [Semantic EoT](docs/SEMANTIC-EOT.md) and [ADR-0057](docs/adr/0057-sentence-end-semantic-race-and-speculative-response.md).
+_Avoid_: AddresseeClassifier, DualIntentClassifier (they solve addressedness/barge-in); SentenceEnd (an ASR observation and precompute trigger, not a committed end of turn)
+
+**Generation**:
+A monotonically-increasing counter tracking the current conversational turn-cycle, incremented whenever a new user turn supersedes prior in-flight work. The Generation-lease mechanism checks a delegated result's originating generation against the current one before injecting it, so results (success or error) from a superseded turn are discarded/logged rather than spoken. See [ADR-0001](docs/adr/0001-two-layer-external-agent-integration.md). Since [ADR-0036](docs/adr/0036-concurrent-turn-execution-and-real-barge-in-cancellation.md) a confirmed barge-in (τ9) also advances it, which is what actually stops an in-flight reply, and the lease additionally guards the speaking budget and Turn Manager signals — see **Invariant T** in that ADR: at most one live turn task holds a current lease, and every other one is observationally inert.
+_Avoid_: Turn ID, session ID (Generation specifically tracks supersession for the lease check, not identity)
+
+**Turn task**:
+The cancelable Realtime Engine work for one committed user turn. Provider, Brain, and TTS producers are cancelled cooperatively, while Generation remains the final guard that makes late output inert. It is subordinate to the Voice Session lifecycle and is settled when the physical transport detaches. See [ADR-0036](docs/adr/0036-concurrent-turn-execution-and-real-barge-in-cancellation.md) and [ADR-0048](docs/adr/0048-end-to-end-streaming-conversation-engine-and-output-contract.md).
+_Avoid_: Worker, thread (it is one coroutine per turn on the session's own event loop, not a pool)
+
+**Playback Progress**:
+Device-reported playback truth scoped to output epoch, speech item, and Generation. Started/progress/finished/stopped reports let the Realtime Engine settle the exact current output; stale epochs or generations are inert. The browser Device Output Runtime is authoritative for what it actually scheduled and heard. See [ADR-0037](docs/adr/0037-re-armable-vad-utterances-and-client-reported-playback.md) and [ADR-0071](docs/adr/0071-device-audio-output-runtime-and-playback-truth.md).
+_Avoid_: Playback position, heartbeat (it reports completion of one generation's audio, not a continuous position, and it is not a liveness ping)
+
+**Delegation Ack**:
+The single spoken acknowledgment the Realtime Delegation Controller may emit once after a configured latency gate when a turn becomes an external Agent task — never a scheduled or tiered filler sequence. Work starts before the gate; a result that arrives inside it skips the Ack. After an Ack, the system stays silent until the task completes, the user asks about progress, or an error is reported. See [ADR-0006](docs/adr/0006-delegation-latency-ack-pull-status-error-gating.md) and [ADR-0061](docs/adr/0061-two-speed-voice-tool-runtime.md).
+_Avoid_: Filler, filler tier (project explicitly rejected periodic/tiered filler content in favor of one Ack)
+
+**DelegationPolicy**:
+The plugin interface Router consults per turn to decide whether to delegate and to return an `AgentSelectionPlan | None` (`None` = stay on the local conversation path). The plan names one primary Agent and only the fallbacks policy explicitly permits; Agent Task Supervisor performs capability/health selection and locks the chosen target at Backend Commit Point. `choose_agent(content) -> str | None` remains a compatibility adapter that produces a no-fallback plan. See [ADR-0031](docs/adr/0031-backend-catalog-and-delegation-policy-agent-selection.md) and [ADR-0054](docs/adr/0054-explicit-agent-selection-plans-and-no-silent-fallback.md).
+_Avoid_: Delegation logic, dispatch policy (use "DelegationPolicy" for this specific plugin interface)
+
+**StatusInquiryClassifier**:
+The plugin interface that, while one or more Delegated Tasks are active, tells a progress check ("how's it going?") apart from a genuinely new topic. It classifies intent only; selecting which active task a progress query refers to is an orchestration decision. Default is `KeywordStatusInquiryClassifier`, a small builtin phrase set, same "minimal shipped heuristic" shape as `AddresseeClassifier`/`DualIntentClassifier`. See [ADR-0008](docs/adr/0008-status-inquiry-classifier-and-single-inflight-delegation.md) and [ADR-0045](docs/adr/0045-multiple-concurrent-delegated-tasks-across-named-agents.md).
+_Avoid_: Progress classifier, follow-up classifier (use "StatusInquiryClassifier" for this specific plugin interface)
+
+**AsrEngine** / **AsrSession**:
+The plugin interface a Cascaded Realtime Engine uses to turn audio into transcript events. An ASR provider may emit endpoint hints, but those hints are only signals to Turn Manager and never authority to commit a user turn. `PreloadedAsrEngine` is the deterministic test conformer; `DoubaoAsrEngine` and `BellaAsrEngine` are vendor conformers. See [ADR-0011](docs/adr/0011-doubao-asr-tts-as-swappable-speech-seam.md).
+_Avoid_: ASR module, speech-to-text (use "AsrEngine" for this specific plugin interface)
+
+**TtsEngine**:
+The provider adapter used by the Cascaded Realtime Speech capability to synthesize assistant text into audio. `SilentTtsEngine` is the deterministic test/demo stand-in; Doubao direct and Bella-backed conformers provide real synthesis. Playback delivery and cancellation belong to Realtime Speech plus the Device Output Runtime, not to the adapter. See [ADR-0011](docs/adr/0011-doubao-asr-tts-as-swappable-speech-seam.md).
+_Avoid_: TTS module, text-to-speech (use "TtsEngine" for this specific plugin interface)
+
+**StreamingTtsEngine**:
+A provider interface for chunked audio delivery: `synthesize_stream(text) -> AsyncIterator[SynthesizedAudioChunk]`. The Cascaded Realtime TTS capability re-checks Generation before delivery and closes the producer on cancellation; for WebSocket providers this tears down the vendor stream rather than relying on a client-side filter. `SilentTtsEngine` supplies a deterministic conformer. See [ADR-0012](docs/adr/0012-streaming-tts-as-a-separate-protocol.md).
+_Avoid_: streaming TTS module (use "StreamingTtsEngine" for this specific plugin interface)
+
+**DuplexStreamingTtsEngine**:
+The legacy Cascaded adapter interface for simultaneous incremental text input and audio output: `synthesize_duplex(text_stream) -> AsyncIterator[SynthesizedAudioChunk]`. It remains behind the migration adapter until the target session-scoped TTS capability adopts the Speech Output command/event lifecycle. See [ADR-0062](docs/adr/0062-duplex-text-audio-streaming-tts.md) and [ADR-0063](docs/adr/0063-stateful-realtime-engine-command-event-contract.md).
+_Avoid_: TTS segment stream (use "DuplexStreamingTtsEngine" when both directions stream)

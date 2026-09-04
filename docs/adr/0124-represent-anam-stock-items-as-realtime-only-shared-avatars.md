@@ -1,0 +1,3 @@
+# Represent Anam stock items as realtime-only Shared Avatars
+
+Anam stock Avatars synchronize into the unified asset library as Shared Avatars with an OpenRealtime `avatar_id`, the provider's `provider_avatar_id`, and its platform-accepted model binding. Their cards are labeled `Anam 内置 · 仅实时驱动`; provider thumbnails and preview videos remain display metadata and cannot be copied into an Avatar Source Image, duplicated, submitted to LivePortrait, or used for segmented rendering. User-created Anam bindings remain capabilities of their source-owning Private Avatar instead. If a stock resource disappears upstream, OpenRealtime marks only its realtime capability unavailable and preserves historical session references.

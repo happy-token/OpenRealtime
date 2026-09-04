@@ -1,0 +1,3 @@
+# Keep session preparation durable without background autostart
+
+The session-start preparation dialog is minimizable and reports the current stage, expected time, and actionable failure details while its one-source/one-model task continues durably across navigation. If preparation succeeds while the user remains in the home Session Configuration Workbench, the original request automatically continues into conversation; if the user has left, the product sends a completion notice and never activates the microphone or Voice Session until the user returns and presses `开始对话` again. Cancelling the requested startup stops further work when possible but retains every valid derived asset already committed for later reuse.

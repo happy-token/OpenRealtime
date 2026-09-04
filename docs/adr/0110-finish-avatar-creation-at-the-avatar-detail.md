@@ -1,0 +1,3 @@
+# Finish Avatar creation at the Avatar detail
+
+Saving a new source image immediately creates the `avatar_id` and turns Avatar Studio's image stage into completed read-only context. The user may create one or more actions or choose `完成` immediately; completion always opens that Avatar's asset detail, even when it has no actions or accepted actions are still preparing in the background. The detail neutrally shows `尚未创建动作` when applicable and exposes `创建动作` plus `开始对话`, while durable preparation progress continues there. Completion never auto-starts a conversation or returns to an unscoped asset catalog where the newly created Avatar would be harder to locate.

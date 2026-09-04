@@ -1,0 +1,3 @@
+# Require explicit Avatar model backfill
+
+Enabling a new Lip-sync Model marks compatible existing Avatar Actions `待适配` but does not automatically enqueue fleet-wide preparation. Avatar Asset Management offers individual and `全部兼容动作` backfill commands with action count, expected runtime, and execution device before submission; jobs continue durably after navigation, failures remain per action, and previously prepared model bindings stay usable throughout. This prohibits unsolicited fleet-wide work, but it does not block an explicit conversation start: selecting one unprepared image or action and pressing `开始对话` authorizes preparation of only that source/model pair for the requested session.

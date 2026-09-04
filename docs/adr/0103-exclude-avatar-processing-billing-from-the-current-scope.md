@@ -1,0 +1,3 @@
+# Exclude Avatar processing billing from the current scope
+
+Avatar action generation, Lip-sync Model preparation, session-start preparation, and model backfill do not classify jobs as paid or free and do not display prices, payment confirmations, refunds, or charge-specific states in the current product scope. Their interfaces show only operational facts such as task state, expected time, and execution device. HappyImage remains responsible for its own account quota and generation entitlement; that existing external quota does not introduce a second Avatar-processing billing model into OpenRealtime.

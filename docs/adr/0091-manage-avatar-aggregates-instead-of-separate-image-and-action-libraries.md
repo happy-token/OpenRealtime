@@ -1,0 +1,3 @@
+# Manage Avatar aggregates instead of separate image and action libraries
+
+Avatar Asset Management lists one card per `avatar_id`; its immutable source image, provider readiness, direct-test entry, zero or more actions, and per-action preparation state live in the Avatar detail. Separate top-level image and action libraries forced users to reconstruct relationships the domain already owns and duplicated one person across cards, while aggregate management keeps action rename, preview, deletion, retry, and creation scoped to the correct Avatar. The detail may offer “基于此形象创建新 Avatar”, but it never replaces the source image beneath existing derived assets.

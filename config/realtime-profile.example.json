@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "engine_kind": "cascaded",
+  "plugins": [
+    {
+      "slot": "vad",
+      "plugin_id": "builtin.vad",
+      "plugin_version": "1.0.0",
+      "requested_data_grants": ["input_audio_processed"]
+    },
+    {
+      "slot": "asr",
+      "plugin_id": "builtin.asr",
+      "plugin_version": "1.0.0",
+      "requested_data_grants": ["input_audio_processed"]
+    },
+    {
+      "slot": "turn_manager",
+      "plugin_id": "builtin.turn_manager",
+      "plugin_version": "1.0.0"
+    },
+    {
+      "slot": "brain",
+      "plugin_id": "builtin.brain",
+      "plugin_version": "1.0.0"
+    },
+    {
+      "slot": "speech_renderer",
+      "plugin_id": "builtin.speech_renderer",
+      "plugin_version": "1.0.0"
+    },
+    {
+      "slot": "tts",
+      "plugin_id": "builtin.tts",
+      "plugin_version": "1.0.0"
+    }
+  ]
+}

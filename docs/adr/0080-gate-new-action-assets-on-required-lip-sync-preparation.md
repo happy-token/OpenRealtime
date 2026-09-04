@@ -1,0 +1,3 @@
+# Gate new action assets on required lip-sync preparation
+
+A newly accepted motion asset receives a stable action ID before model processing but becomes available only after every enabled, deployed, and compatible Lip-sync Model in its versioned required set has prepared successfully. Preparation state is retained per model so one failure can be retried without regenerating the LivePortrait video or discarding successful outputs; catalog-only models do not block creation, and enabling a model later adds visible maintenance work to existing assets without revoking their already working model bindings.

@@ -1,0 +1,52 @@
+# Excluded directories
+tmp/
+docs/prompts/
+.worktrees/
+
+# Secrets
+.env
+.env*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Local model weights
+models/
+
+# Local research source media (Git keeps only manifests, hashes, and metrics)
+research-assets/**/*.mp4
+research-assets/**/*.part
+research-assets/**/.write.lock
+research-assets/**/inputs/
+research-assets/**/*.wav
+research-assets/**/*.mp3
+research-assets/**/*.m4a
+research-assets/**/*.aac
+research-assets/**/*.flac
+research-assets/**/*.jpg
+research-assets/**/*.jpeg
+research-assets/**/*.png
+research-assets/**/runs/**/shuchang-avatar/
+extracted-audio/
+
+# Private avatar experiments (licensed/public-demo assets must replace these)
+research-assets/private-avatar-tests/
+
+# Node / Next.js
+node_modules/
+.next/
+.next-dev/
+.next-e2e-*/
+.openrealtime/
+data/avatar-renderer/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# OS
+.DS_Store

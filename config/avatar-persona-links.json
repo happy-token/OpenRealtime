@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "links": {
+    "default-anam": {
+      "personaId": "intellectual-warmth",
+      "avatarDisplayName": "Shuchang"
+    },
+    "shuchang": {
+      "personaId": "intellectual-warmth",
+      "avatarDisplayName": "Shuchang"
+    },
+    "companion": {
+      "personaId": "soft-luminous",
+      "avatarDisplayName": "陪伴"
+    },
+    "avatar-zhaoning": {
+      "personaId": "intellectual-warmth",
+      "avatarDisplayName": "昭宁"
+    },
+    "avatar-meichuqing": {
+      "personaId": "sweet-sunshine",
+      "avatarDisplayName": "梅初晴"
+    },
+    "avatar-qingyun": {
+      "personaId": "fresh-pastoral",
+      "avatarDisplayName": "清韫"
+    },
+    "avatar-selin": {
+      "personaId": "romantic-french",
+      "avatarDisplayName": "瑟琳"
+    },
+    "avatar-shiruoshui": {
+      "personaId": "soft-luminous",
+      "avatarDisplayName": "施若水"
+    },
+    "avatar-zhaoyue": {
+      "personaId": "cool-urban-night",
+      "avatarDisplayName": "曌月"
+    },
+    "avatar-qingzhao": {
+      "personaId": "melancholic-mist",
+      "avatarDisplayName": "清照"
+    },
+    "avatar-wenlan": {
+      "personaId": "soft-luminous",
+      "avatarDisplayName": "温岚"
+    },
+    "avatar-8657be31-306e-428d-a013-7521e710ab6a": {
+      "personaId": "fresh-pastoral",
+      "avatarDisplayName": "萨曼莎"
+    }
+  }
+}

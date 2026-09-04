@@ -1,0 +1,3 @@
+# Cut over directly to Avatar naming
+
+Because the product remains in active development and has no deployed clients requiring rolling compatibility, the Avatar refactor updates database fields, API requests and responses, code types, components, tests, and routes in one cutover. Old `visual_identity_id`, `motion_base_id`, unqualified provider `avatar_id`, `DigitalHuman` names, and `/digital-human-*` routes receive no runtime aliases, dual writes, deprecation period, or redirects. The one-time data migration may read the old schema to preserve identifier values, but the running post-migration product exposes only the canonical Avatar vocabulary.

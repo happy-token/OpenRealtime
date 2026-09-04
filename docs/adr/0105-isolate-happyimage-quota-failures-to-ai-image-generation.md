@@ -1,0 +1,3 @@
+# Isolate HappyImage quota failures to AI image generation
+
+Avatar Studio displays the current user's HappyImage remaining quota in its AI-generation area. Insufficient quota disables only the generation command, labels the cause as `HappyImage 额度不足`, and offers a new-page link to HappyImage account management without discarding the active Avatar draft; local upload and existing-asset selection remain available. HappyImage integration or provider outages use a distinct `服务不可用` state rather than masquerading as quota exhaustion. OpenRealtime never falls back to anonymous, administrator, or shared quota for a user request.

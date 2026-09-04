@@ -1,0 +1,3 @@
+# Filter Private and built-in Avatars within one library
+
+`/avatars` remains one management page with a top scope switch: `我的 Avatar` is the default and `内置 Avatar` contains Anam stock plus administrator-provided Shared Avatars. Name-or-Avatar-ID search is scoped to the selected range. Private cards expose creation, rename, deletion, and maintenance commands allowed to their owner, while built-in cards expose detail and supported conversation launch only and omit unauthorized operations rather than rendering misleading disabled controls. Both scopes reuse the same aggregate card and capability-label language, and no third primary page is introduced.

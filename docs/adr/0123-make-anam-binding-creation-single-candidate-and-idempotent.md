@@ -1,0 +1,3 @@
+# Make Anam binding creation single-candidate and idempotent
+
+For one `avatar_id + provider + avatar_model`, at most one realtime-binding candidate may be unfinished. The client persists an idempotency key before submission and the server returns the same task for double-clicks, refresh recovery, and network retries rather than creating another Anam resource. `放弃等待` stops local polling but cannot claim that an already accepted provider request was cancelled; background reconciliation records its final result and Provider Avatar ID in attempt history. A new candidate may start only after the previous task reaches success, failure, or reconciled-abandoned terminal state.

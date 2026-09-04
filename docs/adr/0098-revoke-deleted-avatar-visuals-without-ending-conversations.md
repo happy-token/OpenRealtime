@@ -1,0 +1,3 @@
+# Revoke deleted Avatar visuals without ending conversations
+
+When deletion affects an Avatar or Avatar Action currently bound to a live conversation, the product first reports the affected session count and requires an explicit destructive confirmation. Confirmation immediately stops the affected Avatar Renderer and the conversation continues in a visibly labeled audio-only state; it does not keep rendering a soft-deleted private asset, terminate the voice conversation, or silently choose another Avatar, source image, or action. Restoring the aggregate from the recycle bin makes it available for later selection but never automatically reattaches it to an existing session.

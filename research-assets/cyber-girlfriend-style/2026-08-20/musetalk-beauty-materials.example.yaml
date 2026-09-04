@@ -1,0 +1,15 @@
+materials:
+  sweet_smile:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/beauty-ready/musetalk_beauty_sweet_smile_5p9s.mp4
+    recommended_for: first_beauty_test
+    strict_idle_base: true
+
+  kbeauty_pink:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/beauty-ready/musetalk_beauty_kbeauty_pink_7p2s.mp4
+    recommended_for: closeup_beauty_test
+    strict_idle_base: false
+
+  blue_cyber:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/beauty-ready/style_beauty_blue_cyber_2p8s.mp4
+    recommended_for: marketing_style_reference
+    strict_idle_base: false

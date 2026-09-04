@@ -1,0 +1,3 @@
+# Share the home visual shell across Avatar pages
+
+Avatar Asset Management and Avatar Studio share a persistent page shell derived from the home background, atmosphere, texture, and two-option horizontal glass switcher for `资产管理` and `创建数字人`; a sidebar or full experience-mode carousel would overstate two peer destinations and fragment the product. Navigation, panels, cards, and drawers consume the same persisted transparency and glass-blur tokens as the home workbench, while image and video evidence, destructive confirmations, warnings, and errors retain bounded opaque contrast so appearance preferences cannot compromise review accuracy or safety. The shared shell extracts visual layers rather than mounting home session state inside child pages.

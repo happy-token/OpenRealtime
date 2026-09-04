@@ -1,0 +1,23 @@
+# 将其中一个 video_path 复制到 MuseTalk/LiveTalking 的 Avatar 配置中。
+# 先用 clean_portrait 验证技术链路，再切换 cozy_companion 验证产品风格。
+
+materials:
+  clean_portrait:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/ready/musetalk_ready_clean_asian_portrait_9p7s.mp4
+    strict_idle_base: true
+    recommended_for: pipeline_baseline
+
+  cozy_companion:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/ready/musetalk_ready_cozy_asian_companion_6p7s.mp4
+    strict_idle_base: true
+    recommended_for: product_style_test
+
+  cyberpunk_projection:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/ready/musetalk_ready_cyberpunk_projection_4p2s.mp4
+    strict_idle_base: false
+    recommended_for: marketing_style_test
+
+  cardigan_reference:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/ready/style_reference_cardigan_warm_home_6p2s.mp4
+    strict_idle_base: false
+    recommended_for: visual_reference_only

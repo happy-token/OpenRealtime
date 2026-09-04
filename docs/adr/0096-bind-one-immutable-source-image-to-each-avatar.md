@@ -1,0 +1,3 @@
+# Bind one immutable source image to each Avatar
+
+An Avatar ID and its accepted source-image master are bound for the lifetime of that Avatar. The creation draft may freely upload, generate, edit, and switch candidates before save, but after save a likeness change creates a new `avatar_id`; a convenience command may copy editable metadata into the new draft but never copies actions automatically. We rejected in-place source replacement because existing Avatar Actions, provider resources, Renderer assets, model preparation, and session references were derived from the original image and would become visually and semantically misleading. Renaming the Avatar remains an ordinary metadata update and does not affect this identity binding.

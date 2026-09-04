@@ -1,0 +1,9 @@
+materials:
+  warm_cybergirlfriend:
+    video_path: /Users/forever/workspace/OpenRealtime/research-assets/cyber-girlfriend-style/2026-08-20/better-ready/musetalk_better_warm_cybergirlfriend_8p5s.mp4
+    recommended_for: primary_girlfriend_style_test
+    strict_idle_base: true
+    loop_recommended: true
+    fps: 25
+    width: 720
+    height: 1280

@@ -1,0 +1,3 @@
+# Summarize Avatar capabilities without an aggregate readiness state
+
+Avatar catalog cards do not collapse image use, actions, provider bindings, and model preparation into one `ready` or `not configured` status. Every valid Avatar source image remains an available conversation-test source, while the card separately reports `可使用图片`, accepted action count, pending adaptation count when nonzero, and active action or model-processing jobs. An Avatar with no actions receives the neutral hint `尚未创建动作`, never an unavailable or warning state; failures stay on the specific action, model preparation, or provider binding that requires attention.

@@ -1,0 +1,598 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { ArrowLeft } from "lucide-react";
+import { CallView } from "@/components/call/call-view";
+import type { AdvancedConfigTab } from "@/components/call/home-preview-workspace";
+import { ConfirmationCard } from "@/components/call/confirmation-card";
+import { SessionControlBar } from "@/components/call/session-control-bar";
+import { SessionExperienceLayout } from "@/components/call/session-experience-layout";
+import {
+  enterPageForm,
+  restoreFromFullscreen,
+  startPresentationSession,
+  type PageForm,
+  type PresentationSessionView,
+} from "@/components/call/presentation-model";
+import {
+  ConfigDrawer,
+  isConfigTab,
+  type ConfigTab,
+  type TtsRuntimeConfig,
+} from "@/components/drawer/config-drawer";
+import {
+  DEFAULT_AVATAR_DISPLAY_CONFIG,
+  parseAvatarDisplayConfig,
+  parseExperienceMode,
+  type AvatarDisplayConfig,
+  type ExperienceMode,
+} from "@/components/digital-human/types";
+import {
+  useVoiceSession,
+  type ConnectionState,
+  type ConversationState,
+} from "@/hooks/use-voice-session";
+import { isVoiceVisualTheme, type VoiceVisualTheme } from "@/components/call/voice-theme";
+import {
+  DEFAULT_TTS_VOICE,
+  DIALECT_TTS_VOICE,
+  isTtsDialect,
+  isTtsVoice,
+  type TtsDialect,
+  type TtsProvider,
+  type TtsVoice,
+} from "@/components/drawer/voice-options";
+import {
+  AVATAR_DISPLAY_CONFIG_STORAGE_KEY,
+  EXPERIENCE_MODE_STORAGE_KEY,
+} from "@/lib/avatar-identity-sync";
+import { avatarPersonaSelectionId } from "@/lib/avatar-persona";
+import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
+import { loadCurrentAvatarCatalog } from "@/lib/avatar-library-catalog-client";
+import {
+  avatarSessionConfig,
+  reconcileAvatarDisplayConfigWithOwnedAvatar,
+} from "@/lib/avatar-session-config";
+import { useAppTheme } from "@/components/theme/app-theme-provider";
+
+const ChatView = dynamic(
+  () => import("@/components/chat/chat-view").then((module) => module.ChatView),
+  { ssr: false },
+);
+
+const STATE_LABEL: Record<ConversationState, string> = {
+  idle: "待命",
+  listening: "正在听",
+  thinking: "思考中",
+  speaking: "AI 回复中",
+};
+
+const CONNECTION_HINT: Partial<Record<ConnectionState, string>> = {
+  connecting: "正在连接…",
+  reconnecting: "连接已断开，正在重连…",
+  error: "连接错误，正在重试…",
+};
+
+const VOICE_VISUAL_THEME_STORAGE_KEY = "voice-agent-visual-theme";
+const TTS_CONFIG_STORAGE_KEY = "voice-agent-tts-config";
+const REDUCED_MOTION_STORAGE_KEY = "voice-agent-reduced-motion";
+const CAPTIONS_ENABLED_STORAGE_KEY = "voice-agent-captions-enabled";
+
+export function OpenRealtimeApp({
+  avatarArtifactPreviewEnabled = false,
+}: {
+  avatarArtifactPreviewEnabled?: boolean;
+}) {
+  const engine = useVoiceSession();
+  const { theme: appTheme, setTheme: setAppTheme } = useAppTheme();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<ConfigTab>("display");
+  const [sessionStarted, setSessionStarted] = useState(false);
+  const [sessionPaused, setSessionPaused] = useState(false);
+  const [avatarStarting, setAvatarStarting] = useState(false);
+  const [presentationView, setPresentationView] = useState<PresentationSessionView | null>(null);
+  const [micError, setMicError] = useState<string | null>(null);
+  const [voiceVisualTheme, setVoiceVisualTheme] = useState<VoiceVisualTheme>("cloud");
+  const [experienceMode, setExperienceMode] = useState<ExperienceMode>("voice");
+  const [avatarDisplayConfig, setAvatarDisplayConfig] = useState<AvatarDisplayConfig>(DEFAULT_AVATAR_DISPLAY_CONFIG);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
+  const [ttsVoice, setTtsVoice] = useState<TtsVoice>(DEFAULT_TTS_VOICE);
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider>("bailian");
+  const [ttsSpeechRate, setTtsSpeechRate] = useState(0);
+  const [ttsDialect, setTtsDialect] = useState<TtsDialect>("");
+  const configureTts = engine.configureTts;
+  const configureAvatarPersona = engine.configureAvatarPersona;
+
+  const connected = engine.connection === "open";
+
+  const openSettings = useCallback((tab: ConfigTab = "display") => {
+    setDrawerInitialTab(tab);
+    setDrawerOpen(true);
+  }, []);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(VOICE_VISUAL_THEME_STORAGE_KEY);
+    if (isVoiceVisualTheme(savedTheme)) setVoiceVisualTheme(savedTheme);
+    const savedExperienceMode = window.localStorage.getItem(EXPERIENCE_MODE_STORAGE_KEY);
+    setExperienceMode(parseExperienceMode(savedExperienceMode));
+    setReducedMotion(window.localStorage.getItem(REDUCED_MOTION_STORAGE_KEY) === "true");
+    setCaptionsEnabled(window.localStorage.getItem(CAPTIONS_ENABLED_STORAGE_KEY) !== "false");
+    let storedConfig = DEFAULT_AVATAR_DISPLAY_CONFIG;
+    try {
+      storedConfig = parseAvatarDisplayConfig(JSON.parse(
+        window.localStorage.getItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY) ?? "null",
+      ));
+      setAvatarDisplayConfig(storedConfig);
+    } catch {
+      window.localStorage.removeItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY);
+    }
+    const controller = new AbortController();
+    const query = new URLSearchParams(window.location.search);
+    const requestedAvatarId = query.get("avatar_id") ?? "";
+    const requestedConfigTab = query.get("open_config") ?? "";
+    if (requestedAvatarId) {
+      void fetchOwnedAvatar(requestedAvatarId, controller.signal).then((requestedAvatar) => {
+        if (!requestedAvatar || requestedAvatar.deleted_at) return;
+        const nextConfig = avatarSessionConfig(
+          requestedAvatar,
+          storedConfig,
+          query.get("avatar_action_id") ?? undefined,
+        );
+        setAvatarDisplayConfig(nextConfig);
+        setExperienceMode("avatar");
+        window.localStorage.setItem(EXPERIENCE_MODE_STORAGE_KEY, "avatar");
+        window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+        if (isConfigTab(requestedConfigTab)) openSettings(requestedConfigTab);
+      }).catch(() => undefined);
+    } else if (storedConfig.renderPath === "segmented") {
+      void Promise.all([
+        fetchOwnedAvatar(storedConfig.segmentedAvatarId, controller.signal),
+        loadCurrentAvatarCatalog(controller.signal, { includeHostedAvatars: false }).catch(() => []),
+      ]).then(([storedAvatar, catalog]) => {
+        if (!storedAvatar) return;
+        const catalogActionIds = catalog
+          .find((avatar) => avatar.avatarId === storedConfig.segmentedAvatarId)
+          ?.actions.map((action) => action.avatarActionId) ?? [];
+        const nextConfig = reconcileAvatarDisplayConfigWithOwnedAvatar(
+          storedConfig,
+          storedAvatar,
+          catalogActionIds,
+        );
+        if (nextConfig === storedConfig) return;
+        setAvatarDisplayConfig(nextConfig);
+        window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+      }).catch(() => undefined);
+    }
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    function syncAvatarDisplayConfig(event: StorageEvent) {
+      if (sessionStarted || event.key !== AVATAR_DISPLAY_CONFIG_STORAGE_KEY || !event.newValue) return;
+      try {
+        setAvatarDisplayConfig(parseAvatarDisplayConfig(JSON.parse(event.newValue)));
+      } catch {
+        return;
+      }
+    }
+    window.addEventListener("storage", syncAvatarDisplayConfig);
+    return () => window.removeEventListener("storage", syncAvatarDisplayConfig);
+  }, [sessionStarted]);
+
+  useEffect(() => {
+    window.localStorage.setItem(REDUCED_MOTION_STORAGE_KEY, String(reducedMotion));
+  }, [reducedMotion]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CAPTIONS_ENABLED_STORAGE_KEY, String(captionsEnabled));
+  }, [captionsEnabled]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(TTS_CONFIG_STORAGE_KEY) ?? "null") as {
+        voice?: unknown;
+        speechRate?: unknown;
+        dialect?: unknown;
+      } | null;
+      if (saved && isTtsVoice(saved.voice)) setTtsVoice(saved.voice);
+      if (saved && isTtsDialect(saved.dialect)) {
+        setTtsDialect(saved.voice === DIALECT_TTS_VOICE ? saved.dialect : "");
+      }
+      if (
+        saved &&
+        typeof saved.speechRate === "number" &&
+        saved.speechRate >= -50 &&
+        saved.speechRate <= 100
+      ) {
+        setTtsSpeechRate(saved.speechRate);
+      }
+    } catch {
+      window.localStorage.removeItem(TTS_CONFIG_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      window.localStorage.setItem(
+        TTS_CONFIG_STORAGE_KEY,
+        JSON.stringify({ voice: ttsVoice, speechRate: ttsSpeechRate, dialect: ttsDialect }),
+      );
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [ttsDialect, ttsSpeechRate, ttsVoice]);
+
+  const handleTtsRuntimeConfigChange = useCallback((config: TtsRuntimeConfig) => {
+    setTtsProvider(config.provider);
+    configureTts(
+      config.provider,
+      config.voice,
+      config.speechRate,
+      config.dialect,
+    );
+  }, [configureTts]);
+
+  useEffect(() => {
+    configureAvatarPersona(avatarPersonaSelectionId({
+      renderPath: avatarDisplayConfig.renderPath,
+      avatarProfileId: avatarDisplayConfig.avatarProfileId,
+      segmentedAvatarId: avatarDisplayConfig.segmentedAvatarId,
+    }));
+  }, [
+    avatarDisplayConfig.avatarProfileId,
+    avatarDisplayConfig.renderPath,
+    avatarDisplayConfig.segmentedAvatarId,
+    configureAvatarPersona,
+  ]);
+
+  function handleTtsVoiceChange(voice: TtsVoice) {
+    setTtsVoice(voice);
+    if (voice !== DIALECT_TTS_VOICE) setTtsDialect("");
+  }
+
+  function handleTtsDialectChange(dialect: TtsDialect) {
+    setTtsDialect(dialect);
+    if (dialect) setTtsVoice(DIALECT_TTS_VOICE);
+  }
+
+  const beginSession = useCallback(async (mode: ExperienceMode = experienceMode) => {
+    if (!connected) return false;
+    try {
+      await engine.start();
+      engine.clearConversationDisplay();
+      setSessionStarted(true);
+      setPresentationView(startPresentationSession(mode));
+      setSessionPaused(false);
+      setMicError(null);
+      return true;
+    } catch (error) {
+      setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  }, [engine, connected, experienceMode]);
+
+  const startDigitalHumanSession = useCallback((config: AvatarDisplayConfig) => {
+    setAvatarDisplayConfig(config);
+    engine.clearConversationDisplay();
+    setPresentationView(startPresentationSession("avatar"));
+    setSessionStarted(true);
+    setAvatarStarting(true);
+    setSessionPaused(false);
+    setMicError(null);
+  }, [engine]);
+
+  const handleHomeStart = useCallback(async (requestedMode: ExperienceMode = experienceMode) => {
+    if (requestedMode === "avatar") {
+      let launchConfig = avatarDisplayConfig;
+      if (launchConfig.renderPath === "segmented") {
+        try {
+          const currentAvatar = await fetchOwnedAvatar(launchConfig.segmentedAvatarId);
+          if (currentAvatar) {
+            launchConfig = reconcileAvatarDisplayConfigWithOwnedAvatar(launchConfig, currentAvatar);
+          }
+        } catch (error) {
+          setMicError(`数字人配置校验失败：${error instanceof Error ? error.message : String(error)}`);
+          return;
+        }
+      }
+      if (launchConfig !== avatarDisplayConfig) {
+        setAvatarDisplayConfig(launchConfig);
+        window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(launchConfig));
+      }
+      startDigitalHumanSession(launchConfig);
+      return;
+    }
+    await beginSession("voice");
+  }, [avatarDisplayConfig, beginSession, experienceMode, startDigitalHumanSession]);
+
+  const toggleSessionPause = useCallback(async () => {
+    if (sessionPaused) {
+      try {
+        await engine.start();
+        setSessionPaused(false);
+        setMicError(null);
+      } catch (error) {
+        setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+      }
+      return;
+    }
+    engine.stop();
+    setSessionPaused(true);
+  }, [engine, sessionPaused]);
+
+  const terminateSession = useCallback(() => {
+    engine.terminate();
+    setSessionStarted(false);
+    setAvatarStarting(false);
+    setPresentationView(null);
+    setSessionPaused(false);
+    setMicError(null);
+  }, [engine]);
+
+  function handleVoiceVisualThemeChange(theme: VoiceVisualTheme) {
+    setVoiceVisualTheme(theme);
+    window.localStorage.setItem(VOICE_VISUAL_THEME_STORAGE_KEY, theme);
+  }
+
+  function handleExperienceModeChange(mode: ExperienceMode) {
+    if (sessionStarted) return;
+    setExperienceMode(mode);
+    window.localStorage.setItem(EXPERIENCE_MODE_STORAGE_KEY, mode);
+  }
+
+  function handleAvatarDisplayConfigChange(config: AvatarDisplayConfig) {
+    if (sessionStarted) return;
+    setAvatarDisplayConfig(config);
+    window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  }
+
+  function handlePageFormChange(pageForm: PageForm) {
+    setPresentationView((current) => current ? enterPageForm(current, pageForm) : current);
+  }
+
+  const handleRestoreFromFullscreen = useCallback(() => {
+    setPresentationView((current) => current ? restoreFromFullscreen(current) : current);
+  }, []);
+
+  const handleAvatarRendererReady = useCallback(async () => {
+    if (!avatarStarting) return;
+    try {
+      await engine.start();
+      engine.clearConversationDisplay();
+      window.localStorage.setItem(
+        AVATAR_DISPLAY_CONFIG_STORAGE_KEY,
+        JSON.stringify(avatarDisplayConfig),
+      );
+      setAvatarStarting(false);
+      setSessionPaused(false);
+      setMicError(null);
+    } catch (error) {
+      engine.terminate();
+      setAvatarStarting(false);
+      setSessionStarted(false);
+      setPresentationView(null);
+      setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [avatarDisplayConfig, avatarStarting, engine]);
+
+  const cancelAvatarStartup = useCallback(() => {
+    engine.terminate();
+    setAvatarStarting(false);
+    setSessionStarted(false);
+    setPresentationView(null);
+    setMicError(null);
+  }, [engine]);
+
+  const pageForm = presentationView?.pageForm ?? "fullscreen";
+
+  function renderHomeAdvancedSettings(
+    tab: AdvancedConfigTab,
+    onVoiceLabelChange: (label: string) => void,
+    onModelLabelChange: (label: string) => void,
+  ) {
+    return <ConfigDrawer
+      open
+      initialTab={tab}
+      variant="embedded"
+      onClose={() => undefined}
+      voiceVisualTheme={voiceVisualTheme}
+      onVoiceVisualThemeChange={handleVoiceVisualThemeChange}
+      ttsVoice={ttsVoice}
+      ttsSpeechRate={ttsSpeechRate}
+      ttsDialect={ttsDialect}
+      ttsConfigurable={engine.ttsConfigurable}
+      ttsPreviewAvailable={engine.ttsPreviewAvailable}
+      ttsConfigStatus={engine.ttsConfigStatus}
+      onTtsVoiceChange={handleTtsVoiceChange}
+      onTtsRuntimeConfigChange={handleTtsRuntimeConfigChange}
+      onSelectedVoiceLabelChange={onVoiceLabelChange}
+      onSelectedModelLabelChange={onModelLabelChange}
+      onTtsSpeechRateChange={setTtsSpeechRate}
+      onTtsDialectChange={handleTtsDialectChange}
+      experienceMode={experienceMode}
+      onExperienceModeChange={handleExperienceModeChange}
+      avatarDisplayConfig={avatarDisplayConfig}
+      onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+      avatarConfigLocked={false}
+      avatarArtifactPreviewEnabled={avatarArtifactPreviewEnabled}
+      reducedMotion={reducedMotion}
+      onReducedMotionChange={setReducedMotion}
+      appTheme={appTheme}
+      onAppThemeChange={setAppTheme}
+      setBargeInMuted={engine.setBargeInMuted}
+      setNoiseSuppression={engine.setNoiseSuppression}
+      setVolume={engine.setVolume}
+      sessionId={engine.sessionId}
+    />;
+  }
+
+  useEffect(() => {
+    function restoreLayout(event: KeyboardEvent) {
+      if (event.key !== "Escape" || pageForm !== "fullscreen" || drawerOpen || engine.pendingConfirmation) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [role=dialog], [role=menu]")) return;
+      handleRestoreFromFullscreen();
+    }
+    window.addEventListener("keydown", restoreLayout);
+    return () => window.removeEventListener("keydown", restoreLayout);
+  }, [drawerOpen, engine.pendingConfirmation, handleRestoreFromFullscreen, pageForm]);
+
+  return (
+    <div
+      className="app-shell"
+      data-state={engine.state}
+      data-session={sessionStarted ? "active" : "idle"}
+      data-view="call"
+      data-experience-mode={experienceMode}
+      data-entry-stage={sessionStarted ? "session" : "home"}
+    >
+      <div className="ambient ambient-one" aria-hidden="true" />
+      <div className="ambient ambient-two" aria-hidden="true" />
+      <header className="topbar">
+        <div className="topbar-left">
+          <span className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span className="brand-wordmark">OpenRealtime</span>
+          </span>
+          <span className="status-dot" data-state={engine.state}>
+            {STATE_LABEL[engine.state]}
+          </span>
+          <span className={`offline-hint ${connected ? "hidden" : ""}`} data-offline={connected ? "false" : "true"}>
+            {connected ? "" : CONNECTION_HINT[engine.connection] ?? ""}
+          </span>
+        </div>
+      </header>
+
+      <main className="app-main">
+        {sessionStarted ? (
+          <SessionExperienceLayout
+            pageForm={pageForm}
+            onEnterFullscreen={() => handlePageFormChange("fullscreen")}
+            surface={<CallView
+          hidden={false}
+          sessionStarted={sessionStarted}
+          state={engine.state}
+          statusLabel={sessionPaused ? "已暂停" : STATE_LABEL[engine.state]}
+          level={engine.level}
+          currentTurnText={engine.caption}
+          error={micError}
+          connected={connected && engine.micAvailable}
+          onStartSession={handleHomeStart}
+          visualTheme={voiceVisualTheme}
+          onVisualThemeChange={handleVoiceVisualThemeChange}
+          experienceMode={experienceMode}
+          onExperienceModeChange={handleExperienceModeChange}
+          avatarDisplayConfig={avatarDisplayConfig}
+          onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+          ttsProvider={ttsProvider}
+          ttsVoice={ttsVoice}
+          settingsRequest={0}
+          renderAdvancedSettings={renderHomeAdvancedSettings}
+          setAvatarAudioSink={engine.setAvatarAudioSink}
+          reducedMotion={reducedMotion}
+          captionsEnabled={captionsEnabled}
+          onAvatarRendererReady={handleAvatarRendererReady}
+        />}
+            conversation={<ChatView entries={engine.transcript} active={pageForm !== "fullscreen"} />}
+          />
+        ) : <CallView
+          hidden={false}
+          sessionStarted={false}
+          state={engine.state}
+          statusLabel={STATE_LABEL[engine.state]}
+          level={engine.level}
+          currentTurnText={engine.caption}
+          error={micError}
+          connected={connected && engine.micAvailable}
+          onStartSession={handleHomeStart}
+          visualTheme={voiceVisualTheme}
+          onVisualThemeChange={handleVoiceVisualThemeChange}
+          experienceMode={experienceMode}
+          onExperienceModeChange={handleExperienceModeChange}
+          avatarDisplayConfig={avatarDisplayConfig}
+          onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+          ttsProvider={ttsProvider}
+          ttsVoice={ttsVoice}
+          settingsRequest={0}
+          renderAdvancedSettings={renderHomeAdvancedSettings}
+          setAvatarAudioSink={engine.setAvatarAudioSink}
+          reducedMotion={reducedMotion}
+          captionsEnabled={captionsEnabled}
+        />}
+      </main>
+
+      {engine.pendingConfirmation && (
+        <div className="confirmation-overlay">
+          <ConfirmationCard
+            pending={engine.pendingConfirmation}
+            onDecision={engine.resolveConfirmation}
+          />
+        </div>
+      )}
+
+      {sessionStarted && avatarStarting && (
+        <button
+          type="button"
+          className="avatar-startup-return"
+          aria-label="取消启动并返回主页"
+          title="取消启动并返回主页"
+          onClick={cancelAvatarStartup}
+        >
+          <ArrowLeft aria-hidden="true" />
+        </button>
+      )}
+
+      {sessionStarted && !avatarStarting && (
+        <SessionControlBar
+          pageForm={pageForm}
+          paused={sessionPaused}
+          captionsEnabled={captionsEnabled}
+          onPageFormChange={handlePageFormChange}
+          onCaptionsChange={setCaptionsEnabled}
+          onPauseToggle={toggleSessionPause}
+          onOpenSettings={() => openSettings()}
+          onTerminate={terminateSession}
+          onSendText={engine.sendText}
+        />
+      )}
+
+      {(sessionStarted || drawerOpen) && <ConfigDrawer
+        open={drawerOpen}
+        variant={sessionStarted ? "session" : "drawer"}
+        initialTab={drawerInitialTab}
+        onClose={() => setDrawerOpen(false)}
+        voiceVisualTheme={voiceVisualTheme}
+        onVoiceVisualThemeChange={handleVoiceVisualThemeChange}
+        ttsVoice={ttsVoice}
+        ttsSpeechRate={ttsSpeechRate}
+        ttsDialect={ttsDialect}
+        ttsConfigurable={engine.ttsConfigurable}
+        ttsPreviewAvailable={engine.ttsPreviewAvailable}
+        ttsConfigStatus={engine.ttsConfigStatus}
+        onTtsVoiceChange={handleTtsVoiceChange}
+        onTtsRuntimeConfigChange={handleTtsRuntimeConfigChange}
+        onTtsSpeechRateChange={setTtsSpeechRate}
+        onTtsDialectChange={handleTtsDialectChange}
+        experienceMode={experienceMode}
+        onExperienceModeChange={handleExperienceModeChange}
+        avatarDisplayConfig={avatarDisplayConfig}
+        onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+        avatarConfigLocked={sessionStarted}
+        avatarArtifactPreviewEnabled={avatarArtifactPreviewEnabled}
+        reducedMotion={reducedMotion}
+        onReducedMotionChange={setReducedMotion}
+        appTheme={appTheme}
+        onAppThemeChange={setAppTheme}
+        setBargeInMuted={engine.setBargeInMuted}
+        setNoiseSuppression={engine.setNoiseSuppression}
+        setVolume={engine.setVolume}
+        sessionId={engine.sessionId}
+      />}
+    </div>
+  );
+}

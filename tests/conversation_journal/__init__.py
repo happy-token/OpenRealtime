@@ -1,0 +1,1 @@
+"""Conversation Journal contract tests."""
