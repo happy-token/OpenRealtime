@@ -297,12 +297,10 @@ export function DigitalHumanStage({
   const selectedOpenTalkingIdentity = OPENTALKING_AVATAR_CATALOG.find(
     (asset) => asset.id === displayConfig.segmentedAvatarId,
   );
-  const hostedAvatarName = displayConfig.hostedAvatarDisplayName
-    ?? (displayConfig.avatarProfileId === "default-anam" ? "Shuchang" : "所选数字人");
+  const hostedAvatarName = displayConfig.hostedAvatarDisplayName ?? "所选数字人";
   const fallbackImage = displayConfig.renderPath === "segmented"
     ? selectedOpenTalkingIdentity?.previewImageUrl ?? selectedSegmentedAvatar?.imageUrl
-    : displayConfig.hostedAvatarImageUrl
-      ?? (displayConfig.avatarProfileId === "default-anam" ? "/digital-human/shuchang-preview.jpg" : undefined);
+    : displayConfig.hostedAvatarImageUrl;
   const segmentedAvatarName = (displayConfig.segmentedDisplayName !== "Shuchang"
     || displayConfig.segmentedAvatarId === "shuchang"
     ? displayConfig.segmentedDisplayName

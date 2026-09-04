@@ -495,7 +495,7 @@ export function OpenRealtimeApp({
           renderAdvancedSettings={renderHomeAdvancedSettings}
           setAvatarAudioSink={engine.setAvatarAudioSink}
           reducedMotion={reducedMotion}
-          captionsEnabled={captionsEnabled}
+          captionsEnabled={captionsEnabled && pageForm !== "sidecar"}
           onAvatarRendererReady={handleAvatarRendererReady}
         />}
             conversation={<ChatView entries={engine.transcript} active={pageForm !== "fullscreen"} />}

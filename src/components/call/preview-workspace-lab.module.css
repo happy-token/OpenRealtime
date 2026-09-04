@@ -187,12 +187,6 @@
   transform: scale(1.16);
 }
 
-.avatarPreview > img {
-  object-fit: cover;
-  object-position: 50% 22%;
-  filter: saturate(.86) contrast(1.03) brightness(.72);
-}
-
 .avatarPreviewPlaceholder {
   position: absolute;
   inset: 0;

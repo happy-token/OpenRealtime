@@ -55,8 +55,6 @@ export const DEFAULT_AVATAR_DISPLAY_CONFIG: AvatarDisplayConfig = {
   renderPath: "hosted",
   provider: "anam",
   avatarProfileId: "default-anam",
-  hostedAvatarDisplayName: "Shuchang",
-  hostedAvatarImageUrl: "/digital-human/shuchang-preview.jpg",
   segmentedPresetId: "shuchang",
   segmentedAvatarId: "shuchang",
   segmentedDisplayName: "Shuchang",
@@ -64,7 +62,7 @@ export const DEFAULT_AVATAR_DISPLAY_CONFIG: AvatarDisplayConfig = {
   segmentedAvatarActionId: "builtin:shuchang-realtime-idle",
   segmentedLipSyncId: "wav2lip256",
   surface: "fullbleed",
-  framing: "half",
+  framing: "full",
   ratio: "16:9",
   quality: "quality",
   fallbackToClassic: true,
@@ -78,9 +76,8 @@ export function parseAvatarDisplayConfig(value: unknown): AvatarDisplayConfig {
     : DEFAULT_AVATAR_DISPLAY_CONFIG.avatarProfileId;
   const hostedAvatarDisplayName = typeof draft.hostedAvatarDisplayName === "string" && draft.hostedAvatarDisplayName.trim()
     ? draft.hostedAvatarDisplayName.trim().slice(0, 50)
-    : avatarProfileId === "default-anam" ? DEFAULT_AVATAR_DISPLAY_CONFIG.hostedAvatarDisplayName : undefined;
-  const hostedAvatarImageUrl = parseHostedAvatarImageUrl(draft.hostedAvatarImageUrl)
-    ?? (avatarProfileId === "default-anam" ? DEFAULT_AVATAR_DISPLAY_CONFIG.hostedAvatarImageUrl : undefined);
+    : undefined;
+  const hostedAvatarImageUrl = parseHostedAvatarImageUrl(draft.hostedAvatarImageUrl);
   const parsed: AvatarDisplayConfig = {
     renderPath: draft.renderPath === "segmented" ? "segmented" : "hosted",
     provider: draft.provider === "heygen" || draft.provider === "custom" ? draft.provider : "anam",
@@ -110,7 +107,7 @@ export function parseAvatarDisplayConfig(value: unknown): AvatarDisplayConfig {
       ? draft.segmentedLipSyncId
       : DEFAULT_AVATAR_DISPLAY_CONFIG.segmentedLipSyncId,
     surface: draft.surface === "stage" || draft.surface === "pip" ? draft.surface : "fullbleed",
-    framing: draft.framing === "close" || draft.framing === "full" ? draft.framing : "half",
+    framing: draft.framing === "close" || draft.framing === "half" ? draft.framing : "full",
     ratio: draft.ratio === "9:16" || draft.ratio === "1:1" ? draft.ratio : "16:9",
     quality: draft.quality === "balanced" || draft.quality === "latency" ? draft.quality : "quality",
     fallbackToClassic: true,

@@ -4241,6 +4241,11 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   .session-experience-layout[data-page-form="content"] .digital-human-state { font-size: .5rem; }
 }
 
+/* 主模式（全屏沉浸展示）下的说话人状态与对话文字使用更收敛的字号 */
+.session-experience-layout[data-page-form="fullscreen"] .digital-human-state { font-size: .5rem; }
+.session-experience-layout[data-page-form="fullscreen"] .digital-human-call-copy p { font-size: clamp(1.05rem, 2vw, 1.6rem); }
+.session-experience-layout[data-page-form="fullscreen"] .current-turn-text { font-size: clamp(.76rem, 1.05vw, .88rem); }
+
 @media (hover: none) {
   .session-experience-layout[data-page-form="content"] .session-surface-actions {
     opacity: 1;

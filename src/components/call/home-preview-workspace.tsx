@@ -497,11 +497,9 @@ export function HomePreviewWorkspace({
   const activeProvider = AVATAR_PROVIDER_OPTIONS.find((provider) => provider.id === avatarDisplayConfig.provider) ?? AVATAR_PROVIDER_OPTIONS[0];
   const currentHostedChoice = useMemo<HomeAvatarChoice>(() => ({
     id: hostedChoiceId(avatarDisplayConfig),
-    name: avatarDisplayConfig.hostedAvatarDisplayName
-      ?? (avatarDisplayConfig.avatarProfileId === "default-anam" ? "Shuchang" : "当前配置形象"),
+    name: avatarDisplayConfig.hostedAvatarDisplayName ?? "当前配置形象",
     role: `${activeProvider.name} · 当前配置`,
-    preview: avatarDisplayConfig.hostedAvatarImageUrl
-      ?? (avatarDisplayConfig.avatarProfileId === "default-anam" ? "/digital-human/shuchang-preview.jpg" : undefined),
+    preview: avatarDisplayConfig.hostedAvatarImageUrl,
     config: { ...avatarDisplayConfig, renderPath: "hosted" },
   }), [activeProvider.name, avatarDisplayConfig]);
   const providerHostedChoices = useMemo(() => avatarDisplayConfig.provider === "anam"
@@ -653,8 +651,8 @@ export function HomePreviewWorkspace({
       renderPath: "hosted",
       provider,
       avatarProfileId: provider === "anam" ? "default-anam" : provider === "heygen" ? "default-heygen" : "default-custom",
-      hostedAvatarDisplayName: provider === "anam" ? "Shuchang" : undefined,
-      hostedAvatarImageUrl: provider === "anam" ? "/digital-human/shuchang-preview.jpg" : undefined,
+      hostedAvatarDisplayName: undefined,
+      hostedAvatarImageUrl: undefined,
     });
   }
 
@@ -827,14 +825,26 @@ export function HomePreviewWorkspace({
           {selectedAvatar.motion && !reducedMotion ? (
             <MainAvatarMotionPreview key={selectedAvatar.id} choice={selectedAvatar} />
           ) : selectedAvatar.preview ? (
-            <Image
-              src={selectedAvatar.preview}
-              alt={`${selectedAvatarName} 数字人预览`}
-              fill
-              priority
-              sizes="100vw"
-              unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatar.preview)}
-            />
+            <>
+              <Image
+                className={styles.avatarPreviewMotionBackdrop}
+                src={selectedAvatar.preview}
+                alt=""
+                aria-hidden="true"
+                fill
+                sizes="100vw"
+                unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatar.preview)}
+              />
+              <Image
+                className={styles.avatarPreviewForeground}
+                src={selectedAvatar.preview}
+                alt={`${selectedAvatarName} 数字人预览`}
+                fill
+                priority
+                sizes="100vw"
+                unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatar.preview)}
+              />
+            </>
           ) : <div className={styles.avatarPreviewPlaceholder}><UserRound aria-hidden="true" /></div>}
           <div className={styles.avatarWash} aria-hidden="true" />
         </div>

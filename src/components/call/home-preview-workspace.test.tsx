@@ -290,7 +290,7 @@ describe("HomePreviewWorkspace", () => {
     expect(html).not.toContain("digital-human-workbench");
     expect(html).toContain('aria-label="同步 Anam 数字人名称"');
     expect(html).toContain('aria-label="Anam 自定义数字人列表"');
-    expect(html).toContain('aria-label="选择自定义数字人：Shuchang"');
+    expect(html).toContain('aria-label="选择自定义数字人：当前配置形象"');
     expect(html).toContain('aria-label="展开官方数字人"');
     expect(html).not.toContain('aria-label="Anam 官方数字人列表"');
   });

@@ -177,7 +177,7 @@ describe("ConfigDrawer", () => {
   it("renders the hosted asset configuration without provider administration", () => {
     const html = renderDrawer("avatar");
 
-    expect(html).toContain("SHUCHANG · CONFIG PREVIEW");
+    expect(html).toContain("当前环境形象 · CONFIG PREVIEW");
     expect(html).not.toContain("你好，我是 Shuchang");
     expect(html).toContain("%2Fdigital-human%2Fshuchang-preview.jpg");
     expect(html).toContain("数字人资产配置");
