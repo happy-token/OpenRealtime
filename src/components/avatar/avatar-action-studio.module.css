@@ -286,6 +286,6 @@
 @media (max-width: 699px) {
   .embedded .layout,
   .embedded .controls { height: auto; }
-  .embedded .previewPanel,
-  .embedded .previewFrame { height: 520px; min-height: 0; }
+  .embedded .previewPanel { width: 100%; aspect-ratio: 9 / 16; height: auto; max-height: calc(100dvh - 176px); min-height: 0; }
+  .embedded .previewFrame { height: 100%; min-height: 0; }
 }

@@ -350,4 +350,11 @@ describe("AvatarActionStudio", () => {
     expect(css).toMatch(/\.previewFrame img\[data-fit="landscape"\],\s*\n\.previewFrame img\[data-fit="portrait"\],\s*\n\.previewFrame video\[data-fit="landscape"\],\s*\n\.previewFrame video\[data-fit="portrait"\] \{ object-fit: cover; \}/);
     expect(css).toContain('.previewFrame img[data-fit="portrait"],\n.previewFrame video[data-fit="portrait"] { object-position: 50% 22%; }');
   });
+
+  it("switches the mobile preview panel to a portrait 9:16 box instead of a fixed height", () => {
+    const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/@media \(max-width: 699px\) \{\s*\n\s*\.embedded \.layout,\s*\n\s*\.embedded \.controls \{ height: auto; \}\s*\n\s*\.embedded \.previewPanel \{ width: 100%; aspect-ratio: 9 \/ 16; height: auto; max-height: calc\(100dvh - 176px\); min-height: 0; \}\s*\n\s*\.embedded \.previewFrame \{ height: 100%; min-height: 0; \}\s*\n\}/);
+    expect(css).not.toMatch(/\.embedded \.previewPanel,\s*\n\.embedded \.previewFrame \{ height: 520px; min-height: 0; \}/);
+  });
 });

@@ -375,5 +375,5 @@
 @media (max-width: 699px) {
   .wizardPanel,
   .taskSidebar { height: auto; }
-  .visualStage { height: 520px; min-height: 0; }
+  .visualStage { width: 100%; aspect-ratio: 9 / 16; height: auto; max-height: calc(100dvh - 176px); min-height: 0; }
 }

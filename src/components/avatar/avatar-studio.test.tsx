@@ -93,4 +93,11 @@ describe("AvatarStudio", () => {
     expect(css).toMatch(/\.stageImage \.stagePortraitImage\[data-fit="landscape"\],\s*\n\.stageImage \.stagePortraitImage\[data-fit="portrait"\] \{ object-fit: cover; \}/);
     expect(css).toContain('.stageImage .stagePortraitImage[data-fit="portrait"] { object-position: 50% 22%; }');
   });
+
+  it("switches the mobile visual stage to a portrait 9:16 box instead of a fixed height", () => {
+    const css = readFileSync(new URL("./avatar-studio.module.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/@media \(max-width: 699px\) \{\s*\n\s*\.wizardPanel,\s*\n\s*\.taskSidebar \{ height: auto; \}\s*\n\s*\.visualStage \{ width: 100%; aspect-ratio: 9 \/ 16; height: auto; max-height: calc\(100dvh - 176px\); min-height: 0; \}\s*\n\}/);
+    expect(css).not.toContain(".visualStage { height: 520px; min-height: 0; }");
+  });
 });
