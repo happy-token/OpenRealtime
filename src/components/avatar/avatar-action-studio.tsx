@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, RefreshCw, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, RefreshCw, Upload, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
+import { StudioConfigOverlay } from "./studio-config-overlay";
 import {
   appendOwnedAvatarAction,
   fetchOwnedAvatar,
@@ -75,6 +76,25 @@ const MINIMAX_IMAGE_ROLE_OPTIONS: ReadonlyArray<{ value: MiniMaxImageRole; label
   { value: "last_frame", label: "仅尾帧", detail: "视频最终回到数字人形象 · last_frame" },
   { value: "reference_image", label: "多模态参考图", detail: "作为 reference_image，可与参考视频组合" },
 ];
+
+const GENERATION_ESTIMATED_DURATION_MS: Record<TaskProvider, number> = {
+  liveportrait: 40_000,
+  ltx: 70_000,
+  minimax: 150_000,
+};
+const GENERATION_PROGRESS_CAP = 0.96;
+const ELAPSED_TICK_MS = 500;
+
+export function estimateGenerationProgress(elapsedMs: number, taskSource: TaskProvider): number {
+  return Math.min(GENERATION_PROGRESS_CAP, 1 - Math.exp(-elapsedMs / GENERATION_ESTIMATED_DURATION_MS[taskSource]));
+}
+
+export function formatElapsedTime(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 function GenerationParameterSelect({
   label,
@@ -193,6 +213,8 @@ export function AvatarActionStudio({
   previewImageUrl = "",
   onChangeAvatar,
   onPreviewAvatar,
+  mobileConfigOpen,
+  onMobileConfigOpenChange,
 }: {
   avatarId: string;
   embedded?: boolean;
@@ -200,6 +222,8 @@ export function AvatarActionStudio({
   previewImageUrl?: string;
   onChangeAvatar?: () => void;
   onPreviewAvatar?: () => void;
+  mobileConfigOpen?: boolean;
+  onMobileConfigOpenChange?: (open: boolean) => void;
 }) {
   const [avatar, setAvatar] = useState<OwnedAvatarRecord | null>(null);
   const [provider, setProvider] = useState<ActionProvider>(initialProvider);
@@ -244,7 +268,9 @@ export function AvatarActionStudio({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedActionId, setSavedActionId] = useState("");
+  const [elapsedMs, setElapsedMs] = useState(0);
   const submissionLock = useRef(false);
+  const generationStartedAtRef = useRef(0);
   const drivingInput = useRef<HTMLInputElement>(null);
   const miniMaxReferenceInput = useRef<HTMLInputElement>(null);
   const actionSelect = useRef<HTMLDivElement>(null);
@@ -375,6 +401,26 @@ export function AvatarActionStudio({
     };
   }, [pollTask, taskId, taskProvider, taskState]);
 
+  const busy = taskState === "queueing" || taskState === "processing";
+
+  useEffect(() => {
+    if (!busy) return;
+    const updateElapsed = () => setElapsedMs(Date.now() - generationStartedAtRef.current);
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, ELAPSED_TICK_MS);
+    return () => window.clearInterval(interval);
+  }, [busy]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const confirmBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", confirmBeforeUnload);
+    return () => window.removeEventListener("beforeunload", confirmBeforeUnload);
+  }, [busy]);
+
   async function generatePreview() {
     const activeRuntime = provider === "ltx" ? ltxRuntime : livePortraitRuntime;
     if (
@@ -385,6 +431,8 @@ export function AvatarActionStudio({
       || (provider === "liveportrait" && motionSourceMode === "upload" && !drivingFile)
     ) return;
     submissionLock.current = true;
+    generationStartedAtRef.current = Date.now();
+    setElapsedMs(0);
     setTaskState("queueing");
     setTaskProvider(provider === "liveportrait" ? "liveportrait" : videoVendor);
     setError("");
@@ -435,6 +483,7 @@ export function AvatarActionStudio({
       if (!response.ok || !payload.task_id) throw new Error(payload.error || "动作任务创建失败");
       setTaskId(payload.task_id);
       setTaskState(payload.state ?? "queueing");
+      onMobileConfigOpenChange?.(false);
     } catch (generationError) {
       setTaskState("failed");
       setError(generationError instanceof Error ? generationError.message : "动作生成失败");
@@ -749,6 +798,7 @@ export function AvatarActionStudio({
         pending_model_count: 1,
       });
       setSavedActionId(motion.avatar_action_id);
+      onMobileConfigOpenChange?.(false);
       void prepareAllEnabledModels(avatar, motion.avatar_action_id);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "动作资产创建失败");
@@ -774,7 +824,7 @@ export function AvatarActionStudio({
     }
   }
 
-  const busy = taskState === "queueing" || taskState === "processing";
+  const generationProgress = busy ? estimateGenerationProgress(elapsedMs, taskProvider) : 0;
   const selectedAction = LIVEPORTRAIT_ACTIONS.find((action) => action.id === selectedActionId) ?? LIVEPORTRAIT_ACTIONS[0];
   const selectedLtxPrompt = VIDEO_PROMPT_CHOICES.find((choice) => choice.id === videoPromptChoiceId) ?? VIDEO_PROMPT_CHOICES[0];
   const selectedVideoVendor = VIDEO_GENERATION_PROVIDERS.find((item) => item.id === videoVendor) ?? VIDEO_GENERATION_PROVIDERS[0];
@@ -815,7 +865,9 @@ export function AvatarActionStudio({
           <p>源图只读，新动作会归属于当前数字人。</p>
         </aside> : null}
 
-        <div className={styles.controls}>
+        {(() => {
+          const controlsPanel = (
+          <div className={styles.controls}>
           {embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label="数字人形象 · 当前共享 Avatar">
             <button type="button" aria-label={`预览 ${avatar?.display_name || avatarId}`} onClick={onPreviewAvatar}>
               {avatar ? <Image src={previewImageUrl || avatar.source_image_url} alt="" fill sizes="56px" unoptimized /> : <LoaderCircle className={styles.spin} />}
@@ -1159,9 +1211,21 @@ export function AvatarActionStudio({
               aria-busy={busy}
               disabled={!avatar || !actionName.trim() || activeRuntime !== "ready" || busy || (provider === "ltx" ? !ltxPrompt.trim() : motionSourceMode === "upload" && !drivingFile)}
               onClick={() => void generatePreview()}
-            >生成动作</button>
+            >{busy ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{busy ? "生成中…" : "生成动作"}</button>
           </div>
         </div>
+          );
+          return embedded && onMobileConfigOpenChange ? (
+            <StudioConfigOverlay
+              open={Boolean(mobileConfigOpen)}
+              onOpenChange={onMobileConfigOpenChange}
+              label="动作配置"
+              icon={<Wand2 aria-hidden="true" />}
+            >
+              {controlsPanel}
+            </StudioConfigOverlay>
+          ) : controlsPanel;
+        })()}
 
         <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
           <div className={styles.previewFrame} data-preview-frame="true">
@@ -1183,13 +1247,26 @@ export function AvatarActionStudio({
                 <button type="button" data-active={showingReference} aria-pressed={showingReference} disabled={!referencePreviewUrl} onClick={() => setPreviewMode("reference")}>参考动作</button>
                 <button type="button" data-active={showingResult} aria-pressed={showingResult} disabled={!resultUrl} onClick={() => setPreviewMode("result")}>生成效果</button>
               </div>
-              <div className={styles.previewActions}>
-                <button className={styles.accept} type="button" data-saved={Boolean(savedActionId)} disabled={!resultUrl || saving || Boolean(savedActionId)} onClick={() => void createActionAsset()}>
-                  {saving ? <LoaderCircle className={styles.spin} /> : null}
-                  {saving ? "正在创建并准备模型" : savedActionId ? "动作资产已创建" : "创建动作资产"}
-                </button>
-                {savedActionId ? <Link className={styles.viewAvatar} href={`/avatars/${encodeURIComponent(avatarId)}`}>查看 Avatar</Link> : null}
-              </div>
+              {busy ? (
+                <div className={styles.generationProgress} aria-label="视频生成进度">
+                  <LoaderCircle className={styles.spin} aria-hidden="true" />
+                  <div className={styles.generationProgressCopy}>
+                    <strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong>
+                    <span aria-live="off">已用时 {formatElapsedTime(elapsedMs)} · 请勿关闭或刷新此页面</span>
+                  </div>
+                  <div className={styles.generationProgressTrack} aria-hidden="true">
+                    <span className={styles.generationProgressFill} style={{ "--progress": generationProgress } as CSSProperties} />
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.previewActions}>
+                  <button className={styles.accept} type="button" data-saved={Boolean(savedActionId)} disabled={!resultUrl || saving || Boolean(savedActionId)} onClick={() => void createActionAsset()}>
+                    {saving ? <LoaderCircle className={styles.spin} /> : null}
+                    {saving ? "正在创建并准备模型" : savedActionId ? "动作资产已创建" : "创建动作资产"}
+                  </button>
+                  {savedActionId ? <Link className={styles.viewAvatar} href={`/avatars/${encodeURIComponent(avatarId)}`}>查看 Avatar</Link> : null}
+                </div>
+              )}
             </div>
           </div>
         </aside>

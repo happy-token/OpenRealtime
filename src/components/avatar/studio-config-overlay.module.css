@@ -1,0 +1,50 @@
+.backdrop { position: fixed; z-index: 140; inset: 0; display: block; border: 0; background: rgba(8,10,17,.42); opacity: 0; transition: opacity .22s ease; pointer-events: none; backdrop-filter: blur(8px); }
+.backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
+
+.panel {
+  position: fixed;
+  z-index: 141;
+  right: 20px;
+  bottom: 20px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--avatar-primary-border);
+  border-radius: 50%;
+  background: var(--avatar-primary-bg);
+  box-shadow: var(--avatar-primary-shadow);
+  backdrop-filter: blur(18px) saturate(145%);
+  transition: width .34s cubic-bezier(.22,.8,.28,1), height .34s cubic-bezier(.22,.8,.28,1),
+    right .3s ease, bottom .3s ease, border-radius .3s ease, border-color .3s ease,
+    background .3s ease, box-shadow .3s ease;
+}
+.panel[data-open="true"] {
+  right: 8px;
+  bottom: 8px;
+  width: calc(100vw - 16px);
+  height: min(78svh, 720px);
+  border-radius: 24px;
+  border-color: color-mix(in srgb, var(--border-strong) 82%, rgba(255,255,255,.28));
+  background: color-mix(in srgb, var(--surface-solid) calc(var(--panel-surface-alpha, .5) * 100%), transparent);
+  box-shadow: 0 32px 110px rgba(8,10,18,.34), inset 0 1px rgba(255,255,255,.28);
+  backdrop-filter: blur(var(--panel-blur, 20px)) saturate(145%);
+}
+
+.toggle { width: 100%; height: 100%; display: grid; place-items: center; border: 0; background: transparent; color: var(--avatar-primary-text); cursor: pointer; }
+.toggle svg { width: 22px; height: 22px; }
+
+.panelHeader { flex: 0 0 auto; min-height: 52px; padding: 12px 14px 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+.panelHeaderIcon { display: grid; place-items: center; width: 22px; height: 22px; color: var(--accent); }
+.panelHeaderIcon svg { width: 16px; height: 16px; }
+.panelHeader strong { flex: 1; min-width: 0; overflow: hidden; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.panelHeader button { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; }
+.panelHeader button svg { width: 14px; height: 14px; }
+
+.panelBody { flex: 1; min-height: 0; padding: 4px 4px 10px; overflow: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel { transition: none; }
+  .backdrop { transition: none; }
+}

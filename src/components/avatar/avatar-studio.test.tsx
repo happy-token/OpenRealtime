@@ -20,7 +20,7 @@ describe("AvatarStudio", () => {
     expect(html).not.toContain("动作配置");
     expect(html).not.toContain("确认 Avatar ·");
     expect(html).toContain("从资产库选择");
-    expect(html).toContain("创建图片");
+    expect(html).not.toContain("创建图片");
     expect(html).not.toContain("HappyImage 创作");
     expect(html).toContain("创建 Avatar");
     expect(html).toContain('role="group" aria-label="形象来源"');
@@ -47,5 +47,37 @@ describe("AvatarStudio", () => {
 
     expect(css).toMatch(/\.wizardPanel,\s*\.visualStage,\s*\.taskSidebar \{ height: var\(--avatar-workspace-height\); min-height: 0; \}/);
     expect(css).toContain(".creationWorkspace { min-height: var(--avatar-workspace-height); }");
+  });
+
+  it("moves the mobile config drawer into the shared StudioConfigOverlay component", () => {
+    const html = renderToStaticMarkup(<AvatarStudio />);
+    const source = readFileSync(new URL("./avatar-studio.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("./avatar-studio.module.css", import.meta.url), "utf8");
+
+    expect(html).not.toContain("关闭配置");
+    expect(html).not.toContain("收起配置");
+    expect(source).toContain('import { StudioConfigOverlay } from "./studio-config-overlay";');
+    expect(source).toMatch(/<StudioConfigOverlay open=\{mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label="配置 Avatar"/);
+    expect(source).toMatch(/<StudioConfigOverlay open=\{mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label="实时驱动配置"/);
+    expect(source).toContain("mobileConfigOpen={mobileConfigOpen}");
+    expect(source).toContain("onMobileConfigOpenChange={setMobileConfigOpen}");
+    expect(source).not.toContain("mobileDrawerBackdrop");
+    expect(source).not.toContain("mobileConfigToggle");
+    expect(source).not.toContain("data-mobile-config");
+    expect(css).not.toContain("mobileDrawerBackdrop");
+    expect(css).not.toContain("mobileConfigToggle");
+  });
+
+  it("auto-collapses the mobile config panel only after operations that produce a result", () => {
+    const source = readFileSync(new URL("./avatar-studio.tsx", import.meta.url), "utf8");
+
+    expect(source).toMatch(/chooseSource\(\{ id: `happyimage-\$\{crypto\.randomUUID\(\)\}`[^\n]*\}\);\s*\n\s*setMobileConfigOpen\(false\);/);
+    expect(source).toMatch(/setAnamCandidate\(payload\.avatar\);\s*\n\s*setMobileConfigOpen\(false\);/);
+    expect(source).toMatch(/setCurrentStep\(3\);\s*\n\s*setMobileConfigOpen\(false\);/);
+
+    const changeAvatarBody = source.match(/function changeAvatar\(\) \{[\s\S]*?\n {2}\}/)?.[0] ?? "";
+    const changeTaskBody = source.match(/function changeTask\([\s\S]*?\n {2}\}/)?.[0] ?? "";
+    expect(changeAvatarBody).not.toContain("setMobileConfigOpen");
+    expect(changeTaskBody).not.toContain("setMobileConfigOpen");
   });
 });

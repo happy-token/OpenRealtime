@@ -444,6 +444,10 @@ _Avoid_: Orb fallback, silent audio fallback, automatic avatar substitution, inf
 The independent Avatar-creation workspace labeled `创建数字人`. It supports authorized source-image creation and reusable action creation. Uploading or saving a new generated candidate creates a new Avatar, while choosing an existing Avatar from the asset library targets that same `avatar_id` and adds actions beneath it without copying the source image or aggregate. Accepted-asset maintenance remains in Avatar Asset Management and realtime experience selection remains outside the workspace.
 _Avoid_: asset manager, asset-management dialog, Avatar Session Preflight, provider console
 
+**Studio Config Overlay**:
+The narrow-viewport control in Avatar Studio that collapses its configuration card into a settings-style toggle floating over the persistent preview, rather than stacking the two side by side. It applies uniformly across every Avatar Studio tool and step; the desktop/tablet side-by-side layout is unaffected.
+_Avoid_: Page Form, Experience Surface, mobile drawer, bottom sheet
+
 **Existing Avatar Action Creation**:
 The Avatar Studio path entered by selecting an existing Avatar source image from the library or using `创建动作` from its detail. It fixes the parent `avatar_id`, shows the Avatar name and immutable source image as a completed read-only first stage, and places focus directly on action creation; changing the selection returns to the library and targets another Avatar without mutating either asset. Entry from an Avatar detail bypasses the picker, and the persistent preview continues to show the chosen likeness and generated motion. This path creates only new child Avatar Actions and never a duplicate Avatar. `创建副本` is a separate explicit command that creates a new Avatar ID from a new draft and never copies actions automatically.
 _Avoid_: image reuse as new identity, implicit Avatar copy, action library import, source-image replacement

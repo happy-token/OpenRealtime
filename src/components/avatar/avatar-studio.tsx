@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, ChevronRight, Film, ImagePlus, LoaderCircle, LockKeyhole, Maximize2, Play, Sparkles, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ArrowLeft, ArrowRight, Check, Film, ImagePlus, LoaderCircle, LockKeyhole, Maximize2, Play, Sparkles, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import {
   ANAM_AVATAR_NAME_MAX_LENGTH,
   ANAM_AVATAR_NAME_MIN_LENGTH,
@@ -27,6 +27,7 @@ import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { isInternalAvatarPresetId } from "@/lib/internal-avatar-ids";
 import { AvatarActionStudio } from "./avatar-action-studio";
+import { StudioConfigOverlay } from "./studio-config-overlay";
 import styles from "./avatar-studio.module.css";
 
 type SourceMode = "library" | "upload" | "happyimage";
@@ -44,7 +45,6 @@ export function AvatarStudio({
   const [task, setTask] = useState<CreationTask>(initialTask);
   const [mode, setMode] = useState<SourceMode>("library");
   const [libraryChoices, setLibraryChoices] = useState<SourceChoice[]>([]);
-  const [libraryActiveIndex, setLibraryActiveIndex] = useState(0);
   const [source, setSource] = useState<SourceChoice | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [displayNameOrigin, setDisplayNameOrigin] = useState<"" | "asset" | "user">("");
@@ -58,6 +58,10 @@ export function AvatarStudio({
   const [currentStep, setCurrentStep] = useState(initialAvatarId ? 2 : 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [mobileConfigOpen, setMobileConfigOpen] = useState(false);
+  const [libraryDockPinned, setLibraryDockPinned] = useState(false);
+  const [libraryDockHovered, setLibraryDockHovered] = useState(false);
+  const [libraryDockFocused, setLibraryDockFocused] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -116,21 +120,10 @@ export function AvatarStudio({
     };
   }, [previewOpen]);
 
-  useEffect(() => {
-    if (!mobileConfigOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileConfigOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileConfigOpen]);
-
   function chooseSource(choice: SourceChoice) {
     if (createdAvatar) return;
     setSource(choice);
     if (mode === "library") {
-      const choiceIndex = libraryChoices.findIndex((candidate) => candidate.id === choice.id);
-      if (choiceIndex >= 0) setLibraryActiveIndex(choiceIndex);
       setDisplayName(choice.name);
       setDisplayNameOrigin("asset");
     } else if (displayNameOrigin !== "user") {
@@ -140,12 +133,28 @@ export function AvatarStudio({
     setError("");
   }
 
-  function selectAdjacentLibraryChoice(direction: -1 | 1) {
-    if (createdAvatar || libraryChoices.length < 2) return;
-    const nextIndex = (libraryActiveIndex + direction + libraryChoices.length) % libraryChoices.length;
-    setLibraryActiveIndex(nextIndex);
-    chooseSource(libraryChoices[nextIndex]);
-  }
+  useEffect(() => {
+    if (mode !== "library" || createdAvatar || libraryChoices.length === 0) return;
+    if (source && libraryChoices.some((choice) => choice.id === source.id)) return;
+    chooseSource(libraryChoices[0]);
+  }, [mode, source, createdAvatar, libraryChoices]);
+
+  useEffect(() => {
+    const updateVisibility = () => setPageVisible(document.visibilityState === "visible");
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "library" || createdAvatar || libraryChoices.length < 2 || !pageVisible) return;
+    if (libraryDockPinned || libraryDockHovered || libraryDockFocused) return;
+    const timer = window.setTimeout(() => {
+      const currentIndex = source ? libraryChoices.findIndex((choice) => choice.id === source.id) : -1;
+      chooseSource(libraryChoices[(currentIndex + 1) % libraryChoices.length]);
+    }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [mode, source, createdAvatar, libraryChoices, pageVisible, libraryDockPinned, libraryDockHovered, libraryDockFocused]);
 
   function changeSourceMode(nextMode: SourceMode) {
     if (nextMode === mode || createdAvatar) return;
@@ -184,6 +193,7 @@ export function AvatarStudio({
       const payload = await readJsonResponse<{ imageUrl?: string; error?: string }>(response, "HappyImage 生成失败");
       if (!response.ok || !payload.imageUrl) throw new Error(payload.error || "HappyImage 没有返回图片");
       chooseSource({ id: `happyimage-${crypto.randomUUID()}`, name: prompt.trim().slice(0, 24), imageUrl: payload.imageUrl });
+      setMobileConfigOpen(false);
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : "HappyImage 生成失败");
     } finally {
@@ -240,6 +250,7 @@ export function AvatarStudio({
       const payload = await readJsonResponse<{ avatar?: AnamHostedAvatar; error?: string }>(response, "实时形象创建失败");
       if (!response.ok || !payload.avatar) throw new Error(payload.error || "实时形象创建失败");
       setAnamCandidate(payload.avatar);
+      setMobileConfigOpen(false);
     } catch (candidateError) {
       setError(candidateError instanceof Error ? candidateError.message : "实时形象创建失败");
     } finally {
@@ -259,6 +270,7 @@ export function AvatarStudio({
       setCreatedAvatar(avatar);
       setAnamCandidate(null);
       setCurrentStep(3);
+      setMobileConfigOpen(false);
     } catch (acceptError) {
       setError(acceptError instanceof Error ? acceptError.message : "实时形象保存失败");
     } finally {
@@ -294,8 +306,9 @@ export function AvatarStudio({
   const avatarNameLocked = isAvatarNameLocked(mode);
   return (
     <section className={styles.studio} aria-label="创建数字人工作区">
-      {currentStep < 3 ? <div className={styles.creationWorkspace} data-stage={currentStep === 0 ? "select" : "configure"} data-mobile-config={mobileConfigOpen ? "open" : "closed"}>
+      {currentStep < 3 ? <div className={styles.creationWorkspace} data-stage={currentStep === 0 ? "select" : "configure"}>
         {currentStep === 0 ? (
+          <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="配置 Avatar" icon={<Sparkles aria-hidden="true" />}>
           <section key="source" className={styles.wizardPanel} aria-labelledby="avatar-source-step-title">
           <div className={styles.sectionHeading}>
             <h2 id="avatar-source-step-title">选择 Avatar 形象</h2>
@@ -308,9 +321,6 @@ export function AvatarStudio({
             </button>
             <button type="button" data-active={mode === "upload"} onClick={() => changeSourceMode("upload")}>
               <Upload aria-hidden="true" /><span><strong>上传图片</strong><small>选择本机正面人物照片</small></span>
-            </button>
-            <button type="button" data-active={mode === "happyimage"} onClick={() => changeSourceMode("happyimage")}>
-              <Sparkles aria-hidden="true" /><span><strong>创建图片</strong><small>描述并生成新的形象</small></span>
             </button>
           </div>
 
@@ -388,6 +398,7 @@ export function AvatarStudio({
             </div>
           </footer>
           </section>
+          </StudioConfigOverlay>
         ) : null}
 
         {currentStep === 0 ? (
@@ -398,40 +409,55 @@ export function AvatarStudio({
           >
             <div className={styles.visualStageBody}>
               {mode === "library" ? (
-                <div className={styles.sourceGallery}>
-                  <button className={styles.galleryNav} type="button" data-direction="previous" aria-label="上一个 Avatar" disabled={libraryChoices.length < 2} onClick={() => selectAdjacentLibraryChoice(-1)}><ChevronLeft aria-hidden="true" /></button>
-                  <div
-                    className={styles.galleryViewport}
-                    role="group"
-                    aria-label="内部预制形象"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowLeft") { event.preventDefault(); selectAdjacentLibraryChoice(-1); }
-                      if (event.key === "ArrowRight") { event.preventDefault(); selectAdjacentLibraryChoice(1); }
-                    }}
-                  >
-                    {libraryChoices.map((choice, index) => {
-                      const offset = galleryOffset(index, libraryActiveIndex, libraryChoices.length);
-                      const isSelected = source?.id === choice.id;
-                      return (
-                        <button
-                          key={choice.id}
-                          className={styles.galleryCard}
-                          type="button"
-                          data-position={offset === 0 ? "center" : offset < 0 ? "left" : "right"}
-                          data-hidden={Math.abs(offset) > 1}
-                          aria-current={isSelected ? "true" : undefined}
-                          aria-label={`${isSelected ? "预览" : "选择"} ${choice.name}`}
-                          style={{ "--gallery-offset": offset, "--gallery-distance": Math.abs(offset) } as CSSProperties}
-                          onClick={() => isSelected ? setPreviewOpen(true) : chooseSource(choice)}
-                        >
-                          <Image className={styles.galleryBackdrop} src={choice.imageUrl} alt="" aria-hidden="true" fill sizes="900px" unoptimized />
-                          <Image className={styles.galleryPortrait} src={choice.imageUrl} alt="" fill sizes="900px" unoptimized />
-                        </button>
-                      );
-                    })}
+                <div className={styles.libraryDockStage}>
+                  <div className={styles.libraryStagePreview}>
+                    {source ? (
+                      <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
+                        <Image className={styles.stageBackdropImage} src={source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
+                        <Image className={styles.stagePortraitImage} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
+                      </button>
+                    ) : (
+                      <div className={styles.emptyStage}><LoaderCircle className={styles.spin} aria-hidden="true" /><strong>正在加载 Avatar 形象…</strong></div>
+                    )}
+                    <div
+                      className={styles.libraryDock}
+                      role="group"
+                      aria-label="内部预制形象"
+                      data-auto-advance={libraryDockPinned || libraryDockHovered || libraryDockFocused ? "paused" : "running"}
+                      onPointerEnter={() => setLibraryDockHovered(true)}
+                      onPointerLeave={() => setLibraryDockHovered(false)}
+                      onFocusCapture={() => setLibraryDockFocused(true)}
+                      onBlurCapture={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setLibraryDockFocused(false);
+                      }}
+                    >
+                      {libraryChoices.map((choice) => {
+                        const isSelected = source?.id === choice.id;
+                        return (
+                          <button
+                            key={choice.id}
+                            className={styles.libraryDockCard}
+                            type="button"
+                            data-current={isSelected ? "true" : undefined}
+                            aria-current={isSelected ? "true" : undefined}
+                            aria-label={`选择 ${choice.name}`}
+                            onClick={() => {
+                              setLibraryDockPinned(true);
+                              chooseSource(choice);
+                            }}
+                          >
+                            <span className={styles.libraryDockMedia}>
+                              <Image src={choice.imageUrl} alt="" fill sizes="88px" unoptimized />
+                            </span>
+                            <strong>{choice.name}</strong>
+                          </button>
+                        );
+                      })}
+                      <button className={styles.libraryDockUpload} type="button" aria-label="改为上传图片" onClick={() => changeSourceMode("upload")}>
+                        <Upload aria-hidden="true" /><span>上传图片</span>
+                      </button>
+                    </div>
                   </div>
-                  <button className={styles.galleryNav} type="button" data-direction="next" aria-label="下一个 Avatar" disabled={libraryChoices.length < 2} onClick={() => selectAdjacentLibraryChoice(1)}><ChevronRight aria-hidden="true" /></button>
                 </div>
               ) : source ? (
                 <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
@@ -447,6 +473,7 @@ export function AvatarStudio({
 
         {currentStep === 2 && createdAvatar ? (
           task === "realtime" ? <>
+            <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="实时驱动配置" icon={<Play aria-hidden="true" />}>
             <aside className={styles.taskSidebar}>
               <section className={styles.selectedAvatar} aria-label="当前共享 Avatar">
                 <button className={styles.selectedAvatarImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
@@ -488,6 +515,7 @@ export function AvatarStudio({
                 <footer><button type="button" onClick={() => changeTask("action")}><Film />继续创建动作</button><Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link></footer>
               </section>
             </aside>
+            </StudioConfigOverlay>
             <section className={styles.visualStage} aria-label="实时驱动效果预览">
               <header><strong>{realtimePreviewVideoUrl ? "效果确认" : "当前形象"}</strong></header>
               <div className={styles.visualStageBody}>
@@ -503,18 +531,10 @@ export function AvatarStudio({
             previewImageUrl={selectedAvatarImageUrl}
             onChangeAvatar={changeAvatar}
             onPreviewAvatar={() => setPreviewOpen(true)}
+            mobileConfigOpen={mobileConfigOpen}
+            onMobileConfigOpenChange={setMobileConfigOpen}
           />
         ) : null}
-        <button className={styles.mobileDrawerBackdrop} type="button" aria-label="关闭配置" onClick={() => setMobileConfigOpen(false)} />
-        <button
-          className={styles.mobileConfigToggle}
-          type="button"
-          aria-expanded={mobileConfigOpen}
-          onClick={() => setMobileConfigOpen((open) => !open)}
-        >
-          {mobileConfigOpen ? <X aria-hidden="true" /> : task === "action" ? <Film aria-hidden="true" /> : <Play aria-hidden="true" />}
-          {mobileConfigOpen ? "收起配置" : currentStep === 0 ? "配置 Avatar" : task === "action" ? "动作配置" : "实时驱动配置"}
-        </button>
       </div> : null}
 
       {currentStep === 3 && createdAvatar && task === "realtime" ? (
@@ -574,10 +594,3 @@ function suggestNextNumberedAvatarName(displayNames: string[]) {
   return `数字人${highestNumber + 1}`;
 }
 
-function galleryOffset(index: number, activeIndex: number, total: number) {
-  if (total <= 1) return 0;
-  let offset = index - activeIndex;
-  if (offset > total / 2) offset -= total;
-  if (offset < -total / 2) offset += total;
-  return offset;
-}

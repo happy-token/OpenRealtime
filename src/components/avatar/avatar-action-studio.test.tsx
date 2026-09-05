@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { VIDEO_GENERATION_MODELS } from "@/lib/ltx-avatar-action";
-import { AvatarActionStudio } from "./avatar-action-studio";
+import { AvatarActionStudio, estimateGenerationProgress, formatElapsedTime } from "./avatar-action-studio";
 
 describe("AvatarActionStudio", () => {
   it("offers a compact action picker, separate upload entry, and continuous strength control", () => {
@@ -253,5 +253,87 @@ describe("AvatarActionStudio", () => {
     expect(css).toMatch(/\.embedded \.actionFooter \{[^}]*position: sticky;[^}]*bottom: 0;[^}]*margin-top: auto/);
     expect(css).toMatch(/\.embedded \.actionFooter \{[^}]*grid-template-columns: minmax\(0,1fr\) auto;[^}]*align-items: end/);
     expect(css).toMatch(/\.actionFooter \.generate \{[^}]*width: auto;[^}]*min-width: 112px/);
+  });
+
+  it("hides the generation progress indicator while idle and keeps the accept flow reachable", () => {
+    const livePortraitHtml = renderToStaticMarkup(
+      <AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />,
+    );
+
+    expect(livePortraitHtml).not.toContain("排队中");
+    expect(livePortraitHtml).not.toContain("视频生成中");
+    expect(livePortraitHtml).not.toContain("请勿关闭或刷新此页面");
+    expect(livePortraitHtml).toContain("创建动作资产");
+  });
+
+  it("wires up a queueing/processing progress overlay with an unload guard while a task is busy", () => {
+    const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('const busy = taskState === "queueing" || taskState === "processing";');
+    expect(source).toContain('taskState === "queueing" ? "排队中…" : "视频生成中…"');
+    expect(source).toContain("已用时 {formatElapsedTime(elapsedMs)} · 请勿关闭或刷新此页面");
+    expect(source).toContain('window.addEventListener("beforeunload", confirmBeforeUnload)');
+    expect(source).toContain("event.preventDefault();");
+  });
+
+  it("keeps the ticking elapsed-time clock out of the polite live region so it isn't re-announced every tick", () => {
+    const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
+
+    expect(source).toMatch(/<strong role="status" aria-live="polite">\{taskState === "queueing"/);
+    expect(source).toContain('<span aria-live="off">已用时 {formatElapsedTime(elapsedMs)}');
+  });
+
+  it("estimates generation progress with an asymptotic curve capped below 100%, per provider duration", () => {
+    expect(estimateGenerationProgress(0, "ltx")).toBe(0);
+    expect(estimateGenerationProgress(70_000, "ltx")).toBeCloseTo(1 - Math.exp(-1), 5);
+    expect(estimateGenerationProgress(10_000_000, "minimax")).toBeCloseTo(0.96, 5);
+    expect(estimateGenerationProgress(40_000, "liveportrait")).toBeGreaterThan(
+      estimateGenerationProgress(40_000, "minimax"),
+    );
+  });
+
+  it("formats elapsed milliseconds as mm:ss", () => {
+    expect(formatElapsedTime(0)).toBe("00:00");
+    expect(formatElapsedTime(65_000)).toBe("01:05");
+    expect(formatElapsedTime(-500)).toBe("00:00");
+  });
+
+  it("animates the generation progress fill with a compositor-friendly transform, not layout properties", () => {
+    const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
+
+    const fillRule = css.match(/\.generationProgressFill \{[^}]*\}/)?.[0] ?? "";
+    expect(fillRule).toContain("transform: scaleX(var(--progress,0))");
+    expect(fillRule).toContain("transition: transform");
+    expect(fillRule).not.toMatch(/transition:[^;]*width/);
+
+    expect(css).toMatch(/\.generationProgress \{[^}]*bottom: 70px;[^}]*left: 50%/);
+    expect(css).toMatch(/@media \(max-width: 699px\) \{[\s\S]*\.generationProgress \{ bottom: 66px; width: calc\(100% - 24px\); \}/);
+  });
+
+  it("renders identical output whether or not a mobile config handler is supplied, since the overlay only activates on narrow viewports", () => {
+    const withHandler = renderToStaticMarkup(
+      <AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} mobileConfigOpen onMobileConfigOpenChange={() => undefined} />,
+    );
+    const withoutHandler = renderToStaticMarkup(
+      <AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />,
+    );
+
+    expect(withHandler).toBe(withoutHandler);
+    expect(withoutHandler).not.toContain('role="dialog"');
+  });
+
+  it("wires the embedded controls panel into the shared StudioConfigOverlay and auto-collapses on success", () => {
+    const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('import { StudioConfigOverlay } from "./studio-config-overlay";');
+    expect(source).toContain("mobileConfigOpen?: boolean;");
+    expect(source).toContain("onMobileConfigOpenChange?: (open: boolean) => void;");
+    expect(source).toMatch(/embedded && onMobileConfigOpenChange \? \(\s*<StudioConfigOverlay/);
+    expect(source.match(/onMobileConfigOpenChange\?\.\(false\);/g)).toHaveLength(2);
+    expect(source).not.toContain("[data-mobile-config");
+
+    const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
+    expect(css).not.toContain("data-mobile-config");
+    expect(css).not.toMatch(/\.embedded \.controls \{[^}]*position: fixed/);
   });
 });
