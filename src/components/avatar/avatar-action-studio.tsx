@@ -574,6 +574,7 @@ export function AvatarActionStudio({
     setMotionSourceMode("template");
     setActionName(action.name);
     setLivePortraitActionName(action.name);
+    setMotionMultiplier(LIVEPORTRAIT_STRENGTH_MULTIPLIERS[action.recommendedStrength]);
     setPreviewMode("reference");
     setResultUrl("");
     setTaskId("");

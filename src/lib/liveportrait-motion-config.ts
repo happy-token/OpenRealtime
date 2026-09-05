@@ -13,7 +13,7 @@ export type LivePortraitMotionConfig = {
 };
 
 export const LIVEPORTRAIT_DEFAULT_MOTION_CONFIG: LivePortraitMotionConfig = {
-  animation_region: "all",
+  animation_region: "exp",
   driving_multiplier: 1,
   flag_stitching: true,
   flag_pasteback: true,
@@ -28,7 +28,7 @@ export const LIVEPORTRAIT_STRENGTH_MULTIPLIERS = {
 } as const satisfies Record<LivePortraitMotionStrength, number>;
 
 export function createLivePortraitMotionConfig({
-  animationRegion = "all",
+  animationRegion = "exp",
   strength = "natural",
   drivingMultiplier,
   stability,

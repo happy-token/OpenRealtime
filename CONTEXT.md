@@ -609,7 +609,7 @@ A Motion Base Video creation method labeled `智能生成` in the product UI, as
 _Avoid_: Motion-driven Portrait Animation, image animation, lip-sync, finished speaking video
 
 **Motion-driven Portrait Animation**:
-A Motion Base Video creation method labeled `动作复刻` in the product UI, also called portrait reenactment or motion transfer, that applies facial expression, head pose, or body motion extracted from a Driving Performance to an Avatar source image. LivePortrait is one implementation of this method, not the name of the product capability.
+A Motion Base Video creation method labeled `动作复刻` in the product UI, also called portrait reenactment or motion transfer, that applies facial expression extracted from a Driving Performance to an Avatar source image. LivePortrait is one implementation of this method, not the name of the product capability; the first release transfers the face region only, so the Avatar's head and body remain at their source pose.
 _Avoid_: Generative Image-to-Video, LivePortrait generation, lip-sync, prompt-generated motion
 
 **Driving Performance**:
@@ -617,7 +617,7 @@ A user-uploaded or curated video, pose sequence, or privacy-preserving motion te
 _Avoid_: Motion Base Video, identity image, prompt template, finished speaking video
 
 **Natural Interaction Performance**:
-A continuous non-verbal Driving Performance for conversational presentation that coherently combines blinking, gaze changes, subtle head pose, breathing presence, micro-expression, and restrained body movement. It is transferred as one timed performance and previewed as a loop, never decomposed into a mutually exclusive blink, nod, or smile preset and never treated as lip-sync input.
+A continuous non-verbal Driving Performance for conversational presentation whose facial expression (blinking, gaze, micro-expression, and closed-mouth non-verbal motion) drives the Avatar. Head pose, breathing presence, and body sway may appear in the reference but are not transferred; the Avatar's head and body stay at the source pose. It is transferred as one timed performance and previewed as a loop, never decomposed into a mutually exclusive blink, nod, or smile preset and never treated as lip-sync input.
 _Avoid_: single-action preset, gesture clip, finished talking video, random motion collection
 
 **Motion Base Mouth Neutrality**:
@@ -665,7 +665,7 @@ The shared set of Saved Motion Transfer Profiles published and maintained by aut
 _Avoid_: personal preset library, provider configuration, draft-local overrides, anonymous profile publishing
 
 **Driving Performance Catalog**:
-The set of curated Natural Interaction Performances plus upload or recording of a custom continuous performance within Motion-driven Portrait Animation. Its initial entries are `自然交流`, `亲和陪伴`, and `稳重讲解`, each backed by a distinct performance and recommended Motion Transfer Profile; each entry is previewed as a whole timed performance with its interaction character, duration, and loop behavior. Individual blinks, nods, gaze shifts, or smiles are descriptive ingredients rather than separate choices, and every output still enters the catalog as a Motion Base Candidate rather than inheriting approval from its driver.
+The set of curated Natural Interaction Performances plus upload or recording of a custom continuous performance within Motion-driven Portrait Animation. It is presented as previewable driving-performance cards such as `甜美元气`, `纯欲柔光`, `冷艳夜色`, `知性温柔`, and `忧郁共鸣`, each backed by a distinct facial-expression character, duration, and recommended transfer amplitude; each entry is previewed as a whole timed performance with its interaction character, duration, and loop behavior. Blinking, gaze shifts, and micro-expression are descriptive ingredients rather than separate choices, and every output still enters the catalog as a Motion Base Candidate rather than inheriting approval from its driver.
 _Avoid_: single-action catalog, Motion Base Video catalog, prompt templates, public stock-video library, automatic approval
 
 **Motion Generation Worker**:
