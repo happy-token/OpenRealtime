@@ -18,6 +18,7 @@ import {
   LIVEPORTRAIT_STRENGTH_MULTIPLIERS,
 } from "@/lib/liveportrait-motion-config";
 import { readJsonResponse } from "@/lib/http-json-response";
+import { classifyMediaAspectRatio, type MediaAspectBucket } from "@/lib/media-aspect-fit";
 import {
   VIDEO_GENERATION_DEFAULT_MODELS,
   VIDEO_GENERATION_MODELS,
@@ -239,6 +240,7 @@ export function AvatarActionStudio({
   const [drivingFile, setDrivingFile] = useState<File | null>(null);
   const [drivingPreviewUrl, setDrivingPreviewUrl] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("avatar");
+  const [previewFit, setPreviewFit] = useState<MediaAspectBucket>("square");
   const [motionMultiplier, setMotionMultiplier] = useState(1);
   const [actionName, setActionName] = useState(initialProvider === "ltx" ? VIDEO_PROMPT_STYLES[0].name : LIVEPORTRAIT_ACTIONS[0].name);
   const [livePortraitActionName, setLivePortraitActionName] = useState(LIVEPORTRAIT_ACTIONS[0].name);
@@ -1230,11 +1232,11 @@ export function AvatarActionStudio({
         <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
           <div className={styles.previewFrame} data-preview-frame="true">
             {showingResult
-              ? <video aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay muted loop playsInline />
+              ? <video data-fit={previewFit} aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
               : showingReference
-                ? <video key={referencePreviewUrl} aria-label={`参考动作预览：${provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作"}`} src={referencePreviewUrl} controls autoPlay muted loop playsInline preload="metadata" />
+                ? <video key={referencePreviewUrl} data-fit={previewFit} aria-label={`参考动作预览：${provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作"}`} src={referencePreviewUrl} controls autoPlay muted loop playsInline preload="metadata" onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
                 : avatar
-                  ? <Image src={previewImageUrl || avatar.source_image_url} alt={`当前形象预览：${avatar.display_name}`} fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
+                  ? <Image data-fit={previewFit} src={previewImageUrl || avatar.source_image_url} alt={`当前形象预览：${avatar.display_name}`} fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))} />
                   : null}
             <div className={styles.previewChrome}>
               <div className={styles.previewTitle}>

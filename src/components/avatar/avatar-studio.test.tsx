@@ -80,4 +80,17 @@ describe("AvatarStudio", () => {
     expect(changeAvatarBody).not.toContain("setMobileConfigOpen");
     expect(changeTaskBody).not.toContain("setMobileConfigOpen");
   });
+
+  it("switches the stage portrait to cover for non-square avatars so tall or wide images fill the frame", () => {
+    const source = readFileSync(new URL("./avatar-studio.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("./avatar-studio.module.css", import.meta.url), "utf8");
+
+    expect(source).toContain('import { classifyMediaAspectRatio } from "@/lib/media-aspect-fit";');
+    expect(source.match(/onLoad=\{handleStagePortraitLoad\}/g)).toHaveLength(3);
+    expect(source.match(/data-fit=\{stagePreviewFit\}/g)).toHaveLength(3);
+    expect(source).toContain("setStagePreviewFit(classifyMediaAspectRatio(img.naturalWidth, img.naturalHeight));");
+
+    expect(css).toMatch(/\.stageImage \.stagePortraitImage\[data-fit="landscape"\],\s*\n\.stageImage \.stagePortraitImage\[data-fit="portrait"\] \{ object-fit: cover; \}/);
+    expect(css).toContain('.stageImage .stagePortraitImage[data-fit="portrait"] { object-position: 50% 22%; }');
+  });
 });

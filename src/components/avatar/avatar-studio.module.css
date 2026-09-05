@@ -274,6 +274,9 @@
 .stageImage { position: relative; width: 100%; height: 100%; min-height: 480px; overflow: hidden; padding: 0; border: 0; background: var(--surface-muted); color: #fff; text-align: left; cursor: zoom-in; }
 .stageImage .stageBackdropImage { z-index: 0; object-fit: cover; filter: blur(30px) brightness(.5) saturate(.85); transform: scale(1.15); }
 .stageImage .stagePortraitImage { z-index: 1; object-fit: contain; }
+.stageImage .stagePortraitImage[data-fit="landscape"],
+.stageImage .stagePortraitImage[data-fit="portrait"] { object-fit: cover; }
+.stageImage .stagePortraitImage[data-fit="portrait"] { object-position: 50% 22%; }
 .stageImage > span { position: absolute; z-index: 2; right: 24px; bottom: 22px; left: 24px; display: grid; gap: 4px; }
 .stageImage > span::before { content: ""; position: absolute; z-index: -1; inset: -120px -24px -22px; background: linear-gradient(transparent,rgba(8,10,17,.82)); }
 .stageImage small { color: rgba(255,255,255,.66); font-family: var(--font-mono); font-size: .47rem; letter-spacing: .1em; text-transform: uppercase; }

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Film, ImagePlus, LoaderCircle, LockKeyhole, Maximize2, Play, Sparkles, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import {
   ANAM_AVATAR_NAME_MAX_LENGTH,
   ANAM_AVATAR_NAME_MIN_LENGTH,
@@ -26,6 +26,7 @@ import { normalizeAvatarSourceImage } from "@/lib/avatar-image-normalization";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { isInternalAvatarPresetId } from "@/lib/internal-avatar-ids";
+import { classifyMediaAspectRatio } from "@/lib/media-aspect-fit";
 import { AvatarActionStudio } from "./avatar-action-studio";
 import { StudioConfigOverlay } from "./studio-config-overlay";
 import styles from "./avatar-studio.module.css";
@@ -58,6 +59,12 @@ export function AvatarStudio({
   const [currentStep, setCurrentStep] = useState(initialAvatarId ? 2 : 0);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [mobileConfigOpen, setMobileConfigOpen] = useState(false);
+  const [stagePreviewFit, setStagePreviewFit] = useState<"landscape" | "square" | "portrait">("square");
+
+  function handleStagePortraitLoad(event: SyntheticEvent<HTMLImageElement>): void {
+    const img = event.currentTarget;
+    setStagePreviewFit(classifyMediaAspectRatio(img.naturalWidth, img.naturalHeight));
+  }
   const [libraryDockPinned, setLibraryDockPinned] = useState(false);
   const [libraryDockHovered, setLibraryDockHovered] = useState(false);
   const [libraryDockFocused, setLibraryDockFocused] = useState(false);
@@ -414,7 +421,7 @@ export function AvatarStudio({
                     {source ? (
                       <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
                         <Image className={styles.stageBackdropImage} src={source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
-                        <Image className={styles.stagePortraitImage} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
+                        <Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} />
                       </button>
                     ) : (
                       <div className={styles.emptyStage}><LoaderCircle className={styles.spin} aria-hidden="true" /><strong>正在加载 Avatar 形象…</strong></div>
@@ -462,7 +469,7 @@ export function AvatarStudio({
               ) : source ? (
                 <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
                   <Image className={styles.stageBackdropImage} src={source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
-                  <Image className={styles.stagePortraitImage} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
+                  <Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} />
                 </button>
               ) : (
                 <div className={styles.emptyStage}>{mode === "upload" ? <Upload aria-hidden="true" /> : <Sparkles aria-hidden="true" />}<strong>{mode === "upload" ? "在左侧上传一张图片" : "在左侧描述并创建图片"}</strong><span>图片结果会在这里以大图展示</span></div>
@@ -521,7 +528,7 @@ export function AvatarStudio({
               <div className={styles.visualStageBody}>
                 {realtimePreviewVideoUrl
                   ? <video className={styles.stageVideo} src={realtimePreviewVideoUrl} controls autoPlay muted loop playsInline />
-                  : <button className={styles.stageImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><span><strong>{createdAvatar.display_name}</strong><em>创建后将在这里播放实时驱动效果</em></span><Maximize2 aria-hidden="true" /></button>}
+                  : <button className={styles.stageImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{createdAvatar.display_name}</strong><em>创建后将在这里播放实时驱动效果</em></span><Maximize2 aria-hidden="true" /></button>}
               </div>
               <footer><span>{createdAvatar.realtime_binding ? "已确认并启用" : anamCandidate ? "等待效果确认，确认后启用" : "尚未创建实时驱动效果"}</span></footer>
             </section>

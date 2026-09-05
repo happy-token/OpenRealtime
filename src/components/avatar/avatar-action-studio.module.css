@@ -189,6 +189,12 @@
 .previewFrame { position: relative; width: 100%; height: 100%; min-height: 570px; overflow: hidden; border-radius: inherit; background: #10131a; }
 .previewFrame img,
 .previewFrame video { width: 100%; height: 100%; object-fit: contain; }
+.previewFrame img[data-fit="landscape"],
+.previewFrame img[data-fit="portrait"],
+.previewFrame video[data-fit="landscape"],
+.previewFrame video[data-fit="portrait"] { object-fit: cover; }
+.previewFrame img[data-fit="portrait"],
+.previewFrame video[data-fit="portrait"] { object-position: 50% 22%; }
 .previewFrame video { position: absolute; inset: 0; }
 .previewFrame::after { content: ""; position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg,rgba(7,9,14,.42),transparent 28%,transparent 58%,rgba(7,9,14,.76)); pointer-events: none; }
 .previewChrome { position: absolute; z-index: 2; inset: 0; color: #fff; pointer-events: none; }

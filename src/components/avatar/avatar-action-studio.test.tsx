@@ -336,4 +336,18 @@ describe("AvatarActionStudio", () => {
     expect(css).not.toContain("data-mobile-config");
     expect(css).not.toMatch(/\.embedded \.controls \{[^}]*position: fixed/);
   });
+
+  it("switches the preview frame to cover for non-square media so tall or wide content fills the frame", () => {
+    const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
+
+    expect(source).toContain('import { classifyMediaAspectRatio, type MediaAspectBucket } from "@/lib/media-aspect-fit";');
+    expect(source).toContain('const [previewFit, setPreviewFit] = useState<MediaAspectBucket>("square");');
+    expect(source.match(/data-fit=\{previewFit\}/g)).toHaveLength(3);
+    expect(source).toContain("setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))");
+    expect(source).toContain("setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))");
+
+    expect(css).toMatch(/\.previewFrame img\[data-fit="landscape"\],\s*\n\.previewFrame img\[data-fit="portrait"\],\s*\n\.previewFrame video\[data-fit="landscape"\],\s*\n\.previewFrame video\[data-fit="portrait"\] \{ object-fit: cover; \}/);
+    expect(css).toContain('.previewFrame img[data-fit="portrait"],\n.previewFrame video[data-fit="portrait"] { object-position: 50% 22%; }');
+  });
 });
