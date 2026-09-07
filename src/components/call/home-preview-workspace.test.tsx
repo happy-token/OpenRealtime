@@ -18,6 +18,11 @@ import {
 
 const noop = vi.fn();
 
+it("unmounts the GPU orb while the avatar preview is selected", () => {
+  expect(renderHome("avatar")).not.toContain('aria-label="实时语音状态可视化"');
+  expect(renderHome("voice")).toContain('aria-label="实时语音状态可视化"');
+});
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("resolveMainAvatarMotionFit", () => {

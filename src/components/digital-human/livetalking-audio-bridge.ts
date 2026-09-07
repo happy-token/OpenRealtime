@@ -2,35 +2,37 @@ import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-out
 
 type Fetcher = typeof fetch;
 
-interface BufferedGeneration {
+interface StreamingGeneration {
   sampleRateHz: number;
-  chunks: string[];
+  source: Int16Array;
+  sentSamples: number;
+  sequence: number;
+  final: boolean;
+  started: boolean;
+  controller: AbortController;
+  request: Promise<void>;
+  pollTimer: ReturnType<typeof setTimeout> | null;
   onStarted: () => void;
   onEnded: () => void;
 }
 
-interface ActiveGeneration {
-  controller: AbortController;
-  endTimer: ReturnType<typeof setTimeout> | null;
-  onEnded: () => void;
-}
+interface VolumeTarget { volume: number }
+const UPLOAD_SAMPLES = 4_800; // 300 ms, so a 320 ms source chunk can retain its resampling neighbour.
 
-interface VolumeTarget {
-  volume: number;
-}
-
-const WAV2LIP_RENDER_BUFFER_MS = 700;
-
-/** Sends OpenRealtime TTS audio to LiveTalking's Wav2Lip renderer. */
+/** Streams one continuous PCM timeline per TTS generation to our renderer. */
 export class LiveTalkingAudioBridge implements AvatarAudioSink {
   private baseUrl = "";
   private sessionId = "";
   private video: VolumeTarget | null = null;
   private volume = 0.8;
-  private readonly buffered = new Map<number, BufferedGeneration>();
-  private readonly active = new Map<number, ActiveGeneration>();
+  private readonly active = new Map<number, StreamingGeneration>();
 
-  constructor(private readonly fetcher: Fetcher = fetch) {}
+  private readonly fetcher: Fetcher;
+
+  constructor(fetcher: Fetcher = fetch) {
+    // Native browser fetch must not receive the bridge object as its receiver.
+    this.fetcher = (input, init) => fetcher(input, init);
+  }
 
   connect(baseUrl: string, sessionId: string, video?: VolumeTarget): void {
     this.baseUrl = baseUrl.replace(/\/$/, "");
@@ -40,85 +42,112 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
   }
 
   enqueue(chunk: AvatarAudioChunk): boolean {
-    if (!this.baseUrl || !this.sessionId || chunk.sampleRateHz <= 0) return false;
-    const current = this.buffered.get(chunk.generation);
-    if (current && current.sampleRateHz !== chunk.sampleRateHz) {
-      this.buffered.delete(chunk.generation);
-      return false;
+    if (!this.baseUrl || !this.sessionId || !Number.isFinite(chunk.sampleRateHz) || chunk.sampleRateHz <= 0) return false;
+    let current = this.active.get(chunk.generation);
+    if (current && (current.sampleRateHz !== chunk.sampleRateHz || current.final)) return false;
+    const incoming = decodePcm16Chunks([chunk.pcm16Base64]);
+    if ((current?.source.length ?? 0) + incoming.length > chunk.sampleRateHz * 120) return false;
+    if (!current) {
+      current = {
+        sampleRateHz: chunk.sampleRateHz, source: new Int16Array(0), sentSamples: 0,
+        sequence: 0, final: false, started: false, controller: new AbortController(),
+        request: Promise.resolve(), pollTimer: null, onStarted: chunk.onStarted, onEnded: chunk.onEnded,
+      };
+      this.active.set(chunk.generation, current);
     }
-    const generation = current ?? {
-      sampleRateHz: chunk.sampleRateHz,
-      chunks: [],
-      onStarted: chunk.onStarted,
-      onEnded: chunk.onEnded,
-    };
-    if (chunk.pcm16Base64) generation.chunks.push(chunk.pcm16Base64);
-    generation.onEnded = chunk.onEnded;
-    this.buffered.set(chunk.generation, generation);
+    const combined = new Int16Array(current.source.length + incoming.length);
+    combined.set(current.source);
+    combined.set(incoming, current.source.length);
+    current.source = combined;
+    current.onEnded = chunk.onEnded;
+    // Keep resampling phase continuous; retain the last source sample until its
+    // interpolation neighbour arrives, rather than rounding each HTTP chunk.
+    const available = Math.max(0, Math.min(
+      Math.ceil((combined.length - 1) * 16_000 / current.sampleRateHz),
+      Math.round(combined.length * 16_000 / current.sampleRateHz),
+    ));
+    if (available - current.sentSamples >= UPLOAD_SAMPLES) this.flush(chunk.generation, current, available, false);
     return true;
   }
 
   completeGeneration(generation: number): boolean {
-    if (this.active.has(generation)) return true;
-    const buffered = this.buffered.get(generation);
-    if (!this.baseUrl || !this.sessionId || !buffered || buffered.chunks.length === 0) return false;
-    this.buffered.delete(generation);
-
-    const sourcePcm = decodePcm16Chunks(buffered.chunks);
-    const wav2LipPcm = resamplePcm16(sourcePcm, buffered.sampleRateHz, 16_000);
-    const wav = pcm16ToWav(wav2LipPcm, 16_000);
-    const controller = new AbortController();
-    this.active.set(generation, { controller, endTimer: null, onEnded: buffered.onEnded });
-    const form = new FormData();
-    form.append("file", new Blob([wav], { type: "audio/wav" }), `response-${generation}.wav`);
-    form.append("sessionid", this.sessionId);
-    const request = this.fetcher;
-    void request(`${this.baseUrl}/humanaudio`, {
-      method: "POST",
-      body: form,
-      signal: controller.signal,
-    }).then(async (response) => {
-      const payload = await response.json() as { code?: number; msg?: string };
-      if (!response.ok || payload.code !== 0) throw new Error(payload.msg || "Wav2Lip audio upload failed");
-      if (!this.active.has(generation)) return;
-      buffered.onStarted();
-      const audioDurationMs = wav2LipPcm.length / 16_000 * 1000;
-      const endTimer = setTimeout(() => {
-        const active = this.active.get(generation);
-        if (!active) return;
-        this.active.delete(generation);
-        active.onEnded();
-      }, WAV2LIP_RENDER_BUFFER_MS + audioDurationMs);
-      const active = this.active.get(generation);
-      if (active) active.endTimer = endTimer;
-    }).catch(() => {
-      const active = this.active.get(generation);
-      if (!active) return;
-      this.clearGeneration(generation);
-      active.onEnded();
-    });
+    const current = this.active.get(generation);
+    if (!current || current.source.length === 0) return false;
+    if (current.final) return true;
+    current.final = true;
+    this.flush(generation, current, Math.max(1, Math.round(current.source.length * 16_000 / current.sampleRateHz)), true);
     return true;
   }
 
+  private flush(generation: number, current: StreamingGeneration, end: number, final: boolean): void {
+    const pcm = resampleRange(current.source, current.sampleRateHz, current.sentSamples, end);
+    current.sentSamples = end;
+    const form = new FormData();
+    if (pcm.length) form.append("file", new Blob([pcm16ToWav(pcm, 16_000)], { type: "audio/wav" }), `response-${generation}.wav`);
+    form.append("sessionid", this.sessionId);
+    form.append("generation", String(generation));
+    form.append("sequence", String(current.sequence++));
+    form.append("final", final ? "1" : "0");
+    const endpoint = this.baseUrl;
+    current.request = current.request.then(async () => {
+      if (current.controller.signal.aborted) return;
+      const response = await this.fetcher(`${endpoint}/humanaudio`, {
+        method: "POST", body: form, signal: current.controller.signal,
+      });
+      const payload = await response.json() as { code?: number; msg?: string; discarded?: boolean };
+      if (!response.ok || payload.code !== 0 || payload.discarded) throw new Error(payload.msg || "Avatar audio upload rejected");
+      if (this.active.get(generation) !== current) return;
+      if (current.pollTimer === null) this.schedulePoll(generation, current);
+    }).catch((error: unknown) => {
+      if (this.active.get(generation) !== current) return;
+      console.error("Avatar streaming failed", error);
+      this.cancelGeneration(generation);
+      current.onEnded();
+    });
+  }
+
+  private schedulePoll(generation: number, current: StreamingGeneration): void {
+    current.pollTimer = setTimeout(() => { void this.poll(generation, current); }, 120);
+  }
+
+  private async poll(generation: number, current: StreamingGeneration): Promise<void> {
+    try {
+      const query = new URLSearchParams({ sessionid: this.sessionId, generation: String(generation) });
+      const response = await this.fetcher(`${this.baseUrl}/audio_status?${query}`, { signal: current.controller.signal });
+      const status = await response.json() as { code?: number; state?: string };
+      if (!response.ok || status.code !== 0) throw new Error("Avatar playback status unavailable");
+      if (this.active.get(generation) !== current) return;
+      if (!current.started && (status.state === "playing" || status.state === "completed")) {
+        current.started = true;
+        current.onStarted();
+      }
+      if (status.state === "completed" || status.state === "cancelled") {
+        this.clearGeneration(generation);
+        current.onEnded();
+      } else {
+        this.schedulePoll(generation, current);
+      }
+    } catch (error) {
+      if (this.active.get(generation) !== current) return;
+      console.error("Avatar playback failed", error);
+      this.cancelGeneration(generation);
+      current.onEnded();
+    }
+  }
+
   cancelGeneration(generation: number): void {
-    this.buffered.delete(generation);
     this.clearGeneration(generation);
     if (!this.baseUrl || !this.sessionId) return;
-    const request = this.fetcher;
-    void request(`${this.baseUrl}/interrupt_talk`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionid: this.sessionId }),
+    void this.fetcher(`${this.baseUrl}/interrupt_talk`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionid: this.sessionId, generation }),
     }).catch(() => undefined);
   }
 
-  isActive(generation: number): boolean {
-    return this.buffered.has(generation) || this.active.has(generation);
-  }
+  isActive(generation: number): boolean { return this.active.has(generation); }
 
   reset(): void {
-    this.buffered.clear();
-    for (const generation of this.active.keys()) this.clearGeneration(generation);
+    for (const generation of this.active.keys()) this.cancelGeneration(generation);
   }
 
   disconnect(): void {
@@ -134,10 +163,10 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
   }
 
   private clearGeneration(generation: number): void {
-    const active = this.active.get(generation);
-    if (!active) return;
-    active.controller.abort();
-    if (active.endTimer) clearTimeout(active.endTimer);
+    const current = this.active.get(generation);
+    if (!current) return;
+    current.controller.abort();
+    if (current.pollTimer !== null) clearTimeout(current.pollTimer);
     this.active.delete(generation);
   }
 }
@@ -158,16 +187,15 @@ function decodePcm16Chunks(chunks: string[]): Int16Array {
   return samples;
 }
 
-function resamplePcm16(input: Int16Array, sourceRate: number, targetRate: number): Int16Array {
-  if (sourceRate === targetRate || input.length < 2) return input.slice();
-  const output = new Int16Array(Math.max(1, Math.round(input.length * targetRate / sourceRate)));
-  const scale = sourceRate / targetRate;
-  for (let index = 0; index < output.length; index += 1) {
+function resampleRange(input: Int16Array, sourceRate: number, start: number, end: number): Int16Array {
+  const output = new Int16Array(end - start);
+  const scale = sourceRate / 16_000;
+  for (let index = start; index < end; index += 1) {
     const position = index * scale;
     const left = Math.min(input.length - 1, Math.floor(position));
     const right = Math.min(input.length - 1, left + 1);
     const weight = position - left;
-    output[index] = Math.round(input[left]! * (1 - weight) + input[right]! * weight);
+    output[index - start] = Math.round(input[left]! * (1 - weight) + input[right]! * weight);
   }
   return output;
 }

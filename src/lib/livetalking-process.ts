@@ -32,7 +32,10 @@ export async function ensureLiveTalkingProcess(
   port = 8010,
   modelSize: 256 | 96 = 256,
 ): Promise<void> {
-  if (await portIsOpen(port)) return;
+  if (await portIsOpen(port)) {
+    await verifyOwnedRenderer(port);
+    return;
+  }
   const current = state(`${modelSize}:${port}`);
   if (current.starting) return current.starting;
   current.starting = startProcess(projectRoot, port, modelSize, current).finally(() => {
@@ -56,11 +59,10 @@ async function startProcess(
   current: LiveTalkingProcessState,
 ): Promise<void> {
   const python = path.join(projectRoot, "models/livetalking/.venv/bin/python");
-  const launcher = path.join(projectRoot, "scripts/livetalking_provider.py");
+  const launcher = path.join(projectRoot, "scripts/avatar_renderer.py");
   const inferenceStride = modelSize === 256 ? resolveWav2LipInferenceStride(process.env) : 1;
   const child = spawn(python, [
     launcher,
-    "serve",
     "--runtime-root",
     path.join(projectRoot, "models/livetalking"),
     "--avatar-id",
@@ -90,11 +92,25 @@ async function startProcess(
 async function waitForPort(port: number, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await portIsOpen(port)) return;
+    if (await portIsOpen(port)) {
+      await verifyOwnedRenderer(port);
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   stopLiveTalkingProcess();
   throw new Error("LiveTalking startup timed out");
+}
+
+async function verifyOwnedRenderer(port: number): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${port}/health`, {
+    signal: AbortSignal.timeout(2_000),
+    cache: "no-store",
+  });
+  const health = response.ok ? await response.json() as { renderer?: string } : null;
+  if (health?.renderer !== "openrealtime") {
+    throw new Error(`Port ${port} is occupied by an older avatar service; restart the OpenRealtime avatar renderer`);
+  }
 }
 
 function portIsOpen(port: number): Promise<boolean> {

@@ -819,7 +819,7 @@ export function HomePreviewWorkspace({
         <div className={styles.atmosphere} aria-hidden="true"><i /><i /><i /></div>
         <div className={styles.orbPreview} data-visible={experienceMode === "voice"}>
           <div className={styles.orbHalo} aria-hidden="true" />
-          <Orb state="listening" level={previewEnergy / 100} theme={visualTheme} />
+          {experienceMode === "voice" && <Orb state="listening" level={previewEnergy / 100} theme={visualTheme} />}
         </div>
         <div className={styles.avatarPreview} data-visible={experienceMode === "avatar"}>
           {selectedAvatar.motion && !reducedMotion ? (

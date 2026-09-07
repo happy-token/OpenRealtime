@@ -69,6 +69,13 @@ if [ "$avatar_services_command" != "start" ] && [ "$avatar_services_command" != 
 fi
 
 livetalking_is_ready() {
+  if [ "$avatar_renderer_mode" = "managed" ]; then
+    renderer_health="$(curl --fail --silent --max-time 1 "$avatar_renderer_url/health" 2>/dev/null || true)"
+    case "$renderer_health" in
+      *'"renderer": "openrealtime"'*|*'"renderer":"openrealtime"'*) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
   renderer_probe="$(curl --silent --show-error --output /dev/null --max-time 1 \
     --header 'Origin: http://127.0.0.1:3010' \
     --write-out '%{http_code} %{redirect_url}' \
@@ -111,8 +118,8 @@ if [ ! -x "$livetalking_python" ]; then
   exit 1
 fi
 
-echo "Prewarming avatar renderer with the LiveTalking Wav2Lip compatibility adapter"
-exec "$livetalking_python" "$PWD/scripts/livetalking_provider.py" serve \
+echo "Prewarming the OpenRealtime Wav2Lip avatar renderer"
+exec "$livetalking_python" "$PWD/scripts/avatar_renderer.py" \
   --runtime-root "$PWD/models/livetalking" \
   --avatar-id "$livetalking_avatar_id" \
   --port "$livetalking_port" \
