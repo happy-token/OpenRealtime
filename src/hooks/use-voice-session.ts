@@ -458,7 +458,7 @@ export interface VoiceSessionViewModel {
   stop: () => void;
   terminate: () => void;
   clearConversationDisplay: () => void;
-  sendText: (text: string) => void;
+  sendText: (text: string) => boolean;
   setNoiseSuppression: (enabled: boolean) => void;
   setBargeInMuted: (muted: boolean) => void;
   setVolume: (volume: number) => void;
@@ -541,7 +541,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
   const startRef = useRef<() => Promise<void>>(async () => {});
   const stopRef = useRef<() => void>(() => {});
   const terminateRef = useRef<() => void>(() => {});
-  const sendTextRef = useRef<(text: string) => void>(() => {});
+  const sendTextRef = useRef<(text: string) => boolean>(() => false);
   const setNoiseSuppressionRef = useRef<(enabled: boolean) => void>(() => {});
   const setBargeInMutedRef = useRef<(muted: boolean) => void>(() => {});
   const setVolumeRef = useRef<(volume: number) => void>(() => {});
@@ -1148,7 +1148,12 @@ export function useVoiceSession(): VoiceSessionViewModel {
 
     function submitUserText(text: string) {
       const transport = transportRef.current;
-      if (!text || !transport?.isOpen) return;
+      if (!text.trim() || !transport?.isOpen) return false;
+      try {
+        if (!transport.send({ type: "user_text", text })) return false;
+      } catch {
+        return false;
+      }
       sessionOutputEnabledRef.current = true;
       setCaption(`你：${text}`);
       if (
@@ -1171,10 +1176,10 @@ export function useVoiceSession(): VoiceSessionViewModel {
           ];
         });
       }
-      transport.send({ type: "user_text", text });
       speakingGenerationRef.current = null;
       setState("thinking");
       armThinkingFallback();
+      return true;
     }
 
     sendTextRef.current = submitUserText;

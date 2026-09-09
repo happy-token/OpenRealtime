@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -29,6 +29,29 @@ async function repositoryRoot() {
 }
 
 describe("Avatar catalog repository", () => {
+  it.each([{}, [{ avatar_id: "avatar-invalid" }]])("preserves an invalid catalog instead of overwriting it: %j", async (invalid) => {
+    const root = await repositoryRoot();
+    const catalog = path.join(root, "catalog.json");
+    const original = JSON.stringify(invalid);
+    await writeFile(catalog, original);
+    await expect(listOwnedAvatars(root)).rejects.toThrow("目录结构异常");
+    await expect(createOwnedAvatar({ displayName: "New", sourceImageDataUrl: jpeg }, root))
+      .rejects.toThrow("目录结构异常");
+    expect(await readFile(catalog, "utf8")).toBe(original);
+  });
+
+  it("does not drop valid neighbors when a stored record is invalid", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    const catalog = path.join(root, "catalog.json");
+    const records = JSON.parse(await readFile(catalog, "utf8"));
+    const original = JSON.stringify([...records, { avatar_id: "avatar-broken" }]);
+    await writeFile(catalog, original);
+    await expect(updateOwnedAvatar("avatar-123", { displayName: "Changed" }, root))
+      .rejects.toThrow("目录结构异常");
+    expect(await readFile(catalog, "utf8")).toBe(original);
+  });
+
   it("persists one immutable source image under avatar_id", async () => {
     const root = await repositoryRoot();
     const avatar = await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);

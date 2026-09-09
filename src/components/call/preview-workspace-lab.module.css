@@ -261,6 +261,8 @@
   width: min(100%, 220px);
   margin: 0;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   transform: translateX(-50%);
 }
@@ -2184,3 +2186,15 @@
   animation: none !important;
   transition: none !important;
 }
+
+.textStartButton {
+  display: block;
+  margin: 12px auto 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 20px;
+  background: rgba(0, 0, 0, .5);
+  color: white;
+  cursor: pointer;
+}
+.textStartButton:focus-visible { outline: 2px solid white; outline-offset: 3px; }

@@ -272,6 +272,17 @@ export function OpenRealtimeApp({
     }
   }, [engine, connected, experienceMode]);
 
+  const beginTextSession = useCallback(() => {
+    engine.stop();
+    engine.clearConversationDisplay();
+    setExperienceMode("voice");
+    setPresentationView(enterPageForm(startPresentationSession("voice"), "content"));
+    setSessionStarted(true);
+    setAvatarStarting(false);
+    setSessionPaused(true);
+    setMicError(null);
+  }, [engine]);
+
   const startDigitalHumanSession = useCallback((config: AvatarDisplayConfig) => {
     setAvatarDisplayConfig(config);
     engine.clearConversationDisplay();
@@ -483,6 +494,7 @@ export function OpenRealtimeApp({
           error={micError}
           connected={connected && engine.micAvailable}
           onStartSession={handleHomeStart}
+          onStartTextSession={beginTextSession}
           visualTheme={voiceVisualTheme}
           onVisualThemeChange={handleVoiceVisualThemeChange}
           experienceMode={experienceMode}
@@ -510,6 +522,7 @@ export function OpenRealtimeApp({
           error={micError}
           connected={connected && engine.micAvailable}
           onStartSession={handleHomeStart}
+          onStartTextSession={beginTextSession}
           visualTheme={voiceVisualTheme}
           onVisualThemeChange={handleVoiceVisualThemeChange}
           experienceMode={experienceMode}

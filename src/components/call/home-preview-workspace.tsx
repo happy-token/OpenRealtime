@@ -93,6 +93,7 @@ interface HomePreviewWorkspaceProps {
     onModelLabelChange: (label: string) => void,
   ) => ReactNode;
   onStartSession: (mode?: ExperienceMode) => void;
+  onStartTextSession?: () => void;
   initialPanelState?: PanelState;
 }
 
@@ -360,6 +361,7 @@ export function HomePreviewWorkspace({
   settingsRequest,
   renderAdvancedSettings,
   onStartSession,
+  onStartTextSession,
   initialPanelState = "collapsed",
 }: HomePreviewWorkspaceProps) {
   const [panelState, setPanelState] = useState<PanelState>(initialPanelState);
@@ -869,6 +871,11 @@ export function HomePreviewWorkspace({
               : "请选择可用的数字人动作"}
           onPress={() => onStartSession(experienceMode)}
         />
+        {onStartTextSession && (
+          <button type="button" className={styles.textStartButton} onClick={onStartTextSession}>
+            使用文字对话
+          </button>
+        )}
       </div>
 
       <nav className={`${styles.modeSwitch} ${styles.homeModeDock}`} data-transparency={panelTransparency} data-glass-blur={panelGlassBlur} aria-label="主页呈现模式">

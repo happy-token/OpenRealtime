@@ -28,7 +28,7 @@ interface SessionControlBarProps {
   onPauseToggle: () => void;
   onOpenSettings: () => void;
   onTerminate: () => void;
-  onSendText: (text: string) => void;
+  onSendText: (text: string) => boolean;
 }
 
 const PAGE_FORM_OPTIONS = [
@@ -49,6 +49,7 @@ export function SessionControlBar({
   onSendText,
 }: SessionControlBarProps) {
   const [text, setText] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [visualPreferences, setVisualPreferences] = useState(DEFAULT_WORKBENCH_VISUAL_PREFERENCES);
@@ -78,7 +79,11 @@ export function SessionControlBar({
     event.preventDefault();
     const value = text.trim();
     if (!value) return;
-    onSendText(value);
+    if (!onSendText(value)) {
+      setSendError("消息未发送，草稿已保留。请等待连接恢复后重试。");
+      return;
+    }
+    setSendError(null);
     setText("");
     if (pageForm === "fullscreen") setComposerOpen(false);
   }
@@ -120,6 +125,7 @@ export function SessionControlBar({
               <span>发送</span>
             </button>
           </div>
+          {sendError && <p role="alert">{sendError}</p>}
         </form>
       )}
 

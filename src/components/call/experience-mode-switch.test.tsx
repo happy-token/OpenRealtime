@@ -114,7 +114,7 @@ describe("presentation mode display", () => {
         onPauseToggle={() => {}}
         onOpenSettings={() => {}}
         onTerminate={() => {}}
-        onSendText={() => {}}
+        onSendText={() => true}
       />,
     );
 

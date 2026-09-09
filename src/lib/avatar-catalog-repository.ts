@@ -247,7 +247,10 @@ function storedImagePath(root: string, avatar: StoredAvatar) {
 async function readCatalog(root: string): Promise<StoredAvatar[]> {
   try {
     const value = JSON.parse(await readFile(catalogPath(root), "utf8")) as unknown;
-    return Array.isArray(value) ? value.filter(isStoredAvatar) : [];
+    if (!Array.isArray(value) || !value.every(isStoredAvatar)) {
+      throw new Error("Avatar 目录结构异常，已停止读写以保护现有资产");
+    }
+    return value;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;

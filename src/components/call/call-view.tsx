@@ -18,6 +18,7 @@ interface CallViewProps {
   error: string | null;
   connected: boolean;
   onStartSession: (mode?: ExperienceMode) => void;
+  onStartTextSession?: () => void;
   visualTheme: VoiceVisualTheme;
   onVisualThemeChange: (theme: VoiceVisualTheme) => void;
   experienceMode: ExperienceMode;
@@ -48,6 +49,7 @@ export function CallView({
   error,
   connected,
   onStartSession,
+  onStartTextSession,
   visualTheme,
   onVisualThemeChange,
   experienceMode,
@@ -124,6 +126,7 @@ export function CallView({
           settingsRequest={settingsRequest}
           renderAdvancedSettings={renderAdvancedSettings}
           onStartSession={onStartSession}
+          onStartTextSession={onStartTextSession}
         />
       )}
     </section>
