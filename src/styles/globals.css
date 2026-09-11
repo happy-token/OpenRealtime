@@ -758,6 +758,9 @@ body[data-color-scheme="dark"] .view-toggle { background: color-mix(in srgb, var
 .digital-human-call-placeholder strong { font-size: 1.2rem; }
 .digital-human-call-placeholder small { color: rgba(255,255,255,.54); font-size: .62rem; }
 .digital-human-call-stage[data-renderer-state="ready"] .digital-human-live-video { opacity: 1; }
+.digital-human-call-stage[data-render-path="hosted"][data-renderer-state="ready"] .digital-human-call-image,
+.digital-human-call-stage[data-render-path="hosted"][data-renderer-state="ready"] .digital-human-call-placeholder { visibility: hidden; }
+.digital-human-call-stage[data-render-path="hosted"][data-renderer-state="ready"] .digital-human-call-backdrop { opacity: 1; }
 .digital-human-call-stage[data-renderer-state="preview"] .digital-human-motion-base-video { opacity: 1; }
 .digital-human-call-vignette { position: absolute; z-index: -1; inset: 0; background: linear-gradient(to bottom, transparent 44%, rgba(11,8,16,.76)); pointer-events: none; }
 .avatar-startup-dialog { position: absolute; z-index: 4; left: 50%; top: 50%; width: min(calc(100% - 40px), 460px); padding: 18px 20px; display: flex; align-items: center; gap: 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 20px; background: rgba(20,17,28,.66); color: white; box-shadow: 0 22px 70px rgba(7,5,11,.36); backdrop-filter: blur(22px) saturate(1.2); transform: translate(-50%, -50%); }

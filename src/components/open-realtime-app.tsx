@@ -51,9 +51,9 @@ import { avatarPersonaSelectionId } from "@/lib/avatar-persona";
 import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
 import { loadCurrentAvatarCatalog } from "@/lib/avatar-library-catalog-client";
 import {
-  avatarSessionConfig,
   reconcileAvatarDisplayConfigWithOwnedAvatar,
 } from "@/lib/avatar-session-config";
+import { loadRequestedAvatarConfig } from "@/lib/requested-avatar-config";
 import { useAppTheme } from "@/components/theme/app-theme-provider";
 
 const ChatView = dynamic(
@@ -133,19 +133,21 @@ export function OpenRealtimeApp({
     const requestedAvatarId = query.get("avatar_id") ?? "";
     const requestedConfigTab = query.get("open_config") ?? "";
     if (requestedAvatarId) {
-      void fetchOwnedAvatar(requestedAvatarId, controller.signal).then((requestedAvatar) => {
-        if (!requestedAvatar || requestedAvatar.deleted_at) return;
-        const nextConfig = avatarSessionConfig(
-          requestedAvatar,
-          storedConfig,
-          query.get("avatar_action_id") ?? undefined,
-        );
+      void loadRequestedAvatarConfig(
+        requestedAvatarId, storedConfig, controller.signal,
+        query.get("avatar_action_id") ?? undefined,
+      ).then((nextConfig) => {
+        if (controller.signal.aborted) return;
         setAvatarDisplayConfig(nextConfig);
         setExperienceMode("avatar");
         window.localStorage.setItem(EXPERIENCE_MODE_STORAGE_KEY, "avatar");
         window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
         if (isConfigTab(requestedConfigTab)) openSettings(requestedConfigTab);
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setMicError(error instanceof Error ? error.message : "所选数字人加载失败");
+        }
+      });
     } else if (storedConfig.renderPath === "segmented") {
       void Promise.all([
         fetchOwnedAvatar(storedConfig.segmentedAvatarId, controller.signal),
