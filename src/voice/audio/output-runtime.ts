@@ -19,6 +19,10 @@ export class DeviceAudioOutputRuntime {
     return this.queue.length;
   }
 
+  get isActive(): boolean {
+    return this.outputEpoch !== null;
+  }
+
   beginEpoch(outputEpoch: string): void {
     if (!outputEpoch) throw new Error("output epoch must be non-empty");
     this.clear();

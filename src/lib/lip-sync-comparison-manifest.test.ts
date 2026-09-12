@@ -21,7 +21,7 @@ type ComparisonRun = {
 };
 
 describe("pinned lip-sync comparison manifest", () => {
-  it("binds both allowlisted previews to the same input evidence", () => {
+  it.runIf(process.env.RUN_LOCAL_MEDIA === "1")("binds both allowlisted previews to the same input evidence", () => {
     const campaignRoot = path.join(process.cwd(), "research-assets/avatar-evaluation/2026-08-22");
     const manifest = JSON.parse(fs.readFileSync(path.join(
       campaignRoot,

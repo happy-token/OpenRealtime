@@ -8,6 +8,8 @@ interface SessionExperienceLayoutProps {
   pageForm: PageForm;
   surface: ReactNode;
   conversation: ReactNode;
+  controls: ReactNode;
+  ambientColor?: string | null;
   onEnterFullscreen: () => void;
 }
 
@@ -17,11 +19,15 @@ export function SessionExperienceLayout({
   pageForm,
   surface,
   conversation,
+  controls,
+  ambientColor,
   onEnterFullscreen,
 }: SessionExperienceLayoutProps) {
   const [companionMinimized, setCompanionMinimized] = useState(false);
   const [companionCorner, setCompanionCorner] = useState<CompanionCorner>("bottom-right");
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [sidecarConversationWidth, setSidecarConversationWidth] = useState(58);
+  const layoutRef = useRef<HTMLElement>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
   function beginDrag(event: PointerEvent<HTMLButtonElement>) {
@@ -47,9 +53,42 @@ export function SessionExperienceLayout({
     dragStart.current = null;
   }
 
+  function updateSidecarConversationWidth(clientX: number) {
+    const bounds = layoutRef.current?.getBoundingClientRect();
+    if (!bounds?.width) return;
+    const next = Math.min(68, Math.max(38, ((clientX - bounds.left) / bounds.width) * 100));
+    setSidecarConversationWidth(Math.round(next * 10) / 10);
+  }
+
+  function beginSidecarResize(event: PointerEvent<HTMLDivElement>) {
+    if (pageForm !== "sidecar") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateSidecarConversationWidth(event.clientX);
+  }
+
+  function resizeSidecar(event: PointerEvent<HTMLDivElement>) {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    updateSidecarConversationWidth(event.clientX);
+  }
+
+  function finishSidecarResize(event: PointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function adjustSidecarWidthByKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    const delta = event.key === "ArrowLeft" ? -2 : event.key === "ArrowRight" ? 2 : 0;
+    if (!delta) return;
+    event.preventDefault();
+    setSidecarConversationWidth(current => Math.min(68, Math.max(38, current + delta)));
+  }
+
   const surfaceStyle = {
     "--companion-drag-x": `${dragOffset.x}px`,
     "--companion-drag-y": `${dragOffset.y}px`,
+  } as CSSProperties;
+  const layoutStyle = {
+    "--sidecar-conversation-width": `${sidecarConversationWidth}%`,
+    ...(ambientColor ? { "--session-avatar-ambient": ambientColor } : {}),
   } as CSSProperties;
 
   function enterFullscreenFromCompanion(event: MouseEvent<HTMLElement>) {
@@ -64,7 +103,7 @@ export function SessionExperienceLayout({
   }
 
   return (
-    <section className="session-experience-layout" data-page-form={pageForm}>
+    <section ref={layoutRef} className="session-experience-layout" data-page-form={pageForm} style={layoutStyle}>
       <section
         className="session-surface-region"
         data-minimized={companionMinimized}
@@ -107,6 +146,24 @@ export function SessionExperienceLayout({
       <section className="session-conversation-region" aria-label="对话内容" aria-hidden={pageForm === "fullscreen"}>
         {conversation}
       </section>
+      {pageForm === "sidecar" && <div
+        className="session-sidecar-resizer"
+        role="separator"
+        aria-label="调整对话区宽度"
+        aria-orientation="vertical"
+        aria-valuemin={38}
+        aria-valuemax={68}
+        aria-valuenow={sidecarConversationWidth}
+        tabIndex={0}
+        onPointerDown={beginSidecarResize}
+        onPointerMove={resizeSidecar}
+        onPointerUp={finishSidecarResize}
+        onPointerCancel={finishSidecarResize}
+        onKeyDown={adjustSidecarWidthByKeyboard}
+      />}
+      <div className="session-controls-region" aria-label="会话操作">
+        {controls}
+      </div>
     </section>
   );
 }

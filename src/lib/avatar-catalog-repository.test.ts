@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   appendOwnedAvatarAction,
+  attachTalkingVariant,
   createOwnedAvatar,
   findOwnedAvatar,
   listOwnedAvatars,
@@ -50,6 +51,19 @@ describe("Avatar catalog repository", () => {
     await expect(updateOwnedAvatar("avatar-123", { displayName: "Changed" }, root))
       .rejects.toThrow("目录结构异常");
     expect(await readFile(catalog, "utf8")).toBe(original);
+  });
+
+  it.each(["minimax", "musetalk"] as const)("keeps %s talking variants nested, idempotent and bound to the source", async (method) => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    const variant = { id: "talk-v2", display_name: "Talking", method, source_video_url: "/base.mp4", video_url: "/digital-human/talking-variants/talk-v2.mp4", processing: "original" as const, validation: "pending" as const };
+    await attachTalkingVariant("avatar-123", "base", variant, root);
+    await attachTalkingVariant("avatar-123", "base", variant, root);
+    const avatar = await findOwnedAvatar("avatar-123", root);
+    expect(avatar?.actions).toHaveLength(1);
+    expect(avatar?.actions[0].talking_variants).toEqual([variant]);
+    await expect(attachTalkingVariant("avatar-123", "base", { ...variant, source_video_url: "/other.mp4" }, root)).rejects.toThrow("不匹配");
   });
 
   it("persists one immutable source image under avatar_id", async () => {

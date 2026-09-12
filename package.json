@@ -19,6 +19,7 @@
     "start:web": "bash scripts/start_web.sh",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:media:local": "RUN_LOCAL_MEDIA=1 vitest run src/lib/liveportrait-actions.test.ts src/lib/opentalking-avatar-catalog.test.ts src/lib/lip-sync-comparison-manifest.test.ts",
     "test:e2e": "playwright test",
     "test:voice": "bash scripts/test_voice_runtime.sh",
     "test:voice:live": "RUN_LIVE=1 .venv/bin/python -m pytest -q tests/live/test_doubao_direct_asr_live.py tests/live/test_doubao_direct_tts_live.py tests/live/test_deepseek_llm_live.py"

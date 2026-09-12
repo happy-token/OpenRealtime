@@ -1862,7 +1862,8 @@ body[data-color-scheme="dark"] .mode-strip { background: linear-gradient(110deg,
   min-width: 0;
   flex: 1;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 9px;
   transform-origin: 52% 50%;
   animation: control-liquid-field-in 700ms cubic-bezier(.16, 1, .3, 1) both;
@@ -2806,7 +2807,7 @@ body[data-color-scheme="dark"] .mode-strip { background: linear-gradient(110deg,
 .segmented-avatar-card-media-navigation > button:focus-visible { outline: 2px solid rgba(255,255,255,.86); outline-offset: 2px; }
 .segmented-avatar-card-media-navigation svg { width: 14px; height: 14px; }
 .segmented-avatar-card-quick-use { position: absolute; z-index: 6; right: 50%; bottom: 10px; width: max-content; max-width: calc(100% - 96px); min-height: 31px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; color: rgba(245,247,255,.94); background: rgb(15 18 29 / var(--panel-surface-alpha,.56)); box-shadow: inset 0 1px rgba(255,255,255,.1),0 10px 26px rgba(0,0,0,.2); font: inherit; font-size: .48rem; font-weight: 760; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; opacity: 0; pointer-events: none; backdrop-filter: blur(var(--panel-blur,24px)) saturate(148%); transform: translate(50%,4px); transition: opacity 160ms ease,border-color 160ms ease,background 160ms ease,transform 160ms ease; }
-.segmented-avatar-card-media:hover .segmented-avatar-card-quick-use,.segmented-avatar-card-media:focus-within .segmented-avatar-card-quick-use { opacity: 1; pointer-events: auto; transform: translate(50%,0); }
+.segmented-avatar-card[data-actions-only="true"] .segmented-avatar-card-quick-use,.segmented-avatar-card-media:hover .segmented-avatar-card-quick-use,.segmented-avatar-card-media:focus-within .segmented-avatar-card-quick-use { opacity: 1; pointer-events: auto; transform: translate(50%,0); }
 .segmented-avatar-card-quick-use:hover:not(:disabled) { border-color: rgba(255,255,255,.5); background: rgb(20 24 38 / var(--panel-surface-alpha,.56)); transform: translate(50%,-1px); }
 .segmented-avatar-card-quick-use:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .segmented-avatar-card-quick-use[data-selected="true"] { border-color: rgba(112,226,171,.48); color: rgba(219,255,238,.96); background: rgb(15 18 29 / var(--panel-surface-alpha,.56)); box-shadow: inset 0 0 0 1px rgba(64,190,127,.14),0 10px 26px rgba(0,0,0,.2); }
@@ -4126,6 +4127,8 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
 .session-conversation-region[aria-hidden="true"] { display: none; }
 .session-conversation-region .chat-view { width: 100%; height: 100%; padding: 28px 28px 116px; }
 .session-conversation-region .transcript-shell { width: 100%; max-width: 920px; height: 100%; }
+.session-controls-region { pointer-events: none; }
+.session-controls-region .session-control-shell { pointer-events: auto; }
 
 .session-experience-layout[data-page-form="fullscreen"] .session-surface-region { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; }
 
@@ -4149,6 +4152,40 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   border-radius: 24px;
   background: #17131b;
   box-shadow: 0 24px 62px rgba(37, 31, 54, .18);
+}
+.session-experience-layout[data-page-form="sidecar"] .session-controls-region {
+  grid-area: conversation;
+  z-index: 6;
+  align-self: end;
+  justify-self: stretch;
+  min-width: 0;
+  margin: 0 22px 22px;
+}
+.session-experience-layout[data-page-form="sidecar"] .session-control-shell {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  padding: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-radius: 20px;
+  transform: none;
+  animation: sidecar-control-in 360ms var(--ease-out-expo) both;
+}
+.session-experience-layout[data-page-form="sidecar"] .session-control-shell .session-chat-input {
+  flex: 1 0 100%;
+  width: 100%;
+}
+.session-experience-layout[data-page-form="sidecar"] .session-control-shell .session-fixed-actions {
+  width: 100%;
+  justify-content: center;
+}
+.session-experience-layout[data-page-form="sidecar"] .session-conversation-region .chat-view {
+  padding-bottom: 188px;
 }
 
 .session-experience-layout[data-page-form="content"] .session-conversation-region { position: absolute; inset: 0; }
@@ -4277,6 +4314,11 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
 .session-control-shell[data-view="fullscreen"] .session-chat-input { width: min(420px, 38vw); flex: 0 1 420px; }
 .session-control-shell[data-view="sidecar"] .session-chat-input { width: clamp(280px, 32vw, 420px); flex: 0 1 420px; }
 .session-control-shell[data-view="content"] .session-chat-input { width: clamp(320px, 38vw, 520px); flex: 0 1 520px; }
+
+@keyframes sidecar-control-in {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .session-layout-menu-wrap { position: relative; }
 .session-layout-menu-wrap[data-open="true"] > .session-action-btn::after { display: none; }
 .session-layout-menu {
@@ -4351,6 +4393,7 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   .session-experience-layout[data-page-form="sidecar"] { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 38dvh) minmax(0, 1fr); grid-template-areas: "surface" "conversation"; padding: 10px; gap: 10px; }
   .session-experience-layout[data-page-form="sidecar"] .session-surface-region,
   .session-experience-layout[data-page-form="sidecar"] .session-conversation-region { border-radius: 18px; }
+  .session-experience-layout[data-page-form="sidecar"] .session-controls-region { margin: 0 16px 16px; }
   .session-experience-layout[data-page-form="content"] .session-surface-region { top: 10px !important; right: 10px !important; bottom: auto !important; left: auto !important; width: min(42vw, 320px); height: min(26dvh, 220px); }
   .session-control-shell[data-view] { bottom: max(8px, env(safe-area-inset-bottom)); width: fit-content; max-width: calc(100% - 20px); gap: 8px; }
   .session-control-shell[data-view] .session-action-btn { width: 44px; min-width: 44px; height: 44px; }
@@ -4361,6 +4404,7 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
 @media (max-width: 680px) {
   .session-experience-layout[data-page-form="sidecar"] { grid-template-rows: minmax(170px, 30dvh) minmax(0, 1fr); }
   .session-conversation-region .chat-view { padding: 14px 12px 154px; }
+  .session-experience-layout[data-page-form="sidecar"] .session-conversation-region .chat-view { padding-bottom: 190px; }
   .session-experience-layout[data-page-form="content"] .session-surface-region { width: min(52vw, 250px); height: min(22dvh, 170px); border-radius: 16px; }
   .session-control-shell[data-view] { width: calc(100% - 20px); flex-wrap: wrap; padding: 7px; border-radius: 22px; }
   .session-control-shell[data-view] .session-chat-input { order: 2; flex: 1 0 100%; }
@@ -4373,3 +4417,430 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   .session-layout-menu > button { width: 100%; min-width: 0; padding-inline: 7px; }
   .session-layout-menu small { white-space: normal; }
 }
+
+.documentation-link { margin-left: auto; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; color: inherit; text-decoration: none; font-size: 13px; pointer-events: auto; }
+
+.confirmation-card { margin: auto; color: var(--text); max-height: calc(100dvh - 48px); overflow-y: auto; }
+.confirmation-card::backdrop { background: rgb(0 0 0 / 35%); }
+
+.avatar-capability-notice { display: grid; gap: 6px; padding: 10px; border-radius: 10px; background: var(--surface); color: var(--text); font-size: .8rem; line-height: 1.5; }
+.avatar-capability-notice a, .avatar-capability-notice button { color: var(--accent); }
+
+.session-chat-input > .session-chat-field { flex: 0 0 auto; }
+.session-chat-input > [role="alert"] { margin: 0; color: var(--danger); font-size: .75rem; overflow-wrap: anywhere; }
+
+/* Sidecar inherits its environment from the selected avatar/action, not a fixed dark stage. */
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) {
+  --session-avatar-ambient: rgb(45 40 55);
+  background:
+    radial-gradient(ellipse 56% 100% at 100% 50%, color-mix(in srgb, var(--session-avatar-ambient) 28%, transparent), transparent 78%),
+    var(--bg);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-region,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage {
+  background: var(--session-avatar-ambient);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-solid) 94%, var(--session-avatar-ambient)),
+    color-mix(in srgb, var(--surface-solid) 76%, var(--session-avatar-ambient))
+  );
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage)::before {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--session-avatar-ambient) 12%, transparent) 28%,
+    color-mix(in srgb, var(--session-avatar-ambient) 56%, transparent) 78%,
+    color-mix(in srgb, var(--session-avatar-ambient) 78%, transparent) 100%
+  );
+}
+
+@media (max-width: 900px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage)::before {
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--session-avatar-ambient) 78%, transparent) 0%,
+      color-mix(in srgb, var(--session-avatar-ambient) 48%, transparent) 46%,
+      color-mix(in srgb, var(--session-avatar-ambient) 8%, transparent) 82%,
+      transparent 100%
+    );
+  }
+}
+
+/* Avatar Sidecar: one full-bleed action canvas, with the conversation as a reading layer. */
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  background: var(--session-avatar-ambient);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-region {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-content,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage[data-ratio="16:9"] .digital-human-call-image,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage[data-ratio="16:9"] .digital-human-live-video {
+  object-fit: cover;
+  object-position: 0% 50%;
+  transform: scale(1.025);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region {
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 0;
+  width: min(58%, 960px);
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-solid) 94%, var(--session-avatar-ambient)) 0%,
+    color-mix(in srgb, var(--surface-solid) 86%, var(--session-avatar-ambient)) 68%,
+    color-mix(in srgb, var(--surface-solid) 24%, transparent) 100%
+  );
+  box-shadow: none;
+  backdrop-filter: blur(8px) saturate(112%);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region .chat-view {
+  padding-bottom: 188px;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region {
+  position: absolute;
+  z-index: 6;
+  right: auto;
+  bottom: 22px;
+  left: 22px;
+  width: min(calc(58% - 44px), 916px);
+  margin: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage)::before {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region {
+    inset: 34dvh 0 0;
+    width: 100%;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-solid) 48%, transparent) 0%,
+      color-mix(in srgb, var(--surface-solid) 92%, var(--session-avatar-ambient)) 18%,
+      color-mix(in srgb, var(--surface-solid) 96%, var(--session-avatar-ambient)) 100%
+    );
+  }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region {
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    width: auto;
+  }
+}
+
+/* The legacy avatar rule uses fixed positioning; Sidecar controls belong to its conversation layer. */
+.app-shell[data-session="active"][data-view="call"][data-experience-mode="avatar"] .session-experience-layout[data-page-form="sidecar"] .session-control-shell {
+  position: relative;
+  inset: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: none;
+  transform: none;
+}
+
+/* Avatar Sidecar keeps text entry and actions in one compact row; the reading layer can be resized. */
+.session-sidecar-resizer { display: none; }
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region {
+  width: min(var(--sidecar-conversation-width), 960px);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region {
+  width: min(calc(var(--sidecar-conversation-width) - 44px), 916px);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell {
+  flex-wrap: nowrap;
+  gap: 7px;
+  padding: 8px;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-chat-input {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-fixed-actions {
+  width: auto;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer {
+  position: absolute;
+  z-index: 5;
+  top: 16%;
+  bottom: 16%;
+  left: calc(var(--sidecar-conversation-width) - 8px);
+  display: block;
+  width: 16px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  width: 4px;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.3);
+  box-shadow: 0 0 0 1px rgba(9, 11, 18, .22);
+  opacity: .3;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease, background 160ms ease;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer:hover::before,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer:focus-visible::before {
+  background: rgba(255,255,255,.78);
+  opacity: 1;
+}
+.session-sidecar-resizer:focus-visible { outline: none; }
+
+@media (max-width: 900px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region { width: 100%; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region { width: auto; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell { flex-wrap: wrap; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-chat-input { flex-basis: 100%; width: 100%; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-fixed-actions { width: 100%; justify-content: center; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer { display: none; }
+}
+
+/* Avatar Sidecar places the digital human above the conversation rather than beside it. */
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(300px, 46dvh) minmax(0, 1fr);
+  grid-template-areas:
+    "surface"
+    "conversation";
+  gap: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-region {
+  position: relative;
+  z-index: 1;
+  grid-area: surface;
+  inset: auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-content,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage {
+  min-height: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage[data-ratio="16:9"] .digital-human-call-image,
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .digital-human-call-stage[data-ratio="16:9"] .digital-human-live-video {
+  object-position: center 38%;
+  transform: none;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region {
+  position: relative;
+  z-index: 2;
+  grid-area: conversation;
+  inset: auto;
+  width: auto;
+  min-height: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--session-avatar-ambient) 18%, var(--surface-solid)),
+    color-mix(in srgb, var(--session-avatar-ambient) 8%, var(--surface-solid))
+  );
+  backdrop-filter: blur(10px) saturate(112%);
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region .chat-view {
+  padding-bottom: 164px;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region {
+  position: relative;
+  z-index: 6;
+  grid-area: conversation;
+  align-self: end;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: auto;
+  margin: 0 22px 22px;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer {
+  display: none;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell {
+  flex-wrap: nowrap;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-chat-input {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+}
+.session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-fixed-actions {
+  width: auto;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+.session-chat-field textarea {
+  min-width: 0;
+  max-height: 132px;
+  flex: 1;
+  padding: 8px 0;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: .82rem;
+  line-height: 1.45;
+  scrollbar-width: thin;
+}
+.session-chat-field textarea::placeholder { color: var(--text-faint); }
+.session-chat-field:has(textarea:not(:placeholder-shown)) {
+  height: auto;
+  min-height: 50px;
+  border-radius: 20px;
+}
+.session-actions-overflow-wrap { position: relative; }
+.session-actions-overflow-wrap[data-open="true"] > .session-action-btn::after { display: none; }
+.session-actions-overflow {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: min(248px, calc(100vw - 32px));
+  padding: 7px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-solid) 96%, transparent);
+  box-shadow: 0 18px 48px rgba(19, 18, 31, .22);
+  backdrop-filter: blur(22px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(7px) scale(.98);
+  transition: opacity 150ms ease, transform 190ms var(--ease-out-expo), visibility 0s linear 190ms;
+}
+.session-actions-overflow-wrap[data-open="true"] .session-actions-overflow {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+.session-overflow-action {
+  min-height: 38px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: .72rem;
+  text-align: left;
+  cursor: pointer;
+}
+.session-overflow-action:hover,
+.session-overflow-action:focus-visible { background: color-mix(in srgb, var(--accent) 10%, var(--bg-soft)); color: var(--text); outline: 0; }
+.session-overflow-action svg { width: 17px; height: 17px; }
+.session-overflow-action.is-danger { color: color-mix(in srgb, var(--danger) 82%, var(--text)); }
+.session-overflow-layouts { margin: 3px 0; padding: 9px 10px 10px; border-top: 1px solid color-mix(in srgb, var(--border-strong) 66%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 66%, transparent); }
+.session-overflow-layouts > span { display: block; margin-bottom: 7px; color: var(--text-faint); font-size: .62rem; }
+.session-overflow-layouts > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.session-overflow-layouts button { min-height: 31px; padding: 0 5px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text-dim); font: inherit; font-size: .62rem; cursor: pointer; }
+.session-overflow-layouts button:hover,
+.session-overflow-layouts button[data-active="true"] { border-color: color-mix(in srgb, var(--accent) 34%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, var(--bg-soft)); color: var(--accent-deep); }
+
+@media (max-width: 900px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) {
+    grid-template-rows: minmax(230px, 38dvh) minmax(0, 1fr);
+  }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region { margin: 0 16px 16px; }
+}
+
+@media (max-width: 680px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) {
+    grid-template-rows: minmax(190px, 32dvh) minmax(0, 1fr);
+  }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell { flex-wrap: nowrap; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-chat-input { flex-basis: 0; width: auto; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-control-shell .session-fixed-actions { width: auto; }
+  .session-chat-field { align-items: flex-end; }
+  .session-chat-field textarea { font-size: .8rem; }
+}
+
+
+/* Desktop correction: Sidecar remains left/right; avatar sits above the composer layer. */
+@media (min-width: 901px) {
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) { display: block; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-surface-region { position: absolute; z-index: 4; inset: 0 0 0 calc(var(--sidecar-conversation-width) - 72px); width: auto; height: 100%; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 72px, #000 100%); mask-image: linear-gradient(90deg, transparent 0, #000 72px, #000 100%); }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-conversation-region { position: absolute; z-index: 1; inset: 0 auto 0 0; width: min(var(--sidecar-conversation-width), 960px); background: linear-gradient(90deg, color-mix(in srgb, var(--surface-solid) 94%, var(--session-avatar-ambient)) 0%, color-mix(in srgb, var(--surface-solid) 88%, var(--session-avatar-ambient)) 82%, color-mix(in srgb, var(--surface-solid) 78%, var(--session-avatar-ambient)) 100%); }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-controls-region { position: absolute; z-index: 3; right: auto; bottom: 22px; left: 22px; width: min(calc(var(--sidecar-conversation-width) - 44px), 916px); margin: 0; }
+  .session-experience-layout[data-page-form="sidecar"]:has(.digital-human-call-stage) .session-sidecar-resizer { display: block; }
+}
+
+
+/* Keep the home avatar scene mounted while the real-time speaking source crossfades above it. */
+.app-shell[data-session="active"] .topbar { display: none; }
+.call-view.avatar-runtime-only {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: none;
+}
+.call-view.avatar-runtime-only .digital-human-call-stage { background: transparent; box-shadow: none; }
+.call-view.avatar-runtime-only .digital-human-call-backdrop,
+.call-view.avatar-runtime-only .digital-human-call-image,
+.call-view.avatar-runtime-only .digital-human-call-placeholder,
+.call-view.avatar-runtime-only .digital-human-call-vignette,
+.call-view.avatar-runtime-only .digital-human-motion-base-video { display: none; }
+.call-view.avatar-runtime-only .digital-human-call-copy { position: relative; z-index: 5; }
+.call-view.avatar-runtime-only .avatar-startup-dialog { z-index: 6; }
+
+/* The real-time source crossfades over the persistent preview in the same viewport. */
+.call-view.avatar-runtime-only .digital-human-live-video {
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 30%;
+  transform: none;
+  transition: opacity 320ms ease;
+}
+.call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="segmented"] .digital-human-wav2lip-video {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+
+.session-surface-region:has(.avatar-runtime-only) { background: transparent; border: 0; box-shadow: none; pointer-events: none; }
+.app-shell[data-session="active"][data-experience-mode="avatar"] .session-experience-layout { background: transparent; }
+.app-shell[data-session="active"][data-experience-mode="avatar"] .session-experience-layout .session-surface-region:has(.avatar-runtime-only) { opacity: 1; background: transparent; border: 0; box-shadow: none; pointer-events: none; }

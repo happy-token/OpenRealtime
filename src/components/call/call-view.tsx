@@ -11,6 +11,8 @@ import { HomePreviewWorkspace, type AdvancedConfigTab } from "./home-preview-wor
 interface CallViewProps {
   hidden: boolean;
   sessionStarted: boolean;
+  homeSessionActive?: boolean;
+  runtimeOnly?: boolean;
   state: ConversationState;
   statusLabel: string;
   level: number;
@@ -18,7 +20,6 @@ interface CallViewProps {
   error: string | null;
   connected: boolean;
   onStartSession: (mode?: ExperienceMode) => void;
-  onStartTextSession?: () => void;
   visualTheme: VoiceVisualTheme;
   onVisualThemeChange: (theme: VoiceVisualTheme) => void;
   experienceMode: ExperienceMode;
@@ -37,11 +38,14 @@ interface CallViewProps {
   reducedMotion: boolean;
   captionsEnabled?: boolean;
   onAvatarRendererReady?: () => void;
+  onAvatarAmbientColorChange?: (color: string | null) => void;
 }
 
 export function CallView({
   hidden,
   sessionStarted,
+  homeSessionActive = false,
+  runtimeOnly = false,
   state,
   statusLabel,
   level,
@@ -49,7 +53,6 @@ export function CallView({
   error,
   connected,
   onStartSession,
-  onStartTextSession,
   visualTheme,
   onVisualThemeChange,
   experienceMode,
@@ -64,6 +67,7 @@ export function CallView({
   reducedMotion,
   captionsEnabled = true,
   onAvatarRendererReady,
+  onAvatarAmbientColorChange,
 }: CallViewProps) {
   const statusPlacement = ["cloud", "liquid-glass", "aurora-particles", "radial", "circle"].includes(visualTheme)
     ? "center"
@@ -71,7 +75,7 @@ export function CallView({
 
   return (
     <section
-      className={`view call-view ${hidden ? "hidden" : ""}`}
+      className={`view call-view ${hidden ? "hidden" : ""}${runtimeOnly ? " avatar-runtime-only" : ""}`}
       data-session={sessionStarted ? "active" : "idle"}
       aria-hidden={hidden}
     >
@@ -84,6 +88,7 @@ export function CallView({
           setAvatarAudioSink={setAvatarAudioSink}
           captionsEnabled={captionsEnabled}
           onRendererReady={onAvatarRendererReady}
+          onAmbientColorChange={onAvatarAmbientColorChange}
         />
       ) : sessionStarted ? (
         <div className="call-orb-wrap" data-state={state}>
@@ -112,6 +117,7 @@ export function CallView({
         </div>
       ) : (
         <HomePreviewWorkspace
+          sessionActive={homeSessionActive}
           connected={connected}
           error={error}
           visualTheme={visualTheme}
@@ -126,7 +132,6 @@ export function CallView({
           settingsRequest={settingsRequest}
           renderAdvancedSettings={renderAdvancedSettings}
           onStartSession={onStartSession}
-          onStartTextSession={onStartTextSession}
         />
       )}
     </section>

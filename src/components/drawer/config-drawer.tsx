@@ -56,6 +56,7 @@ import {
   OPENTALKING_AVATAR_CATALOG,
   type OpenTalkingAvatarAsset,
 } from "@/lib/opentalking-avatar-catalog";
+import { BottomVoiceStylePicker } from "@/components/call/bottom-voice-style-picker";
 import { ExperienceModeSwitch } from "@/components/call/experience-mode-switch";
 import { ExperienceModeDemo } from "@/components/call/experience-mode-demo";
 import { SelectMenu } from "@/components/ui/select-menu";
@@ -908,6 +909,9 @@ export function ConfigDrawer({
 
               {activeTab === "general" && (
                 <div className="drawer-tab-content">
+                  <section className="config-card">
+                    <BottomVoiceStylePicker />
+                  </section>
                   <section className="config-card">
                     <div className="config-card-heading"><span className="config-step"><Settings2 /></span><div><h4>界面主题</h4><p>应用于首页、设置与数字人资产页面</p></div><InfoHint text="主题保存在本机，并在所有页面保持一致。" /></div>
                     <div className="app-theme-grid" role="radiogroup" aria-label="通用界面主题">

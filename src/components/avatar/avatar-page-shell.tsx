@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useAvatarCapabilities } from "@/hooks/use-avatar-capabilities";
+import { AvatarCapabilityNotice } from "./avatar-capability-notice";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
@@ -29,6 +31,7 @@ export function AvatarPageShell({
   pageTitle?: string;
   children: ReactNode;
 }) {
+  const { capabilities, error, retry } = useAvatarCapabilities();
   const [preferences, setPreferences] = useState(DEFAULT_WORKBENCH_VISUAL_PREFERENCES);
   useEffect(() => {
     const sync = () => setPreferences(readWorkbenchVisualPreferences());
@@ -66,7 +69,10 @@ export function AvatarPageShell({
         </nav>
         <span className={styles.wordmark}>OPENREALTIME</span>
       </header>
-      <main className={styles.main}>{children}</main>
+      <main className={styles.main}>
+        {(error || capabilities?.assets.state !== "available") && <AvatarCapabilityNotice capability={capabilities?.assets} error={error} onRetry={retry} />}
+        {children}
+      </main>
     </div>
   );
 }

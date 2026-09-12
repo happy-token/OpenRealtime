@@ -18,7 +18,7 @@ export function parseExperienceMode(value: unknown): ExperienceMode {
   return parsePresentationMode(value);
 }
 
-export type AvatarRenderPath = "hosted" | "segmented";
+export type AvatarRenderPath = "hosted" | "segmented" | "orchestrated";
 export type AvatarProvider = "anam" | "heygen" | "custom";
 export type AvatarSurface = "fullbleed" | "stage" | "pip";
 export type AvatarFraming = "close" | "half" | "full";
@@ -34,6 +34,7 @@ const SEGMENTED_LIP_SYNC_IDS = new Set([
 
 export interface AvatarDisplayConfig {
   renderPath: AvatarRenderPath;
+  motionTalkingVariantId?: string;
   provider: AvatarProvider;
   avatarProfileId: string;
   hostedAvatarDisplayName?: string;
@@ -79,7 +80,8 @@ export function parseAvatarDisplayConfig(value: unknown): AvatarDisplayConfig {
     : undefined;
   const hostedAvatarImageUrl = parseHostedAvatarImageUrl(draft.hostedAvatarImageUrl);
   const parsed: AvatarDisplayConfig = {
-    renderPath: draft.renderPath === "segmented" ? "segmented" : "hosted",
+    renderPath: draft.renderPath === "orchestrated" ? "orchestrated" : draft.renderPath === "segmented" ? "segmented" : "hosted",
+    motionTalkingVariantId: typeof draft.motionTalkingVariantId === "string" ? draft.motionTalkingVariantId.slice(0, 128) : undefined,
     provider: draft.provider === "heygen" || draft.provider === "custom" ? draft.provider : "anam",
     avatarProfileId,
     hostedAvatarDisplayName,

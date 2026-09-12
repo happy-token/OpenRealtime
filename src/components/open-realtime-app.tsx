@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CallView } from "@/components/call/call-view";
 import type { AdvancedConfigTab } from "@/components/call/home-preview-workspace";
 import { ConfirmationCard } from "@/components/call/confirmation-card";
+import { BottomVoiceEdge } from "@/components/call/bottom-voice-edge";
 import { SessionControlBar } from "@/components/call/session-control-bar";
 import { SessionExperienceLayout } from "@/components/call/session-experience-layout";
 import {
@@ -96,6 +98,7 @@ export function OpenRealtimeApp({
   const [voiceVisualTheme, setVoiceVisualTheme] = useState<VoiceVisualTheme>("cloud");
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>("voice");
   const [avatarDisplayConfig, setAvatarDisplayConfig] = useState<AvatarDisplayConfig>(DEFAULT_AVATAR_DISPLAY_CONFIG);
+  const [avatarAmbientColor, setAvatarAmbientColor] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
   const [ttsVoice, setTtsVoice] = useState<TtsVoice>(DEFAULT_TTS_VOICE);
@@ -106,6 +109,10 @@ export function OpenRealtimeApp({
   const configureAvatarPersona = engine.configureAvatarPersona;
 
   const connected = engine.connection === "open";
+
+  useEffect(() => {
+    setAvatarAmbientColor(null);
+  }, [experienceMode, avatarDisplayConfig]);
 
   const openSettings = useCallback((tab: ConfigTab = "display") => {
     setDrawerInitialTab(tab);
@@ -168,7 +175,7 @@ export function OpenRealtimeApp({
       }).catch(() => undefined);
     }
     return () => controller.abort();
-  }, []);
+  }, [openSettings]);
 
   useEffect(() => {
     function syncAvatarDisplayConfig(event: StorageEvent) {
@@ -273,17 +280,6 @@ export function OpenRealtimeApp({
       return false;
     }
   }, [engine, connected, experienceMode]);
-
-  const beginTextSession = useCallback(() => {
-    engine.stop();
-    engine.clearConversationDisplay();
-    setExperienceMode("voice");
-    setPresentationView(enterPageForm(startPresentationSession("voice"), "content"));
-    setSessionStarted(true);
-    setAvatarStarting(false);
-    setSessionPaused(true);
-    setMicError(null);
-  }, [engine]);
 
   const startDigitalHumanSession = useCallback((config: AvatarDisplayConfig) => {
     setAvatarDisplayConfig(config);
@@ -479,44 +475,14 @@ export function OpenRealtimeApp({
             {connected ? "" : CONNECTION_HINT[engine.connection] ?? ""}
           </span>
         </div>
+        <Link className="documentation-link" href="/docs">文档</Link>
       </header>
 
       <main className="app-main">
-        {sessionStarted ? (
-          <SessionExperienceLayout
-            pageForm={pageForm}
-            onEnterFullscreen={() => handlePageFormChange("fullscreen")}
-            surface={<CallView
-          hidden={false}
-          sessionStarted={sessionStarted}
-          state={engine.state}
-          statusLabel={sessionPaused ? "已暂停" : STATE_LABEL[engine.state]}
-          level={engine.level}
-          currentTurnText={engine.caption}
-          error={micError}
-          connected={connected && engine.micAvailable}
-          onStartSession={handleHomeStart}
-          onStartTextSession={beginTextSession}
-          visualTheme={voiceVisualTheme}
-          onVisualThemeChange={handleVoiceVisualThemeChange}
-          experienceMode={experienceMode}
-          onExperienceModeChange={handleExperienceModeChange}
-          avatarDisplayConfig={avatarDisplayConfig}
-          onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
-          ttsProvider={ttsProvider}
-          ttsVoice={ttsVoice}
-          settingsRequest={0}
-          renderAdvancedSettings={renderHomeAdvancedSettings}
-          setAvatarAudioSink={engine.setAvatarAudioSink}
-          reducedMotion={reducedMotion}
-          captionsEnabled={captionsEnabled && pageForm !== "sidecar"}
-          onAvatarRendererReady={handleAvatarRendererReady}
-        />}
-            conversation={<ChatView entries={engine.transcript} active={pageForm !== "fullscreen"} />}
-          />
-        ) : <CallView
+        {experienceMode === "avatar" ? <CallView
           hidden={false}
           sessionStarted={false}
+          homeSessionActive={sessionStarted}
           state={engine.state}
           statusLabel={STATE_LABEL[engine.state]}
           level={engine.level}
@@ -524,7 +490,6 @@ export function OpenRealtimeApp({
           error={micError}
           connected={connected && engine.micAvailable}
           onStartSession={handleHomeStart}
-          onStartTextSession={beginTextSession}
           visualTheme={voiceVisualTheme}
           onVisualThemeChange={handleVoiceVisualThemeChange}
           experienceMode={experienceMode}
@@ -538,8 +503,83 @@ export function OpenRealtimeApp({
           setAvatarAudioSink={engine.setAvatarAudioSink}
           reducedMotion={reducedMotion}
           captionsEnabled={captionsEnabled}
-        />}
+        /> : null}
+
+        {sessionStarted ? (
+          <SessionExperienceLayout
+            pageForm={pageForm}
+            ambientColor={experienceMode === "avatar" ? avatarAmbientColor : null}
+            onEnterFullscreen={() => handlePageFormChange("fullscreen")}
+            surface={<CallView
+              hidden={false}
+              sessionStarted
+              runtimeOnly={experienceMode === "avatar"}
+              state={engine.state}
+              statusLabel={sessionPaused ? "已暂停" : STATE_LABEL[engine.state]}
+              level={engine.level}
+              currentTurnText={engine.caption}
+              error={micError}
+              connected={connected && engine.micAvailable}
+              onStartSession={handleHomeStart}
+              visualTheme={voiceVisualTheme}
+              onVisualThemeChange={handleVoiceVisualThemeChange}
+              experienceMode={experienceMode}
+              onExperienceModeChange={handleExperienceModeChange}
+              avatarDisplayConfig={avatarDisplayConfig}
+              onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+              ttsProvider={ttsProvider}
+              ttsVoice={ttsVoice}
+              settingsRequest={0}
+              renderAdvancedSettings={renderHomeAdvancedSettings}
+              setAvatarAudioSink={engine.setAvatarAudioSink}
+              reducedMotion={reducedMotion}
+              captionsEnabled={captionsEnabled && pageForm !== "sidecar"}
+              onAvatarRendererReady={handleAvatarRendererReady}
+              onAvatarAmbientColorChange={setAvatarAmbientColor}
+            />}
+            conversation={<ChatView entries={engine.transcript} active={pageForm !== "fullscreen"} />}
+            controls={<SessionControlBar
+              pageForm={pageForm}
+              paused={sessionPaused}
+              captionsEnabled={captionsEnabled}
+              onPageFormChange={handlePageFormChange}
+              onCaptionsChange={setCaptionsEnabled}
+              onPauseToggle={toggleSessionPause}
+              onOpenSettings={() => openSettings()}
+              onTerminate={terminateSession}
+              onSendText={engine.sendText}
+            />}
+          />
+        ) : experienceMode === "voice" ? <CallView
+          hidden={false}
+          sessionStarted={false}
+          state={engine.state}
+          statusLabel={STATE_LABEL[engine.state]}
+          level={engine.level}
+          currentTurnText={engine.caption}
+          error={micError}
+          connected={connected && engine.micAvailable}
+          onStartSession={handleHomeStart}
+          visualTheme={voiceVisualTheme}
+          onVisualThemeChange={handleVoiceVisualThemeChange}
+          experienceMode={experienceMode}
+          onExperienceModeChange={handleExperienceModeChange}
+          avatarDisplayConfig={avatarDisplayConfig}
+          onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
+          ttsProvider={ttsProvider}
+          ttsVoice={ttsVoice}
+          settingsRequest={0}
+          renderAdvancedSettings={renderHomeAdvancedSettings}
+          setAvatarAudioSink={engine.setAvatarAudioSink}
+          reducedMotion={reducedMotion}
+          captionsEnabled={captionsEnabled}
+        /> : null}
       </main>
+
+      {sessionStarted && !avatarStarting && (
+        <BottomVoiceEdge state={engine.state} level={engine.level} muted={sessionPaused}
+          connected={connected} reducedMotion={reducedMotion} />
+      )}
 
       {engine.pendingConfirmation && (
         <div className="confirmation-overlay">
@@ -560,20 +600,6 @@ export function OpenRealtimeApp({
         >
           <ArrowLeft aria-hidden="true" />
         </button>
-      )}
-
-      {sessionStarted && !avatarStarting && (
-        <SessionControlBar
-          pageForm={pageForm}
-          paused={sessionPaused}
-          captionsEnabled={captionsEnabled}
-          onPageFormChange={handlePageFormChange}
-          onCaptionsChange={setCaptionsEnabled}
-          onPauseToggle={toggleSessionPause}
-          onOpenSettings={() => openSettings()}
-          onTerminate={terminateSession}
-          onSendText={engine.sendText}
-        />
       )}
 
       {(sessionStarted || drawerOpen) && <ConfigDrawer

@@ -21,14 +21,11 @@ jobs:
         run: uv sync --frozen --all-extras
       - name: Run pytest
         run: uv run pytest
-      - name: Run mypy
-        # Non-blocking until ISSUE-0024's pre-existing error backlog is cleared;
-        # flip to blocking once `uv run mypy server` is clean.
-        continue-on-error: true
-        run: uv run mypy server
+      - name: Block new mypy errors
+        run: uv run python scripts/check_mypy.py
 
   web:
-    name: Web (lint + typecheck + vitest)
+    name: Web (lint + typecheck + vitest + build + browser smoke)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +36,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -49,3 +46,16 @@ jobs:
         run: pnpm exec tsc --noEmit
       - name: Unit tests
         run: pnpm test
+      - name: Production build
+        run: pnpm build
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser regression
+        run: pnpm exec playwright test tests-e2e/text-fallback.spec.ts tests-e2e/confirmation-access.spec.ts tests-e2e/avatar-capabilities.spec.ts
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-results
+          path: test-results/
+          retention-days: 7

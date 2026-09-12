@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import type { PendingConfirmationView } from "@/hooks/use-voice-session";
 
 interface ConfirmationCardProps {
@@ -6,8 +10,23 @@ interface ConfirmationCardProps {
 }
 
 export function ConfirmationCard({ pending, onDecision }: ConfirmationCardProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const returnTarget = document.activeElement;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      dialog?.close();
+      if (returnTarget instanceof HTMLElement && returnTarget.isConnected) returnTarget.focus();
+    };
+  }, []);
+  useFocusTrap(dialogRef, { active: true, onEscape: () => onDecision(false) });
+
   return (
-    <section
+    <dialog
+      ref={dialogRef}
+      onCancel={(event) => { event.preventDefault(); onDecision(false); }}
       className="confirmation-card"
       role="alertdialog"
       aria-modal="true"
@@ -31,6 +50,6 @@ export function ConfirmationCard({ pending, onDecision }: ConfirmationCardProps)
           确认执行
         </button>
       </div>
-    </section>
+    </dialog>
   );
 }

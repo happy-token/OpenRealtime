@@ -110,3 +110,14 @@ describe("SegmentedAvatarAssetPicker", () => {
     expect(html).toContain(">确认使用</button>");
   });
 });
+
+it("shows talking clips for owned avatars with realtime bindings and confirms the material itself", () => {
+  const html = renderToStaticMarkup(<SegmentedAvatarAssetPicker
+    actionsOnly avatars={[{ ...localSegmentedAvatar, realtimeBinding: { provider: "anam", providerAvatarId: "remote", avatarModel: "cara-3", state: "accepted", previewVideoUrl: null }, actions: [{ avatarActionId: "talking-id", displayName: "柔和回应 · MuseTalk", state: "available", videoUrl: "/talking.mp4", pendingModelCount: 0 }] }]}
+    selectedAvatarId="" selectedActionId="" disabled={false} active onSelect={() => {}}
+  />);
+  expect(html).toContain('src="/talking.mp4"');
+  expect(html).toContain('aria-label="确认使用讲话素材：柔和回应 · MuseTalk"');
+  expect(html).toContain('data-actions-only="true"');
+  expect(html).toContain("1 个讲话素材");
+});

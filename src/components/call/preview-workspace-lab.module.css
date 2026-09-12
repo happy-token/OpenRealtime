@@ -261,8 +261,6 @@
   width: min(100%, 220px);
   margin: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
   transform: translateX(-50%);
 }
@@ -2187,14 +2185,37 @@
   transition: none !important;
 }
 
-.textStartButton {
-  display: block;
-  margin: 12px auto 0;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, .35);
-  border-radius: 20px;
-  background: rgba(0, 0, 0, .5);
-  color: white;
-  cursor: pointer;
-}
-.textStartButton:focus-visible { outline: 2px solid white; outline-offset: 3px; }
+.avatarRenderPathSwitch { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 600px) { .avatarRenderPathSwitch { grid-template-columns: 1fr; } }
+
+.motionOrchestrationConfig { display: grid; gap: 12px; min-width: 0; }
+.motionOrchestrationConfig .macLipSyncSection { display: grid; gap: 10px; }
+.motionOrchestrationConfig .macLipSyncSection header small { color: var(--text-dim); font-size: .6rem; }
+.motionPairPreview summary { padding: 8px 0; cursor: pointer; font-size: .62rem; color: var(--text-dim); }
+.motionPairPreview video { object-fit: contain; }
+
+.motionMaterialSelector { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.motionMaterialSelector header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.motionMaterialSelector h3 { margin: 0; font-size: .65rem; }
+.motionMaterialSelector small { color: var(--text-dim); font-size: .58rem; }
+.motionMaterialSelector :global(.select-menu-popover) { width: 100%; max-height: 180px; overflow-y: auto; z-index: 20; }
+.motionMaterialSelector :global(.select-menu-option-copy) { min-width: 0; }
+.motionMaterialSelector :global(.select-menu-option-copy) strong { white-space: normal; overflow-wrap: anywhere; }
+.motionPreviewSwitch { top: 8px; right: 8px; z-index: 5; }
+.motionMaterialSelector :global(.select-menu) { width: 100%; min-width: 0; }
+.motionMaterialSelector :global(.select-menu-trigger) { width: 100%; }
+
+
+.workspace[data-session-active="true"] .topbar,
+.workspace[data-session-active="true"] .previewCopy,
+.workspace[data-session-active="true"] .homeStartAction,
+.workspace[data-session-active="true"] .homeModeDock,
+.workspace[data-session-active="true"] .liquidPanel,
+.workspace[data-session-active="true"] .homeError,
+.workspace[data-session-active="true"] .avatarWash,
+.workspace[data-session-active="true"] .atmosphere { display: none; }
+
+.workspace[data-session-active="true"] .preview::before,
+.workspace[data-session-active="true"] .preview::after { display: none; }
+
+.workspace[data-session-active="true"] .avatarPreviewForeground { filter: none; }

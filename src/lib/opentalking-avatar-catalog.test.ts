@@ -23,8 +23,14 @@ describe("OpenTalking built-in visual identity pack", () => {
       expect(identity.sourceImageUrl).toMatch(/^\/digital-human\/opentalking\/.+\/reference\.png$/);
       if (identity.motionVideoUrl) {
         expect(identity.motionVideoUrl).toMatch(/^\/digital-human\/opentalking\/.+\/motion\.mp4$/);
-        expect(existsSync(join(process.cwd(), "public", identity.motionVideoUrl))).toBe(true);
+
       }
     }
   });
+  it.runIf(process.env.RUN_LOCAL_MEDIA === "1")("finds every installed motion video", () => {
+    for (const identity of OPENTALKING_AVATAR_CATALOG) {
+      if (identity.motionVideoUrl) expect(existsSync(join(process.cwd(), "public", identity.motionVideoUrl))).toBe(true);
+    }
+  });
+
 });

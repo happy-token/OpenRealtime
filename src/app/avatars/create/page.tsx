@@ -16,7 +16,7 @@ export default async function CreateAvatarPage({
   return (
     <AvatarPageShell active="create" pageTitle="创建数字人">
       <AvatarStudio
-        initialTask={query.task === "action" ? "action" : "realtime"}
+        initialTask={query.task === "lightweight" ? "lightweight" : query.task === "action" ? "action" : "realtime"}
         initialAvatarId={typeof query.avatar_id === "string" ? query.avatar_id : ""}
       />
     </AvatarPageShell>

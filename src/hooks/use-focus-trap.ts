@@ -35,6 +35,8 @@ export function useFocusTrap(
   useEffect(() => {
     if (!active) return;
 
+    const returnTarget = returnFocusRef?.current
+      ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const container = containerRef.current;
     const focusable = container
       ? Array.from(container.querySelectorAll<HTMLElement>(FOCUS_TRAP_SELECTOR))
@@ -69,7 +71,7 @@ export function useFocusTrap(
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      returnFocusRef?.current?.focus();
+      if (returnTarget?.isConnected) returnTarget.focus();
     };
   }, [active, containerRef, returnFocusRef]);
 }

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, RefreshCw, Upload, Wand2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type CSSProperties, type KeyboardEvent } from "react";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
 import { StudioConfigOverlay } from "./studio-config-overlay";
 import {
@@ -216,8 +216,12 @@ export function AvatarActionStudio({
   onPreviewAvatar,
   mobileConfigOpen,
   onMobileConfigOpenChange,
+  configHeader,
+  active = true,
 }: {
   avatarId: string;
+  configHeader?: ReactNode;
+  active?: boolean;
   embedded?: boolean;
   initialProvider?: ActionProvider;
   previewImageUrl?: string;
@@ -226,6 +230,10 @@ export function AvatarActionStudio({
   mobileConfigOpen?: boolean;
   onMobileConfigOpenChange?: (open: boolean) => void;
 }) {
+  const mediaRoot = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!active) mediaRoot.current?.querySelectorAll("video").forEach(video => video.pause());
+  }, [active]);
   const [avatar, setAvatar] = useState<OwnedAvatarRecord | null>(null);
   const [provider, setProvider] = useState<ActionProvider>(initialProvider);
   const [livePortraitRuntime, setLivePortraitRuntime] = useState<RuntimeState>("checking");
@@ -848,6 +856,7 @@ export function AvatarActionStudio({
   const showingReference = previewMode === "reference" && Boolean(referencePreviewUrl);
   return (
     <section
+      ref={mediaRoot}
       className={`${styles.studio} ${embedded ? styles.embedded : ""}`}
       aria-labelledby="action-studio-title"
       {...(embedded ? { "data-transition": "in-page" } : {})}
@@ -871,6 +880,7 @@ export function AvatarActionStudio({
         {(() => {
           const controlsPanel = (
           <div className={styles.controls}>
+          {configHeader}
           {embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label="数字人形象 · 当前共享 Avatar">
             <button type="button" aria-label={`预览 ${avatar?.display_name || avatarId}`} onClick={onPreviewAvatar}>
               {avatar ? <Image src={previewImageUrl || avatar.source_image_url} alt="" fill sizes="56px" unoptimized /> : <LoaderCircle className={styles.spin} />}
@@ -1233,9 +1243,9 @@ export function AvatarActionStudio({
         <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
           <div className={styles.previewFrame} data-preview-frame="true">
             {showingResult
-              ? <video data-fit={previewFit} aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
+              ? <video data-fit={previewFit} aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay={active} muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
               : showingReference
-                ? <video key={referencePreviewUrl} data-fit={previewFit} aria-label={`参考动作预览：${provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作"}`} src={referencePreviewUrl} controls autoPlay muted loop playsInline preload="metadata" onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
+                ? <video key={referencePreviewUrl} data-fit={previewFit} aria-label={`参考动作预览：${provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作"}`} src={referencePreviewUrl} controls autoPlay={active} muted loop playsInline preload="metadata" onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
                 : avatar
                   ? <Image data-fit={previewFit} src={previewImageUrl || avatar.source_image_url} alt={`当前形象预览：${avatar.display_name}`} fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))} />
                   : null}

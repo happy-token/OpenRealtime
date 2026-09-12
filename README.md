@@ -350,8 +350,11 @@ server Policy Gateway → per-turn Fast Tool Loop → durable Journal result →
 correlated model continuation. Clock runs inline; public search uses the
 acknowledge-then-defer Voice Runtime path from
 [ADR-0061](docs/adr/0061-two-speed-voice-tool-runtime.md). Protected tools stop at a persisted bound-confirmation request;
-the authenticated browser approval/resume flow is the next increment, so the
-current demo never treats free-form speech as authorization.
+the browser displays the server-owned action summary and sends an explicit decision
+bound to its confirmation ID and digest. The server validates the decision;
+strong-auth actions remain unapprovable from the voice UI. Recovery re-emits
+pending confirmations, and free-form speech never counts as authorization.
+The dialog confines keyboard focus and Escape rejects the operation.
 
 `search_web` separately uses `DeterministicWebSearch` (no network) unless a real vendor is
 configured. To use `ByteWebSearch` (ByteDance's search API) instead, set:
@@ -375,7 +378,8 @@ the low-level UDP adapter and its protocol tests remain available for that work.
 uv run pytest -q
 uv run ruff check server demos tests
 pnpm test          # vitest unit tests (lib/audio.ts)
-pnpm test:e2e      # Playwright smoke test against the Next.js app
+pnpm test:e2e      # Playwright tests against the Next.js app
+pnpm test:media:local # optional installed media/evaluation evidence checks
 pnpm test:voice    # deterministic voice regression: Realtime + ASR/TTS + browser E2E
 ```
 
@@ -448,3 +452,13 @@ src/
 public/voice-input-worklet.js # v2 Device Audio Input Runtime worklet
 public/voice-input-worklet.js # v2 device input epoch/buffer worklet
 ```
+
+## Reliability and deployment boundaries
+
+The voice runtime is the framework; the Next.js digital-human workbench is its
+reference application. The file-backed Avatar catalog is separate from the
+Python PostgreSQL Journal. See [reliability operations](docs/RELIABILITY-OPERATIONS.md)
+for shared-directory locking, crash recovery, capability preflight, test profiles,
+and the Python type-error baseline. Local voice and text chat require no paid
+provider credentials. Hosted avatar sessions require authorized access and
+provider configuration; the UI checks these before offering startup.

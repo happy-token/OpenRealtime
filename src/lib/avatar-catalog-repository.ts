@@ -1,8 +1,9 @@
+import { withAvatarCatalogLock } from "./avatar-catalog-lock";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AvatarRealtimeBindingRecord } from "./avatar-catalog";
-import type { OwnedAvatarActionRecord, OwnedAvatarRecord } from "./avatar-records";
+import type { AvatarTalkingVariant, OwnedAvatarActionRecord, OwnedAvatarRecord } from "./avatar-records";
 import { isInternalAvatarPresetId } from "./internal-avatar-ids";
 import { hasMatchingImageSignature } from "./media-signatures";
 
@@ -15,10 +16,9 @@ const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_IMAGE_BYTES = 4_500_000;
 const AVATAR_ID = /^avatar-[A-Za-z0-9-]{3,80}$/;
 const ACTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-let mutationQueue = Promise.resolve();
 
 export async function listOwnedAvatars(root = repositoryRoot()) {
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const purged = purgeExpired(records);
     if (purged.changed) {
@@ -46,7 +46,7 @@ export async function createOwnedAvatar(
   input: { displayName: string; sourceImageDataUrl: string; avatarId?: string },
   root = repositoryRoot(),
 ) {
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const displayName = normalizeName(input.displayName, "请填写 Avatar 名称");
     const avatarId = input.avatarId?.trim() || `avatar-${randomUUID()}`;
     validateAvatarId(avatarId);
@@ -89,7 +89,7 @@ export async function updateOwnedAvatar(
   root = repositoryRoot(),
 ) {
   validateAvatarId(avatarId);
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const current = records.find((avatar) => avatar.avatar_id === avatarId);
     if (!current) throw new Error("找不到这个 Avatar");
@@ -111,7 +111,7 @@ export async function replaceOwnedAvatarSourceImage(
   root = repositoryRoot(),
 ) {
   validateAvatarId(avatarId);
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const current = records.find((avatar) => avatar.avatar_id === avatarId);
     if (!current) throw new Error("找不到这个 Avatar");
@@ -155,7 +155,7 @@ export async function appendOwnedAvatarAction(
 ) {
   validateAvatarId(avatarId);
   if (!ACTION_ID.test(input.avatar_action_id)) throw new Error("avatar_action_id 无效");
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const current = records.find((avatar) => avatar.avatar_id === avatarId);
     if (!current) throw new Error("找不到要添加动作的 Avatar");
@@ -185,7 +185,7 @@ export async function updateOwnedAvatarAction(
 ) {
   validateAvatarId(avatarId);
   if (!ACTION_ID.test(avatarActionId)) throw new Error("avatar_action_id 无效");
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const current = records.find((avatar) => avatar.avatar_id === avatarId);
     if (!current) throw new Error("找不到这个 Avatar");
@@ -208,9 +208,35 @@ export async function updateOwnedAvatarAction(
   });
 }
 
+export async function attachTalkingVariant(avatarId: string, actionId: string, variant: AvatarTalkingVariant, root = repositoryRoot()) {
+  validateAvatarId(avatarId);
+  if (!ACTION_ID.test(actionId) || !isTalkingVariant(variant)) throw new Error("讲话变体参数无效");
+  return withAvatarCatalogLock(root, async () => {
+    const records = await readCatalog(root);
+    const avatar = records.find(record => record.avatar_id === avatarId && !record.deleted_at);
+    const action = avatar?.actions.find(record => record.avatar_action_id === actionId && !record.deleted_at);
+    if (!avatar || !action) throw new Error("找不到基础动作");
+    if (action.video_url !== variant.source_video_url) throw new Error("讲话变体底片不匹配");
+    const updated = { ...action, talking_variants: [...(action.talking_variants || []).filter(item => item.id !== variant.id && item.method !== variant.method), variant] };
+    await writeCatalog(root, records.map(record => record === avatar ? { ...avatar, updated_at: new Date().toISOString(), actions: avatar.actions.map(item => item === action ? updated : item) } : record));
+    return updated;
+  });
+}
+
+function isTalkingVariant(value: unknown): value is AvatarTalkingVariant {
+  if (!value || typeof value !== "object") return false;
+  const item = value as AvatarTalkingVariant;
+  return typeof item.id === "string" && /^[a-z0-9-]{1,100}$/.test(item.id)
+    && typeof item.display_name === "string" && item.display_name.length > 0 && item.display_name.length <= 100
+    && (item.method === "wav2lip" || item.method === "minimax" || item.method === "musetalk")
+    && typeof item.source_video_url === "string"
+    && item.video_url === `/digital-human/talking-variants/${item.id}.mp4`
+    && (item.processing === "mouth-only" || (item.processing === "original" && (item.method === "minimax" || item.method === "musetalk"))) && item.validation === "pending";
+}
+
 export async function readOwnedAvatarImage(avatarId: string, root = repositoryRoot()) {
   validateAvatarId(avatarId);
-  return withMutation(async () => {
+  return withAvatarCatalogLock(root, async () => {
     const record = (await readCatalog(root)).find((avatar) => avatar.avatar_id === avatarId);
     if (!record) return null;
     return { bytes: await readFile(storedImagePath(root, record)), mediaType: record.source_image_media_type };
@@ -340,10 +366,4 @@ function isStoredRealtimeBinding(value: unknown): value is AvatarRealtimeBinding
     && typeof binding.avatar_model === "string"
     && binding.state === "accepted"
     && (binding.preview_video_url == null || typeof binding.preview_video_url === "string");
-}
-
-function withMutation<T>(task: () => Promise<T>) {
-  const result = mutationQueue.then(task, task);
-  mutationQueue = result.then(() => undefined, () => undefined);
-  return result;
 }

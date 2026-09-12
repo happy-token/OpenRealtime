@@ -29,11 +29,11 @@ export type PersonaSummary = {
 };
 
 export function avatarPersonaSelectionId(config: {
-  renderPath: "hosted" | "segmented";
+  renderPath: "hosted" | "segmented" | "orchestrated";
   avatarProfileId: string;
   segmentedAvatarId: string;
 }) {
-  return config.renderPath === "segmented"
+  return config.renderPath !== "hosted"
     ? config.segmentedAvatarId
     : config.avatarProfileId;
 }

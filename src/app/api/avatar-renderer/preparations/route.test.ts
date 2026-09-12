@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
 
@@ -17,7 +20,11 @@ vi.mock("@/lib/avatar-catalog-repository", () => ({
 import { GET, POST } from "./route";
 import { resolveAvatarRendererBinding } from "@/lib/avatar-renderer-preparation";
 
-afterEach(() => {
+const fixtureRoots: string[] = [];
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(fixtureRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -255,6 +262,13 @@ describe("avatar renderer preparation route", () => {
 
   it("prepares Wav2Lip 96 assets on the isolated compatibility renderer", async () => {
     enableLocalPreview();
+    const root = await mkdtemp(path.join(tmpdir(), "renderer-route-fixture-"));
+    fixtureRoots.push(root);
+    const mediaDir = path.join(root, "public/digital-human/builtin-motion");
+    await mkdir(mediaDir, { recursive: true });
+    // The route forwards bytes; actual video decoding belongs to renderer integration tests.
+    await writeFile(path.join(mediaDir, "liveportrait-optimized.mp4"), Buffer.from("fixture-video"));
+    vi.spyOn(process, "cwd").mockReturnValue(root);
     const rendererRequest = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, data: { state: "idle" } })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, data: { task_id: "task-96" } })));

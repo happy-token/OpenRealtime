@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("text chat needs no microphone and retains an offline draft until retry succeeds", async ({ page }) => {
+test("session text input retains an offline draft until retry succeeds", async ({ page }) => {
   await page.addInitScript(() => {
     type Listener = (event: Event) => void;
     const sockets: Socket[] = [];
@@ -11,6 +11,12 @@ test("text chat needs no microphone and retains an offline draft until retry suc
       listeners = new Map<string, Listener[]>();
       constructor() {
         sockets.push(this);
+        Object.assign(window, { disconnectTextTestSockets: () => {
+          for (const socket of sockets) {
+            socket.readyState = 0;
+            socket.emit("error", new Event("error"));
+          }
+        } });
         Object.assign(window, { connectTextTestSocket: () => {
           for (const socket of sockets) {
             if (socket.readyState !== 0) continue;
@@ -44,13 +50,18 @@ test("text chat needs no microphone and retains an offline draft until retry suc
       }
       close() { this.readyState = 3; }
     }
-    Object.assign(window, { WebSocket: Socket, SpeechRecognition: undefined, webkitSpeechRecognition: undefined });
+    class Recognition { start() {} stop() {} abort() {} }
+    Object.assign(window, { WebSocket: Socket, SpeechRecognition: Recognition });
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: () => {
       throw new Error("Text chat must not request microphone access");
     } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "使用文字对话" }).click();
+  await page.waitForFunction(() => typeof (window as unknown as { connectTextTestSocket?: unknown }).connectTextTestSocket === "function");
+  await page.evaluate(() => (window as unknown as { connectTextTestSocket: () => void }).connectTextTestSocket());
+  await page.getByRole("button", { name: "主页开始对话" }).click();
+  await page.getByRole("button", { name: "展开文字输入" }).click();
+  await page.evaluate(() => (window as unknown as { disconnectTextTestSockets: () => void }).disconnectTextTestSockets());
   const input = page.getByRole("textbox", { name: "输入对话消息" });
   await input.fill("你好，文字模式");
   await page.getByRole("button", { name: "发送消息" }).click();
@@ -59,6 +70,7 @@ test("text chat needs no microphone and retains an offline draft until retry suc
   await page.evaluate(() => (window as unknown as { connectTextTestSocket: () => void }).connectTextTestSocket());
   await expect(page.locator(".offline-hint")).toHaveAttribute("data-offline", "false");
   await page.getByRole("button", { name: "发送消息" }).click();
+  await page.getByRole("button", { name: "展开文字输入" }).click();
   await expect(input).toHaveValue("");
   await expect(page.locator(".session-chat-input").getByRole("alert")).toHaveCount(0);
   await expect(page.locator(".bubble--assistant")).toContainText("收到：你好，文字模式");

@@ -2,8 +2,22 @@
 
 // React binding for the browser Voice Session runtime.
 
+import { setPlaybackActive } from "@/voice/audio/playback-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { markdownToSpeechText } from "@/lib/message-text";
+import {
+  shouldResetTranscriptForSession,
+  mergeAssistantTranscript,
+  settleAssistantTranscript,
+  updateAssistantOutputText,
+  browserSpeechTextForResponse,
+  mergeUserTranscript,
+  updateAssistantCaption,
+  type TranscriptEntry,
+  type AssistantOutputText,
+  type AssistantCaptionState,
+} from "@/voice/session/transcript";
+export { shouldResetTranscriptForSession, mergeAssistantTranscript, settleAssistantTranscript, updateAssistantOutputText, browserSpeechTextForResponse, mergeUserTranscript, updateAssistantCaption } from "@/voice/session/transcript";
+export type { TranscriptEntry, AssistantMessageStatus, AssistantOutputText, UserTranscriptUpdate, AssistantCaptionState, AssistantCaptionUpdate } from "@/voice/session/transcript";
 import type { AvatarPersonaConfigFrame, ServerToClientFrame, TtsConfigFrame } from "@/lib/frames";
 import { BrowserAudioInput } from "@/voice/audio/browser-input";
 import { BrowserAudioOutput } from "@/voice/audio/browser-output";
@@ -119,19 +133,6 @@ declare global {
   }
 }
 
-export function shouldResetTranscriptForSession(
-  previousSessionId: string | null,
-  nextSessionId: string | null,
-  continuationFromSessionId: string | null = null,
-): boolean {
-  return (
-    previousSessionId !== null &&
-    nextSessionId !== null &&
-    previousSessionId !== nextSessionId &&
-    previousSessionId !== continuationFromSessionId
-  );
-}
-
 // Cancellation takes effect at a chunk boundary, so one more audio chunk for the
 // interrupted generation can already be in flight behind the cancel frame — and
 // since ADR-0036 the server's frame loop and its turn task can both write to the
@@ -175,173 +176,6 @@ export function playedAudioEndUs(
     Math.min(currentTimeSeconds, scheduledEndSeconds) - startedAtSeconds,
   );
   return Math.round(playedSeconds * 1_000_000);
-}
-
-export interface TranscriptEntry {
-  role: "user" | "assistant";
-  text: string;
-  generation?: number;
-  turnId?: string;
-  revision?: number;
-  isFinal?: boolean;
-  status?: AssistantMessageStatus;
-}
-
-export type AssistantMessageStatus = "streaming" | "completed" | "interrupted" | "failed";
-
-export interface AssistantOutputText {
-  generation: number | null;
-  display: string;
-  spoken: string;
-}
-
-export interface UserTranscriptUpdate {
-  turnId?: string | null;
-  revision?: number | null;
-  isFinal?: boolean;
-}
-
-export function mergeAssistantTranscript(
-  transcript: TranscriptEntry[],
-  generation: number,
-  text: string,
-): TranscriptEntry[] {
-  const existingIndex = transcript.findIndex(
-    (entry) => entry.role === "assistant" && entry.generation === generation,
-  );
-  if (existingIndex >= 0) {
-    return transcript.flatMap((entry, index) => {
-      if (entry.role !== "assistant" || entry.generation !== generation) {
-        return [entry];
-      }
-      return index === existingIndex ? [{ ...entry, text, status: "streaming" }] : [];
-    });
-  }
-  return [...transcript, { role: "assistant", text, generation, status: "streaming" }];
-}
-
-export function settleAssistantTranscript(
-  transcript: TranscriptEntry[],
-  generation: number,
-  status: Exclude<AssistantMessageStatus, "streaming">,
-): TranscriptEntry[] {
-  return transcript.map((entry) => (
-    entry.role === "assistant" && entry.generation === generation
-      ? { ...entry, status }
-      : entry
-  ));
-}
-
-export function updateAssistantOutputText(
-  current: AssistantOutputText,
-  kind: "display" | "spoken",
-  generation: number,
-  text: string,
-): AssistantOutputText {
-  const next = current.generation === generation
-    ? current
-    : { generation, display: "", spoken: "" };
-  return { ...next, [kind]: text };
-}
-
-export function browserSpeechTextForResponse(
-  output: AssistantOutputText,
-  generation: number,
-): string {
-  if (output.generation !== generation) return "";
-  return output.spoken.trim() || markdownToSpeechText(output.display);
-}
-
-export function mergeUserTranscript(
-  transcript: TranscriptEntry[],
-  generation: number,
-  text: string,
-  update: UserTranscriptUpdate = {},
-): TranscriptEntry[] {
-  const turnId = update.turnId ?? undefined;
-  const existingIndex = transcript.findIndex(
-    (entry) =>
-      entry.role === "user"
-      && (turnId ? entry.turnId === turnId : entry.generation === generation),
-  );
-  if (existingIndex >= 0) {
-    const existing = transcript[existingIndex];
-    if (
-      update.revision != null
-      && existing.revision != null
-      && update.revision < existing.revision
-    ) {
-      return transcript;
-    }
-    return transcript.flatMap((entry, index) => {
-      const sameTurn = entry.role === "user" && (
-        turnId ? entry.turnId === turnId : entry.generation === generation
-      );
-      if (!sameTurn) return [entry];
-      if (index !== existingIndex) return [];
-      return [{
-        ...entry,
-        text,
-        generation,
-        ...(turnId ? { turnId } : {}),
-        ...(update.revision == null ? {} : { revision: update.revision }),
-        ...(update.isFinal === undefined ? {} : { isFinal: update.isFinal }),
-      }];
-    });
-  }
-  const optimisticIndex = transcript.findLastIndex(
-    (entry) =>
-      entry.role === "user"
-      && entry.generation === undefined
-      && entry.text === text,
-  );
-  if (optimisticIndex >= 0) {
-    return transcript.map((entry, index) => (
-      index === optimisticIndex
-        ? {
-            ...entry,
-            text,
-            generation,
-            ...(turnId ? { turnId } : {}),
-            ...(update.revision == null ? {} : { revision: update.revision }),
-            ...(update.isFinal === undefined ? {} : { isFinal: update.isFinal }),
-          }
-        : entry
-    ));
-  }
-  return [
-    ...transcript,
-    {
-      role: "user",
-      text,
-      generation,
-      ...(turnId ? { turnId } : {}),
-      ...(update.revision == null ? {} : { revision: update.revision }),
-      ...(update.isFinal === undefined ? {} : { isFinal: update.isFinal }),
-    },
-  ];
-}
-
-export interface AssistantCaptionState {
-  text: string;
-  spokenGeneration: number | null;
-}
-
-export interface AssistantCaptionUpdate {
-  kind: "display" | "spoken";
-  generation: number;
-  text: string;
-}
-
-export function updateAssistantCaption(
-  current: AssistantCaptionState,
-  update: AssistantCaptionUpdate,
-): AssistantCaptionState {
-  if (update.kind === "spoken") {
-    return { text: update.text, spokenGeneration: update.generation };
-  }
-  if (current.spokenGeneration === update.generation) return current;
-  return { ...current, text: update.text };
 }
 
 export type SpeechInputMode = "server" | "browser" | "unavailable";
@@ -595,6 +429,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
     }
 
     function leaveSpeaking() {
+      setPlaybackActive(false);
       speakingGenerationRef.current = null;
       setState(micActiveRef.current ? "listening" : "idle");
     }
@@ -665,12 +500,12 @@ export function useVoiceSession(): VoiceSessionViewModel {
           }
           sessionIdRef.current = frame.session_id ?? null;
           setSessionId(sessionIdRef.current);
+          outputGraph.beginEpoch(crypto.randomUUID());
           if (
             frame.protocol_version === 2
             && typeof frame.resume_token === "string"
           ) {
             voiceControllerRef.current.acceptSession(frame as SessionAckV2);
-            outputGraph.beginEpoch(crypto.randomUUID());
             if (micActiveRef.current && inputGraph.isActive) {
               if (transportRef.current?.isOpen) {
                 inputGraph.beginEpoch();
@@ -970,6 +805,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
       generation: number,
       phase: PlaybackProgressPhase,
     ) {
+      setPlaybackActive(phase === "started");
       // Client-observed playback anchors. They are only emitted by genuine
       // start/end events or an explicit server cancellation, never by the
       // fallback timer used for no-audio demo paths.
@@ -986,6 +822,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
     }
 
     function reportPlaybackFinished(generation: number) {
+      setPlaybackActive(false);
       const transport = transportRef.current;
       if (!transport?.isOpen) return;
       transport.send(
@@ -1108,6 +945,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
         browserSpeechRecognitionConstructor() !== null,
       );
       try {
+        outputGraph.activate();
         if (mode === "server") await inputGraph.start();
         else if (mode === "browser") startBrowserSpeechRecognition();
         else throw new Error("语音识别不可用，请先使用文字输入");
@@ -1139,6 +977,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
       window.speechSynthesis?.cancel();
       outputGraph.reset();
       avatarAudioSinkRef.current?.reset();
+      setPlaybackActive(false);
       speakingGenerationRef.current = null;
       assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
       assistantCaptionRef.current = { text: "", spokenGeneration: null };
@@ -1154,6 +993,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
       } catch {
         return false;
       }
+      outputGraph.activate();
       sessionOutputEnabledRef.current = true;
       setCaption(`你：${text}`);
       if (
@@ -1176,6 +1016,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
           ];
         });
       }
+      setPlaybackActive(false);
       speakingGenerationRef.current = null;
       setState("thinking");
       armThinkingFallback();

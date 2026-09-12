@@ -12,10 +12,21 @@ export interface OwnedAvatarRecord {
 }
 
 export interface OwnedAvatarActionRecord {
+  talking_variants?: AvatarTalkingVariant[];
   avatar_action_id: string;
   display_name: string;
   video_url: string | null;
   pending_model_count: number;
   created_at: string;
   deleted_at: string | null;
+}
+
+export interface AvatarTalkingVariant {
+  id: string;
+  display_name: string;
+  method: "wav2lip" | "minimax" | "musetalk";
+  source_video_url: string;
+  video_url: string;
+  processing: "mouth-only" | "original";
+  validation: "pending";
 }

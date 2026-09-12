@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Film, ImagePlus, LoaderCircle, LockKeyhole, Maximize2, Play, Sparkles, Upload, X } from "lucide-react";
-import { useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import {
   ANAM_AVATAR_NAME_MAX_LENGTH,
   ANAM_AVATAR_NAME_MIN_LENGTH,
@@ -27,12 +27,14 @@ import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { isInternalAvatarPresetId } from "@/lib/internal-avatar-ids";
 import { classifyMediaAspectRatio } from "@/lib/media-aspect-fit";
+import { AvatarDriveTabs, type AvatarCreationTask } from "./avatar-drive-tabs";
+import { AvatarLightweightConfig } from "./avatar-lightweight-config";
 import { AvatarActionStudio } from "./avatar-action-studio";
 import { StudioConfigOverlay } from "./studio-config-overlay";
 import styles from "./avatar-studio.module.css";
 
 type SourceMode = "library" | "upload" | "happyimage";
-type CreationTask = "realtime" | "action";
+type CreationTask = AvatarCreationTask;
 type SourceChoice = { id: string; name: string; imageUrl: string };
 type BusyState = "" | "image" | "save" | "anam" | "accept";
 
@@ -44,6 +46,7 @@ export function AvatarStudio({
   initialAvatarId?: string;
 } = {}) {
   const [task, setTask] = useState<CreationTask>(initialTask);
+  const [visitedTasks, setVisitedTasks] = useState<CreationTask[]>([initialTask]);
   const [mode, setMode] = useState<SourceMode>("library");
   const [libraryChoices, setLibraryChoices] = useState<SourceChoice[]>([]);
   const [source, setSource] = useState<SourceChoice | null>(null);
@@ -127,7 +130,7 @@ export function AvatarStudio({
     };
   }, [previewOpen]);
 
-  function chooseSource(choice: SourceChoice) {
+  const chooseSource = useCallback((choice: SourceChoice) => {
     if (createdAvatar) return;
     setSource(choice);
     if (mode === "library") {
@@ -138,13 +141,13 @@ export function AvatarStudio({
       setDisplayNameOrigin("");
     }
     setError("");
-  }
+  }, [createdAvatar, mode, displayNameOrigin]);
 
   useEffect(() => {
     if (mode !== "library" || createdAvatar || libraryChoices.length === 0) return;
     if (source && libraryChoices.some((choice) => choice.id === source.id)) return;
     chooseSource(libraryChoices[0]);
-  }, [mode, source, createdAvatar, libraryChoices]);
+  }, [mode, source, createdAvatar, libraryChoices, chooseSource]);
 
   useEffect(() => {
     const updateVisibility = () => setPageVisible(document.visibilityState === "visible");
@@ -161,7 +164,7 @@ export function AvatarStudio({
       chooseSource(libraryChoices[(currentIndex + 1) % libraryChoices.length]);
     }, 1_000);
     return () => window.clearTimeout(timer);
-  }, [mode, source, createdAvatar, libraryChoices, pageVisible, libraryDockPinned, libraryDockHovered, libraryDockFocused]);
+  }, [mode, source, createdAvatar, libraryChoices, pageVisible, libraryDockPinned, libraryDockHovered, libraryDockFocused, chooseSource]);
 
   function changeSourceMode(nextMode: SourceMode) {
     if (nextMode === mode || createdAvatar) return;
@@ -213,6 +216,7 @@ export function AvatarStudio({
     const resolvedDisplayName = displayName.trim() || (mode === "library" ? "" : defaultAvatarName);
     if (!resolvedDisplayName) return;
     setTask(nextTask);
+    setVisitedTasks(previous => previous.includes(nextTask) ? previous : [...previous, nextTask]);
     setBusy("save");
     setError("");
     setDisplayName(resolvedDisplayName);
@@ -287,6 +291,7 @@ export function AvatarStudio({
 
   function changeAvatar() {
     if (busy) return;
+    setVisitedTasks([task]);
     setCreatedAvatar(null);
     setAnamCandidate(null);
     setCurrentStep(0);
@@ -294,8 +299,9 @@ export function AvatarStudio({
   }
 
   function changeTask(nextTask: CreationTask) {
-    if (nextTask === task) return;
+    if (nextTask === task || busy) return;
     setTask(nextTask);
+    setVisitedTasks(previous => previous.includes(nextTask) ? previous : [...previous, nextTask]);
     setCurrentStep(createdAvatar ? 2 : 0);
     setError("");
   }
@@ -378,28 +384,14 @@ export function AvatarStudio({
             <div className={styles.nextTaskBlock}>
               <div className={styles.nextTaskHeading}>
                 <strong>确认形象并选择下一步</strong>
-                <small>两项能力后续都可以继续添加</small>
+                <small>实时托管、多段式合成或轻量动作</small>
               </div>
               <div className={styles.nextTaskChoices} role="group" aria-label="选择下一步操作">
-                <button
-                  className={styles.nextTaskChoice}
-                  type="button"
+                <button className={styles.nextTaskChoice} type="button"
                   disabled={!source || (avatarNameLocked && !displayName.trim()) || Boolean(busy)}
-                  onClick={() => void createAvatar("realtime")}
-                >
-                  <span className={styles.nextTaskIcon}>{busy === "save" && task === "realtime" ? <LoaderCircle className={styles.spin} /> : <Play />}</span>
-                  <span><strong>创建实时驱动</strong></span>
-                  <ArrowRight aria-hidden="true" />
-                </button>
-                <button
-                  className={styles.nextTaskChoice}
-                  type="button"
-                  disabled={!source || (avatarNameLocked && !displayName.trim()) || Boolean(busy)}
-                  onClick={() => void createAvatar("action")}
-                >
-                  <span className={styles.nextTaskIcon}>{busy === "save" && task === "action" ? <LoaderCircle className={styles.spin} /> : <Film />}</span>
-                  <span><strong>创建 Avatar 动作</strong></span>
-                  <ArrowRight aria-hidden="true" />
+                  onClick={() => void createAvatar("realtime")}>
+                  <span className={styles.nextTaskIcon}>{busy === "save" ? <LoaderCircle className={styles.spin} /> : <Play />}</span>
+                  <span><strong>继续配置驱动方式</strong></span><ArrowRight />
                 </button>
               </div>
             </div>
@@ -479,9 +471,11 @@ export function AvatarStudio({
         ) : null}
 
         {currentStep === 2 && createdAvatar ? (
-          task === "realtime" ? <>
-            <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="实时驱动配置" icon={<Play aria-hidden="true" />}>
+          <>
+          <div className={styles.driveView} hidden={task !== "realtime"}>
+            <StudioConfigOverlay open={task === "realtime" && mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="实时驱动配置" icon={<Play aria-hidden="true" />}>
             <aside className={styles.taskSidebar}>
+              <AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />
               <section className={styles.selectedAvatar} aria-label="当前共享 Avatar">
                 <button className={styles.selectedAvatarImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
                 <div><strong>{createdAvatar.display_name}</strong></div>
@@ -523,24 +517,35 @@ export function AvatarStudio({
               </section>
             </aside>
             </StudioConfigOverlay>
-            <section className={styles.visualStage} aria-label="实时驱动效果预览">
+            <section className={`${styles.visualStage} ${styles.floatingPreviewStage}`} aria-label="实时驱动效果预览">
               <header><strong>{realtimePreviewVideoUrl ? "效果确认" : "当前形象"}</strong></header>
               <div className={styles.visualStageBody}>
-                {realtimePreviewVideoUrl
+                {realtimePreviewVideoUrl && task === "realtime"
                   ? <video className={styles.stageVideo} src={realtimePreviewVideoUrl} controls autoPlay muted loop playsInline />
                   : <button className={styles.stageImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{createdAvatar.display_name}</strong><em>创建后将在这里播放实时驱动效果</em></span><Maximize2 aria-hidden="true" /></button>}
               </div>
               <footer><span>{createdAvatar.realtime_binding ? "已确认并启用" : anamCandidate ? "等待效果确认，确认后启用" : "尚未创建实时驱动效果"}</span></footer>
             </section>
-          </> : <AvatarActionStudio
+          </div>
+          {visitedTasks.includes("action") ? <div className={styles.driveView} hidden={task !== "action"}><AvatarActionStudio
+            key={createdAvatar.avatar_id}
+            active={task === "action"}
+            configHeader={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />}
             avatarId={createdAvatar.avatar_id}
             embedded
             previewImageUrl={selectedAvatarImageUrl}
             onChangeAvatar={changeAvatar}
             onPreviewAvatar={() => setPreviewOpen(true)}
-            mobileConfigOpen={mobileConfigOpen}
+            mobileConfigOpen={task === "action" && mobileConfigOpen}
             onMobileConfigOpenChange={setMobileConfigOpen}
-          />
+          /></div> : null}
+          {visitedTasks.includes("lightweight") ? <div className={styles.driveView} hidden={task !== "lightweight"}>
+            <AvatarLightweightConfig key={createdAvatar.avatar_id} avatar={createdAvatar} active={task === "lightweight"}
+              header={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />}
+              open={task === "lightweight" && mobileConfigOpen} onOpenChange={setMobileConfigOpen}
+              onCreateAction={() => changeTask("action")} />
+          </div> : null}
+          </>
         ) : null}
       </div> : null}
 

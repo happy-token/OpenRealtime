@@ -86,6 +86,10 @@ export class BrowserAudioOutput {
     this.runtime.beginEpoch(outputEpoch);
   }
 
+  activate(): void {
+    if (!this.runtime.isActive) this.beginEpoch(crypto.randomUUID());
+  }
+
   play(chunk: BrowserAudioChunk): boolean {
     const context = this.ensureContext();
     const accepted = this.runtime.enqueue({

@@ -7,8 +7,10 @@ describe("SessionExperienceLayout", () => {
     const sidecar = renderToStaticMarkup(
       <SessionExperienceLayout
         pageForm="sidecar"
+        ambientColor="rgb(32 72 112)"
         surface={<div>ORB SURFACE</div>}
         conversation={<div>CONVERSATION HISTORY</div>}
+        controls={<div>SESSION CONTROLS</div>}
         onEnterFullscreen={() => {}}
       />,
     );
@@ -17,12 +19,16 @@ describe("SessionExperienceLayout", () => {
         pageForm="fullscreen"
         surface={<div>ORB SURFACE</div>}
         conversation={<div>CONVERSATION HISTORY</div>}
+        controls={<div>SESSION CONTROLS</div>}
         onEnterFullscreen={() => {}}
       />,
     );
 
     expect(sidecar).toContain('aria-label="实时展示"');
+    expect(sidecar).toContain("--session-avatar-ambient:rgb(32 72 112)");
     expect(sidecar).toContain('aria-label="对话内容" aria-hidden="false"');
+    expect(sidecar).toContain('class="session-controls-region" aria-label="会话操作"><div>SESSION CONTROLS</div></div>');
+    expect(sidecar).toContain('class="session-sidecar-resizer" role="separator" aria-label="调整对话区宽度"');
     expect(sidecar).not.toContain('aria-label="小窗显示控制"');
     expect(sidecar).not.toContain('class="session-surface-fullscreen"');
     expect(fullscreen).toContain('aria-label="对话内容" aria-hidden="true"');
@@ -35,6 +41,7 @@ describe("SessionExperienceLayout", () => {
         pageForm="content"
         surface={<div>AVATAR</div>}
         conversation={<div>CONVERSATION</div>}
+        controls={<div>SESSION CONTROLS</div>}
         onEnterFullscreen={() => {}}
       />,
     );

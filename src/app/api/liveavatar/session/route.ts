@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authorizeAvatarAssetRequest } from "@/lib/avatar-assets-server";
 import {
   createLiveAvatarSessionToken,
   LiveAvatarSessionError,
@@ -7,7 +8,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  if (request.headers.get("x-openrealtime-client") !== "voice-ui") {
+  if (!authorizeAvatarAssetRequest(request, true)) {
     return NextResponse.json(
       { error: "不允许从当前来源创建 LiveAvatar 会话" },
       { status: 403, headers: { "Cache-Control": "no-store" } },

@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import { useAvatarCapabilities } from "@/hooks/use-avatar-capabilities";
+import { AvatarCapabilityNotice } from "@/components/avatar/avatar-capability-notice";
 import Link from "next/link";
 import {
   Bot,
@@ -42,6 +44,7 @@ import {
   workbenchSurfaceTokens,
   writeWorkbenchVisualPreferences,
 } from "@/lib/workbench-visual-preferences";
+import { MotionOrchestrationConfig } from "@/components/digital-human/motion-orchestration";
 import type { AvatarDisplayConfig, AvatarProvider, ExperienceMode } from "@/components/digital-human/types";
 import {
   activateMacLipSyncRuntime,
@@ -75,6 +78,7 @@ export type AdvancedConfigTab = Exclude<ConfigTab, "appearance">;
 const IGNORE_MODEL_LABEL_CHANGE: (label: string) => void = () => undefined;
 
 interface HomePreviewWorkspaceProps {
+  sessionActive?: boolean;
   connected: boolean;
   error: string | null;
   visualTheme: VoiceVisualTheme;
@@ -93,7 +97,6 @@ interface HomePreviewWorkspaceProps {
     onModelLabelChange: (label: string) => void,
   ) => ReactNode;
   onStartSession: (mode?: ExperienceMode) => void;
-  onStartTextSession?: () => void;
   initialPanelState?: PanelState;
 }
 
@@ -347,6 +350,7 @@ function MainAvatarMotionPreview({ choice }: { choice: HomeAvatarChoice }) {
 }
 
 export function HomePreviewWorkspace({
+  sessionActive = false,
   connected,
   error,
   visualTheme,
@@ -361,9 +365,16 @@ export function HomePreviewWorkspace({
   settingsRequest,
   renderAdvancedSettings,
   onStartSession,
-  onStartTextSession,
   initialPanelState = "collapsed",
 }: HomePreviewWorkspaceProps) {
+  const { capabilities, error: capabilityError, retry: retryCapabilities } = useAvatarCapabilities();
+  const capabilityId = avatarDisplayConfig.renderPath === "hosted"
+    ? avatarDisplayConfig.provider === "heygen" ? "heygen" : "anam"
+    : avatarDisplayConfig.renderPath === "segmented" ? "localRenderer" : "assets";
+  const selectedCapability = avatarDisplayConfig.renderPath === "hosted" && avatarDisplayConfig.provider !== "anam"
+    ? { state: "not_configured" as const, message: "此对话模式暂不可用，请选择 Anam 实时托管。" }
+    : capabilities?.[capabilityId];
+  const capabilityBlocked = experienceMode === "avatar" && selectedCapability?.state !== "available";
   const [panelState, setPanelState] = useState<PanelState>(initialPanelState);
   const [activeTab, setActiveTab] = useState<ConfigTab>("appearance");
   const [previewEnergy, setPreviewEnergy] = useState(42);
@@ -730,7 +741,7 @@ export function HomePreviewWorkspace({
     }
   }
 
-  const selectedAvatarName = selectedAvatar.avatarName ?? selectedAvatar.name;
+  const selectedAvatarName = avatarDisplayConfig.renderPath === "orchestrated" ? avatarDisplayConfig.segmentedDisplayName || "所选数字人" : selectedAvatar.avatarName ?? selectedAvatar.name;
   const workbenchPersonaAvatarId = avatarPersonaSelectionId({
     renderPath: avatarDisplayConfig.renderPath,
     avatarProfileId: avatarDisplayConfig.avatarProfileId,
@@ -739,7 +750,7 @@ export function HomePreviewWorkspace({
   const startLabel = experienceMode === "voice"
     ? "使用对话模式开始对话"
     : `与 ${selectedAvatarName} 开始对话`;
-  const selectedSegmentedRuntimeReady = avatarDisplayConfig.renderPath !== "segmented"
+  const selectedSegmentedRuntimeReady = avatarDisplayConfig.renderPath === "orchestrated" ? Boolean(avatarDisplayConfig.segmentedAvatarId && avatarDisplayConfig.segmentedAvatarActionId && avatarDisplayConfig.motionTalkingVariantId) : avatarDisplayConfig.renderPath !== "segmented"
     || Boolean(getSegmentedAvatarRuntime(avatarDisplayConfig));
   const advancedTab: AdvancedConfigTab = activeTab === "appearance" ? "general" : activeTab;
   const panelTokens = workbenchSurfaceTokens({ transparency: panelTransparency, glassBlur: panelGlassBlur });
@@ -816,7 +827,7 @@ export function HomePreviewWorkspace({
   }
 
   return (
-    <div className={styles.workspace} data-mode={experienceMode === "voice" ? "orb" : "avatar"} data-orb-theme={visualTheme} data-reduced-motion={reducedMotion} style={panelStyle} onPointerDown={closePanelFromBlankPreview}>
+    <div className={styles.workspace} data-session-active={sessionActive} data-mode={experienceMode === "voice" ? "orb" : "avatar"} data-orb-theme={visualTheme} data-reduced-motion={reducedMotion} style={panelStyle} onPointerDown={closePanelFromBlankPreview}>
       <div className={styles.preview} aria-live="polite">
         <div className={styles.atmosphere} aria-hidden="true"><i /><i /><i /></div>
         <div className={styles.orbPreview} data-visible={experienceMode === "voice"}>
@@ -861,7 +872,7 @@ export function HomePreviewWorkspace({
       <div className={styles.homeStartAction}>
         <VoiceStartButton
           connected={connected}
-          disabled={experienceMode === "avatar" && !selectedSegmentedRuntimeReady}
+          disabled={capabilityBlocked || (experienceMode === "avatar" && !selectedSegmentedRuntimeReady)}
           ariaLabel="主页开始对话"
           label={experienceMode === "voice" ? "开始语音对话" : `与 ${selectedAvatarName} 对话`}
           hint={experienceMode === "voice"
@@ -871,11 +882,7 @@ export function HomePreviewWorkspace({
               : "请选择可用的数字人动作"}
           onPress={() => onStartSession(experienceMode)}
         />
-        {onStartTextSession && (
-          <button type="button" className={styles.textStartButton} onClick={onStartTextSession}>
-            使用文字对话
-          </button>
-        )}
+        {experienceMode === "avatar" && <AvatarCapabilityNotice capability={selectedCapability} error={capabilityError} onRetry={retryCapabilities} />}
       </div>
 
       <nav className={`${styles.modeSwitch} ${styles.homeModeDock}`} data-transparency={panelTransparency} data-glass-blur={panelGlassBlur} aria-label="主页呈现模式">
@@ -961,9 +968,10 @@ export function HomePreviewWorkspace({
                     <button type="button" data-active={avatarDisplayConfig.renderPath === "segmented"} aria-pressed={avatarDisplayConfig.renderPath === "segmented"} onClick={() => selectAvatarRenderPath("segmented")}>
                       <span><Film /></span><span><strong>多段式合成</strong><small>动作资产与形象资产组合</small></span>{avatarDisplayConfig.renderPath === "segmented" ? <Check /> : null}
                     </button>
+                    <button type="button" data-active={avatarDisplayConfig.renderPath === "orchestrated"} aria-pressed={avatarDisplayConfig.renderPath === "orchestrated"} onClick={() => selectAvatarRenderPath("orchestrated")}><span><Film /></span><span><strong>动作编排</strong><small>播放配对的待机与讲话素材</small></span>{avatarDisplayConfig.renderPath === "orchestrated" ? <Check /> : null}</button>
                   </div>
 
-                  {avatarDisplayConfig.renderPath === "hosted" ? (
+                  {avatarDisplayConfig.renderPath === "orchestrated" ? <MotionOrchestrationConfig config={avatarDisplayConfig} onChange={onAvatarDisplayConfigChange} catalog={segmentedAvatarCatalog} active={!reducedMotion} /> : avatarDisplayConfig.renderPath === "hosted" ? (
                     <>
                       <section className={styles.avatarProviderSection}>
                         <header>
@@ -1128,7 +1136,7 @@ export function HomePreviewWorkspace({
                 </button>
                 <PersonaQuickSelect avatarId={workbenchPersonaAvatarId} avatarDisplayName={selectedAvatarName} />
               </div>
-              <button type="button" className={styles.startButton} disabled={!connected} onClick={() => onStartSession(experienceMode)}>
+              <button type="button" className={styles.startButton} disabled={!connected || capabilityBlocked || (experienceMode === "avatar" && !selectedSegmentedRuntimeReady)} onClick={() => onStartSession(experienceMode)}>
                 <span><Play /></span>{connected ? startLabel : "语音服务准备中"}<ChevronRight />
               </button>
             </footer>

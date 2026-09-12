@@ -377,3 +377,71 @@
   .taskSidebar { height: auto; }
   .visualStage { width: 100%; aspect-ratio: 9 / 16; height: auto; max-height: calc(100dvh - 176px); min-height: 0; }
 }
+
+.driveView { display: contents; }
+.driveView[hidden] { display: none; }
+.driveTabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.driveTabs button, .lightweightButton { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--control-surface); color: var(--text); font: inherit; font-size: .65rem; cursor: pointer; }
+.driveTabs button { flex: 1; white-space: nowrap; }
+.driveTabs button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-surface); }
+.driveTabs button:disabled, .lightweightButton:disabled { opacity: .5; cursor: default; }
+.lightweightField { display: grid; gap: 8px; margin: 18px 0; color: var(--text-dim); font-size: .65rem; }
+.lightweightField select { width: 100%; min-height: 42px; padding: 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-solid); color: var(--text); font: inherit; }
+.lightweightNotice { padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.taskSidebar .lightweightModule { flex: 0 0 auto; gap: 10px; padding-top: 4px; }
+.taskSidebar .lightweightModule > header p { display: block; margin-bottom: 0; }
+.lightweightModule > p { margin: 0; color: var(--text-dim); font-size: .62rem; line-height: 1.55; }
+.lightweightModule .lightweightField { margin: 4px 0; }
+.lightweightModule .lightweightNotice { padding: 9px; }
+.talkingUnavailable { padding: 10px 14px; color: var(--text-dim); font-size: .65rem; }
+.talkingUnavailable p { margin: 0 0 8px; }
+.talkingUnavailable button { padding: 8px 12px; margin: 0 6px 5px 0; border: 1px solid var(--accent); border-radius: 12px; background: var(--control-surface); color: var(--text); font: inherit; cursor: pointer; }
+.lightweightStage { position: relative; grid-template-rows: minmax(0, 1fr); }
+
+.lightweightIdentity { display: flex; gap: 10px; align-items: center; padding: 0 4px 12px; border-bottom: 1px solid var(--border); }
+.lightweightIdentity img { border-radius: 10px; object-fit: cover; }
+.lightweightIdentity div { display: grid; gap: 3px; }
+.lightweightIdentity strong { color: var(--text); font-size: .72rem; }
+.lightweightIdentity small { color: var(--text-dim); font-size: .55rem; }
+.lightweightGroup { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.lightweightGroup h3 { margin: 0 0 8px; color: var(--text); font-size: .72rem; }
+.lightweightGroup .lightweightButton { min-height: 38px; }
+.lightweightGroup > .lightweightButton { margin-top: 8px; }
+.lightweightVariant { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--accent-border); border-radius: 14px; background: var(--accent-surface); }
+.lightweightVariant strong { font-size: .66rem; color: var(--text); }
+.lightweightVariant span { font-size: .55rem; color: var(--text-dim); }
+.lightweightVariant button { justify-self: start; }
+.lightweightHint { margin: 10px 0; color: var(--text-dim); font-size: .6rem; }
+.lightweightGeneration, .lightweightHelp { color: var(--text-dim); font-size: .6rem; }
+.lightweightGeneration summary, .lightweightHelp summary { padding: 8px 0; cursor: pointer; color: var(--text); }
+.lightweightGeneration p, .lightweightHelp p { line-height: 1.6; }
+.lightweightGeneration .lightweightButton { width: 100%; margin-top: 10px; }
+.lightweightSave { position: static; padding: 12px 0 8px; display: grid; gap: 6px; background: var(--surface-solid); border-top: 1px solid var(--border); border-radius: 12px; }
+.lightweightSave small { text-align: center; color: var(--text-dim); font-size: .52rem; }
+
+.lightweightGroupHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.lightweightGroupHeading h3 { margin: 0; }
+.lightweightGroupHeading button { border: 0; background: transparent; color: var(--text-dim); font: inherit; font-size: .6rem; cursor: pointer; padding: 4px 0; }
+.lightweightGroupHeading button:disabled { opacity: .5; cursor: default; }
+.taskSidebar .lightweightModule { gap: 6px; padding-inline: 4px; }
+.lightweightIdentity { padding-bottom: 8px; }
+.lightweightGroup { padding: 6px 0; }
+.lightweightVariant { gap: 5px; padding: 9px; }
+.lightweightHint { margin: 7px 0; }
+.lightweightSave { padding-top: 8px; }
+.lightweightField :global(.select-menu) { width: 100%; min-width: 0; }
+.lightweightField :global(.select-menu-trigger) { min-height: 38px; padding: 8px 10px; border-radius: 12px; font-size: .65rem; }
+.lightweightField :global(.select-menu-popover) { max-height: 210px; overflow-y: auto; border-radius: 12px; }
+.lightweightField :global(.select-menu-option-select) { padding: 8px; min-height: 34px; }
+.lightweightField :global(.select-menu-option-copy) strong { font-size: .65rem; }
+.lightweightField :global(.select-menu-option-copy) small { font-size: .55rem; }
+
+.floatingPreviewSwitch { z-index: 3; }
+.lightweightStage .stageVideo, .floatingPreviewStage .stageVideo { min-height: 0; }
+.lightweightStage .talkingUnavailable { position: absolute; z-index: 2; bottom: 64px; left: 14px; right: 14px; padding: 12px; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; background: rgba(8,10,15,.72); color: #fff; backdrop-filter: blur(14px); }
+.floatingPreviewStage { position: relative; }
+.floatingPreviewStage > header { position: absolute; z-index: 2; top: 16px; left: 16px; padding: 7px 11px; border-radius: 999px; background: rgba(8,10,15,.58); color: #fff; font-size: .65rem; backdrop-filter: blur(14px); pointer-events: none; }
+.floatingPreviewStage > footer { position: absolute; z-index: 2; bottom: 64px; left: 16px; right: 16px; width: fit-content; padding: 7px 11px; border-radius: 12px; background: rgba(8,10,15,.58); color: #fff; font-size: .6rem; backdrop-filter: blur(14px); pointer-events: none; }
+
+.lightweightMaterialStatus { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--text-dim); font-size: .58rem; }
+.lightweightMaterialStatus .lightweightButton { min-height: 30px; padding: 6px 10px; }

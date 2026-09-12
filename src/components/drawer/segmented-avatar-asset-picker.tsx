@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Check, ChevronLeft, ChevronRight, Minimize2, MoreHorizontal } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AvatarMediaCoverflow, avatarImageMediaId } from "@/components/avatar/avatar-media-coverflow";
 import type { AvatarAction, AvatarAsset } from "@/lib/avatar-catalog";
 import { isSegmentedAvatarAsset } from "@/lib/avatar-library-catalog-client";
@@ -43,6 +43,10 @@ export function SegmentedAvatarAssetPicker({
   disabled,
   active,
   showCollapsedSummary = true,
+  ariaLabel = "多段式 Avatar 资产",
+  actionsOnly = false,
+  selectedPreviewUrl,
+  selectedPreviewControls,
   onSelect,
 }: {
   avatars: AvatarAsset[];
@@ -51,9 +55,15 @@ export function SegmentedAvatarAssetPicker({
   disabled: boolean;
   active: boolean;
   showCollapsedSummary?: boolean;
+  ariaLabel?: string;
+  actionsOnly?: boolean;
+  selectedPreviewUrl?: string;
+  selectedPreviewControls?: ReactNode;
   onSelect: (avatar: AvatarAsset, action: AvatarAction | null) => void;
 }) {
-  const segmentedAvatars = useMemo(() => filterSegmentedAvatarAssets(avatars), [avatars]);
+  const segmentedAvatars = useMemo(() => actionsOnly
+    ? avatars.filter(avatar => avatar.source.kind === "owned" && !avatar.deletedAt && avatar.actions.length > 0)
+    : filterSegmentedAvatarAssets(avatars), [avatars, actionsOnly]);
   const [focusedAvatarId, setFocusedAvatarId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,7 +72,7 @@ export function SegmentedAvatarAssetPicker({
   }, [focusedAvatarId, segmentedAvatars]);
 
   return (
-    <section className="segmented-avatar-picker" aria-label="多段式 Avatar 资产" data-focus-active={Boolean(focusedAvatarId)}>
+    <section className="segmented-avatar-picker" aria-label={ariaLabel} data-focus-active={Boolean(focusedAvatarId)}>
       {focusedAvatarId || showCollapsedSummary ? (
         <div className="segmented-avatar-picker-summary">
           <strong>{focusedAvatarId ? "形象与动作" : "内置 Avatar"}</strong>
@@ -74,6 +84,9 @@ export function SegmentedAvatarAssetPicker({
           <SegmentedAvatarCard
             key={avatar.avatarId}
             avatar={avatar}
+            actionsOnly={actionsOnly}
+            selectedPreviewUrl={selectedPreviewUrl}
+            selectedPreviewControls={selectedPreviewControls}
             focused={focusedAvatarId === avatar.avatarId}
             selectedAvatarId={selectedAvatarId}
             selectedActionId={selectedActionId}
@@ -92,6 +105,9 @@ export function SegmentedAvatarAssetPicker({
 
 function SegmentedAvatarCard({
   avatar,
+  actionsOnly,
+  selectedPreviewUrl,
+  selectedPreviewControls,
   focused,
   selectedAvatarId,
   selectedActionId,
@@ -102,6 +118,9 @@ function SegmentedAvatarCard({
   onSelect,
 }: {
   avatar: AvatarAsset;
+  actionsOnly: boolean;
+  selectedPreviewUrl?: string;
+  selectedPreviewControls?: ReactNode;
   focused: boolean;
   selectedAvatarId: string;
   selectedActionId: string;
@@ -117,8 +136,8 @@ function SegmentedAvatarCard({
     [actions],
   );
   const selectedIndex = selectedAvatarId === avatar.avatarId
-    ? Math.max(0, avatar.actions.findIndex((action) => action.avatarActionId === selectedActionId) + 1)
-    : 0;
+    ? Math.max(actionsOnly ? 1 : 0, avatar.actions.findIndex((action) => action.avatarActionId === selectedActionId) + 1)
+    : actionsOnly ? 1 : 0;
   const [mediaIndex, setMediaIndex] = useState(selectedIndex);
   const [menuOpen, setMenuOpen] = useState(false);
   const [manuallyPaused, setManuallyPaused] = useState(false);
@@ -130,7 +149,7 @@ function SegmentedAvatarCard({
     ? selectedActionId === action.avatarActionId
     : !selectedActionId || selectedActionId === imageSelectionId);
   const avatarSelected = selectedAvatarId === avatar.avatarId;
-  const selectionLabel = action ? `确认使用动作：${action.displayName}` : `确认使用形象：${avatar.displayName}`;
+  const selectionLabel = action ? `确认使用${actionsOnly ? "讲话素材" : "动作"}：${action.displayName}` : `确认使用形象：${avatar.displayName}`;
   const configuredMediaId = selectedAvatarId === avatar.avatarId && selectedActionId && selectedActionId !== imageSelectionId
     ? selectedActionId
     : selectedAvatarId === avatar.avatarId ? avatarImageMediaId(avatar.avatarId) : undefined;
@@ -138,13 +157,13 @@ function SegmentedAvatarCard({
   useEffect(() => {
     if (selectedAvatarId !== avatar.avatarId) return;
     const nextIndex = avatar.actions.findIndex((candidate) => candidate.avatarActionId === selectedActionId) + 1;
-    setMediaIndex(Math.max(0, nextIndex));
-  }, [avatar.actions, avatar.avatarId, selectedActionId, selectedAvatarId]);
+    setMediaIndex(Math.max(actionsOnly ? 1 : 0, nextIndex));
+  }, [avatar.actions, avatar.avatarId, selectedActionId, selectedAvatarId, actionsOnly]);
 
   useEffect(() => {
     if (mediaIndex < mediaCount) return;
-    setMediaIndex(0);
-  }, [mediaCount, mediaIndex]);
+    setMediaIndex(actionsOnly ? 1 : 0);
+  }, [mediaCount, mediaIndex, actionsOnly]);
 
   useEffect(() => {
     if (!shouldAutoAdvanceSegmentedAvatarCardMedia({
@@ -156,10 +175,10 @@ function SegmentedAvatarCard({
       playableActionCount: playableActions.length,
     })) return;
     const timer = window.setTimeout(() => {
-      setMediaIndex((current) => (current + 1) % mediaCount);
+      setMediaIndex((current) => actionsOnly ? (current % actions.length) + 1 : (current + 1) % mediaCount);
     }, 3_000);
     return () => window.clearTimeout(timer);
-  }, [playableActions.length, active, avatarSelected, focused, manuallyPaused, mediaCount, menuOpen, mediaIndex]);
+  }, [playableActions.length, active, avatarSelected, focused, manuallyPaused, mediaCount, menuOpen, mediaIndex, actionsOnly, actions.length]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -185,8 +204,9 @@ function SegmentedAvatarCard({
       data-avatar-selected={avatarSelected}
       data-focused={focused}
       data-preview-kind={action ? "action" : "image"}
+      data-actions-only={actionsOnly}
     >
-      {focused ? (
+      {focused && !actionsOnly ? (
           <AvatarMediaCoverflow
             avatarId={avatar.avatarId}
             avatarName={avatar.displayName}
@@ -204,7 +224,7 @@ function SegmentedAvatarCard({
             {active && action?.videoUrl ? (
               <>
                 <Image className="segmented-avatar-card-backdrop" src={avatar.source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 700px) 100vw, 260px" unoptimized />
-                <video className="segmented-avatar-card-action-video" key={action.avatarActionId} src={action.videoUrl} poster={avatar.source.imageUrl} aria-label={`${avatar.displayName} · ${action.displayName}`} autoPlay={active} muted loop playsInline preload="auto" />
+                <video className="segmented-avatar-card-action-video" key={selected && selectedPreviewUrl ? selectedPreviewUrl : action.avatarActionId} src={selected && selectedPreviewUrl ? selectedPreviewUrl : action.videoUrl} poster={avatar.source.imageUrl} aria-label={`${avatar.displayName} · ${action.displayName}`} autoPlay={active} muted loop playsInline preload="auto" />
               </>
             ) : (
               <>
@@ -221,7 +241,7 @@ function SegmentedAvatarCard({
                 aria-label={`上一项：${avatar.displayName}`}
                 onClick={() => {
                   setManuallyPaused(true);
-                  setMediaIndex((current) => (current - 1 + mediaCount) % mediaCount);
+                  setMediaIndex((current) => actionsOnly ? ((current - 2 + actions.length) % actions.length) + 1 : (current - 1 + mediaCount) % mediaCount);
                 }}
               >
                 <ChevronLeft aria-hidden="true" />
@@ -231,7 +251,7 @@ function SegmentedAvatarCard({
                 aria-label={`下一项：${avatar.displayName}`}
                 onClick={() => {
                   setManuallyPaused(true);
-                  setMediaIndex((current) => (current + 1) % mediaCount);
+                  setMediaIndex((current) => actionsOnly ? (current % actions.length) + 1 : (current + 1) % mediaCount);
                 }}
               >
                 <ChevronRight aria-hidden="true" />
@@ -248,9 +268,10 @@ function SegmentedAvatarCard({
           >
             {selected ? <><Check aria-hidden="true" />当前使用</> : "确认使用"}
           </button>
-          {avatarSelected ? <span className="segmented-avatar-card-selected"><Check />当前 Avatar</span> : null}
-          <button className="segmented-avatar-card-action-count" type="button" aria-label={`浏览 ${avatar.displayName} 的形象与动作`} onClick={onFocus}>
-            {avatar.actions.length ? `${avatar.actions.length} 个动作` : "未创建动作"}
+          {selected && selectedPreviewControls ? selectedPreviewControls : null}
+          {avatarSelected && !selectedPreviewControls ? <span className="segmented-avatar-card-selected"><Check />当前 Avatar</span> : null}
+          <button style={selected && selectedPreviewControls ? { top: 48 } : undefined} className="segmented-avatar-card-action-count" type="button" aria-label={`浏览 ${avatar.displayName} 的形象与动作`} onClick={onFocus}>
+            {avatar.actions.length ? `${avatar.actions.length} 个${actionsOnly ? "讲话素材" : "动作"}` : "未创建动作"}
           </button>
         </div>
       )}
@@ -268,7 +289,7 @@ function SegmentedAvatarCard({
             <span>
               <strong>{avatar.displayName}</strong>
               <em>{action
-                ? `${action.state === "available" && !action.pendingModelCount ? "动作" : "待适配动作"} · ${action.displayName}`
+                ? `${actionsOnly ? "讲话素材" : action.state === "available" && !action.pendingModelCount ? "动作" : "待适配动作"} · ${action.displayName}`
                 : "形象预览"}</em>
             </span>
             <button className="segmented-avatar-card-more" type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>

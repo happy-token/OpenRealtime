@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import { MotionOrchestrationStage } from "./motion-orchestration";
 import { LoaderCircle, RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import type { ConversationState } from "@/hooks/use-voice-session";
 import type { AvatarAudioSink } from "@/voice/audio/avatar-output";
 import { getBuiltinMotionPreviewUrl } from "@/lib/builtin-motion-catalog";
@@ -20,6 +21,7 @@ import { LiveTalkingAudioBridge } from "./livetalking-audio-bridge";
 import { LiveTalkingSession } from "./livetalking-session";
 import { AVATAR_IDENTITY_CHOICES, LIP_SYNC_CHOICES } from "./segmented-avatar-config";
 import type { AvatarDisplayConfig } from "./types";
+import { sampleMediaAmbientColor } from "@/lib/ambient-color";
 
 interface DigitalHumanStageProps {
   state: ConversationState;
@@ -29,6 +31,7 @@ interface DigitalHumanStageProps {
   setAvatarAudioSink: (sink: AvatarAudioSink | null) => void;
   captionsEnabled?: boolean;
   onRendererReady?: () => void;
+  onAmbientColorChange?: (color: string | null) => void;
 }
 
 type RendererState = "connecting" | "ready" | "preview" | "degraded" | "error";
@@ -47,7 +50,12 @@ interface AvatarRendererRuntimeResponse {
   error?: string;
 }
 
-export function DigitalHumanStage({
+export function DigitalHumanStage(props: DigitalHumanStageProps) {
+  if (props.displayConfig.renderPath === "orchestrated") return <MotionOrchestrationStage config={props.displayConfig} speaking={props.state === "speaking"} onReady={props.onRendererReady} onAmbientColorChange={props.onAmbientColorChange} caption={props.captionsEnabled !== false ? props.currentTurnText : ""} statusLabel={props.statusLabel} />;
+  return <RenderedDigitalHumanStage {...props} />;
+}
+
+function RenderedDigitalHumanStage({
   state,
   statusLabel,
   currentTurnText,
@@ -55,6 +63,7 @@ export function DigitalHumanStage({
   setAvatarAudioSink,
   captionsEnabled = true,
   onRendererReady,
+  onAmbientColorChange,
 }: DigitalHumanStageProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const anamBridgeRef = useRef(new AnamAudioBridge(24_000));
@@ -65,6 +74,7 @@ export function DigitalHumanStage({
   const [segmentedTemporaryFit, setSegmentedTemporaryFit] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
   const readyReported = useRef(false);
+  const reportedAmbientColor = useRef<string | null>(null);
 
   useEffect(() => {
     readyReported.current = false;
@@ -307,6 +317,22 @@ export function DigitalHumanStage({
     : "") || selectedOpenTalkingIdentity?.name
     || selectedSegmentedAvatar?.name
     || "分段式";
+  function reportAmbientColor(source: CanvasImageSource, sourceWidth: number, sourceHeight: number) {
+    if (!onAmbientColorChange || sourceWidth < 1 || sourceHeight < 1) return;
+    const color = sampleMediaAmbientColor(source, sourceWidth, sourceHeight);
+    if (!color || color === reportedAmbientColor.current) return;
+    reportedAmbientColor.current = color;
+    onAmbientColorChange(color);
+  }
+
+  function handleFallbackImageLoad(event: SyntheticEvent<HTMLImageElement>) {
+    reportAmbientColor(event.currentTarget, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+  }
+
+  function handleVideoMetadata(event: SyntheticEvent<HTMLVideoElement>) {
+    reportAmbientColor(event.currentTarget, event.currentTarget.videoWidth, event.currentTarget.videoHeight);
+  }
+
   return (
     <div
       className="digital-human-call-stage"
@@ -338,12 +364,14 @@ export function DigitalHumanStage({
         priority
         unoptimized={fallbackImage.startsWith("https://")}
         sizes="(max-width: 900px) 100vw, 900px"
+        onLoad={handleFallbackImageLoad}
       /> : <div className="digital-human-call-placeholder"><span>AVATAR ASSET</span><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? "数字人形象"}</strong><small>预览资产将在 Renderer 接入后显示</small></div>}
       {displayConfig.renderPath === "hosted" && displayConfig.provider === "anam" && <video
         id="anam-digital-human-video"
         ref={videoRef}
         className="digital-human-live-video"
         autoPlay
+        onLoadedData={handleVideoMetadata}
         playsInline
         aria-label="Anam 实时数字人画面"
       />}
@@ -351,6 +379,7 @@ export function DigitalHumanStage({
         ref={videoRef}
         className="digital-human-live-video digital-human-wav2lip-video"
         autoPlay
+        onLoadedData={handleVideoMetadata}
         playsInline
         aria-label="Wav2Lip 实时数字人画面"
       />}
@@ -358,6 +387,7 @@ export function DigitalHumanStage({
         className="digital-human-live-video digital-human-motion-base-video"
         src={segmentedVideoUrl}
         autoPlay
+        onLoadedData={handleVideoMetadata}
         loop
         muted
         playsInline

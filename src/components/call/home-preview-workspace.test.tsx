@@ -187,7 +187,7 @@ describe("HomePreviewWorkspace", () => {
     expect(html.indexOf("Avatar 资产")).toBeLessThan(html.indexOf("口型模型"));
     expect(html).toMatch(/<header><h3[^>]*>口型模型<\/h3><select[^>]*aria-label="口型模型选择"/);
     expect(html).toContain("Wav2Lip 256");
-    const lipSyncModelOption = html.match(/<option[^>]*>[\s\S]*?<\/option>/)?.[0] ?? "";
+    const lipSyncModelOption = html.match(/<option[^>]*value="wav2lip256"[^>]*>[\s\S]*?<\/option>/)?.[0] ?? "";
     expect(lipSyncModelOption).toContain("Wav2Lip 256（默认）");
     expect(lipSyncModelOption).toContain('value="wav2lip256"');
     expect(lipSyncModelOption).toContain("selected");
