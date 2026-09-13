@@ -34,7 +34,11 @@ interface DigitalHumanStageProps {
   onAmbientColorChange?: (color: string | null) => void;
 }
 
-type RendererState = "connecting" | "ready" | "preview" | "degraded" | "error";
+export type RendererState = "connecting" | "ready" | "preview" | "degraded" | "error";
+
+export function rendererCanStartConversation(state: RendererState): boolean {
+  return state === "ready" || state === "preview" || state === "degraded";
+}
 
 interface TokenResponse {
   session_token?: string;
@@ -73,16 +77,19 @@ function RenderedDigitalHumanStage({
   const [segmentedVideoUrl, setSegmentedVideoUrl] = useState("");
   const [segmentedTemporaryFit, setSegmentedTemporaryFit] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const [voiceFallback, setVoiceFallback] = useState(false);
+  const [showStartupFallback, setShowStartupFallback] = useState(false);
   const readyReported = useRef(false);
   const reportedAmbientColor = useRef<string | null>(null);
 
   useEffect(() => {
     readyReported.current = false;
+    setVoiceFallback(false);
   }, [displayConfig]);
 
   const segmentedRuntime = getSegmentedAvatarRuntime(displayConfig);
   const hasSegmentedRuntime = Boolean(segmentedRuntime);
-  const conversationCanStart = rendererState === "ready";
+  const conversationCanStart = rendererCanStartConversation(rendererState);
 
   useEffect(() => {
     if (conversationCanStart && !readyReported.current) {
@@ -90,6 +97,15 @@ function RenderedDigitalHumanStage({
       onRendererReady?.();
     }
   }, [conversationCanStart, onRendererReady]);
+
+  useEffect(() => {
+    if (rendererState !== "connecting" || voiceFallback) {
+      setShowStartupFallback(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowStartupFallback(true), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [rendererState, voiceFallback, connectionAttempt, displayConfig]);
 
   useEffect(() => {
     const requestController = new AbortController();
@@ -105,6 +121,11 @@ function RenderedDigitalHumanStage({
       setAvatarAudioSink(null);
       setSegmentedVideoUrl("");
       setSegmentedTemporaryFit(false);
+      if (voiceFallback) {
+        setRendererState("degraded");
+        setRendererMessage("实时口型暂时不可用，已使用当前画面继续对话");
+        return;
+      }
       if (displayConfig.renderPath === "segmented") {
         const lipModel = LIP_SYNC_CHOICES.find((choice) => choice.id === displayConfig.segmentedLipSyncId)?.name ?? "分段式 Renderer";
         if (hasSegmentedRuntime) {
@@ -297,11 +318,21 @@ function RenderedDigitalHumanStage({
     displayConfig.segmentedAvatarActionId,
     displayConfig.segmentedAvatarId,
     connectionAttempt,
+    voiceFallback,
     setAvatarAudioSink,
     hasSegmentedRuntime,
     segmentedRuntime?.avatarId,
     segmentedRuntime?.displayName,
   ]);
+
+  function retryRenderer() {
+    setVoiceFallback(false);
+    setConnectionAttempt((attempt) => attempt + 1);
+  }
+
+  function continueWithCurrentVisual() {
+    setVoiceFallback(true);
+  }
 
   const selectedSegmentedAvatar = AVATAR_IDENTITY_CHOICES.find((choice) => choice.id === displayConfig.segmentedPresetId);
   const selectedOpenTalkingIdentity = OPENTALKING_AVATAR_CATALOG.find(
@@ -398,23 +429,31 @@ function RenderedDigitalHumanStage({
         <div className="avatar-startup-dialog" role="status" aria-live="polite">
           <LoaderCircle aria-hidden="true" />
           <div>
-            <strong>正在按当前配置启动 Avatar</strong>
+            <strong>正在准备数字人</strong>
             <span>{rendererMessage || "正在初始化画面与口型服务，请稍候…"}</span>
+            {showStartupFallback ? (
+              <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button>
+            ) : null}
           </div>
         </div>
       )}
       <div className="digital-human-call-copy">
-        <span className="digital-human-state"><i />{statusLabel}</span>
+        <span className="digital-human-state" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true" />{statusLabel}</span>
         {captionsEnabled && currentTurnText.trim() ? (
           <p aria-live="polite">{currentTurnText}</p>
         ) : null}
         {(rendererState === "degraded" || rendererState === "error") && (
-          <div className="digital-human-recovery" role="status">
+          <div className="digital-human-recovery" role={rendererState === "error" ? "alert" : "status"}>
             <span>{rendererMessage}</span>
-            <button type="button" aria-label="重新连接数字人画面" onClick={() => setConnectionAttempt((attempt) => attempt + 1)}>
-              <RotateCcw aria-hidden="true" />
-              重连画面
-            </button>
+            <div className="digital-human-recovery-actions">
+              <button type="button" aria-label="重新连接数字人画面" onClick={retryRenderer}>
+                <RotateCcw aria-hidden="true" />
+                重连画面
+              </button>
+              {rendererState === "error" ? (
+                <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

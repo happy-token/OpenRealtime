@@ -11,6 +11,7 @@ import {
   Phone,
   Send,
   SlidersHorizontal,
+  Square,
 } from "lucide-react";
 import type { PageForm } from "./presentation-model";
 import {
@@ -30,6 +31,10 @@ interface SessionControlBarProps {
   onOpenSettings: () => void;
   onTerminate: () => void;
   onSendText: (text: string) => boolean;
+  assistantBusy: boolean;
+  onStopReply: () => void;
+  focusComposerRequest?: number;
+  ended?: boolean;
 }
 
 const PAGE_FORM_OPTIONS = [
@@ -48,6 +53,10 @@ export function SessionControlBar({
   onOpenSettings,
   onTerminate,
   onSendText,
+  assistantBusy,
+  onStopReply,
+  focusComposerRequest = 0,
+  ended = false,
 }: SessionControlBarProps) {
   const [text, setText] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
@@ -57,8 +66,8 @@ export function SessionControlBar({
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [visualPreferences, setVisualPreferences] = useState(DEFAULT_WORKBENCH_VISUAL_PREFERENCES);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const showComposer = pageForm !== "fullscreen" || composerOpen;
-  const compactActions = pageForm === "sidecar" && (composerFocused || Boolean(text.trim()) || actionsMenuOpen);
+  const showComposer = !ended && (pageForm !== "fullscreen" || composerOpen);
+  const compactActions = !ended && pageForm === "sidecar" && (composerFocused || Boolean(text.trim()) || actionsMenuOpen);
   const activePageForm = PAGE_FORM_OPTIONS.find((option) => option.id === pageForm) ?? PAGE_FORM_OPTIONS[0];
 
   useEffect(() => {
@@ -71,6 +80,18 @@ export function SessionControlBar({
       window.removeEventListener(WORKBENCH_VISUAL_PREFERENCES_EVENT, syncVisualPreferences);
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusComposerRequest) return;
+    setComposerOpen(true);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }, [focusComposerRequest]);
+
+  useEffect(() => {
+    if (!ended) return;
+    setActionsMenuOpen(false);
+    setComposerOpen(false);
+  }, [ended]);
 
   const surfaceTokens = workbenchSurfaceTokens(visualPreferences);
   const surfaceStyle = {
@@ -105,6 +126,19 @@ export function SessionControlBar({
     sendText();
   }
 
+  function handleTextInputAction() {
+    if (pageForm !== "fullscreen") {
+      composerRef.current?.focus();
+      return;
+    }
+    if (composerOpen) {
+      setComposerOpen(false);
+      return;
+    }
+    setComposerOpen(true);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  }
+
   function closeLayoutMenuAfterFocus(event: FocusEvent<HTMLDivElement>) {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
       setLayoutMenuOpen(false);
@@ -129,6 +163,7 @@ export function SessionControlBar({
       data-view={pageForm}
       data-transparency={visualPreferences.transparency}
       data-glass-blur={visualPreferences.glassBlur}
+      data-ended={ended}
       style={surfaceStyle}
     >
       {showComposer && (
@@ -174,6 +209,9 @@ export function SessionControlBar({
               <MoreHorizontal />
             </ControlButton>
             <div className="session-actions-overflow" role="menu" aria-label="更多会话操作" aria-hidden={!actionsMenuOpen}>
+              {assistantBusy ? <OverflowAction label="停止回复" onClick={() => { onStopReply(); setActionsMenuOpen(false); }}>
+                <Square />
+              </OverflowAction> : null}
               <OverflowAction label={paused ? "开启麦克风" : "关闭麦克风"} onClick={() => { onPauseToggle(); setActionsMenuOpen(false); }}>
                 {paused ? <MicOff /> : <Mic />}
               </OverflowAction>
@@ -214,20 +252,32 @@ export function SessionControlBar({
               label={paused ? "开启麦克风" : "关闭麦克风"}
               pressed={!paused}
               onClick={onPauseToggle}
+              retireDirection="left"
+              retireOrder={0}
+              retired={ended}
             >
               {paused ? <MicOff /> : <Mic />}
             </ControlButton>
             <ControlButton
-              label={composerOpen ? "收起文字输入" : "展开文字输入"}
-              pressed={showComposer}
-              onClick={() => setComposerOpen((open) => !open)}
+              label={pageForm === "fullscreen" ? (composerOpen ? "收起文字输入" : "展开文字输入") : "聚焦文字输入"}
+              pressed={pageForm === "fullscreen" ? showComposer : composerFocused}
+              onClick={handleTextInputAction}
+              retireDirection="left"
+              retireOrder={1}
+              retired={ended}
             >
               <Keyboard />
             </ControlButton>
+            {assistantBusy ? <ControlButton label="停止回复" onClick={onStopReply}>
+              <Square />
+            </ControlButton> : null}
             <ControlButton
               label={captionsEnabled ? "隐藏临时字幕" : "显示临时字幕"}
               pressed={captionsEnabled}
               onClick={() => onCaptionsChange(!captionsEnabled)}
+              retireDirection="left"
+              retireOrder={2}
+              retired={ended}
             >
               <Captions />
             </ControlButton>
@@ -276,8 +326,8 @@ export function SessionControlBar({
                 ))}
               </div>
             </div>
-            <ControlButton label="会话设置" onClick={onOpenSettings}><SlidersHorizontal /></ControlButton>
-            <ControlButton label="结束通话" danger onClick={onTerminate}><Phone className="session-hangup-icon" /></ControlButton>
+            <ControlButton label="会话设置" retireDirection="right" retireOrder={1} retired={ended} onClick={onOpenSettings}><SlidersHorizontal /></ControlButton>
+            <ControlButton label="结束通话" danger retireDirection="right" retireOrder={0} retired={ended} onClick={onTerminate}><Phone className="session-hangup-icon" /></ControlButton>
           </>
         )}
       </div>
@@ -291,6 +341,9 @@ function ControlButton({
   danger = false,
   pressed,
   expanded,
+  retireDirection,
+  retireOrder = 0,
+  retired = false,
   onClick,
 }: {
   label: string;
@@ -298,6 +351,9 @@ function ControlButton({
   danger?: boolean;
   pressed?: boolean;
   expanded?: boolean;
+  retireDirection?: "left" | "right";
+  retireOrder?: number;
+  retired?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -307,7 +363,13 @@ function ControlButton({
       aria-label={label}
       aria-pressed={pressed}
       aria-expanded={expanded}
+      aria-hidden={retired || undefined}
+      disabled={retired}
+      tabIndex={retired ? -1 : undefined}
       data-tooltip={label}
+      data-retire-on-end={retireDirection ? "true" : undefined}
+      data-retire-direction={retireDirection}
+      style={retireDirection ? { "--retire-delay": `${retireOrder * 45}ms` } as CSSProperties : undefined}
       onClick={onClick}
     >
       {children}

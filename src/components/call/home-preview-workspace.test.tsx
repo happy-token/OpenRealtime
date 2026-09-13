@@ -168,6 +168,8 @@ describe("HomePreviewWorkspace", () => {
     expect(html).not.toContain("选择 Orb 主题");
     expect(html).not.toContain("让声音成为界面本身");
     expect(html).toContain("使用对话模式开始对话");
+    expect(html).not.toContain("想聊什么？直接说就好。");
+    expect(html).not.toContain("对话中可以随时打断，也可以改用文字。");
     expect(html).toContain('aria-label="选择 Persona"');
     expect(html).toContain("未关联 Persona");
   });

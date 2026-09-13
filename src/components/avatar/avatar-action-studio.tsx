@@ -18,6 +18,11 @@ import {
   LIVEPORTRAIT_STRENGTH_MULTIPLIERS,
 } from "@/lib/liveportrait-motion-config";
 import { readJsonResponse } from "@/lib/http-json-response";
+import {
+  clearRecoverableGenerationTask,
+  readRecoverableGenerationTask,
+  saveRecoverableGenerationTask,
+} from "@/lib/generation-task-recovery";
 import { classifyMediaAspectRatio, type MediaAspectBucket } from "@/lib/media-aspect-fit";
 import {
   VIDEO_GENERATION_DEFAULT_MODELS,
@@ -273,6 +278,7 @@ export function AvatarActionStudio({
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [taskState, setTaskState] = useState<TaskState>("idle");
   const [taskId, setTaskId] = useState("");
+  const [submissionRequestId, setSubmissionRequestId] = useState("");
   const [taskProvider, setTaskProvider] = useState<TaskProvider>("liveportrait");
   const [resultUrl, setResultUrl] = useState("");
   const [error, setError] = useState("");
@@ -332,6 +338,22 @@ export function AvatarActionStudio({
     void checkLtxRuntime();
     return () => controller.abort();
   }, [avatarId, checkLivePortraitRuntime, checkLtxRuntime]);
+
+  useEffect(() => {
+    const recovered = readRecoverableGenerationTask(avatarId, "action");
+    if (!recovered) return;
+    generationStartedAtRef.current = recovered.startedAt;
+    setElapsedMs(Math.max(0, Date.now() - recovered.startedAt));
+    setSubmissionRequestId(recovered.requestId);
+    setTaskProvider(recovered.provider);
+    setTaskId(recovered.taskId ?? "");
+    setTaskState("queueing");
+    if (recovered.provider === "liveportrait") setProvider("liveportrait");
+    else {
+      setProvider("ltx");
+      setVideoVendor(recovered.provider);
+    }
+  }, [avatarId]);
 
   useEffect(() => {
     if (!drivingFile) {
@@ -396,6 +418,56 @@ export function AvatarActionStudio({
   }, []);
 
   useEffect(() => {
+    if (!submissionRequestId || taskId || (taskProvider !== "ltx" && taskProvider !== "minimax") || taskState !== "queueing") return;
+    let cancelled = false;
+    let controller: AbortController | null = null;
+    let timer = window.setTimeout(async function recoverSubmission() {
+      controller = new AbortController();
+      try {
+        const response = await fetch(`/api/ltx/image-to-video?request_id=${encodeURIComponent(submissionRequestId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json() as {
+          task_id?: string;
+          state?: TaskState;
+          submission_state?: string;
+          error?: string;
+        };
+        if (!response.ok) throw new Error(payload.error || "生成任务恢复失败");
+        if (payload.submission_state === "submission_unknown") {
+          setTaskState("failed");
+          setError(payload.error || "任务提交结果无法确认，为避免重复扣费，系统不会自动重试。");
+          return;
+        }
+        if (payload.task_id) {
+          setTaskId(payload.task_id);
+          setTaskState(payload.state ?? "queueing");
+          saveRecoverableGenerationTask({
+            avatarId,
+            purpose: "action",
+            requestId: submissionRequestId,
+            provider: taskProvider,
+            taskId: payload.task_id,
+            startedAt: generationStartedAtRef.current,
+          });
+          return;
+        }
+        if (!cancelled) timer = window.setTimeout(recoverSubmission, 2_000);
+      } catch (recoveryError) {
+        if (recoveryError instanceof Error && recoveryError.name === "AbortError") return;
+        setTaskState("failed");
+        setError(recoveryError instanceof Error ? recoveryError.message : "生成任务恢复失败");
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      controller?.abort();
+      window.clearTimeout(timer);
+    };
+  }, [avatarId, submissionRequestId, taskId, taskProvider, taskState]);
+
+  useEffect(() => {
     if (!taskId || (taskState !== "queueing" && taskState !== "processing")) return;
     let cancelled = false;
     let controller: AbortController | null = null;
@@ -421,16 +493,6 @@ export function AvatarActionStudio({
     return () => window.clearInterval(interval);
   }, [busy]);
 
-  useEffect(() => {
-    if (!busy) return;
-    const confirmBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", confirmBeforeUnload);
-    return () => window.removeEventListener("beforeunload", confirmBeforeUnload);
-  }, [busy]);
-
   async function generatePreview() {
     const activeRuntime = provider === "ltx" ? ltxRuntime : livePortraitRuntime;
     if (
@@ -441,10 +503,22 @@ export function AvatarActionStudio({
       || (provider === "liveportrait" && motionSourceMode === "upload" && !drivingFile)
     ) return;
     submissionLock.current = true;
+    const requestId = crypto.randomUUID();
+    const nextTaskProvider: TaskProvider = provider === "liveportrait" ? "liveportrait" : videoVendor;
     generationStartedAtRef.current = Date.now();
     setElapsedMs(0);
     setTaskState("queueing");
-    setTaskProvider(provider === "liveportrait" ? "liveportrait" : videoVendor);
+    setTaskProvider(nextTaskProvider);
+    setSubmissionRequestId(requestId);
+    if (nextTaskProvider !== "liveportrait") {
+      saveRecoverableGenerationTask({
+        avatarId: avatar.avatar_id,
+        purpose: "action",
+        requestId,
+        provider: nextTaskProvider,
+        startedAt: generationStartedAtRef.current,
+      });
+    }
     setError("");
     setSavedActionId("");
     try {
@@ -453,6 +527,7 @@ export function AvatarActionStudio({
         if (videoVendor === "minimax") {
           const form = new FormData();
           form.set("avatarId", avatar.avatar_id);
+          form.set("requestId", requestId);
           form.set("prompt", ltxPrompt);
           form.set("model", ltxModel);
           form.set("ratio", miniMaxRatio);
@@ -469,6 +544,7 @@ export function AvatarActionStudio({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               avatarId: avatar.avatar_id,
+              requestId,
               prompt: ltxPrompt,
               model: ltxModel,
               creditsAccepted: true,
@@ -489,9 +565,28 @@ export function AvatarActionStudio({
         form.set("rightsConfirmed", "true");
         response = await fetch("/api/liveportrait", { method: "POST", body: form });
       }
-      const payload = await response.json() as { task_id?: string; state?: TaskState; error?: string };
-      if (!response.ok || !payload.task_id) throw new Error(payload.error || "动作任务创建失败");
-      setTaskId(payload.task_id);
+      const payload = await response.json() as {
+        task_id?: string;
+        state?: TaskState;
+        submission_state?: string;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "动作任务创建失败");
+      if (payload.submission_state === "submission_unknown") {
+        throw new Error(payload.error || "任务提交结果无法确认，为避免重复扣费，系统不会自动重试。");
+      }
+      if (!payload.task_id && provider === "liveportrait") throw new Error(payload.error || "动作任务创建失败");
+      if (payload.task_id) {
+        setTaskId(payload.task_id);
+        saveRecoverableGenerationTask({
+          avatarId: avatar.avatar_id,
+          purpose: "action",
+          requestId,
+          provider: nextTaskProvider,
+          taskId: payload.task_id,
+          startedAt: generationStartedAtRef.current,
+        });
+      }
       setTaskState(payload.state ?? "queueing");
       onMobileConfigOpenChange?.(false);
     } catch (generationError) {
@@ -511,6 +606,8 @@ export function AvatarActionStudio({
     setVideoVendorMenuOpen(false);
     setActionName(nextProvider === "ltx" ? ltxActionName : livePortraitActionName);
     setPreviewMode("avatar");
+    clearRecoverableGenerationTask(avatarId, "action");
+    setSubmissionRequestId("");
     setResultUrl("");
     setTaskId("");
     setTaskState("idle");
@@ -645,6 +742,8 @@ export function AvatarActionStudio({
   }
 
   function resetGeneratedPreview() {
+    clearRecoverableGenerationTask(avatarId, "action");
+    setSubmissionRequestId("");
     setResultUrl("");
     setTaskId("");
     setTaskState("idle");
@@ -809,6 +908,8 @@ export function AvatarActionStudio({
         pending_model_count: 1,
       });
       setSavedActionId(motion.avatar_action_id);
+      clearRecoverableGenerationTask(avatar.avatar_id, "action");
+      setSubmissionRequestId("");
       onMobileConfigOpenChange?.(false);
       void prepareAllEnabledModels(avatar, motion.avatar_action_id);
     } catch (saveError) {
@@ -1265,7 +1366,7 @@ export function AvatarActionStudio({
                   <LoaderCircle className={styles.spin} aria-hidden="true" />
                   <div className={styles.generationProgressCopy}>
                     <strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong>
-                    <span aria-live="off">已用时 {formatElapsedTime(elapsedMs)} · 请勿关闭或刷新此页面</span>
+                    <span aria-live="off">已用时 {formatElapsedTime(elapsedMs)} · 刷新后会自动恢复</span>
                   </div>
                   <div className={styles.generationProgressTrack} aria-hidden="true">
                     <span className={styles.generationProgressFill} style={{ "--progress": generationProgress } as CSSProperties} />

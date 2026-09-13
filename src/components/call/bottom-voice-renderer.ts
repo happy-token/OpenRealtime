@@ -158,7 +158,8 @@ export function paintBottomVoice(ctx: CanvasRenderingContext2D, width: number, h
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
     ctx.globalCompositeOperation = "source-over";
-    const amplitude = Math.min(48, height * .72) * Math.pow(Math.max(0, level), .72);
+    const baseAmplitude = Math.min(48, height * .72) * Math.pow(Math.max(0, level), .72);
+    const amplitude = style === "aurora" ? Math.min(height * .82, baseAmplitude * 2.8) : baseAmplitude;
     if (amplitude < .3) {
         quiet(ctx, width, height, state, time);
         return;

@@ -32,6 +32,13 @@ class UserTextFrame(BaseModel):
     timestamp_ms: int | None = None
 
 
+class CancelAssistantResponseFrame(BaseModel):
+    """Explicit user request to stop the active assistant response."""
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["cancel_assistant_response"] = "cancel_assistant_response"
+
+
 class PlaybackProgressFrame(BaseModel):
     """Client-reported playback truth for one generation's assistant audio.
 
@@ -391,6 +398,7 @@ InboundFrame = (
     | InputCaptureDiagnostic
     | PlaybackProgressV2
     | UserTextFrame
+    | CancelAssistantResponseFrame
     | SessionHelloFrame
     | SessionHeartbeatFrame
     | PlaybackProgressFrame

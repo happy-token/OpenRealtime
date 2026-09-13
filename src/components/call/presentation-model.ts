@@ -1,6 +1,8 @@
 export type PresentationMode = "voice" | "avatar";
 export type PageForm = "fullscreen" | "sidecar" | "content";
 
+const PAGE_FORM_STORAGE_PREFIX = "openrealtime-session-page-form";
+
 export interface PresentationSessionView {
   mode: PresentationMode;
   pageForm: PageForm;
@@ -20,8 +22,23 @@ export function parsePresentationMode(value: unknown): PresentationMode {
   return value === "avatar" ? "avatar" : "voice";
 }
 
-export function startPresentationSession(mode: PresentationMode): PresentationSessionView {
-  return { mode, pageForm: "fullscreen", fullscreenReturn: null };
+export function parsePageForm(value: unknown): PageForm {
+  return value === "sidecar" || value === "content" ? value : "fullscreen";
+}
+
+export function pageFormStorageKey(mode: PresentationMode): string {
+  return `${PAGE_FORM_STORAGE_PREFIX}-${mode}`;
+}
+
+export function startPresentationSession(
+  mode: PresentationMode,
+  pageForm: PageForm = "fullscreen",
+): PresentationSessionView {
+  return {
+    mode,
+    pageForm,
+    fullscreenReturn: pageForm === "fullscreen" ? null : pageForm,
+  };
 }
 
 export function enterPageForm(

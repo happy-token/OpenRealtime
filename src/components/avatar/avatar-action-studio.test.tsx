@@ -266,14 +266,15 @@ describe("AvatarActionStudio", () => {
     expect(livePortraitHtml).toContain("创建动作资产");
   });
 
-  it("wires up a queueing/processing progress overlay with an unload guard while a task is busy", () => {
+  it("keeps queueing and processing visible while persisting enough state to recover after refresh", () => {
     const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('const busy = taskState === "queueing" || taskState === "processing";');
     expect(source).toContain('taskState === "queueing" ? "排队中…" : "视频生成中…"');
-    expect(source).toContain("已用时 {formatElapsedTime(elapsedMs)} · 请勿关闭或刷新此页面");
-    expect(source).toContain('window.addEventListener("beforeunload", confirmBeforeUnload)');
-    expect(source).toContain("event.preventDefault();");
+    expect(source).toContain("已用时 {formatElapsedTime(elapsedMs)} · 刷新后会自动恢复");
+    expect(source).toContain('saveRecoverableGenerationTask({');
+    expect(source).toContain('requestId,');
+    expect(source).toContain('/api/ltx/image-to-video?request_id=');
   });
 
   it("keeps the ticking elapsed-time clock out of the polite live region so it isn't re-announced every tick", () => {

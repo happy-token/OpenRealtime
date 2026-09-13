@@ -17,3 +17,32 @@ describe("MuseTalk source generation", () => {
     await expect(startTalkingJob("avatar-test", "base")).rejects.toThrow("找不到");
   });
 });
+
+describe("MuseTalk durable job recovery", () => {
+  it("recovers an interrupted job as retry-blocked after process memory loss", async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const root = await mkdtemp(path.join(os.tmpdir(), "openrealtime-musetalk-"));
+    vi.stubEnv("MUSETALK_JOB_ROOT", root);
+    const id = "musetalk-11111111-1111-4111-8111-111111111111";
+    await mkdir(path.join(root, id));
+    await writeFile(path.join(root, id, "job.json"), JSON.stringify({
+      id,
+      state: "processing",
+      avatarId: "avatar-1",
+      actionId: "action-1",
+      sourceUrl: "/digital-human/action.mp4",
+      createdAt: "2026-09-12T10:00:00.000Z",
+      updatedAt: "2026-09-12T10:01:00.000Z",
+    }));
+    const { getTalkingJob } = await import("./musetalk-talking-worker");
+    await expect(getTalkingJob("avatar-1", "action-1")).resolves.toMatchObject({
+      state: "failed",
+      retryBlocked: true,
+      error: expect.stringContaining("避免重复消耗 GPU"),
+    });
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true });
+  });
+});

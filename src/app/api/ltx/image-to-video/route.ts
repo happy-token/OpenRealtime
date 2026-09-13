@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE } from "@/lib/admin-auth";
 import { canUseAvatarTestApis, isSameOriginAvatarMutation } from "@/lib/avatar-test-access";
@@ -9,7 +9,11 @@ import {
   VIDEO_GENERATION_DEFAULT_MODEL,
   VIDEO_GENERATION_MODELS,
 } from "@/lib/ltx-avatar-action";
-import { createOrReuseLocalLtxTask } from "@/lib/ltx-task-coordinator";
+import {
+  createOrReuseLocalLtxTask,
+  getLocalLtxSubmissionByRequestId,
+  LtxTaskSubmissionPendingError,
+} from "@/lib/ltx-task-coordinator";
 import { LtxProviderError } from "@/lib/ltx-video";
 import { prepareMiniMaxFrameImage } from "@/lib/minimax-frame-image";
 import {
@@ -36,8 +40,25 @@ export async function GET(request: NextRequest) {
   if (!canUseAvatarTestApis(request, request.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
     return json({ error: "不允许从当前来源读取视频生成状态" }, 403);
   }
+  const requestId = request.nextUrl.searchParams.get("request_id");
+  if (requestId) {
+    if (!validRequestId(requestId)) return json({ error: "生成请求 ID 无效" }, 400);
+    const record = getLocalLtxSubmissionByRequestId(requestId);
+    if (!record) return json({ error: "没有找到可恢复的生成任务" }, 404);
+    return json({
+      request_id: requestId,
+      submission_state: record.state,
+      task_id: record.task?.taskId,
+      state: record.task?.state ?? (record.state === "submission_unknown" ? "failed" : "queueing"),
+      model: record.model,
+      created_at: record.createdAt,
+      error: record.state === "submission_unknown"
+        ? "上次付费任务的提交结果无法确认。为避免重复扣费，系统不会自动重试，请先核对服务商任务记录。"
+        : record.error,
+    });
+  }
   if (process.env.NODE_ENV === "production") {
-    return json({ ready: false, configured: hasAnyConfiguredProvider(), error: "持久化视频生成 Coordinator 尚未部署" }, 503);
+    return json({ ready: false, configured: hasAnyConfiguredProvider(), error: "生产付费视频生成将在 GPU 与持久化存储验收后启用" }, 503);
   }
   try {
     const configuredModels = VIDEO_GENERATION_MODELS
@@ -59,7 +80,7 @@ export async function POST(request: NextRequest) {
     return json({ error: "不允许从当前来源创建视频生成任务" }, 403);
   }
   if (process.env.NODE_ENV === "production") {
-    return json({ error: "持久化视频生成 Coordinator 尚未部署，生产环境禁止创建付费任务" }, 503);
+    return json({ error: "生产付费视频生成将在 GPU 与持久化存储验收后启用，生产环境禁止创建付费任务" }, 503);
   }
   try {
     const length = Number(request.headers.get("content-length"));
@@ -67,6 +88,8 @@ export async function POST(request: NextRequest) {
     const multipart = request.headers.get("content-type")?.toLowerCase().startsWith("multipart/form-data") ?? false;
     if (length > (multipart ? 52 * 1024 * 1024 : 16 * 1024)) throw new LtxProviderError("视频生成任务参数过大", 413);
     const payload = await readGenerationPayload(request, multipart);
+    const requestId = typeof payload.requestId === "string" ? payload.requestId : randomUUID();
+    if (!validRequestId(requestId)) throw new LtxProviderError("生成请求 ID 无效", 400);
     if (typeof payload.avatarId !== "string") throw new LtxProviderError("avatar_id 无效", 400);
     if (typeof payload.prompt !== "string") throw new LtxProviderError("请填写动作提示词", 400);
     if (!isVideoGenerationModelId(payload.model)) throw new LtxProviderError("视频生成模型无效", 400);
@@ -98,8 +121,10 @@ export async function POST(request: NextRequest) {
     const { task, reused } = await createOrReuseLocalLtxTask(provenance, () => createImageToVideo(
       videoGenerationEnvironment(),
       { imageDataUrl, prompt, model, ...miniMaxOptions },
-    ));
+    ), { requestId });
     return json({
+      request_id: requestId,
+      submission_state: "active",
       task_id: task.taskId,
       state: task.state,
       model: task.model,
@@ -107,6 +132,15 @@ export async function POST(request: NextRequest) {
       reused,
     }, 202);
   } catch (error) {
+    if (error instanceof LtxTaskSubmissionPendingError) {
+      return json({
+        request_id: error.record.requestIds.at(-1),
+        submission_state: error.record.state,
+        state: error.record.state === "submission_unknown" ? "failed" : "queueing",
+        error: error.message,
+        reused: true,
+      }, 202);
+    }
     const known = isVideoGenerationProviderError(error);
     return json(
       { error: known ? error.message : "图生视频任务创建失败" },
@@ -126,6 +160,7 @@ type GenerationPayload = {
   duration?: unknown;
   imageRole?: unknown;
   referenceVideo?: MiniMaxReferenceVideo;
+  requestId?: unknown;
 };
 
 async function readGenerationPayload(request: NextRequest, multipart: boolean): Promise<GenerationPayload> {
@@ -147,6 +182,7 @@ async function readGenerationPayload(request: NextRequest, multipart: boolean): 
   }
   return {
     avatarId: form.get("avatarId"),
+    requestId: form.get("requestId"),
     prompt: form.get("prompt"),
     model: form.get("model"),
     creditsAccepted: form.get("creditsAccepted") === "true",
@@ -190,6 +226,10 @@ function videoGenerationEnvironment() {
     MINIMAX_API_URL: process.env.MINIMAX_API_URL,
     MINIMAX_UPLOAD_CACHE_PATH: process.env.MINIMAX_UPLOAD_CACHE_PATH,
   };
+}
+
+function validRequestId(value: string) {
+  return /^[A-Za-z0-9_-]{16,128}$/.test(value);
 }
 
 function hasAnyConfiguredProvider() {

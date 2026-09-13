@@ -47,6 +47,7 @@ from server.transport.frames import (
     AssistantSpeechCancelledFrame,
     AssistantSpeechTextFrame,
     AssistantTextFrame,
+    CancelAssistantResponseFrame,
     ConfirmationDecisionFrame,
     ConfirmationRequestedFrame,
     InboundFrame,
@@ -134,6 +135,8 @@ class RealtimeWebSocketFrameBridge:
             await self._append_v2_audio(frame)
         elif isinstance(frame, UserTextFrame):
             await self._append_user_text(frame.text)
+        elif isinstance(frame, CancelAssistantResponseFrame):
+            await self._cancel_active_response(reason="user_stop", command_prefix="user-stop")
         elif isinstance(frame, PlaybackProgressFrame):
             await self._report_playback(frame)
         elif isinstance(frame, PlaybackProgressV2):
@@ -372,7 +375,7 @@ class RealtimeWebSocketFrameBridge:
         normalized = text.strip()
         if not normalized:
             return
-        await self._cancel_active_response_for_text_input()
+        await self._cancel_active_response(reason="text_barge_in", command_prefix="text-barge-in")
         context = self._turn_context(self._generation)
         item_id = str(uuid.uuid4())
         loop = asyncio.get_running_loop()
@@ -419,7 +422,7 @@ class RealtimeWebSocketFrameBridge:
         finally:
             self._projection_waiters.pop(item_id, None)
 
-    async def _cancel_active_response_for_text_input(self) -> None:
+    async def _cancel_active_response(self, *, reason: str, command_prefix: str) -> None:
         response_id = self._active_response_id
         response_context = self._active_response_context
         if response_id is None or response_context is None:
@@ -428,11 +431,11 @@ class RealtimeWebSocketFrameBridge:
         try:
             await self._conversation.send(
                 CancelResponse(
-                    command_id=f"text-barge-in:{response_id}:{generation}",
-                    idempotency_key=f"text-barge-in:{response_id}:{generation}",
+                    command_id=f"{command_prefix}:{response_id}:{generation}",
+                    idempotency_key=f"{command_prefix}:{response_id}:{generation}",
                     context=replace(response_context, response_id=response_id),
                     response_id=response_id,
-                    reason="text_barge_in",
+                    reason=reason,
                 )
             )
         except ValueError as error:

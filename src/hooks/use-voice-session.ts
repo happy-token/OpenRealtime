@@ -287,12 +287,15 @@ export interface VoiceSessionViewModel {
   ttsConfigurable: boolean;
   ttsPreviewAvailable: boolean;
   ttsConfigStatus: string;
+  sessionError: string | null;
   pendingConfirmation: PendingConfirmationView | null;
   start: () => Promise<void>;
+  retryConnection: () => void;
   stop: () => void;
   terminate: () => void;
   clearConversationDisplay: () => void;
   sendText: (text: string) => boolean;
+  stopReply: () => boolean;
   setNoiseSuppression: (enabled: boolean) => void;
   setBargeInMuted: (muted: boolean) => void;
   setVolume: (volume: number) => void;
@@ -319,6 +322,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
   const [ttsConfigurable, setTtsConfigurable] = useState(false);
   const [ttsPreviewAvailable, setTtsPreviewAvailable] = useState(false);
   const [ttsConfigStatus, setTtsConfigStatus] = useState("");
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmationView | null>(null);
 
   const transportRef = useRef<BrowserVoiceSessionTransport | null>(null);
@@ -373,9 +377,11 @@ export function useVoiceSession(): VoiceSessionViewModel {
   // function closes over that connection's state), invoked via the stable
   // callbacks returned at the bottom of this hook.
   const startRef = useRef<() => Promise<void>>(async () => {});
+  const retryConnectionRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
   const terminateRef = useRef<() => void>(() => {});
   const sendTextRef = useRef<(text: string) => boolean>(() => false);
+  const stopReplyRef = useRef<() => boolean>(() => false);
   const setNoiseSuppressionRef = useRef<(enabled: boolean) => void>(() => {});
   const setBargeInMutedRef = useRef<(muted: boolean) => void>(() => {});
   const setVolumeRef = useRef<(volume: number) => void>(() => {});
@@ -525,6 +531,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
           inputGraph.failGap(frame.input_epoch);
           break;
         case "voice_session_ready":
+          setSessionError(null);
           voiceControllerRef.current.applyEvent(frame);
           inputGraph.release(frame.input_epoch);
           reportRecoveredConnection();
@@ -539,6 +546,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
           voiceControllerRef.current.applyEventTail(frame);
           break;
         case "voice_session_failed":
+          setSessionError(frame.safe_message);
           setCaption(frame.safe_message);
           if (frame.session_disposition === "continuation_required") {
             voiceControllerRef.current.beginContinuation();
@@ -958,6 +966,8 @@ export function useVoiceSession(): VoiceSessionViewModel {
       }
     };
 
+    retryConnectionRef.current = () => transportRef.current?.retryNow();
+
     stopRef.current = () => {
       stopMic();
       setMicActive(false);
@@ -982,7 +992,16 @@ export function useVoiceSession(): VoiceSessionViewModel {
       assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
       assistantCaptionRef.current = { text: "", spokenGeneration: null };
       setCaption("");
+      setSessionError(null);
       setState("idle");
+    };
+
+    stopReplyRef.current = () => {
+      const transport = transportRef.current;
+      if (!transport?.isOpen || !["thinking", "speaking"].includes(stateRef.current)) return false;
+      const sent = transport.send({ type: "cancel_assistant_response" });
+      if (!sent) setSessionError("暂时无法停止回复，请重试。");
+      return sent;
     };
 
     function submitUserText(text: string) {
@@ -993,6 +1012,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
       } catch {
         return false;
       }
+      setSessionError(null);
       outputGraph.activate();
       sessionOutputEnabledRef.current = true;
       setCaption(`你：${text}`);
@@ -1141,6 +1161,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
   }, []);
 
   const start = useCallback(() => startRef.current(), []);
+  const retryConnection = useCallback(() => retryConnectionRef.current(), []);
   const stop = useCallback(() => stopRef.current(), []);
   const terminate = useCallback(() => terminateRef.current(), []);
   const clearConversationDisplay = useCallback(() => {
@@ -1150,6 +1171,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
     setTranscript([]);
   }, []);
   const sendText = useCallback((text: string) => sendTextRef.current(text), []);
+  const stopReply = useCallback(() => stopReplyRef.current(), []);
   const setNoiseSuppression = useCallback(
     (enabled: boolean) => setNoiseSuppressionRef.current(enabled),
     [],
@@ -1187,12 +1209,15 @@ export function useVoiceSession(): VoiceSessionViewModel {
     ttsConfigurable,
     ttsPreviewAvailable,
     ttsConfigStatus,
+    sessionError,
     pendingConfirmation,
     start,
+    retryConnection,
     stop,
     terminate,
     clearConversationDisplay,
     sendText,
+    stopReply,
     setNoiseSuppression,
     setBargeInMuted,
     setVolume,

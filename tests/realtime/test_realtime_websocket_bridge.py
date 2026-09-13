@@ -36,6 +36,7 @@ from server.transport.frames import (
     AssistantSpeechCancelledFrame,
     AssistantSpeechTextFrame,
     AssistantTextFrame,
+    CancelAssistantResponseFrame,
     ConfirmationDecisionFrame,
     ConfirmationRequestedFrame,
     PlaybackProgressFrame,
@@ -565,6 +566,34 @@ async def test_text_input_waits_for_projection_before_requesting_response() -> N
     assert isinstance(conversation.commands[1], RequestResponse)
     assert conversation.commands[1].minimum_thread_sequence == 7
     assert isinstance(transport.frames[0], UserTranscriptFrame)
+
+
+async def test_explicit_stop_cancels_the_active_response_without_creating_a_user_turn() -> None:
+    conversation = RecordingConversation()
+    bridge = RealtimeWebSocketFrameBridge(
+        context=context(),
+        conversation=conversation,
+        transport=RecordingTransport(),
+    )
+    active_context = event_context(response_id="response-1")
+    await bridge.handle_event(
+        ResponseStarted(
+            event_id="started-for-explicit-stop",
+            context=active_context,
+            conversation_sequence=1,
+            occurred_at=datetime.now(UTC),
+            response_id="response-1",
+            response_sequence=1,
+        )
+    )
+
+    await bridge.handle_inbound(CancelAssistantResponseFrame())
+
+    assert len(conversation.commands) == 1
+    cancelled = conversation.commands[0]
+    assert isinstance(cancelled, CancelResponse)
+    assert cancelled.response_id == "response-1"
+    assert cancelled.reason == "user_stop"
 
 
 async def test_text_follow_up_cancels_the_active_response_before_starting_another() -> None:

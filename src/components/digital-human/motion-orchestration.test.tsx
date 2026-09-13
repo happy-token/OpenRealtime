@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { buildTalkingMaterialCatalog, filterPairedMotionCatalog, resolveMotionPair } from "./motion-orchestration";
+import { buildTalkingMaterialCatalog, filterPairedMotionCatalog, resolveMotionPair, shouldShowTalkingMotion } from "./motion-orchestration";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG, parseAvatarDisplayConfig } from "./types";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 it("persists orchestration and only resolves a variant attached to the selected live source", () => {
@@ -40,4 +40,11 @@ it("lists each talking variant directly even when the base has pending lip model
   expect(material.actions.map(a => [a.avatarActionId, a.videoUrl])).toEqual([["muse", "/muse"], ["mini", "/mini"]]);
   expect(material.actions.every(a => a.state === "available" && a.pendingModelCount === 0)).toBe(true);
   expect(buildTalkingMaterialCatalog([asset], [{ ...owned, deleted_at: "today" }])).toEqual([]);
+});
+
+it("shows the talking layer only during actual playback and drops it immediately on interruption", () => {
+  expect(shouldShowTalkingMotion(true, true)).toBe(true);
+  expect(shouldShowTalkingMotion(true, false)).toBe(false);
+  expect(shouldShowTalkingMotion(false, true)).toBe(false);
+  expect(shouldShowTalkingMotion(true, true, true)).toBe(false);
 });

@@ -115,6 +115,8 @@ describe("presentation mode display", () => {
         onOpenSettings={() => {}}
         onTerminate={() => {}}
         onSendText={() => true}
+        assistantBusy={false}
+        onStopReply={() => {}}
       />,
     );
 

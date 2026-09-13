@@ -245,14 +245,6 @@
   letter-spacing: -.075em;
 }
 
-.previewCopy p {
-  margin: 0 0 0 auto;
-  max-width: 430px;
-  color: rgba(238, 241, 255, .58);
-  font-size: clamp(.74rem, .85vw, .92rem);
-  line-height: 1.65;
-}
-
 .homeStartAction {
   position: absolute;
   z-index: 20;
@@ -2086,7 +2078,6 @@
   .previewCopy > span { justify-content: center; }
   .previewCopy h1 { margin-top: 9px; font-size: clamp(2.35rem, 13vw, 4.5rem); }
   .workspace[data-mode="avatar"] .previewCopy h1 { font-size: clamp(2.7rem, 15vw, 5rem); }
-  .previewCopy p { max-width: 330px; margin-inline: auto; font-size: .65rem; }
   .homeStartAction { top: auto; bottom: clamp(118px, 18vh, 152px); }
   .homeStartAction :global(.voice-start-halo-wrap) { gap: 4px; }
   .homeStartAction :global(.voice-start-halo) { width: 96px; height: 96px; }

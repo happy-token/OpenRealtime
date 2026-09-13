@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from server.transport.frames import (
     AvatarPersonaConfigFrame,
+    CancelAssistantResponseFrame,
     ClientConnectionQualityFrame,
     ConfirmationDecisionFrame,
     InboundFrame,
@@ -49,6 +50,8 @@ def parse_inbound_frame(raw_message: str | bytes) -> InboundFrame | None:
             return InputCaptureDiagnostic.model_validate(payload)
         if frame_type == "user_text":
             return UserTextFrame.model_validate(payload)
+        if frame_type == "cancel_assistant_response":
+            return CancelAssistantResponseFrame.model_validate(payload)
         if frame_type == "session_hello":
             return SessionHelloFrame.model_validate(payload)
         if frame_type == "session_heartbeat":

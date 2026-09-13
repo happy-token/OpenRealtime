@@ -9,9 +9,21 @@ import type { AdvancedConfigTab } from "@/components/call/home-preview-workspace
 import { ConfirmationCard } from "@/components/call/confirmation-card";
 import { BottomVoiceEdge } from "@/components/call/bottom-voice-edge";
 import { SessionControlBar } from "@/components/call/session-control-bar";
+import {
+  CONNECTION_STATUS_LABELS,
+  resolveSessionStatusLabel,
+} from "@/components/call/session-copy";
+import {
+  freezeSessionTranscript,
+  SessionEndedActions,
+  type SessionReviewSnapshot,
+} from "@/components/call/session-end-review";
+import { SessionRecoveryNotice } from "@/components/call/session-recovery-notice";
 import { SessionExperienceLayout } from "@/components/call/session-experience-layout";
 import {
   enterPageForm,
+  pageFormStorageKey,
+  parsePageForm,
   restoreFromFullscreen,
   startPresentationSession,
   type PageForm,
@@ -32,8 +44,6 @@ import {
 } from "@/components/digital-human/types";
 import {
   useVoiceSession,
-  type ConnectionState,
-  type ConversationState,
 } from "@/hooks/use-voice-session";
 import { isVoiceVisualTheme, type VoiceVisualTheme } from "@/components/call/voice-theme";
 import {
@@ -63,19 +73,6 @@ const ChatView = dynamic(
   { ssr: false },
 );
 
-const STATE_LABEL: Record<ConversationState, string> = {
-  idle: "待命",
-  listening: "正在听",
-  thinking: "思考中",
-  speaking: "AI 回复中",
-};
-
-const CONNECTION_HINT: Partial<Record<ConnectionState, string>> = {
-  connecting: "正在连接…",
-  reconnecting: "连接已断开，正在重连…",
-  error: "连接错误，正在重试…",
-};
-
 const VOICE_VISUAL_THEME_STORAGE_KEY = "voice-agent-visual-theme";
 const TTS_CONFIG_STORAGE_KEY = "voice-agent-tts-config";
 const REDUCED_MOTION_STORAGE_KEY = "voice-agent-reduced-motion";
@@ -101,6 +98,8 @@ export function OpenRealtimeApp({
   const [avatarAmbientColor, setAvatarAmbientColor] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
+  const [focusComposerRequest, setFocusComposerRequest] = useState(0);
+  const [sessionReview, setSessionReview] = useState<SessionReviewSnapshot | null>(null);
   const [ttsVoice, setTtsVoice] = useState<TtsVoice>(DEFAULT_TTS_VOICE);
   const [ttsProvider, setTtsProvider] = useState<TtsProvider>("bailian");
   const [ttsSpeechRate, setTtsSpeechRate] = useState(0);
@@ -109,6 +108,10 @@ export function OpenRealtimeApp({
   const configureAvatarPersona = engine.configureAvatarPersona;
 
   const connected = engine.connection === "open";
+
+  const preferredPageForm = useCallback((mode: ExperienceMode): PageForm => (
+    parsePageForm(window.localStorage.getItem(pageFormStorageKey(mode)))
+  ), []);
 
   useEffect(() => {
     setAvatarAmbientColor(null);
@@ -267,29 +270,32 @@ export function OpenRealtimeApp({
 
   const beginSession = useCallback(async (mode: ExperienceMode = experienceMode) => {
     if (!connected) return false;
+    setSessionReview(null);
+    engine.clearConversationDisplay();
+    setSessionStarted(true);
+    setPresentationView(startPresentationSession(mode, preferredPageForm(mode)));
     try {
       await engine.start();
-      engine.clearConversationDisplay();
-      setSessionStarted(true);
-      setPresentationView(startPresentationSession(mode));
       setSessionPaused(false);
       setMicError(null);
-      return true;
     } catch (error) {
+      setSessionPaused(true);
       setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
-      return false;
+      setFocusComposerRequest((request) => request + 1);
     }
-  }, [engine, connected, experienceMode]);
+    return true;
+  }, [engine, connected, experienceMode, preferredPageForm]);
 
   const startDigitalHumanSession = useCallback((config: AvatarDisplayConfig) => {
+    setSessionReview(null);
     setAvatarDisplayConfig(config);
     engine.clearConversationDisplay();
-    setPresentationView(startPresentationSession("avatar"));
+    setPresentationView(startPresentationSession("avatar", preferredPageForm("avatar")));
     setSessionStarted(true);
     setAvatarStarting(true);
     setSessionPaused(false);
     setMicError(null);
-  }, [engine]);
+  }, [engine, preferredPageForm]);
 
   const handleHomeStart = useCallback(async (requestedMode: ExperienceMode = experienceMode) => {
     if (requestedMode === "avatar") {
@@ -315,29 +321,65 @@ export function OpenRealtimeApp({
     await beginSession("voice");
   }, [avatarDisplayConfig, beginSession, experienceMode, startDigitalHumanSession]);
 
+  const retryMicrophone = useCallback(async () => {
+    try {
+      await engine.start();
+      setSessionPaused(false);
+      setMicError(null);
+    } catch (error) {
+      setSessionPaused(true);
+      setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [engine]);
+
+  const useTextFallback = useCallback(() => {
+    engine.stop();
+    setSessionPaused(true);
+    setFocusComposerRequest((request) => request + 1);
+  }, [engine]);
+
   const toggleSessionPause = useCallback(async () => {
     if (sessionPaused) {
-      try {
-        await engine.start();
-        setSessionPaused(false);
-        setMicError(null);
-      } catch (error) {
-        setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
-      }
+      await retryMicrophone();
       return;
     }
     engine.stop();
     setSessionPaused(true);
-  }, [engine, sessionPaused]);
+  }, [engine, retryMicrophone, sessionPaused]);
 
   const terminateSession = useCallback(() => {
+    setSessionReview({
+      endedAt: Date.now(),
+      entries: freezeSessionTranscript(engine.transcript),
+    });
     engine.terminate();
-    setSessionStarted(false);
     setAvatarStarting(false);
-    setPresentationView(null);
-    setSessionPaused(false);
+    setSessionPaused(true);
+    setDrawerOpen(false);
     setMicError(null);
   }, [engine]);
+
+  const returnHomeFromReview = useCallback(() => {
+    setSessionReview(null);
+    setSessionStarted(false);
+    setPresentationView(null);
+    setSessionPaused(false);
+    engine.clearConversationDisplay();
+  }, [engine]);
+
+  const continueFromReview = useCallback(async () => {
+    if (!connected) return;
+    setSessionReview(null);
+    try {
+      await engine.start();
+      setSessionPaused(false);
+      setMicError(null);
+    } catch (error) {
+      setSessionPaused(true);
+      setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+      setFocusComposerRequest((request) => request + 1);
+    }
+  }, [connected, engine]);
 
   function handleVoiceVisualThemeChange(theme: VoiceVisualTheme) {
     setVoiceVisualTheme(theme);
@@ -357,11 +399,21 @@ export function OpenRealtimeApp({
   }
 
   function handlePageFormChange(pageForm: PageForm) {
-    setPresentationView((current) => current ? enterPageForm(current, pageForm) : current);
+    setPresentationView((current) => {
+      if (!current) return current;
+      const next = enterPageForm(current, pageForm);
+      window.localStorage.setItem(pageFormStorageKey(current.mode), next.pageForm);
+      return next;
+    });
   }
 
   const handleRestoreFromFullscreen = useCallback(() => {
-    setPresentationView((current) => current ? restoreFromFullscreen(current) : current);
+    setPresentationView((current) => {
+      if (!current) return current;
+      const next = restoreFromFullscreen(current);
+      window.localStorage.setItem(pageFormStorageKey(current.mode), next.pageForm);
+      return next;
+    });
   }, []);
 
   const handleAvatarRendererReady = useCallback(async () => {
@@ -377,11 +429,10 @@ export function OpenRealtimeApp({
       setSessionPaused(false);
       setMicError(null);
     } catch (error) {
-      engine.terminate();
       setAvatarStarting(false);
-      setSessionStarted(false);
-      setPresentationView(null);
+      setSessionPaused(true);
       setMicError(`麦克风错误：${error instanceof Error ? error.message : String(error)}`);
+      setFocusComposerRequest((request) => request + 1);
     }
   }, [avatarDisplayConfig, avatarStarting, engine]);
 
@@ -447,6 +498,12 @@ export function OpenRealtimeApp({
     return () => window.removeEventListener("keydown", restoreLayout);
   }, [drawerOpen, engine.pendingConfirmation, handleRestoreFromFullscreen, pageForm]);
 
+  const statusLabel = resolveSessionStatusLabel({
+    state: engine.state,
+    microphoneMuted: sessionStarted && sessionPaused,
+    ended: Boolean(sessionReview),
+  });
+
   return (
     <div
       className="app-shell"
@@ -455,6 +512,7 @@ export function OpenRealtimeApp({
       data-view="call"
       data-experience-mode={experienceMode}
       data-entry-stage={sessionStarted ? "session" : "home"}
+      data-session-phase={sessionReview ? "ended" : "active"}
     >
       <div className="ambient ambient-one" aria-hidden="true" />
       <div className="ambient ambient-two" aria-hidden="true" />
@@ -469,10 +527,10 @@ export function OpenRealtimeApp({
             <span className="brand-wordmark">OpenRealtime</span>
           </span>
           <span className="status-dot" data-state={engine.state}>
-            {STATE_LABEL[engine.state]}
+            {statusLabel}
           </span>
           <span className={`offline-hint ${connected ? "hidden" : ""}`} data-offline={connected ? "false" : "true"}>
-            {connected ? "" : CONNECTION_HINT[engine.connection] ?? ""}
+            {connected ? "" : CONNECTION_STATUS_LABELS[engine.connection] ?? ""}
           </span>
         </div>
         <Link className="documentation-link" href="/docs">文档</Link>
@@ -484,11 +542,11 @@ export function OpenRealtimeApp({
           sessionStarted={false}
           homeSessionActive={sessionStarted}
           state={engine.state}
-          statusLabel={STATE_LABEL[engine.state]}
+          statusLabel={statusLabel}
           level={engine.level}
           currentTurnText={engine.caption}
           error={micError}
-          connected={connected && engine.micAvailable}
+          connected={connected}
           onStartSession={handleHomeStart}
           visualTheme={voiceVisualTheme}
           onVisualThemeChange={handleVoiceVisualThemeChange}
@@ -515,11 +573,11 @@ export function OpenRealtimeApp({
               sessionStarted
               runtimeOnly={experienceMode === "avatar"}
               state={engine.state}
-              statusLabel={sessionPaused ? "已暂停" : STATE_LABEL[engine.state]}
+              statusLabel={statusLabel}
               level={engine.level}
               currentTurnText={engine.caption}
               error={micError}
-              connected={connected && engine.micAvailable}
+              connected={connected}
               onStartSession={handleHomeStart}
               visualTheme={voiceVisualTheme}
               onVisualThemeChange={handleVoiceVisualThemeChange}
@@ -537,7 +595,22 @@ export function OpenRealtimeApp({
               onAvatarRendererReady={handleAvatarRendererReady}
               onAvatarAmbientColorChange={setAvatarAmbientColor}
             />}
-            conversation={<ChatView entries={engine.transcript} active={pageForm !== "fullscreen"} />}
+            surfaceOverlay={sessionReview ? <SessionEndedActions
+              connected={connected}
+              pageForm={pageForm}
+              onContinue={continueFromReview}
+              onReturnHome={returnHomeFromReview}
+            /> : null}
+            conversation={<ChatView entries={sessionReview?.entries ?? engine.transcript} active={pageForm !== "fullscreen"} />}
+            recovery={sessionReview ? null : <SessionRecoveryNotice
+              connection={engine.connection}
+              micError={micError}
+              micAvailable={engine.micAvailable}
+              sessionError={engine.sessionError}
+              onRetryConnection={engine.retryConnection}
+              onRetryMicrophone={retryMicrophone}
+              onUseText={useTextFallback}
+            />}
             controls={<SessionControlBar
               pageForm={pageForm}
               paused={sessionPaused}
@@ -548,17 +621,21 @@ export function OpenRealtimeApp({
               onOpenSettings={() => openSettings()}
               onTerminate={terminateSession}
               onSendText={engine.sendText}
+              assistantBusy={engine.state === "thinking" || engine.state === "speaking"}
+              onStopReply={engine.stopReply}
+              focusComposerRequest={focusComposerRequest}
+              ended={Boolean(sessionReview)}
             />}
           />
         ) : experienceMode === "voice" ? <CallView
           hidden={false}
           sessionStarted={false}
           state={engine.state}
-          statusLabel={STATE_LABEL[engine.state]}
+          statusLabel={statusLabel}
           level={engine.level}
           currentTurnText={engine.caption}
           error={micError}
-          connected={connected && engine.micAvailable}
+          connected={connected}
           onStartSession={handleHomeStart}
           visualTheme={voiceVisualTheme}
           onVisualThemeChange={handleVoiceVisualThemeChange}
@@ -576,7 +653,7 @@ export function OpenRealtimeApp({
         /> : null}
       </main>
 
-      {sessionStarted && !avatarStarting && (
+      {sessionStarted && !sessionReview && !avatarStarting && (
         <BottomVoiceEdge state={engine.state} level={engine.level} muted={sessionPaused}
           connected={connected} reducedMotion={reducedMotion} />
       )}
@@ -602,7 +679,7 @@ export function OpenRealtimeApp({
         </button>
       )}
 
-      {(sessionStarted || drawerOpen) && <ConfigDrawer
+      {!sessionReview && (sessionStarted || drawerOpen) && <ConfigDrawer
         open={drawerOpen}
         variant={sessionStarted ? "session" : "drawer"}
         initialTab={drawerInitialTab}

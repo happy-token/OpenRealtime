@@ -8,6 +8,10 @@ export interface UserTextFrame {
   text: string;
 }
 
+export interface CancelAssistantResponseFrame {
+  type: "cancel_assistant_response";
+}
+
 export interface SessionHelloFrame {
   type: "session_hello";
   resume_session_id: string | null;
@@ -67,6 +71,7 @@ export interface ConfirmationDecisionFrame {
 
 export type ClientToServerFrame =
   | UserTextFrame
+  | CancelAssistantResponseFrame
   | SessionHelloFrame
   | PlaybackProgressFrame
   | PlaybackQualityFrame

@@ -103,7 +103,11 @@ export class AnamAudioBridge implements AvatarAudioSink {
   }
 
   reset(): void {
-    for (const generation of this.generations.keys()) this.clearGeneration(generation);
+    const generations = [...this.generations.keys()];
+    const first = generations.shift();
+    if (first === undefined) return;
+    this.cancelGeneration(first);
+    for (const generation of generations) this.clearGeneration(generation);
   }
 
   disconnect(): void {

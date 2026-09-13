@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tas
       taskId,
       trusted.model,
     );
-    if (task.state === "success" || task.state === "failed") releaseLocalLtxTask(taskId);
+    if (task.state === "success" || task.state === "failed") await releaseLocalLtxTask(taskId, task.state);
     return json({
       task_id: task.taskId,
       state: task.state,

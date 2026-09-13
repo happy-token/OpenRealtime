@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { attachTalkingVariant, findOwnedAvatar } from "./avatar-catalog-repository";
@@ -9,15 +9,39 @@ import type { AvatarTalkingVariant } from "./avatar-records";
 
 const exec = promisify(execFile);
 const LIMIT = 50 * 1024 * 1024;
-export type TalkingJob = { id: string; state: "queued" | "processing" | "success" | "failed"; error?: string; variant?: AvatarTalkingVariant };
+export type TalkingJob = {
+  id: string;
+  state: "queued" | "processing" | "success" | "failed";
+  avatarId?: string;
+  actionId?: string;
+  sourceUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  retryBlocked?: boolean;
+  error?: string;
+  variant?: AvatarTalkingVariant;
+};
 type Store = { jobs: Map<string, TalkingJob>; tail: Promise<void> };
 const globalStore = globalThis as typeof globalThis & { __musetalkTalkingJobs?: Store };
 const store = globalStore.__musetalkTalkingJobs ??= { jobs: new Map(), tail: Promise.resolve() };
 const keyFor = (avatarId: string, actionId: string) => `${avatarId}/${actionId}`;
 const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
 
-export function getTalkingJob(avatarId: string, actionId: string) {
-  return store.jobs.get(keyFor(avatarId, actionId)) ?? null;
+export async function getTalkingJob(avatarId: string, actionId: string) {
+  const key = keyFor(avatarId, actionId);
+  const active = store.jobs.get(key);
+  if (active) return active;
+  const recovered = await findPersistedJob(avatarId, actionId);
+  if (!recovered) return null;
+  if (recovered.state === "queued" || recovered.state === "processing") {
+    recovered.state = "failed";
+    recovered.retryBlocked = true;
+    recovered.error = "服务曾在生成期间重启，远端任务状态无法确认。为避免重复消耗 GPU，请先核对任务目录和远端输出。";
+    recovered.updatedAt = new Date().toISOString();
+    await persistJob(recovered);
+  }
+  store.jobs.set(key, recovered);
+  return recovered;
 }
 
 /** Only owned artifact endpoints or files confined to public may be used as source media. */
@@ -52,18 +76,31 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
   const action = avatar?.actions.find(item => item.avatar_action_id === actionId && !item.deleted_at);
   if (!avatar || avatar.deleted_at || !action?.video_url) throw new Error("找不到可用动作底片");
   const key = keyFor(avatarId, actionId);
-  const current = store.jobs.get(key);
-  if (current && (current.state === "queued" || current.state === "processing")) return current;
+  const source = action.video_url;
+  const current = await getTalkingJob(avatarId, actionId);
+  const matchesCurrentSource = !current?.sourceUrl || current.sourceUrl === source;
+  if (current && matchesCurrentSource && (current.state === "queued" || current.state === "processing" || current.retryBlocked)) return current;
   const existing = action.talking_variants?.find(v => v.method === "musetalk" && v.source_video_url === action.video_url);
   if (existing) return { id: existing.id, state: "success", variant: existing };
   const host = process.env.MUSETALK_SSH_HOST?.trim() || "dev";
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._@-]*$/.test(host)) throw new Error("GPU SSH 配置无效");
-  const job: TalkingJob = { id: `musetalk-${randomUUID()}`, state: "queued" };
+  const now = new Date().toISOString();
+  const job: TalkingJob = {
+    id: `musetalk-${randomUUID()}`,
+    state: "queued",
+    avatarId,
+    actionId,
+    sourceUrl: source,
+    createdAt: now,
+    updatedAt: now,
+  };
   store.jobs.set(key, job);
-  const source = action.video_url;
+  await persistJob(job);
   store.tail = store.tail.then(async () => {
     job.state = "processing";
-    const local = path.join(process.cwd(), ".openrealtime", "talking-jobs", job.id);
+    job.updatedAt = new Date().toISOString();
+    await persistJob(job);
+    const local = path.join(talkingJobRoot(), job.id);
     let publishedPath: string | undefined;
     try {
       await mkdir(local, { recursive: true });
@@ -91,13 +128,64 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
       await attachTalkingVariant(avatarId, actionId, variant);
       job.variant = variant;
       job.state = "success";
+      job.updatedAt = new Date().toISOString();
+      await persistJob(job);
     } catch (error) {
       if (publishedPath) await unlink(publishedPath).catch(cleanupError => console.error("Cannot remove unpublished talking video", cleanupError));
       job.state = "failed";
-      job.error = "MuseTalk 讲话素材生成失败，请检查 GPU 连接和任务日志后重试。";
+      job.retryBlocked = true;
+      job.updatedAt = new Date().toISOString();
+      job.error = "MuseTalk 讲话素材生成失败。为避免远端任务仍在运行时重复消耗 GPU，请先检查任务日志和远端输出。";
+      await persistJob(job).catch(persistError => console.error("Cannot persist failed talking job", persistError));
       console.error(`Talking job ${job.id} failed`, error);
       await writeFile(path.join(local, "error.log"), String(error)).catch(logError => console.error("Cannot save talking job error", logError));
     }
   });
   return job;
+}
+
+
+function talkingJobRoot() {
+  return process.env.MUSETALK_JOB_ROOT ?? path.join(process.cwd(), ".openrealtime", "talking-jobs");
+}
+
+async function persistJob(job: TalkingJob) {
+  const directory = path.join(talkingJobRoot(), job.id);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const target = path.join(directory, "job.json");
+  const temporary = path.join(directory, `job.${process.pid}.${randomUUID()}.tmp`);
+  await writeFile(temporary, JSON.stringify(job, null, 2), { mode: 0o600 });
+  await rename(temporary, target);
+}
+
+async function findPersistedJob(avatarId: string, actionId: string) {
+  let entries: string[];
+  try {
+    entries = await readdir(talkingJobRoot());
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
+  const jobs = await Promise.all(entries
+    .filter((entry) => /^musetalk-[0-9a-f-]{36}$/.test(entry))
+    .map(async (entry) => {
+      try {
+        const parsed: unknown = JSON.parse(await readFile(path.join(talkingJobRoot(), entry, "job.json"), "utf8"));
+        return isTalkingJob(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }));
+  return jobs
+    .filter((job): job is TalkingJob => Boolean(job && job.avatarId === avatarId && job.actionId === actionId))
+    .sort((left, right) => Date.parse(right.updatedAt ?? right.createdAt ?? "") - Date.parse(left.updatedAt ?? left.createdAt ?? ""))[0] ?? null;
+}
+
+function isTalkingJob(value: unknown): value is TalkingJob {
+  if (!value || typeof value !== "object") return false;
+  const job = value as Partial<TalkingJob>;
+  return typeof job.id === "string"
+    && ["queued", "processing", "success", "failed"].includes(job.state ?? "")
+    && typeof job.avatarId === "string"
+    && typeof job.actionId === "string";
 }

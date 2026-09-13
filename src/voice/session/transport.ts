@@ -95,6 +95,19 @@ export class BrowserVoiceSessionTransport {
     this.socket?.close();
   }
 
+  retryNow(): void {
+    if (this.disposed) return;
+    this.reconnectAllowed = true;
+    if (this.reconnectHandle !== null) {
+      this.cancelScheduled(this.reconnectHandle);
+      this.reconnectHandle = null;
+    }
+    const previous = this.socket;
+    this.socket = null;
+    previous?.close();
+    this.connect();
+  }
+
   reportRecovered(): boolean {
     if (this.disconnectStartedAtMs === null || !this.isOpen) return false;
     const downtimeMs = Math.max(0, this.now() - this.disconnectStartedAtMs);

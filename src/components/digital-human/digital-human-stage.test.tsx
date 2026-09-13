@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "./types";
-import { DigitalHumanStage, usesOwnedAvatarSourceImage } from "./digital-human-stage";
+import { DigitalHumanStage, rendererCanStartConversation, usesOwnedAvatarSourceImage } from "./digital-human-stage";
 
 function renderStage(displayConfig = DEFAULT_AVATAR_DISPLAY_CONFIG) {
   return renderToStaticMarkup(
@@ -18,6 +18,14 @@ function renderStage(displayConfig = DEFAULT_AVATAR_DISPLAY_CONFIG) {
 }
 
 describe("DigitalHumanStage", () => {
+  it("starts the conversation for live, preview, and graceful fallback renderers", () => {
+    expect(rendererCanStartConversation("ready")).toBe(true);
+    expect(rendererCanStartConversation("preview")).toBe(true);
+    expect(rendererCanStartConversation("degraded")).toBe(true);
+    expect(rendererCanStartConversation("connecting")).toBe(false);
+    expect(rendererCanStartConversation("error")).toBe(false);
+  });
+
   it("loads the current owned source image for an internal Avatar id", () => {
     expect(usesOwnedAvatarSourceImage({
       ...DEFAULT_AVATAR_DISPLAY_CONFIG,
@@ -53,7 +61,7 @@ describe("DigitalHumanStage", () => {
   it("does not render a hard-coded greeting while the avatar starts", () => {
     const html = renderStage(DEFAULT_AVATAR_DISPLAY_CONFIG);
 
-    expect(html).toContain("正在按当前配置启动 Avatar");
+    expect(html).toContain("正在准备数字人");
     expect(html).toContain('role="status"');
     expect(html).not.toContain("你好，我是");
   });

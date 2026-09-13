@@ -122,6 +122,56 @@ describe("BrowserVoiceSessionTransport", () => {
     });
   });
 
+  it("retries immediately after a terminal failure when the user asks", () => {
+    const sockets: FakeSocket[] = [];
+    const states: string[] = [];
+    const transport = new BrowserVoiceSessionTransport({
+      url: "ws://voice.test",
+      controller: {
+        createHello: () => ({
+          type: "session_hello",
+          supported_protocol_versions: [2],
+          resume_session_id: null,
+          resume_token: null,
+          last_session_sequence: 0,
+          last_journal_sequence: 0,
+        }),
+        disconnected: () => undefined,
+      },
+      createSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      schedule: () => 1,
+      cancelScheduled: () => undefined,
+      onConnectionState: (state) => states.push(state),
+      onFrame: () => undefined,
+    });
+
+    transport.start();
+    sockets[0].emit("open");
+    sockets[0].emit("message", {
+      data: JSON.stringify({
+        type: "voice_session_failed",
+        error_id: "failure-1",
+        code: "authentication_failed",
+        phase: "starting",
+        retryable: false,
+        retry_after_ms: null,
+        session_disposition: "close",
+        safe_message: "连接身份验证失败。",
+      }),
+    });
+    sockets[0].emit("close");
+
+    transport.retryNow();
+    expect(sockets).toHaveLength(2);
+    expect(states.at(-1)).toBe("reconnecting");
+    sockets[1].emit("open");
+    expect(states.at(-1)).toBe("open");
+  });
+
   it("does not reconnect after a terminal voice-session failure", () => {
     const socket = new FakeSocket();
     const states: string[] = [];

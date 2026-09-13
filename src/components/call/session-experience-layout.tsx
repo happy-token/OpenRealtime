@@ -7,8 +7,10 @@ import type { PageForm } from "./presentation-model";
 interface SessionExperienceLayoutProps {
   pageForm: PageForm;
   surface: ReactNode;
+  surfaceOverlay?: ReactNode;
   conversation: ReactNode;
   controls: ReactNode;
+  recovery?: ReactNode;
   ambientColor?: string | null;
   onEnterFullscreen: () => void;
 }
@@ -18,8 +20,10 @@ type CompanionCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right"
 export function SessionExperienceLayout({
   pageForm,
   surface,
+  surfaceOverlay,
   conversation,
   controls,
+  recovery,
   ambientColor,
   onEnterFullscreen,
 }: SessionExperienceLayoutProps) {
@@ -116,6 +120,7 @@ export function SessionExperienceLayout({
         onKeyDown={enterFullscreenFromKeyboard}
       >
         <div className="session-surface-content">{surface}</div>
+        {pageForm !== "content" ? surfaceOverlay : null}
         {pageForm === "content" && (
           <div className="session-surface-actions" role="toolbar" aria-label="小窗显示控制">
             <button
@@ -143,6 +148,9 @@ export function SessionExperienceLayout({
           </div>
         )}
       </section>
+      {pageForm === "content" && surfaceOverlay ? (
+        <div className="session-content-stage-overlay">{surfaceOverlay}</div>
+      ) : null}
       <section className="session-conversation-region" aria-label="对话内容" aria-hidden={pageForm === "fullscreen"}>
         {conversation}
       </section>
@@ -161,6 +169,7 @@ export function SessionExperienceLayout({
         onPointerCancel={finishSidecarResize}
         onKeyDown={adjustSidecarWidthByKeyboard}
       />}
+      {recovery ? <div className="session-recovery-region">{recovery}</div> : null}
       <div className="session-controls-region" aria-label="会话操作">
         {controls}
       </div>

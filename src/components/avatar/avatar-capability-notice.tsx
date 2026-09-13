@@ -8,10 +8,13 @@ export function AvatarCapabilityNotice({ capability, error, onRetry }: {
   error: string | null;
   onRetry: () => void;
 }) {
-  if (!error && capability?.state === "available") return null;
+  // The capability request normally resolves quickly after hydration. Keep that
+  // transient state visually quiet so refreshing the homepage does not flash a
+  // status card over the avatar; actionable results still remain visible.
+  if (!error && (!capability || capability.state === "available")) return null;
 
   return <div className="avatar-capability-notice" role="status">
-    <span>{error ?? capability?.message ?? "正在检查数字人能力…"}</span>
+    <span>{error ?? capability?.message}</span>
     {capability?.state === "login_required" && <Link href="/admin">管理员登录</Link>}
     {error && <button type="button" onClick={onRetry}>重新检查</button>}
   </div>;

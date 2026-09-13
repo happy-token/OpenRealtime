@@ -11,6 +11,7 @@ const config = [
       "clients/**",
       ".next/**",
       ".next-dev/**",
+      ".next-talking-eval/**",
       ".next-e2e-*/**",
       ".worktrees/**",
       "tmp/**",

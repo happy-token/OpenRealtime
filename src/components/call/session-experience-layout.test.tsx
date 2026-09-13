@@ -40,6 +40,7 @@ describe("SessionExperienceLayout", () => {
       <SessionExperienceLayout
         pageForm="content"
         surface={<div>AVATAR</div>}
+        surfaceOverlay={<div>ENDED ACTIONS</div>}
         conversation={<div>CONVERSATION</div>}
         controls={<div>SESSION CONTROLS</div>}
         onEnterFullscreen={() => {}}
@@ -52,5 +53,7 @@ describe("SessionExperienceLayout", () => {
     expect(html).toContain('aria-label="移动小窗"');
     expect(html).toContain('aria-label="最小化小窗"');
     expect(html).toContain('aria-label="全屏展示"');
+    expect(html).toContain('class="session-content-stage-overlay"><div>ENDED ACTIONS</div></div>');
+    expect(html.indexOf("ENDED ACTIONS")).toBeGreaterThan(html.indexOf('aria-label="实时展示"'));
   });
 });

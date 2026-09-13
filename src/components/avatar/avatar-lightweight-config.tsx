@@ -9,8 +9,29 @@ import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { StudioConfigOverlay } from "./studio-config-overlay";
 import { readLightweightDraft, selectIdle, matchingVariant, type LightweightDraft, type TalkingMethod } from "./lightweight-draft";
+import {
+  clearRecoverableGenerationTask,
+  readRecoverableGenerationTask,
+  saveRecoverableGenerationTask,
+} from "@/lib/generation-task-recovery";
 import styles from "./avatar-studio.module.css";
 import actionStyles from "./avatar-action-studio.module.css";
+
+
+function abortableDelay(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Cancelled", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) cancel();
+  });
+}
 
 export function AvatarLightweightConfig({ avatar, header, active, open, onOpenChange, onCreateAction }: {
   avatar: OwnedAvatarRecord; header: ReactNode; active: boolean;
@@ -25,6 +46,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
   const [duration, setDuration] = useState(10);
   const generationLock = useRef(false);
   const generationAbort = useRef<AbortController | null>(null);
+  const recoveryAttempt = useRef("");
   useEffect(() => () => generationAbort.current?.abort(), []);
   const video = useRef<HTMLVideoElement>(null);
   const key = `openrealtime:lightweight-draft:${avatar.avatar_id}`;
@@ -57,6 +79,55 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
   const generatedVariant = matchingVariant(draft, idle?.video_url);
   const variant = generatedVariant?.method === draft.method ? generatedVariant : attachedVariant ? { videoUrl: attachedVariant.video_url } : undefined;
   const pairedActions = available.filter(action => action.talking_variants?.some(item => item.source_video_url === action.video_url));
+  useEffect(() => {
+    if (!active || !loaded || !idle?.video_url || variant || busy) return;
+    const recoveryKey = `${draft.method}:${idle.avatar_action_id}:${idle.video_url}`;
+    if (recoveryAttempt.current === recoveryKey) return;
+    recoveryAttempt.current = recoveryKey;
+    const controller = new AbortController();
+    generationAbort.current = controller;
+
+    if (draft.method === "musetalk") {
+      const endpoint = `/api/avatars/${encodeURIComponent(avatar.avatar_id)}/actions/${encodeURIComponent(idle.avatar_action_id)}/talking-variants/generate`;
+      void fetch(endpoint, { cache: "no-store", signal: controller.signal }).then(async response => {
+        const payload = await response.json();
+        if (!response.ok || !payload.job) return;
+        if (payload.job.state === "failed") {
+          setNotice(payload.job.error || "上次 MuseTalk 任务未完成，请先核对任务状态。");
+          return;
+        }
+        if (payload.job.state === "queued" || payload.job.state === "processing") {
+          setNotice("已找回正在生成的 MuseTalk 讲话素材，正在恢复进度。");
+          await generateTalking();
+        }
+        if (payload.job.state === "success") {
+          const record = await fetchOwnedAvatar(avatar.avatar_id, controller.signal);
+          if (record) setActions(record.actions);
+          setPreview("talking");
+          setNotice("已找回生成完成的 MuseTalk 讲话素材。");
+        }
+      }).catch(error => {
+        if (!(error instanceof Error && error.name === "AbortError")) setNotice("暂时无法恢复 MuseTalk 任务，系统不会自动重复生成。");
+      });
+      return () => controller.abort();
+    }
+
+    if (draft.method === "minimax") {
+      const recovered = readRecoverableGenerationTask(avatar.avatar_id, "talking");
+      if (!recovered || recovered.provider !== "minimax" || recovered.sourceId !== idle.avatar_action_id || recovered.sourceUrl !== idle.video_url) return;
+      setBusy(true);
+      setNotice("已找回 MiniMax 讲话任务，正在恢复进度。");
+      void resumeMiniMaxTalking(recovered.requestId, recovered.taskId, idle.avatar_action_id, idle.video_url, controller.signal)
+        .catch(error => {
+          if (!(error instanceof Error && error.name === "AbortError")) setNotice(error instanceof Error ? error.message : "讲话任务恢复失败");
+        })
+        .finally(() => setBusy(false));
+      return () => controller.abort();
+    }
+  // generateTalking intentionally resumes only after the server confirms an existing job.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, avatar.avatar_id, draft.method, idle?.avatar_action_id, idle?.video_url, loaded, variant]);
+
   function choosePairedAction(action: typeof available[number]) {
     const existing = action.talking_variants?.find(item => item.method === draft.method && item.source_video_url === action.video_url)
       || action.talking_variants?.find(item => item.source_video_url === action.video_url);
@@ -66,6 +137,48 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
     setNotice("已切换到该底片的讲话版，素材选择已自动保存到本机。");
   }
   const previewUrl = preview === "idle" ? idle?.video_url : variant?.videoUrl;
+
+  async function resumeMiniMaxTalking(requestId: string, knownTaskId: string | undefined, sourceId: string, sourceUrl: string, signal: AbortSignal) {
+    let taskId = knownTaskId;
+    for (let attempt = 0; !taskId && attempt < 900; attempt++) {
+      const response = await fetch(`/api/ltx/image-to-video?request_id=${encodeURIComponent(requestId)}`, { cache: "no-store", signal });
+      const recovered = await response.json();
+      if (!response.ok) throw new Error(recovered.error || "讲话任务恢复失败");
+      if (recovered.submission_state === "submission_unknown") throw new Error(recovered.error || "任务提交结果无法确认，为避免重复扣费，系统不会自动重试。");
+      if (typeof recovered.task_id === "string") {
+        taskId = recovered.task_id;
+        saveRecoverableGenerationTask({
+          avatarId: avatar.avatar_id,
+          purpose: "talking",
+          requestId,
+          provider: "minimax",
+          taskId,
+          sourceId,
+          sourceUrl,
+          startedAt: Date.now(),
+        });
+        break;
+      }
+      await abortableDelay(2_000, signal);
+    }
+    if (!taskId) throw new Error("任务提交确认超时；系统不会自动重复生成。");
+    for (let attempt = 0; attempt < 300; attempt++) {
+      await abortableDelay(3_000, signal);
+      const result = await fetch(`/api/ltx/image-to-video/${encodeURIComponent(taskId)}`, { signal });
+      const task = await result.json();
+      if (!result.ok || task.state === "failed") throw new Error(task.error || "讲话生成失败");
+      if (task.state === "success") {
+        if (typeof task.result_url !== "string" || !/^\/api\/ltx\/image-to-video\/[^/]+\/result$/.test(task.result_url)) throw new Error("讲话视频地址无效");
+        setDraft(current => current.idle === sourceId ? { ...current, variant: { sourceId, sourceUrl, videoUrl: task.result_url, method: "minimax" } } : current);
+        setPreview("talking");
+        clearRecoverableGenerationTask(avatar.avatar_id, "talking");
+        setNotice("讲话版已生成，请检查同相位姿态与循环过渡。生成结果不代表逐帧一致。");
+        return;
+      }
+    }
+    throw new Error(`等待生成超时，任务 ${taskId} 可能仍在处理；刷新页面会继续查询，不会重复提交。`);
+  }
+
   async function generateTalking() {
     if (!idle?.video_url || draft.method === "wav2lip" || generationLock.current) return;
     generationLock.current = true;
@@ -109,8 +222,19 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
       const blob = await source.blob();
       if (blob.size > 50 * 1024 * 1024) throw new Error("MiniMax 参考视频不能超过 50MB");
       if (!["video/mp4", "video/quicktime"].includes(blob.type)) throw new Error("MiniMax 参考底片需为 MP4 或 MOV，请选择兼容素材");
+      const requestId = crypto.randomUUID();
+      saveRecoverableGenerationTask({
+        avatarId: avatar.avatar_id,
+        purpose: "talking",
+        requestId,
+        provider: "minimax",
+        sourceId,
+        sourceUrl,
+        startedAt: Date.now(),
+      });
       const form = new FormData();
       form.set("avatarId", avatar.avatar_id);
+      form.set("requestId", requestId);
       form.set("prompt", MINIMAX_TALKING_PROMPT);
       form.set("model", "MiniMax-H3");
       form.set("ratio", "adaptive");
@@ -122,27 +246,10 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
       form.set("referenceVideo", new File([blob], blob.type === "video/quicktime" ? "idle.mov" : "idle.mp4", { type: blob.type }));
       const response = await fetch("/api/ltx/image-to-video", { method: "POST", body: form, signal: controller.signal });
       const payload = await response.json();
-      if (!response.ok || typeof payload.task_id !== "string") throw new Error(payload.error || "讲话生成任务创建失败");
-      setNotice("MiniMax 正在基于待机底片生成讲话版，请勿关闭页面。");
-      for (let attempt = 0; attempt < 300; attempt++) {
-        await new Promise<void>((resolve, reject) => {
-          const cancel = () => { clearTimeout(timer); reject(new DOMException("Cancelled", "AbortError")); };
-          const timer = setTimeout(() => { controller.signal.removeEventListener("abort", cancel); resolve(); }, 3000);
-          controller.signal.addEventListener("abort", cancel, { once: true });
-          if (controller.signal.aborted) cancel();
-        });
-        const result = await fetch(`/api/ltx/image-to-video/${encodeURIComponent(payload.task_id)}`, { signal: controller.signal });
-        const task = await result.json();
-        if (!result.ok || task.state === "failed") throw new Error(task.error || "讲话生成失败");
-        if (task.state === "success") {
-          if (typeof task.result_url !== "string" || !/^\/api\/ltx\/image-to-video\/[^/]+\/result$/.test(task.result_url)) throw new Error("讲话视频地址无效");
-          setDraft(current => current.idle === sourceId ? { ...current, variant: { sourceId, sourceUrl, videoUrl: task.result_url, method: "minimax" } } : current);
-          setPreview("talking");
-          setNotice("讲话版已生成，请检查同相位姿态与循环过渡。生成结果不代表逐帧一致。");
-          return;
-        }
-      }
-      throw new Error(`等待生成超时，任务 ${payload.task_id} 可能仍在处理，请勿重复提交。`);
+      if (!response.ok) throw new Error(payload.error || "讲话生成任务创建失败");
+      if (payload.submission_state === "submission_unknown") throw new Error(payload.error || "任务提交结果无法确认，为避免重复扣费，系统不会自动重试。");
+      setNotice("MiniMax 正在基于待机底片生成讲话版；刷新页面后会自动恢复。");
+      await resumeMiniMaxTalking(requestId, typeof payload.task_id === "string" ? payload.task_id : undefined, sourceId, sourceUrl, controller.signal);
     } catch (error) {
       if (!(error instanceof Error && error.name === "AbortError")) setNotice(error instanceof Error ? error.message : "讲话生成失败");
     } finally { generationLock.current = false; setBusy(false); }

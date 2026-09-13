@@ -13,5 +13,5 @@ export async function POST(request: Request, context: Context) {
 export async function GET(request: Request, context: Context) {
   if (!authorizeAvatarAssetRequest(request, false)) return jsonError("不允许读取任务", 403);
   const { avatarId, avatarActionId } = await context.params;
-  return Response.json({ job: getTalkingJob(avatarId, avatarActionId) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ job: await getTalkingJob(avatarId, avatarActionId) }, { headers: { "Cache-Control": "no-store" } });
 }

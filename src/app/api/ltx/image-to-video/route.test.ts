@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   readImage: vi.fn(),
   createTask: vi.fn(),
+  recoverTask: vi.fn(),
   submit: vi.fn(),
   prepareFrame: vi.fn(),
 }));
@@ -15,7 +16,10 @@ vi.mock("@/lib/avatar-test-access", () => ({
 }));
 vi.mock("@/lib/ltx-task-coordinator", () => ({
   createOrReuseLocalLtxTask: mocks.createTask,
-  LtxTaskConflictError: class LtxTaskConflictError extends Error {},
+  getLocalLtxSubmissionByRequestId: mocks.recoverTask,
+  LtxTaskSubmissionPendingError: class LtxTaskSubmissionPendingError extends Error {
+    record = { requestIds: [], state: "submitting" };
+  },
 }));
 vi.mock("@/lib/minimax-frame-image", () => ({ prepareMiniMaxFrameImage: mocks.prepareFrame }));
 vi.mock("@/lib/video-generation-provider", async () => {
@@ -173,6 +177,30 @@ describe("LTX image-to-video route", () => {
     }));
     expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({
       referenceVideoSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-    }), expect.any(Function));
+    }), expect.any(Function), expect.objectContaining({
+      requestId: expect.stringMatching(/^[a-f0-9-]{36}$/),
+    }));
+  });
+
+  it("finds a persisted paid task by browser request id after refresh", async () => {
+    enableLocalTestMode();
+    mocks.recoverTask.mockReturnValue({
+      id: "ledger-1",
+      requestIds: ["request_1234567890"],
+      state: "active",
+      task: { taskId: "task_123456", state: "queueing", model: "ltx-2-3-fast" },
+      model: "ltx-2-3-fast",
+      createdAt: "2026-09-12T10:00:00Z",
+    });
+    const response = await GET(new NextRequest(
+      "http://127.0.0.1:3010/api/ltx/image-to-video?request_id=request_1234567890",
+      { headers: { cookie: "openrealtime_admin=test" } },
+    ));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      request_id: "request_1234567890",
+      submission_state: "active",
+      task_id: "task_123456",
+    });
   });
 });

@@ -6,8 +6,9 @@ from server.transport import frames
 from server.transport.base import AuthenticatedTransportIdentity
 from server.transport.frame_parsing import parse_inbound_frame
 from server.transport.frames import (
-    AvatarPersonaConfigFrame,
     AssistantTextFrame,
+    AvatarPersonaConfigFrame,
+    CancelAssistantResponseFrame,
     ClientConnectionQualityFrame,
     ConfirmationDecisionFrame,
     PlaybackProgressFrame,
@@ -60,6 +61,15 @@ async def test_receive_parses_user_text_frame():
     frames = await _collect(adapter)
 
     assert frames == [UserTextFrame(text="hello")]
+
+
+async def test_receive_parses_cancel_assistant_response_frame():
+    connection = FakeConnection(['{"type":"cancel_assistant_response"}'])
+    adapter = WebSocketTransportAdapter(connection)
+
+    received = await _collect(adapter)
+
+    assert received == [CancelAssistantResponseFrame()]
 
 
 async def test_receive_parses_avatar_persona_selection_without_prompt_content():

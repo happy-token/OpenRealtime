@@ -1,12 +1,12 @@
 import type { ConversationState } from "@/hooks/use-voice-session";
 import type { ReactNode } from "react";
-import { Orb } from "./orb";
 import type { VoiceVisualTheme } from "./voice-theme";
 import { DigitalHumanStage } from "@/components/digital-human/digital-human-stage";
 import type { AvatarDisplayConfig, ExperienceMode } from "@/components/digital-human/types";
 import type { AvatarAudioSink } from "@/voice/audio/avatar-output";
 import type { TtsProvider, TtsVoice } from "@/components/drawer/voice-options";
 import { HomePreviewWorkspace, type AdvancedConfigTab } from "./home-preview-workspace";
+import { Orb } from "./orb";
 
 interface CallViewProps {
   hidden: boolean;
@@ -96,14 +96,14 @@ export function CallView({
             <div className="orb-status-stage">
               <Orb state={state} level={level} theme={visualTheme} />
               {statusPlacement === "center" && (
-                <span className="orb-conversation-status orb-conversation-status-center" data-state={state}>
+                <span className="orb-conversation-status orb-conversation-status-center" data-state={state} role="status" aria-live="polite" aria-atomic="true">
                   <i aria-hidden="true" />
                   {statusLabel}
                 </span>
               )}
             </div>
             {statusPlacement === "below" && (
-              <span className="orb-conversation-status orb-conversation-status-below" data-state={state}>
+              <span className="orb-conversation-status orb-conversation-status-below" data-state={state} role="status" aria-live="polite" aria-atomic="true">
                 <i aria-hidden="true" />
                 {statusLabel}
               </span>

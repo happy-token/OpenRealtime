@@ -56,6 +56,26 @@ describe("AnamAudioBridge", () => {
     expect(bridge.enqueue(chunk({ sampleRateHz: 16_000 }))).toBe(false);
   });
 
+  it("interrupts every active remote generation when the session resets", () => {
+    const interruptPersona = vi.fn();
+    const endSequence = vi.fn();
+    const bridge = new AnamAudioBridge();
+    bridge.connect(
+      { interruptPersona },
+      { sendAudioChunk: vi.fn(), endSequence },
+      { volume: 1 },
+    );
+    bridge.enqueue(chunk({ generation: 7 }));
+    bridge.enqueue(chunk({ generation: 8 }));
+
+    bridge.reset();
+
+    expect(interruptPersona).toHaveBeenCalledOnce();
+    expect(endSequence).toHaveBeenCalledOnce();
+    expect(bridge.isActive(7)).toBe(false);
+    expect(bridge.isActive(8)).toBe(false);
+  });
+
   it("interrupts the remote avatar and resets the audio sequence", () => {
     const interruptPersona = vi.fn();
     const endSequence = vi.fn();

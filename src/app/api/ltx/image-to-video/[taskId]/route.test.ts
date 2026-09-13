@@ -61,7 +61,7 @@ describe("LTX task status route", () => {
       state: "success",
       result_url: "/api/ltx/image-to-video/task_123456/result",
     });
-    expect(mocks.release).toHaveBeenCalledWith("task_123456");
+    expect(mocks.release).toHaveBeenCalledWith("task_123456", "success");
     expect(mocks.status).toHaveBeenCalledWith(expect.anything(), "task_123456", "ltx-2-3-fast");
   });
 });
