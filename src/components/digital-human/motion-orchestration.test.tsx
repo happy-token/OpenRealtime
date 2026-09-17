@@ -30,6 +30,7 @@ it("lists each talking variant directly even when the base has pending lip model
   const owned = { avatar_id: "avatar-a", actions: [
     { avatar_action_id: "base", display_name: "柔和回应", video_url: "/idle", pending_model_count: 2, talking_variants: [
       { id: "muse", method: "musetalk", source_video_url: "/idle", video_url: "/muse" },
+      { id: "lip", method: "lipforcing", source_video_url: "/idle", video_url: "/lip" },
       { id: "mini", method: "minimax", source_video_url: "/idle", video_url: "/mini" },
       { id: "stale", method: "wav2lip", source_video_url: "/old", video_url: "/stale" },
     ] },
@@ -37,7 +38,8 @@ it("lists each talking variant directly even when the base has pending lip model
   ] } as unknown as OwnedAvatarRecord;
   const asset = { avatarId: "avatar-a", actions: [] } as unknown as import("@/lib/avatar-catalog").AvatarAsset;
   const material = buildTalkingMaterialCatalog([asset], [owned])[0];
-  expect(material.actions.map(a => [a.avatarActionId, a.videoUrl])).toEqual([["muse", "/muse"], ["mini", "/mini"]]);
+  expect(material.actions.map(a => [a.avatarActionId, a.videoUrl])).toEqual([["muse", "/muse"], ["lip", "/lip"], ["mini", "/mini"]]);
+  expect(material.actions.find(a => a.avatarActionId === "lip")?.displayName).toBe("柔和回应 · Lip Forcing");
   expect(material.actions.every(a => a.state === "available" && a.pendingModelCount === 0)).toBe(true);
   expect(buildTalkingMaterialCatalog([asset], [{ ...owned, deleted_at: "today" }])).toEqual([]);
 });

@@ -1,4 +1,4 @@
-export type TalkingMethod = "wav2lip" | "minimax" | "musetalk";
+export type TalkingMethod = "wav2lip" | "minimax" | "musetalk" | "lipforcing";
 export type LightweightDraft = {
   idle: string;
   method: TalkingMethod;
@@ -9,7 +9,7 @@ export function readLightweightDraft(raw: unknown): LightweightDraft {
   if (!raw || typeof raw !== "object") return empty;
   const record = raw as Record<string, unknown>;
   // Legacy independent talking selections have no provenance and cannot be reused.
-  const draft: LightweightDraft = { idle: typeof record.idle === "string" ? record.idle : "", method: record.method === "wav2lip" || record.method === "minimax" ? record.method : "musetalk" };
+  const draft: LightweightDraft = { idle: typeof record.idle === "string" ? record.idle : "", method: record.method === "wav2lip" || record.method === "minimax" || record.method === "lipforcing" ? record.method : "musetalk" };
   const variant = record.variant as Record<string, unknown> | undefined;
   if (variant && typeof variant === "object" && variant.sourceId === draft.idle
     && typeof variant.sourceUrl === "string" && typeof variant.videoUrl === "string"

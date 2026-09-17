@@ -53,7 +53,7 @@ describe("Avatar catalog repository", () => {
     expect(await readFile(catalog, "utf8")).toBe(original);
   });
 
-  it.each(["minimax", "musetalk"] as const)("keeps %s talking variants nested, idempotent and bound to the source", async (method) => {
+  it.each(["minimax", "musetalk", "lipforcing"] as const)("keeps %s talking variants nested, idempotent and bound to the source", async (method) => {
     const root = await repositoryRoot();
     await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
     await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);

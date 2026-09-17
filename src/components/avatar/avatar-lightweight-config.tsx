@@ -180,7 +180,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
   }
 
   async function generateTalking() {
-    if (!idle?.video_url || draft.method === "wav2lip" || generationLock.current) return;
+    if (!idle?.video_url || draft.method === "wav2lip" || draft.method === "lipforcing" || generationLock.current) return;
     generationLock.current = true;
     const controller = new AbortController();
     generationAbort.current = controller;
@@ -276,10 +276,10 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           <h3>生成讲话素材</h3>
           <div className={styles.lightweightField}>
             <SelectMenu value={draft.method} ariaLabel="配对讲话素材" compact disabled={!loaded || busy}
-              options={(["musetalk", "minimax", "wav2lip"] as const).map(method => {
+              options={(["lipforcing", "musetalk", "minimax", "wav2lip"] as const).map(method => {
                 const saved = idle?.talking_variants?.find(item => item.method === method && item.source_video_url === idle.video_url);
                 const generated = generatedVariant?.method === method;
-                return { value: method, label: generated ? "MiniMax · 新生成的讲话版" : saved?.display_name || (method === "musetalk" ? "MuseTalk 1.5 · GPU 口型" : method === "minimax" ? "MiniMax · 视频参考" : "Wav2Lip · 已有素材"), description: generated || saved ? "当前底片的配对素材" : "此底片尚未生成" };
+                return { value: method, label: generated ? "MiniMax · 新生成的讲话版" : saved?.display_name || (method === "lipforcing" ? "Lip Forcing · 离线讲话素材" : method === "musetalk" ? "MuseTalk 1.5 · GPU 口型" : method === "minimax" ? "MiniMax · 视频参考" : "Wav2Lip · 已有素材"), description: generated || saved ? "当前底片的配对素材" : "此底片尚未生成" };
               })}
               onChange={method => {
                 setDraft({ ...draft, method: method as TalkingMethod });
@@ -288,13 +288,13 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
               }} />
           </div>
           {variant ? <div className={styles.lightweightMaterialStatus}><span>已配对 · 过渡待验证</span><button type="button" className={styles.lightweightButton} onClick={() => setPreview("talking")}>预览</button></div> : <p className={styles.lightweightHint}>此底片尚无当前方式的讲话素材。</p>}
-          <details className={styles.lightweightGeneration} open={!variant} key={`${draft.method}-${Boolean(variant)}`}><summary>{variant ? draft.method === "musetalk" ? "MuseTalk 讲话素材" : "重新生成讲话版" : "生成讲话版"}</summary>
-          {draft.method === "musetalk" ? <p>用当前动作生成配对讲话素材，完成后自动保存。会话中循环播放讲话动作，不逐字对齐新回复。</p> : draft.method === "minimax" ? <>
+          <details className={styles.lightweightGeneration} open={!variant} key={`${draft.method}-${Boolean(variant)}`}><summary>{draft.method === "lipforcing" ? "Lip Forcing 讲话素材" : variant ? draft.method === "musetalk" ? "MuseTalk 讲话素材" : "重新生成讲话版" : "生成讲话版"}</summary>
+          {draft.method === "lipforcing" ? <p>使用已生成并保存的 Lip Forcing 讲话素材，可在会话配置中选择。</p> : draft.method === "musetalk" ? <p>用当前动作生成配对讲话素材，完成后自动保存。会话中循环播放讲话动作，不逐字对齐新回复。</p> : draft.method === "minimax" ? <>
             <div className={styles.lightweightField}><span>生成时长（与底片一致）</span><SelectMenu value={String(duration)} ariaLabel="生成时长" compact disabled={busy} options={Array.from({ length: 12 }, (_, index) => ({ value: String(index + 4), label: `${index + 4} 秒` }))} onChange={value => setDuration(Number(value))} /></div>
             <details><summary>查看 MiniMax 讲话提示词</summary><p>{MINIMAX_TALKING_PROMPT}</p><p>提示词只约束生成；局部嘴部合成是独立后处理，当前生成按钮不会自动执行。</p></details>
             <p>使用 MiniMax H3 / 768P。点击生成会上传当前底片并消耗 API 额度；请确认拥有素材使用权。</p>
           </> : <p className={styles.lightweightNotice}>使用同一底片和参考讲话音频离线处理，优先逐帧推理与嘴部融合质量。Wav2Lip 离线任务接口尚未接入，暂不能从页面启动。</p>}
-          <button type="button" className={styles.lightweightButton} disabled={!idle || busy || draft.method === "wav2lip" || (draft.method === "musetalk" && Boolean(variant))} onClick={() => void generateTalking()}>{busy ? "正在生成讲话素材…" : draft.method === "musetalk" ? variant ? "已生成 MuseTalk 讲话素材" : "生成 MuseTalk 讲话素材" : "基于待机生成讲话版"}</button>
+          <button type="button" className={styles.lightweightButton} disabled={!idle || busy || draft.method === "wav2lip" || draft.method === "lipforcing" || (draft.method === "musetalk" && Boolean(variant))} onClick={() => void generateTalking()}>{busy ? "正在生成讲话素材…" : draft.method === "lipforcing" ? variant ? "已保存 Lip Forcing 讲话素材" : "等待离线素材生成" : draft.method === "musetalk" ? variant ? "已生成 MuseTalk 讲话素材" : "生成 MuseTalk 讲话素材" : "基于待机生成讲话版"}</button>
           </details>
           </section>
           <details className={styles.lightweightHelp}><summary>使用说明与能力范围</summary><p>讲话版附属于当前底片，不加入普通动作列表。切换底片时会带出它自己的讲话版。</p><p>会话配置可直接选择已保存的讲话素材，自动配对待机动作。MiniMax 视频参考不保证逐帧一致。</p></details>
@@ -311,7 +311,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
         <button type="button" aria-pressed={preview === "talking"} data-active={preview === "talking"} disabled={!variant} aria-describedby={!variant ? "talking-preview-unavailable" : undefined} onClick={() => setPreview("talking")}>讲话素材</button>
       </header>
       {!variant ? <div id="talking-preview-unavailable" className={styles.talkingUnavailable}>
-        <p>{idle ? `“${idle.display_name}”尚无${draft.method === "musetalk" ? " MuseTalk" : draft.method === "minimax" ? " MiniMax" : " Wav2Lip"}讲话版。请生成该底片的讲话版，或选择已有配对的动作。` : "请先选择待机动作，才能预览它的讲话版。"}</p>
+        <p>{idle ? `“${idle.display_name}”尚无${draft.method === "lipforcing" ? " Lip Forcing" : draft.method === "musetalk" ? " MuseTalk" : draft.method === "minimax" ? " MiniMax" : " Wav2Lip"}讲话版。请生成该底片的讲话版，或选择已有配对的动作。` : "请先选择待机动作，才能预览它的讲话版。"}</p>
         {pairedActions.map(action => <button type="button" key={action.avatar_action_id} disabled={busy} onClick={() => choosePairedAction(action)}>查看{action.display_name}的讲话版</button>)}
       </div> : null}
       <div className={styles.visualStageBody}>

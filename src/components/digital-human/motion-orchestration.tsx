@@ -47,7 +47,7 @@ export function buildTalkingMaterialCatalog(catalog: AvatarAsset[], owned: Owned
     const actions = avatar.actions.flatMap(base => {
       if (base.deleted_at || !base.video_url) return [];
       return (base.talking_variants ?? []).filter(v => v.source_video_url === base.video_url && v.video_url).map(v => ({
-        avatarActionId: v.id, displayName: `${base.display_name} · ${v.method === "musetalk" ? "MuseTalk" : v.method === "minimax" ? "MiniMax" : "Wav2Lip"}`,
+        avatarActionId: v.id, displayName: `${base.display_name} · ${v.method === "lipforcing" ? "Lip Forcing" : v.method === "musetalk" ? "MuseTalk" : v.method === "minimax" ? "MiniMax" : "Wav2Lip"}`,
         videoUrl: v.video_url, state: "available" as const, pendingModelCount: 0,
       }));
     });

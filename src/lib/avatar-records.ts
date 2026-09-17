@@ -24,7 +24,7 @@ export interface OwnedAvatarActionRecord {
 export interface AvatarTalkingVariant {
   id: string;
   display_name: string;
-  method: "wav2lip" | "minimax" | "musetalk";
+  method: "wav2lip" | "minimax" | "musetalk" | "lipforcing";
   source_video_url: string;
   video_url: string;
   processing: "mouth-only" | "original";

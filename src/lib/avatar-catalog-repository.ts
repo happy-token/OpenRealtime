@@ -228,10 +228,10 @@ function isTalkingVariant(value: unknown): value is AvatarTalkingVariant {
   const item = value as AvatarTalkingVariant;
   return typeof item.id === "string" && /^[a-z0-9-]{1,100}$/.test(item.id)
     && typeof item.display_name === "string" && item.display_name.length > 0 && item.display_name.length <= 100
-    && (item.method === "wav2lip" || item.method === "minimax" || item.method === "musetalk")
+    && (item.method === "wav2lip" || item.method === "minimax" || item.method === "musetalk" || item.method === "lipforcing")
     && typeof item.source_video_url === "string"
     && item.video_url === `/digital-human/talking-variants/${item.id}.mp4`
-    && (item.processing === "mouth-only" || (item.processing === "original" && (item.method === "minimax" || item.method === "musetalk"))) && item.validation === "pending";
+    && (item.processing === "mouth-only" || (item.processing === "original" && (item.method === "minimax" || item.method === "musetalk" || item.method === "lipforcing"))) && item.validation === "pending";
 }
 
 export async function readOwnedAvatarImage(avatarId: string, root = repositoryRoot()) {

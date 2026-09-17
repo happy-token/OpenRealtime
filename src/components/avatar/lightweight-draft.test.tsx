@@ -6,6 +6,9 @@ describe("lightweight source binding", () => {
   it("discards legacy arbitrary talking selections", () => {
     expect(readLightweightDraft({ idle: "idle-a", talking: "unrelated" })).toEqual({ idle: "idle-a", method: "musetalk" });
   });
+  it("preserves a saved Lip Forcing selection", () => {
+    expect(readLightweightDraft({ idle: "idle-a", method: "lipforcing" })).toEqual({ idle: "idle-a", method: "lipforcing" });
+  });
   it("invalidates a generated variant when the base changes", () => {
     expect(selectIdle(draft, "idle-b")).toEqual({ idle: "idle-b", method: "minimax" });
     expect(selectIdle(draft, "idle-a")).toBe(draft);
