@@ -66,7 +66,7 @@ export async function createRole(
     const enabledModes = normalizeModes(input.enabledModes ?? ["conversation"]);
     const defaultMode = input.defaultMode && enabledModes.includes(input.defaultMode)
       ? input.defaultMode
-      : "conversation";
+      : preferredRoleMode(enabledModes);
     const role: StoredRole = {
       role_id: `role-${randomUUID()}`,
       display_name: normalizeName(input.displayName),
@@ -119,7 +119,7 @@ export async function updateRole(
       ? normalizeModes(update.enabledModes)
       : current.enabled_modes;
     const requestedDefault = update.defaultMode ?? current.default_mode;
-    const defaultMode = enabledModes.includes(requestedDefault) ? requestedDefault : enabledModes[0];
+    const defaultMode = enabledModes.includes(requestedDefault) ? requestedDefault : preferredRoleMode(enabledModes);
     const next: StoredRole = {
       ...current,
       ...(update.displayName !== undefined ? { display_name: normalizeName(update.displayName) } : {}),
@@ -238,7 +238,7 @@ function hydrateStoredRole(
     persona_name: personas.find((persona) => persona.personaId === role.persona_id)?.personaName
       ?? (source?.persona_id === role.persona_id ? source.persona_name : null),
     enabled_modes: enabledModes,
-    default_mode: enabledModes.includes(role.default_mode) ? role.default_mode : "conversation",
+    default_mode: enabledModes.includes(role.default_mode) ? role.default_mode : preferredRoleMode(enabledModes),
     default_selections: role.default_selections ?? {},
     voice_dialect: role.voice_dialect ?? "",
     tool_ids: role.tool_ids ?? LEGACY_DEFAULT_TOOL_IDS,

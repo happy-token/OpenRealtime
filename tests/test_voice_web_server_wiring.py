@@ -53,6 +53,21 @@ from server.voice_session.endpoint_bridge import VoiceSessionWebSocketSession
 from server.web_search.deterministic_web_search import DeterministicWebSearch
 from server.web_search.plugins.byte_web_search import ByteWebSearch
 
+
+@pytest.mark.parametrize(
+    ("dialect", "expected"),
+    [
+        ("", None),
+        ("cantonese", "请用广东话表达。"),
+        ("sichuan", "请用四川话表达。"),
+    ],
+)
+def test_bailian_dialect_instruction_uses_required_cosyvoice_format(
+    dialect: str, expected: str | None,
+) -> None:
+    assert voice_web_server._bailian_tts_instruction(dialect) == expected
+
+
 TEST_ENDPOINT_IDENTITY = AuthenticatedTransportIdentity(
     tenant_id="test-tenant",
     user_id="test-user",

@@ -199,10 +199,7 @@ function RoleCard({ role, isDefault, isSelected, savingDefault, onSelect, onSetD
     <div className={styles.cardActions}>
       <Link className={`${styles.startButton} liquid-glass-button`} data-variant="primary" href={conversationHref(role, role.default_mode)} aria-label={`使用${role.display_name}开始对话`} title={`使用默认方式：${ROLE_MODE_LABELS[role.default_mode]}`}><MessageCircle />对话</Link>
       <Link className={styles.detailButton} href={`/roles/${encodeURIComponent(role.role_id)}`} aria-label={`查看${role.display_name}详情`}><Settings2 />详情</Link>
-    </div>
-    <div className={styles.capabilities}>
-      <span>{role.enabled_modes.map((mode) => <em key={mode} data-primary={mode === role.default_mode}>{ROLE_MODE_LABELS[mode]}</em>)}</span>
-      {canDelete ? <button type="button" aria-label={`删除角色${role.display_name}`} title="删除角色" onClick={() => onRequestDelete(role)}><Trash2 /></button> : null}
+      {canDelete ? <button className={styles.deleteButton} type="button" aria-label={`删除角色${role.display_name}`} title="删除角色" onClick={() => onRequestDelete(role)}><Trash2 /></button> : null}
     </div>
   </article>;
 }

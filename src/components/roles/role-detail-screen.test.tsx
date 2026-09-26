@@ -51,6 +51,24 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain('className={styles.actionCardGrid}');
   });
 
+  it("creates a realtime avatar from the current role image instead of managing a catalog image", () => {
+    expect(component).toContain("创建数字人形象");
+    expect(component).toContain("sourceAvatar={avatar}");
+    expect(component).toContain("sourceName={role.display_name}");
+    expect(component).toContain("finishRealtimeCreation(hostedAvatar)");
+    expect(component).toContain("saveHostedAvatarProfile(hostedAvatar.id");
+    expect(component).toContain("memoryEnabled: role.memory_enabled, documentIds: knowledgeIds, toolIds: role.tool_ids");
+    expect(component).not.toContain("选择实时数字人</span><select");
+  });
+
+  it("keeps unavailable realtime and lip-sync modes out of the role detail presentation", () => {
+    expect(component).toContain("roleDetailDisplayMode(activeMode, lipSyncReady");
+    expect(component).toContain('showRealtimeOption={false}');
+    expect(component).toContain("mode={displayMode}");
+    expect(component).toContain("ROLE_MODE_LABELS[displayMode]");
+    expect(component).not.toContain("styles.realtimeShortcut");
+  });
+
   it("reuses the creation-flow avatar cards in role settings", () => {
     expect(component).toContain('<AvatarChoiceGrid avatars={avatars} value={role.avatar_id} onChange={selectAvatar} />');
     expect(component).not.toContain("styles.avatarPicker");

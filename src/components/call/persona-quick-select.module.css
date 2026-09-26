@@ -44,7 +44,7 @@
   min-height: 0 !important;
   padding: 0 !important;
   border: none !important;
-  border-radius: 0 !important;
+  border-radius: 8px !important;
   background: transparent !important;
   box-shadow: none !important;
   color: var(--text) !important;

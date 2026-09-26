@@ -2,8 +2,9 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
+    const token = process.env.GITHUB_TOKEN;
     const response = await fetch("https://api.github.com/repos/happy-token/OpenRealtime", {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": "OpenRealtime" },
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "OpenRealtime", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       next: { revalidate: 3600 }, signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) throw new Error("GitHub unavailable");

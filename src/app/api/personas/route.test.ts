@@ -87,6 +87,20 @@ function postRequest(body: object) {
 }
 
 describe("Personas create route", () => {
+  it("generates a Persona ID when the form does not provide one", async () => {
+    enableLocalTestMode();
+    server.readPersonaProfile.mockImplementation(async (personaId: string) => ({ personaId, personaName: "新伙伴", files: [], linkedAvatarIds: [] }));
+
+    const response = await POST(postRequest({ files: [
+      { filename: "IDENTITY.md", content: "# 新伙伴" },
+      { filename: "SOUL.md", content: "温和" },
+    ] }));
+
+    expect(response.status).toBe(200);
+    expect(server.createPersona).toHaveBeenCalledWith(expect.stringMatching(/^persona-[a-f0-9-]{36}$/), expect.any(Array));
+    expect((await response.json()).profile.personaId).toMatch(/^persona-[a-f0-9-]{36}$/);
+  });
+
   it("creates a Persona with separate card intro", async () => {
     enableLocalTestMode();
     server.readPersonaProfile.mockResolvedValue({ personaId: "brand-new", personaName: "全新人格", intro: "清醒温柔的伙伴。", files: [], linkedAvatarIds: [] });

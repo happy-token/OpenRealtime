@@ -37,8 +37,6 @@
 .topbarTitle span { color: rgba(255,255,255,.54); font-size: .49rem; font-weight: 760; letter-spacing: .16em; }
 .topbarTitle strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
 .topbarActions { display: flex; align-items: center; gap: 7px; }
-.realtimeShortcut { min-height: 38px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--accent-border); border-radius: 999px; color: white; background: color-mix(in srgb,var(--accent) 29%,rgba(16,18,31,.55)); font-size: .66rem; font-weight: 680; text-decoration: none; backdrop-filter: blur(var(--role-glass-blur)) saturate(145%); }
-.realtimeShortcut:hover { border-color: var(--accent); }
 .defaultAction,.saveButton,.launchButton { min-height: 38px; padding: 0 13px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; color: white; background: rgb(15 18 29 / var(--role-glass-alpha)); box-shadow: inset 0 1px rgba(255,255,255,.13),0 10px 28px rgba(0,0,0,.2); font: inherit; font-size: .66rem; font-weight: 680; cursor: pointer; backdrop-filter: blur(var(--role-glass-blur)) saturate(145%); transition: transform 180ms ease,border-color 180ms ease,background 180ms ease; }
 .saveButton,.launchButton { border-color: color-mix(in srgb,var(--accent) 52%,rgba(255,255,255,.25)); background: linear-gradient(145deg,rgba(255,255,255,.13),transparent 60%),color-mix(in srgb,var(--accent) 33%,rgba(16,18,31,.55)); }
 .defaultAction:hover,.saveButton:hover,.launchButton:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.38); }
@@ -70,6 +68,8 @@
 .field > span { color: rgba(241,244,255,.64); font-size: .62rem; font-weight: 640; }
 .field input,.field select { width: 100%; height: 42px; padding: 0 12px; border: 1px solid rgba(255,255,255,.13); border-radius: 13px; outline: 0; color: white; background: rgba(3,5,11,.2); font: inherit; font-size: .7rem; box-shadow: inset 0 1px rgba(255,255,255,.06); }
 .field input:focus,.field select:focus { border-color: color-mix(in srgb,var(--accent) 54%,white); }
+.page .field select { color-scheme: dark; border-color: color-mix(in srgb, var(--accent) 18%, rgba(255,255,255,.16)); background: color-mix(in srgb, var(--accent) 7%, #101522); }
+.field select option { color: #f7f8ff; background: #171b2a; }
 .summaryGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .summaryGrid button { min-width: 0; min-height: 78px; padding: 11px; display: grid; grid-template-columns: 26px minmax(0,1fr) 14px; align-items: center; gap: 9px; border: 1px solid rgba(255,255,255,.11); border-radius: 16px; color: white; background: rgba(255,255,255,.045); font: inherit; text-align: left; cursor: pointer; }
 .summaryGrid button:hover { border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.075); }

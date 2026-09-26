@@ -45,6 +45,8 @@
 .group article small { color: var(--text-faint); font-size: .64rem; }
 .group article code { color: var(--text-dim); font-size: .61rem; }
 .group article button { min-height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); background: transparent; font-size: .62rem; cursor: pointer; }
+.group article .editAction { width: 30px; padding: 0; display: inline-grid; place-items: center; }
+.group article .editAction svg { width: 14px; height: 14px; }
 .group article .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 .group article button:disabled { cursor: default; }
 .loading { min-height: 240px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--text-dim); font-size: .73rem; }

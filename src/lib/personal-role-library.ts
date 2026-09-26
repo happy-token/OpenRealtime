@@ -6,7 +6,7 @@ import { findOwnedAvatar } from "./avatar-catalog-repository";
 import { listPersonas } from "./avatar-persona-server";
 import { findPersonalAvatar } from "./personal-avatar-library";
 import { personalLibraryOwnerDir } from "./personal-motion-library";
-import { enabledRoleModesForAvatar, isRoleDefaultSelections, isRolePresentationMode, isRoleVoiceDialect, roleModesForAvatar, type RoleDefaultSelections, type RolePresentationMode, type RoleRecord, type RoleVoiceDialect } from "./role-records";
+import { enabledRoleModesForAvatar, isRoleDefaultSelections, isRolePresentationMode, isRoleVoiceDialect, preferredRoleMode, roleModesForAvatar, type RoleDefaultSelections, type RolePresentationMode, type RoleRecord, type RoleVoiceDialect } from "./role-records";
 import type { WebUser } from "./user-session";
 
 const PERSONAL_ROLE_ID = /^role-personal-[a-f0-9-]{36}$/;
@@ -74,7 +74,7 @@ async function hydrate(user: WebUser, record: StoredPersonalRole): Promise<RoleR
     persona_name: persona?.personaName ?? null,
     tool_ids: record.tool_ids ?? [],
     enabled_modes: enabledModes,
-    default_mode: enabledModes.includes(record.default_mode) ? record.default_mode : "conversation",
+    default_mode: enabledModes.includes(record.default_mode) ? record.default_mode : preferredRoleMode(enabledModes),
     default_selections: record.default_selections ?? {},
     voice_dialect: record.voice_dialect ?? "",
   };
@@ -171,7 +171,7 @@ export async function deletePersonalRole(user: WebUser, roleId: string): Promise
 
 async function validateAvatar(user: WebUser, avatarId: string | null, modes: readonly RolePresentationMode[]) {
   if (avatarId === null) {
-    if (modes.some((mode) => mode !== "conversation")) throw new Error("当前呈现方式无效");
+    if (modes.some((mode) => mode !== "conversation" && mode !== "realtime")) throw new Error("当前呈现方式无效");
     return;
   }
   const personalAvatar = avatarId.startsWith("avatar-personal-") ? await findPersonalAvatar(user, avatarId) : null;
@@ -182,7 +182,7 @@ async function validateAvatar(user: WebUser, avatarId: string | null, modes: rea
   } : sharedAvatar && !sharedAvatar.deleted_at ? sharedAvatar : null;
   if (!avatar) throw new Error("数字人形象不可用");
   const available = roleModesForAvatar(avatar);
-  if (modes.some((mode) => !available.includes(mode))) throw new Error("当前呈现方式无效");
+  if (modes.some((mode) => mode !== "realtime" && !available.includes(mode))) throw new Error("当前呈现方式无效");
 }
 
 async function validatePersona(personaId: string | null) {

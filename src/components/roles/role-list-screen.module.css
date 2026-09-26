@@ -30,20 +30,16 @@
 .roleCopy { position: absolute; z-index: 3; top: 17px; right: 100px; left: 18px; display: grid; gap: 3px; color: white; text-shadow: 0 2px 14px rgb(0 0 0 / .75); pointer-events: none; }
 .roleCopy > strong { overflow: hidden; font-size: 1.18rem; letter-spacing: -.03em; text-overflow: ellipsis; white-space: nowrap; }
 .roleCopy > small { overflow: hidden; color: rgb(255 255 255 / .7); font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
-.cardActions { position: absolute; z-index: 3; right: 18px; bottom: 56px; left: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; pointer-events: auto; }
+.cardActions { position: absolute; z-index: 3; right: 18px; bottom: 18px; left: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; pointer-events: auto; }
 .startButton,.detailButton { min-height: 36px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px; color: white; font-size: .68rem; font-weight: 720; text-decoration: none; transition: transform 180ms ease,border-color 180ms ease,background 180ms ease; }
 .startButton svg,.detailButton svg { width: 14px; height: 14px; }
 .detailButton { border: 1px solid rgb(255 255 255 / .34); background: rgb(8 11 18 / .46); box-shadow: inset 0 1px rgb(255 255 255 / .1); backdrop-filter: blur(var(--panel-blur,10px)); }
 .detailButton:hover { border-color: rgb(255 255 255 / .68); background: rgb(8 11 18 / .68); transform: translateY(-2px); }
 .detailButton:focus-visible { outline: 2px solid white; outline-offset: 2px; }
-.capabilities { position: absolute; z-index: 3; right: 18px; bottom: 17px; left: 18px; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.capabilities > span { min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; pointer-events: none; }
-.capabilities em { padding: 3px 7px; border: 1px solid rgb(255 255 255 / .26); border-radius: 999px; color: rgb(255 255 255 / .8); background: rgb(8 11 18 / .3); font-size: .59rem; font-style: normal; backdrop-filter: blur(var(--panel-blur,3px)); }
-.capabilities em[data-primary="true"] { border-color: rgb(255 255 255 / .6); color: white; }
-.capabilities > button { width: 1.5rem; height: 1.5rem; padding: 0; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 10px; color: rgb(255 255 255 / .68); background: transparent; cursor: pointer; }
-.capabilities > button:hover { color: #ffafb4; background: rgb(93 24 35 / .48); }
-.capabilities > button:focus-visible { outline: 2px solid white; outline-offset: 2px; }
-.capabilities > button svg { width: .59rem; height: .59rem; }
+.deleteButton { width: 36px; height: 36px; padding: 0; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgb(255 255 255 / .26); border-radius: 50%; color: rgb(255 255 255 / .78); background: rgb(8 11 18 / .46); box-shadow: inset 0 1px rgb(255 255 255 / .08); cursor: pointer; backdrop-filter: blur(var(--panel-blur,10px)); }
+.deleteButton:hover { border-color: rgb(255 175 180 / .55); color: #ffafb4; background: rgb(93 24 35 / .6); }
+.deleteButton:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.deleteButton svg { width: 14px; height: 14px; }
 .defaultButton,.defaultBadge { position: absolute; z-index: 4; top: 14px; right: 14px; min-height: 30px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid rgb(255 255 255 / .35); border-radius: 999px; color: white; background: rgb(8 11 18 / .52); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: .64rem; font-weight: 680; backdrop-filter: blur(var(--panel-blur,10px)); }
 .defaultButton { cursor: pointer; }
 .defaultButton:hover { border-color: rgb(255 255 255 / .7); background: rgb(8 11 18 / .7); }
@@ -73,6 +69,6 @@
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (max-width: 980px) { .header { align-items: flex-start; } .headerActions { flex: 1; } .search { width: min(300px,100%); } }
 @media (max-width: 760px) { .page { width: min(100% - 36px,720px); padding-top: 72px; } .header { flex-direction: column; gap: 20px; } .headerActions { width: 100%; padding-top: 0; } .search { width: 100%; flex: 1; } .list,.loading { margin-top: 30px; } }
-@media (max-width: 560px) { .header h1 { font-size: 1.65rem; } .header p { font-size: .78rem; } .headerActions { gap: 8px; } .createButton { padding: 0 13px; } .list,.loading { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } .roleCopy { top: 11px; right: 84px; left: 11px; gap: 2px; } .roleCopy > strong { font-size: .88rem; } .roleCopy > small { font-size: .55rem; } .cardActions { right: 10px; bottom: 42px; left: 10px; gap: 5px; } .startButton,.detailButton { min-height: 30px; padding: 0 9px; gap: 5px; font-size: .58rem; } .startButton svg,.detailButton svg { width: 12px; height: 12px; } .capabilities { right: 10px; bottom: 10px; left: 10px; gap: 3px; } .capabilities em { padding: 2px 5px; font-size: .47rem; white-space: nowrap; } .capabilities > button { width: 1.25rem; height: 1.25rem; } .capabilities > button svg { width: .47rem; height: .47rem; } .defaultButton,.defaultBadge { top: 8px; right: 8px; min-height: 27px; padding: 0 8px; font-size: .56rem; } .selectedBadge { top: 41px; right: 8px; min-height: 25px; padding: 0 7px; } .selectedBadge span { display: none; } }
-@media (max-width: 390px) { .createButton { width: 42px; padding: 0; font-size: 0; } .createButton svg { margin: 0; } }
+@media (max-width: 560px) { .header h1 { font-size: 1.65rem; } .header p { font-size: .78rem; } .headerActions { gap: 8px; } .createButton { padding: 0 13px; } .list,.loading { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } .roleCopy { top: 11px; right: 84px; left: 11px; gap: 2px; } .roleCopy > strong { font-size: .88rem; } .roleCopy > small { font-size: .55rem; } .cardActions { right: 10px; bottom: 10px; left: 10px; gap: 5px; } .startButton,.detailButton { min-height: 30px; padding: 0 9px; gap: 5px; font-size: .58rem; } .startButton svg,.detailButton svg { width: 12px; height: 12px; } .detailButton { min-width: 30px; padding: 0 8px; font-size: 0; } .deleteButton { width: 30px; height: 30px; } .deleteButton svg { width: 12px; height: 12px; } .defaultButton,.defaultBadge { top: 8px; right: 8px; min-height: 27px; padding: 0 8px; font-size: .56rem; } .selectedBadge { top: 41px; right: 8px; min-height: 25px; padding: 0 7px; } .selectedBadge span { display: none; } }
+@media (max-width: 390px) { .headerActions { flex-wrap: wrap; } .search { flex: 1 1 100%; } .createButton { width: 100%; justify-content: center; } }
 @media (prefers-reduced-motion: reduce) { .loading i,.portrait img,.roleCard,.startButton,.detailButton { animation: none; transition: none; } }

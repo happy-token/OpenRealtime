@@ -14,7 +14,7 @@ import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import type { KnowledgeDocument } from "@/lib/knowledge-catalog-repository";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { createRole } from "@/lib/role-catalog-client";
-import { ROLE_MODE_LABELS, type RolePresentationMode } from "@/lib/role-records";
+import { preferredRoleMode, ROLE_MODE_LABELS, type RolePresentationMode } from "@/lib/role-records";
 import { fetchTools } from "@/lib/tool-catalog-client";
 import type { ToolRecord } from "@/lib/tool-records";
 import { AvatarChoiceGrid } from "./avatar-choice-grid";
@@ -42,7 +42,7 @@ interface DraftState {
 }
 const DEFAULT_DRAFT: DraftState = {
   name: "", voiceProvider: "doubao", voiceId: DEFAULT_TTS_VOICE, voiceDialect: "", personaId: null,
-  memoryEnabled: true, toolIds: [], knowledgeIds: [], modes: ["conversation"], defaultMode: "conversation",
+  memoryEnabled: true, toolIds: [], knowledgeIds: [], modes: ["offline"], defaultMode: "offline",
   avatarId: null, actionId: null, talkingVariantId: null,
 };
 
@@ -72,8 +72,9 @@ export function RoleCreateScreen() {
       const stored = JSON.parse(window.sessionStorage.getItem(ROLE_CREATE_DRAFT_KEY) ?? "null") as Partial<DraftState> | null;
       if (stored) {
         const modes = Array.isArray(stored.modes) ? CREATE_MODES.filter((mode) => stored.modes?.includes(mode)) : DEFAULT_DRAFT.modes;
-        setDraft({ ...DEFAULT_DRAFT, ...stored, modes: modes.length ? modes : DEFAULT_DRAFT.modes,
-          defaultMode: modes.includes(stored.defaultMode as CreateMode) ? stored.defaultMode as CreateMode : modes[0] ?? "conversation" });
+        const enabledModes = modes.length ? modes : DEFAULT_DRAFT.modes;
+        setDraft({ ...DEFAULT_DRAFT, ...stored, modes: enabledModes,
+          defaultMode: enabledModes.includes(stored.defaultMode as CreateMode) ? stored.defaultMode as CreateMode : preferredRoleMode(enabledModes) as CreateMode });
       }
     } catch { window.sessionStorage.removeItem(ROLE_CREATE_DRAFT_KEY); }
     setDraftReady(true);
@@ -157,7 +158,10 @@ export function RoleCreateScreen() {
   function toggleMode(mode: CreateMode) {
     const selected = draft.modes.includes(mode); if (selected && draft.modes.length === 1) return;
     const modes = selected ? draft.modes.filter((item) => item !== mode) : CREATE_MODES.filter((item) => item === mode || draft.modes.includes(item));
-    updateDraft({ modes, defaultMode: modes.includes(draft.defaultMode) ? draft.defaultMode : modes[0] });
+    const defaultMode = !selected && mode === "offline" && draft.defaultMode === "conversation"
+      ? "offline"
+      : modes.includes(draft.defaultMode) ? draft.defaultMode : preferredRoleMode(modes) as CreateMode;
+    updateDraft({ modes, defaultMode });
   }
   function selectAvatar(avatarId: string) { updateDraft({ avatarId, actionId: null, talkingVariantId: null }); setOpenModule(null); }
   function selectAction(actionId: string) {

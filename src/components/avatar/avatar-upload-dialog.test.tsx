@@ -51,4 +51,15 @@ describe("avatar upload dialog", () => {
     expect(realtimeLibrary).toContain('<AvatarUploadDialog');
     expect(realtimeLibrary).toContain('mode="realtime"');
   });
+
+  it("can create a realtime avatar from an existing role image without uploading or duplicating it", () => {
+    const dialog = readFileSync(new URL("./avatar-upload-dialog.tsx", import.meta.url), "utf8");
+    const role = readFileSync(new URL("../roles/role-detail-screen.tsx", import.meta.url), "utf8");
+    expect(dialog).toContain("sourceAvatar?.source_image_url ?? previewUrl");
+    expect(dialog).toContain("if (sourceAvatar) {");
+    expect(dialog).toContain("onRealtimeCreated?.(sourceAvatar, candidate)");
+    expect(role).toContain("sourceAvatar={avatar}");
+    expect(role).toContain("sourceName={role.display_name}");
+    expect(role).toContain("realtime: { avatar_id: hostedAvatar.id }");
+  });
 });

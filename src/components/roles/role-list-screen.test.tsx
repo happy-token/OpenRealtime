@@ -5,11 +5,12 @@ const component = readFileSync(new URL("./role-list-screen.tsx", import.meta.url
 const css = readFileSync(new URL("./role-list-screen.module.css", import.meta.url), "utf8");
 
 describe("role list cards", () => {
-  it("places an icon-only delete action beside the mode list", () => {
+  it("keeps card actions compact without a mode-label row", () => {
     expect(component).toContain('aria-label={`删除角色${role.display_name}`}');
     expect(component).toContain('<Trash2 />');
     expect(component).toContain('role.role_id !== "default-assistant" && !isDefault');
-    expect(css).toMatch(/\.capabilities\s*\{[^}]*justify-content:\s*space-between/s);
+    expect(component).not.toContain('className={styles.capabilities}');
+    expect(css).toMatch(/\.cardActions\s*\{[^}]*bottom:\s*18px/s);
   });
 
   it("requires confirmation before deleting a role", () => {
@@ -32,5 +33,11 @@ describe("role list cards", () => {
 
   it("shows the complete role portrait without cropping or stretching it", () => {
     expect(css).toMatch(/\.portrait img\s*\{[^}]*object-fit:\s*contain[^}]*object-position:\s*center/s);
+  });
+
+  it("keeps the new-role label visible on narrow screens", () => {
+    expect(component).toContain("新建角色");
+    expect(css).not.toMatch(/\.createButton\s*\{[^}]*font-size:\s*0\s*;/s);
+    expect(css).toContain(".createButton { width: 100%; justify-content: center; }");
   });
 });

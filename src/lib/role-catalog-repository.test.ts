@@ -17,6 +17,13 @@ async function temporaryRoot() {
 }
 
 describe("role catalog repository", () => {
+  it("prefers offline as the default when it is enabled and no mode was chosen", async () => {
+    const root = await temporaryRoot();
+    await createRole({ displayName: "离线角色", enabledModes: ["conversation", "offline"] }, root);
+    const stored = JSON.parse(await readFile(path.join(root, "roles.json"), "utf8")) as Array<Record<string, unknown>>;
+    expect(stored[0].default_mode).toBe("offline");
+  });
+
   it("always exposes the default assistant and migrates linked avatar roles", async () => {
     const roles = await listRoles(await temporaryRoot());
     expect(roles[0]).toMatchObject({

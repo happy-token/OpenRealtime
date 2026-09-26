@@ -1,10 +1,13 @@
 .screen { width: min(1100px, calc(100% - 40px)); margin: 0 auto; padding: 88px 0 64px; }
 .screen[data-embedded="true"] { width: 100%; padding: 25px 0 0; }
 
-.intro { max-width: 640px; }
+.intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.intro > div { min-width: 0; max-width: 640px; }
 .intro span { color: var(--accent); font-family: var(--font-mono); font-size: .62rem; font-weight: 700; letter-spacing: .18em; }
 .intro h2 { margin: 8px 0 6px; color: var(--text); font-family: var(--font-display); font-size: var(--workspace-section-title-size); font-weight: 680; letter-spacing: -.03em; }
 .intro p { margin: 0; color: var(--text-dim); font-size: var(--workspace-body-size); line-height: 1.55; }
+.createButton { flex: none; min-height: 38px; padding: 0 13px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--accent-border); border-radius: 10px; color: var(--accent-contrast); background: var(--accent); font: inherit; font-size: .72rem; font-weight: 650; cursor: pointer; }
+.createButton svg { width: 15px; height: 15px; }
 
 .linkingBanner {
   margin-top: 22px;
@@ -39,7 +42,26 @@
 }
 .card:hover { transform: translateY(-3px); }
 .card[data-expanded="true"] { grid-column: 1 / -1; }
-.card[data-create="true"] { border-style: dashed; }
+.card[data-create="true"] { order: -1; border-style: dashed; }
+.createPanelHeader { padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.createPanelHeader > span { display: grid; gap: 4px; }
+.createPanelHeader strong { color: var(--text); font-size: .83rem; }.createPanelHeader small { color: var(--text-dim); font-size: .66rem; }
+.createPanelHeader button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; color: var(--text-dim); background: transparent; cursor: pointer; }
+.createPanelHeader button:hover { border-color: var(--accent-border); color: var(--text); }
+.createPanelHeader button svg { width: 15px; height: 15px; }
+.cardActions { padding: 0 18px 15px; display: flex; align-items: center; gap: 7px; }
+.cardActions button,.inlineAction button { min-height: 32px; padding: 0 10px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 9px; color: var(--text); background: color-mix(in srgb,var(--surface-solid) 70%,transparent); font: inherit; font-size: .66rem; cursor: pointer; }
+.cardActions button:hover,.inlineAction button:hover { border-color: var(--accent-border); }
+.cardActions button:disabled { opacity: .4; cursor: not-allowed; }
+.cardActions svg { width: 13px; height: 13px; }
+.cardActions .iconAction { width: 32px; padding: 0; justify-content: center; }
+.cardActions .iconAction svg { width: 15px; height: 15px; }
+.cardActions .deleteAction,.inlineAction .deleteAction { margin-left: auto; color: var(--danger,#e0575c); }
+.inlineAction { margin: 0 16px 14px; padding: 12px; display: grid; gap: 10px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb,var(--surface-solid) 75%,transparent); }
+.inlineAction p { margin: 0; color: var(--text-dim); font-size: .7rem; }
+.inlineAction > div { display: flex; gap: 8px; }
+.inlineAction > div button:first-child { margin-left: 0; }
+.actionNotice { margin: 0 18px 14px; color: var(--text-dim); font-size: .68rem; }
 
 .cardHeader {
   width: 100%;
@@ -124,5 +146,6 @@
 @media (max-width: 680px) {
   .screen { padding: 76px 0 48px; }
   .grid { grid-template-columns: 1fr; }
+  .intro { align-items: flex-start; }
 }
 @media (hover: none) { .linkButton { opacity: 1; pointer-events: auto; transform: none; } }

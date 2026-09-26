@@ -120,6 +120,7 @@ export function OpenRealtimeApp({
   );
   const [selectedRoleMode, setSelectedRoleMode] = useState<RolePresentationMode>(initialRoleMode ?? "conversation");
   const roleModeRequestId = useRef(0);
+  const hostedStartIntentConsumed = useRef(false);
   const [roleConfigLoading, setRoleConfigLoading] = useState(Boolean(officialAvatarId || (initialRole && initialRoleMode && initialRoleMode !== "conversation")));
   const [roleConfigReady, setRoleConfigReady] = useState(!officialAvatarId && (!initialRole || !initialRoleMode || initialRoleMode === "conversation"));
   const [avatarDisplayConfig, setAvatarDisplayConfig] = useState<AvatarDisplayConfig>(DEFAULT_AVATAR_DISPLAY_CONFIG);
@@ -476,6 +477,13 @@ export function OpenRealtimeApp({
     if (!consumeRoleStartIntent(initialRole.role_id)) return;
     void handleHomeStart(selectedRoleMode === "conversation" ? "voice" : "avatar");
   }, [handleHomeStart, initialRole, officialAvatarId, roleConfigLoading, roleConfigReady, selectedRoleMode, sessionStarted]);
+
+  useEffect(() => {
+    if (!officialAvatarId || !roleConfigReady || sessionStarted || hostedStartIntentConsumed.current) return;
+    if (new URLSearchParams(window.location.search).get("start") !== "1") return;
+    hostedStartIntentConsumed.current = true;
+    void handleHomeStart("avatar");
+  }, [handleHomeStart, officialAvatarId, roleConfigReady, sessionStarted]);
 
   const retryMicrophone = useCallback(async () => {
     try {

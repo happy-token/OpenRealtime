@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronDown, FileText, Link2, Plus } from "lucide-react";
-import type { AvatarPersonaFile, PersonaProfile, PersonaSummary } from "@/lib/avatar-persona";
+import { ChevronDown, FileText, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { isBuiltinPersonaId, type AvatarPersonaFile, type PersonaProfile, type PersonaSummary } from "@/lib/avatar-persona";
 import {
   buildPersonaSavePayload,
   buildPersonaSwitchPayload,
@@ -50,6 +50,7 @@ export function PersonaLibraryScreen({
   const [profiles, setProfiles] = useState<Record<string, PersonaProfile>>({});
   const [profileState, setProfileState] = useState<Record<string, LoadState>>({});
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const [introDrafts, setIntroDrafts] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<Record<string, ActionState>>({});
   const [saveNotice, setSaveNotice] = useState<Record<string, string>>({});
@@ -58,10 +59,12 @@ export function PersonaLibraryScreen({
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createIntro, setCreateIntro] = useState("");
-  const [createId, setCreateId] = useState("");
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
   const [createState, setCreateState] = useState<ActionState>("idle");
   const [createNotice, setCreateNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteState, setDeleteState] = useState<ActionState>("idle");
+  const [actionNotice, setActionNotice] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -90,6 +93,7 @@ export function PersonaLibraryScreen({
           if (!payload.profile) throw new Error("Persona 不存在");
           setProfiles((current) => ({ ...current, [next]: payload.profile as PersonaProfile }));
           setDrafts((current) => ({ ...current, [next]: personaDraftFromFiles((payload.profile as PersonaProfile).files) }));
+          setNameDrafts((current) => ({ ...current, [next]: payload.profile?.personaName ?? "" }));
           setIntroDrafts((current) => ({ ...current, [next]: payload.profile?.intro ?? "" }));
           setProfileState((state) => ({ ...state, [next]: "loaded" }));
         })
@@ -101,7 +105,13 @@ export function PersonaLibraryScreen({
     const profile = profiles[personaId];
     const draft = drafts[personaId];
     if (!profile || !draft) return;
-    const changedFiles = buildPersonaSavePayload(profile.files, draft).files;
+    const personaName = (nameDrafts[personaId] ?? profile.personaName).trim();
+    if (!personaName || personaName.length > 80 || /[\r\n]/.test(personaName)) {
+      setSaveNotice((notice) => ({ ...notice, [personaId]: "请填写不超过 80 字的人设名称" }));
+      return;
+    }
+    const nextDraft = { ...draft, "IDENTITY.md": withIdentityHeading(personaName, draft["IDENTITY.md"] ?? "") };
+    const changedFiles = buildPersonaSavePayload(profile.files, nextDraft).files;
     const intro = introDrafts[personaId] ?? profile.intro ?? "";
     const introChanged = intro.trim() !== (profile.intro ?? "");
     if (changedFiles.length === 0 && !introChanged) return;
@@ -116,14 +126,42 @@ export function PersonaLibraryScreen({
       const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "Persona 保存失败");
       if (!response.ok || !body.profile) throw new Error(body.error || "Persona 保存失败");
       setProfiles((current) => ({ ...current, [personaId]: body.profile as PersonaProfile }));
+      setDrafts((current) => ({ ...current, [personaId]: personaDraftFromFiles((body.profile as PersonaProfile).files) }));
+      setNameDrafts((current) => ({ ...current, [personaId]: body.profile?.personaName ?? "" }));
       setIntroDrafts((current) => ({ ...current, [personaId]: body.profile?.intro ?? "" }));
       setPersonas((current) => current?.map((persona) => persona.personaId === personaId
-        ? { ...persona, intro: body.profile?.intro } : persona) ?? current);
+        ? { ...persona, personaName: body.profile?.personaName ?? persona.personaName, intro: body.profile?.intro } : persona) ?? current);
       setSaveState((state) => ({ ...state, [personaId]: "done" }));
       setSaveNotice((notice) => ({ ...notice, [personaId]: "已保存，下一轮对话生效" }));
     } catch (error) {
       setSaveState((state) => ({ ...state, [personaId]: "error" }));
       setSaveNotice((notice) => ({ ...notice, [personaId]: error instanceof Error ? error.message : "Persona 保存失败" }));
+    }
+  }
+
+  function hasUnsavedDraft(personaId: string) {
+    const profile = profiles[personaId];
+    const draft = drafts[personaId] ?? {};
+    const personaName = (nameDrafts[personaId] ?? profile?.personaName ?? "").trim();
+    const normalizedDraft = { ...draft, "IDENTITY.md": withIdentityHeading(personaName, draft["IDENTITY.md"] ?? "") };
+    return Boolean(profile && (isPersonaDraftDirty(profile.files, normalizedDraft)
+      || (nameDrafts[personaId] ?? profile.personaName).trim() !== profile.personaName
+      || (introDrafts[personaId] ?? profile.intro ?? "").trim() !== (profile.intro ?? "")));
+  }
+
+  async function submitDelete(personaId: string) {
+    setDeleteState("busy");
+    try {
+      const response = await fetch(`/api/personas/${encodeURIComponent(personaId)}`, { method: "DELETE" });
+      const body = await readJsonResponse<{ archived?: boolean; error?: string }>(response, "人设删除失败");
+      if (!response.ok || !body.archived) throw new Error(body.error || "人设删除失败");
+      setPersonas((current) => current?.filter((persona) => persona.personaId !== personaId) ?? current);
+      setExpandedId((current) => current === personaId ? null : current);
+      setDeletingId(null);
+      setDeleteState("done");
+    } catch (error) {
+      setDeleteState("error");
+      setActionNotice((current) => ({ ...current, [personaId]: error instanceof Error ? error.message : "人设删除失败" }));
     }
   }
 
@@ -147,13 +185,7 @@ export function PersonaLibraryScreen({
   }
 
   async function submitCreate() {
-    const personaId = createId.trim();
     const personaName = createName.trim();
-    if (!personaId) {
-      setCreateState("error");
-      setCreateNotice("请填写 Persona ID");
-      return;
-    }
     if (!personaName) {
       setCreateState("error");
       setCreateNotice("请填写 Persona 名称");
@@ -180,7 +212,6 @@ export function PersonaLibraryScreen({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          personaId,
           files,
           ...(createIntro.trim() ? { intro: createIntro } : {}),
           ...(linkingAvatarId ? { avatarId: linkingAvatarId, avatarDisplayName: linkingAvatarDisplayName } : {}),
@@ -206,7 +237,6 @@ export function PersonaLibraryScreen({
       setCreating(false);
       setCreateName("");
       setCreateIntro("");
-      setCreateId("");
       setCreateDraft({});
       setCreateState("idle");
       setCreateNotice("");
@@ -219,9 +249,8 @@ export function PersonaLibraryScreen({
   return (
     <section className={styles.screen} data-embedded={embedded}>
       <header className={styles.intro}>
-        <span>PERSONA LIBRARY</span>
-        <h2>人设</h2>
-        <p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p>
+        <div><span>PERSONA LIBRARY</span><h2>人设</h2><p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p></div>
+        <button type="button" className={styles.createButton} aria-expanded={creating} onClick={() => setCreating((value) => !value)}><Plus />创建人设</button>
       </header>
 
       {linkingAvatarId ? (
@@ -256,6 +285,14 @@ export function PersonaLibraryScreen({
                   <ChevronDown className={styles.cardChevron} />
                 </button>
 
+                <div className={styles.cardActions}>
+                  <button type="button" className={styles.iconAction} aria-label={`编辑人设${persona.personaName}`} title="编辑人设" onClick={() => toggleExpand(persona.personaId)}><Pencil /></button>
+                  <button type="button" className={styles.deleteAction} disabled={isBuiltinPersonaId(persona.personaId) || persona.linkedAvatarIds.length > 0} title={isBuiltinPersonaId(persona.personaId) ? "内置人设不可删除" : persona.linkedAvatarIds.length ? "请先解除数字人关联" : "删除人设"} onClick={() => { if (hasUnsavedDraft(persona.personaId)) { setActionNotice((current) => ({ ...current, [persona.personaId]: "请先保存当前编辑内容，再删除。" })); return; } setDeletingId(persona.personaId); setDeleteState("idle"); }}><Trash2 />删除</button>
+                </div>
+
+                {deletingId === persona.personaId ? <div className={styles.inlineAction} role="group" aria-label={`确认删除${persona.personaName}`}><p>确定删除“{persona.personaName}”？删除后将移入可恢复的归档目录。</p><div><button type="button" className={styles.deleteAction} disabled={deleteState === "busy"} onClick={() => void submitDelete(persona.personaId)}>{deleteState === "busy" ? "删除中…" : "确认删除"}</button><button type="button" onClick={() => setDeletingId(null)}>取消</button></div></div> : null}
+                {actionNotice[persona.personaId] ? <p className={styles.actionNotice} role="status">{actionNotice[persona.personaId]}</p> : null}
+
                 {linkingAvatarId ? (
                   <button
                     type="button"
@@ -274,6 +311,10 @@ export function PersonaLibraryScreen({
                       <p className={styles.notice}>正在加载 Persona 内容…</p>
                     ) : (
                       <>
+                        <label className={styles.editorField}>
+                          <span>人设名称</span>
+                          <input value={nameDrafts[persona.personaId] ?? profile.personaName} maxLength={80} aria-label={`${persona.personaName}的人设名称`} onChange={(event) => setNameDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))} />
+                        </label>
                         <label className={styles.editorField}>
                           <span>卡片简介</span>
                           <textarea
@@ -320,7 +361,7 @@ export function PersonaLibraryScreen({
                             type="button"
                             className={`${styles.saveButton} liquid-glass-button`}
                             data-variant="primary"
-                            disabled={saveState[persona.personaId] === "busy" || (!isPersonaDraftDirty(profile.files, draft) && (introDrafts[persona.personaId] ?? profile.intro ?? "").trim() === (profile.intro ?? ""))}
+                            disabled={saveState[persona.personaId] === "busy" || !hasUnsavedDraft(persona.personaId)}
                             onClick={() => void saveDraft(persona.personaId)}
                           >
                             {saveState[persona.personaId] === "busy" ? "保存中…" : "保存修改"}
@@ -340,38 +381,17 @@ export function PersonaLibraryScreen({
             );
           })}
 
-          <article className={`${styles.card} liquid-glass-surface`} data-expanded={creating} data-create="true">
-            <button
-              type="button"
-              className={styles.cardHeader}
-              aria-expanded={creating}
-              onClick={() => setCreating((value) => !value)}
-            >
-              <span className={styles.cardIcon}><Plus /></span>
-              <span className={styles.cardTitle}>
-                <strong>创建人设</strong>
-                <small>从头定义一个新的人格配置文件</small>
-              </span>
-              <ChevronDown className={styles.cardChevron} />
-            </button>
-            {creating ? (
+          {creating ? <article className={`${styles.card} liquid-glass-surface`} data-expanded="true" data-create="true">
+            <div className={styles.createPanelHeader}><span><strong>新人设配置</strong><small>从头定义一个新的人格配置文件</small></span><button type="button" aria-label="关闭创建人设" title="关闭" onClick={() => setCreating(false)}><X /></button></div>
               <div className={styles.cardBody}>
                 <label className={styles.editorField}>
                   <span>人设名称</span>
                   <input
                     value={createName}
+                    maxLength={80}
                     aria-label="人设名称"
                     placeholder="例如 温柔知性的伙伴"
                     onChange={(event) => setCreateName(event.target.value)}
-                  />
-                </label>
-                <label className={styles.editorField}>
-                  <span>Persona ID</span>
-                  <input
-                    value={createId}
-                    aria-label="Persona ID"
-                    placeholder="例如 sweet-sunshine"
-                    onChange={(event) => setCreateId(event.target.value)}
                   />
                 </label>
                 <label className={styles.editorField}>
@@ -416,8 +436,7 @@ export function PersonaLibraryScreen({
                   {createNotice ? <p role="status">{createNotice}</p> : null}
                 </div>
               </div>
-            ) : null}
-          </article>
+          </article> : null}
       </div>
     </section>
   );

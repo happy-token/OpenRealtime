@@ -18,6 +18,9 @@
   --danger: #dc4960;
   --shadow-soft: 0 24px 80px rgba(76, 82, 126, 0.13);
   --shadow-card: 0 16px 48px rgba(69, 75, 119, 0.1);
+  --dropdown-radius: 13px;
+  --button-radius: 12px;
+  --dropdown-popover-radius: 16px;
 
   --font-display: "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-body: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;

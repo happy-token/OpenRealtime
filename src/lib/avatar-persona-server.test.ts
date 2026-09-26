@@ -1,13 +1,15 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   createPersona,
+  archivePersona,
   listPersonas,
   readAvatarPersonaProfile,
   readPersonaProfile,
+  renamePersona,
   switchAvatarPersona,
   writeAvatarPersonaFiles,
   writePersonaIntro,
@@ -197,6 +199,55 @@ describe("createPersona", () => {
     await expect(createPersona("incomplete", [
       { filename: "AGENTS.md", content: "交互规则" },
     ], root)).rejects.toThrow("缺少必需文件");
+  });
+});
+
+describe("Persona management", () => {
+  it("renames only the display heading and preserves the Persona ID and content", async () => {
+    const root = await makeRoot();
+    await seedPersona(root, "custom-persona", "旧名称");
+
+    const updated = await renamePersona("custom-persona", " 新名称 ", root);
+
+    expect(updated).toMatchObject({ personaId: "custom-persona", personaName: "新名称" });
+    await expect(readFile(path.join(root, "config", "personas", "custom-persona", "IDENTITY.md"), "utf8"))
+      .resolves.toBe("# 新名称\n\n身份定义");
+    await expect(renamePersona("custom-persona", " ", root)).rejects.toThrow("人设名称无效");
+  });
+
+  it("archives an unused custom Persona without permanently deleting its files", async () => {
+    const root = await makeRoot();
+    await seedPersona(root, "custom-persona", "自定义");
+
+    await archivePersona("custom-persona", root);
+
+    await expect(readPersonaProfile("custom-persona", root)).resolves.toBeNull();
+    const [entry] = await readdir(path.join(root, ".openrealtime", "persona-trash"));
+    expect(entry).toMatch(/^custom-persona-/);
+    await expect(readFile(path.join(root, ".openrealtime", "persona-trash", entry, "IDENTITY.md"), "utf8"))
+      .resolves.toContain("# 自定义");
+  });
+
+  it("protects built-in and referenced Personas from deletion", async () => {
+    const root = await makeRoot();
+    await seedPersona(root, "intellectual-warmth", "内置");
+    await expect(archivePersona("intellectual-warmth", root)).rejects.toThrow("内置人设不能删除");
+
+    await seedPersona(root, "custom-linked", "已关联");
+    await seedLinks(root, { "avatar-one": { personaId: "custom-linked", avatarDisplayName: "形象" } });
+    await expect(archivePersona("custom-linked", root)).rejects.toThrow("仍被数字人或角色使用");
+
+    await seedPersona(root, "custom-role", "角色使用");
+    const catalog = path.join(root, ".openrealtime", "role-catalog");
+    await mkdir(catalog, { recursive: true });
+    await writeFile(path.join(catalog, "roles.json"), JSON.stringify([{ persona_id: "custom-role", deleted_at: null }]));
+    await expect(archivePersona("custom-role", root)).rejects.toThrow("仍被数字人或角色使用");
+
+    await seedPersona(root, "custom-personal-role", "个人角色使用");
+    const personalRoles = path.join(root, ".openrealtime", "personal-motion", "owner-one", "roles");
+    await mkdir(personalRoles, { recursive: true });
+    await writeFile(path.join(personalRoles, "catalog.json"), JSON.stringify([{ persona_id: "custom-personal-role", deleted_at: null }]));
+    await expect(archivePersona("custom-personal-role", root)).rejects.toThrow("仍被数字人或角色使用");
   });
 });
 

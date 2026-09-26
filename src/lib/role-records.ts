@@ -10,7 +10,7 @@ export type RoleVoiceDialect = (typeof ROLE_VOICE_DIALECTS)[number];
 export type RoleDefaultSelections = Partial<Record<"motion" | "offline" | "lip-sync", {
   action_id: string;
   talking_variant_id?: string;
-}>>;
+}>> & { realtime?: { avatar_id: string } };
 
 export interface RoleRecord {
   role_id: string;
@@ -73,6 +73,8 @@ export function enabledRoleModesForAvatar(
   avatar: OwnedAvatarRecord | null,
 ): RolePresentationMode[] {
   const available = new Set(roleModesForAvatar(avatar));
+  // Hosted realtime avatars are configured independently of the offline avatar.
+  if (requested.includes("realtime")) available.add("realtime");
   const enabled = ROLE_PRESENTATION_MODES.filter((mode) => requested.includes(mode) && available.has(mode));
   return enabled.length ? enabled : ["conversation"];
 }
@@ -85,10 +87,27 @@ export function preferredRoleMode(modes: readonly RolePresentationMode[]): RoleP
   return "conversation";
 }
 
+export function roleDetailDisplayMode(
+  requested: RolePresentationMode,
+  lipSyncReady: boolean,
+  offlineReady: boolean,
+): RolePresentationMode {
+  if (requested === "realtime" || (requested === "lip-sync" && !lipSyncReady)) {
+    return offlineReady ? "offline" : "conversation";
+  }
+  return requested;
+}
+
 export function isRoleDefaultSelections(value: unknown): value is RoleDefaultSelections {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const entries = Object.entries(value);
   return entries.every(([mode, selection]) => {
+    if (mode === "realtime") {
+      if (!selection || typeof selection !== "object" || Array.isArray(selection)) return false;
+      const item = selection as Record<string, unknown>;
+      return Object.keys(item).length === 1 && typeof item.avatar_id === "string"
+        && /^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$/.test(item.avatar_id);
+    }
     if (mode !== "motion" && mode !== "offline" && mode !== "lip-sync") return false;
     if (!selection || typeof selection !== "object" || Array.isArray(selection)) return false;
     const item = selection as Record<string, unknown>;

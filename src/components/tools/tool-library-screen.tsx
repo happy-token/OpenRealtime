@@ -1,6 +1,6 @@
 "use client";
 
-import { Braces, Check, ChevronRight, Cloud, LoaderCircle, Plus, Server, Wrench, X } from "lucide-react";
+import { Braces, Check, ChevronRight, Cloud, LoaderCircle, Pencil, Plus, Server, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createTool, fetchTools, setToolEnabled, setToolPublicEnabled, updateTool } from "@/lib/tool-catalog-client";
 import { TOOL_KIND_LABELS, type ToolKind, type ToolRecord } from "@/lib/tool-records";
@@ -199,7 +199,7 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
 
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
     {tools === null && !error ? <div className={styles.loading}><LoaderCircle className={styles.spin} />正在读取工具目录</div> : null}
-    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length} 个</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{!tool.builtin ? <button type="button" onClick={() => edit(tool)}>编辑</button> : null}{!tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={`${tool.public_enabled ? "关闭" : "允许"}${tool.display_name}公开语音使用`} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? "公开可用" : "仅内部"}</button> : null}<button type="button" disabled={tool.builtin} aria-label={`${tool.enabled ? "停用" : "启用"}${tool.display_name}`} onClick={() => void toggle(tool)}>{tool.builtin ? "内置" : tool.enabled ? "已启用" : "已停用"}</button></span></article>)}</div></section>)}
+    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length} 个</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{!tool.builtin ? <button type="button" className={styles.editAction} aria-label={`编辑工具${tool.display_name}`} title="编辑工具" onClick={() => edit(tool)}><Pencil /></button> : null}{!tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={`${tool.public_enabled ? "关闭" : "允许"}${tool.display_name}公开语音使用`} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? "公开可用" : "仅内部"}</button> : null}<button type="button" disabled={tool.builtin} aria-label={`${tool.enabled ? "停用" : "启用"}${tool.display_name}`} onClick={() => void toggle(tool)}>{tool.builtin ? "内置" : tool.enabled ? "已启用" : "已停用"}</button></span></article>)}</div></section>)}
   </div>;
 }
 

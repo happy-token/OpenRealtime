@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { authorizeAvatarAssetRequest, jsonError } from "@/lib/avatar-assets-server";
 import { createPersona, listPersonas, normalizePersonaIntro, readPersonaProfile, switchAvatarPersona, writePersonaIntro } from "@/lib/avatar-persona-server";
 import { parsePersonaFiles, personaErrorStatus, readBoundedJson } from "@/lib/persona-api-helpers";
@@ -26,19 +27,20 @@ export async function POST(request: Request) {
       avatarDisplayName?: unknown;
       intro?: unknown;
     };
-    if (typeof payload.personaId !== "string") return jsonError("Persona ID 无效", 400);
+    const personaId = payload.personaId === undefined ? `persona-${randomUUID()}` : payload.personaId;
+    if (typeof personaId !== "string") return jsonError("Persona ID 无效", 400);
 
     const files = parsePersonaFiles(payload.files);
     const intro = payload.intro === undefined ? undefined : normalizePersonaIntro(payload.intro);
-    await createPersona(payload.personaId, files);
-    if (intro !== undefined) await writePersonaIntro(payload.personaId, intro);
+    await createPersona(personaId, files);
+    if (intro !== undefined) await writePersonaIntro(personaId, intro);
 
     if (typeof payload.avatarId === "string") {
       const avatarDisplayName = typeof payload.avatarDisplayName === "string" ? payload.avatarDisplayName : undefined;
-      await switchAvatarPersona(payload.avatarId, payload.personaId, avatarDisplayName);
+      await switchAvatarPersona(payload.avatarId, personaId, avatarDisplayName);
     }
 
-    const profile = await readPersonaProfile(payload.personaId);
+    const profile = await readPersonaProfile(personaId);
     return Response.json({ profile }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Persona 创建失败";

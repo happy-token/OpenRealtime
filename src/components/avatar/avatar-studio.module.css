@@ -435,8 +435,8 @@
 .lightweightHint { margin: 7px 0; }
 .lightweightSave { padding-top: 8px; }
 .lightweightField :global(.select-menu) { width: 100%; min-width: 0; }
-.lightweightField :global(.select-menu-trigger) { min-height: 38px; padding: 8px 10px; border-radius: 12px; font-size: .65rem; }
-.lightweightField :global(.select-menu-popover) { max-height: 210px; overflow-y: auto; border-radius: 12px; }
+.lightweightField :global(.select-menu-trigger) { min-height: 38px; padding: 8px 10px; border-radius: var(--dropdown-radius); font-size: .65rem; }
+.lightweightField :global(.select-menu-popover) { max-height: 210px; overflow-y: auto; border-radius: var(--dropdown-popover-radius); }
 .lightweightField :global(.select-menu-option-select) { padding: 8px; min-height: 34px; }
 .lightweightField :global(.select-menu-option-copy) strong { font-size: .65rem; }
 .lightweightField :global(.select-menu-option-copy) small { font-size: .55rem; }
@@ -460,7 +460,7 @@
 .floatingChoreography .lightweightGroup { padding: 8px 2px; }
 .floatingChoreography .lightweightGroup h3 { margin-bottom: 4px; font-size: .64rem; }
 .floatingChoreography .lightweightField { gap: 4px; margin: 3px 0; font-size: .56rem; }
-.floatingChoreography .lightweightField :global(.select-menu-trigger) { min-height: 32px; padding: 6px 9px; border-radius: 9px; font-size: .6rem; }
+.floatingChoreography .lightweightField :global(.select-menu-trigger) { min-height: 32px; padding: 6px 9px; border-radius: var(--dropdown-radius); font-size: .6rem; }
 .floatingChoreography .lightweightGeneration summary { padding: 6px 0; }
 .floatingChoreography .lightweightGeneration p { margin: 5px 0; line-height: 1.45; }
 .floatingChoreography .lightweightGeneration .lightweightButton { min-height: 34px; margin-top: 5px; border-color: var(--accent-border); background: var(--accent); color: var(--accent-contrast); font-weight: 750; }

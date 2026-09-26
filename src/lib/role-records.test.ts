@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OwnedAvatarRecord } from "./avatar-records";
-import { enabledRoleModesForAvatar, isRoleDefaultSelections, isRoleRecordId, preferredRoleMode, resolveRoleDefaultSelection, roleModesForAvatar } from "./role-records";
+import { enabledRoleModesForAvatar, isRoleDefaultSelections, isRoleRecordId, preferredRoleMode, resolveRoleDefaultSelection, roleDetailDisplayMode, roleModesForAvatar } from "./role-records";
 
 function avatar(overrides: Partial<OwnedAvatarRecord> = {}): OwnedAvatarRecord {
   return {
@@ -17,6 +17,12 @@ function avatar(overrides: Partial<OwnedAvatarRecord> = {}): OwnedAvatarRecord {
 }
 
 describe("role presentation modes", () => {
+  it("does not present realtime or unconfigured lip sync on a role detail page", () => {
+    expect(roleDetailDisplayMode("realtime", true, false)).toBe("conversation");
+    expect(roleDetailDisplayMode("lip-sync", false, false)).toBe("conversation");
+    expect(roleDetailDisplayMode("lip-sync", false, true)).toBe("offline");
+    expect(roleDetailDisplayMode("lip-sync", true, false)).toBe("lip-sync");
+  });
   it("accepts built-in and catalog role IDs for safe return navigation", () => {
     expect(isRoleRecordId("default-assistant")).toBe(true);
     expect(isRoleRecordId("role-personal-123")).toBe(true);
@@ -34,6 +40,8 @@ describe("role presentation modes", () => {
       .toEqual({ action_id: "action-ready", talking_variant_id: "talk-ready" });
     expect(isRoleDefaultSelections({ offline: { action_id: "action-ready", talking_variant_id: "talk-ready" } })).toBe(true);
     expect(isRoleDefaultSelections({ offline: { action_id: "../invalid" } })).toBe(false);
+    expect(isRoleDefaultSelections({ realtime: { avatar_id: "anam-avatar-123" } })).toBe(true);
+    expect(isRoleDefaultSelections({ realtime: { avatar_id: "../invalid" } })).toBe(false);
   });
   it("keeps a role conversation-only without an avatar", () => {
     expect(roleModesForAvatar(null)).toEqual(["conversation"]);
@@ -111,7 +119,8 @@ describe("role presentation modes", () => {
         video_url: "/talk.mp4", processing: "mouth-only", validation: "pending" }],
     }] });
     expect(enabledRoleModesForAvatar(["conversation", "lip-sync"], ready)).toEqual(["conversation", "lip-sync"]);
-    expect(enabledRoleModesForAvatar(["realtime"], ready)).toEqual(["conversation"]);
+    expect(enabledRoleModesForAvatar(["realtime"], ready)).toEqual(["realtime"]);
+    expect(enabledRoleModesForAvatar(["realtime"], null)).toEqual(["realtime"]);
     expect(enabledRoleModesForAvatar(["offline"], ready)).toEqual(["offline"]);
   });
 });

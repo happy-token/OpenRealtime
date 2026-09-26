@@ -5,6 +5,8 @@ const server = vi.hoisted(() => ({
   writeAvatarPersonaFiles: vi.fn(),
   writePersonaIntro: vi.fn(),
   normalizePersonaIntro: vi.fn((value: string) => value.trim()),
+  renamePersona: vi.fn(),
+  archivePersona: vi.fn(),
 }));
 
 vi.mock("@/lib/avatar-persona-server", () => ({
@@ -12,9 +14,11 @@ vi.mock("@/lib/avatar-persona-server", () => ({
   writeAvatarPersonaFiles: server.writeAvatarPersonaFiles,
   writePersonaIntro: server.writePersonaIntro,
   normalizePersonaIntro: server.normalizePersonaIntro,
+  renamePersona: server.renamePersona,
+  archivePersona: server.archivePersona,
 }));
 
-import { GET, PATCH } from "./route";
+import { DELETE, GET, PATCH } from "./route";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -87,6 +91,13 @@ describe("Persona detail route GET", () => {
 });
 
 describe("Persona detail route PATCH", () => {
+  it("renames the Persona without changing its ID", async () => {
+    enableLocalTestMode();
+    server.renamePersona.mockResolvedValue({ ...profile, personaName: "新的名称" });
+    const response = await PATCH(patchRequest({ operation: "rename", displayName: "新的名称" }), context);
+    expect(response.status).toBe(200);
+    expect(server.renamePersona).toHaveBeenCalledWith("intellectual-warmth", "新的名称");
+  });
   it("saves a card intro without changing the runtime Persona files", async () => {
     enableLocalTestMode();
     server.readPersonaProfile.mockResolvedValue({ ...profile, intro: "温和、清醒的阅读伙伴。" });
@@ -140,5 +151,24 @@ describe("Persona detail route PATCH", () => {
 
     expect(response.status).toBe(403);
     expect(server.writeAvatarPersonaFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("Persona detail route DELETE", () => {
+  it("archives an unused Persona", async () => {
+    enableLocalTestMode();
+    const response = await DELETE(new Request("http://127.0.0.1:3010/api/personas/intellectual-warmth", {
+      method: "DELETE", headers: { host: "127.0.0.1:3010", origin: "http://127.0.0.1:3010", "sec-fetch-site": "same-origin" },
+    }), context);
+    expect(response.status).toBe(200);
+    expect(server.archivePersona).toHaveBeenCalledWith("intellectual-warmth");
+  });
+
+  it("rejects a deletion without same-origin authorization", async () => {
+    const response = await DELETE(new Request("http://127.0.0.1:3010/api/personas/intellectual-warmth", {
+      method: "DELETE", headers: { host: "127.0.0.1:3010" },
+    }), context);
+    expect(response.status).toBe(403);
+    expect(server.archivePersona).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { isResourceWorkspacePath, transitionSidebarMode, WorkspaceShell } from "./workspace-shell";
+import { clampSidebarWidth, conversationHref, formatGithubStars, isResourceWorkspacePath, transitionSidebarMode, WorkspaceShell } from "./workspace-shell";
+import type { RoleRecord } from "@/lib/role-records";
 
 const navigation = vi.hoisted(() => ({ pathname: "/conversation", push: vi.fn() }));
 
@@ -16,12 +17,33 @@ describe("WorkspaceShell", () => {
     navigation.push.mockClear();
   });
 
+  it("opens a configured realtime avatar through the resource-library conversation entry", () => {
+    const role = {
+      role_id: "role-test", avatar_id: null,
+      default_selections: { realtime: { avatar_id: "anam-avatar-123" } },
+    } as RoleRecord;
+    expect(conversationHref(role, "realtime")).toBe("/conversation?realtime_avatar_id=anam-avatar-123");
+  });
+
   it("moves between collapsed, hover preview, and pinned sidebar states", () => {
     expect(transitionSidebarMode("collapsed", "hover-enter")).toBe("preview");
     expect(transitionSidebarMode("preview", "hover-leave")).toBe("collapsed");
     expect(transitionSidebarMode("preview", "pin")).toBe("pinned");
     expect(transitionSidebarMode("pinned", "hover-leave")).toBe("pinned");
     expect(transitionSidebarMode("pinned", "collapse")).toBe("collapsed");
+  });
+
+  it("shows GitHub Star counts in the compact reference style", () => {
+    expect(formatGithubStars(125_000)).toBe("125k");
+    expect(formatGithubStars(1_250)).toBe("1.3k");
+    expect(formatGithubStars(null)).toBe("—");
+  });
+
+  it("bounds a saved sidebar width to the desktop viewport", () => {
+    expect(clampSidebarWidth(120, 1440)).toBe(196);
+    expect(clampSidebarWidth(330, 1440)).toBe(330);
+    expect(clampSidebarWidth(500, 1440)).toBe(420);
+    expect(clampSidebarWidth(420, 800)).toBe(420);
   });
 
   it("uses a persistent hover-reveal floating sidebar on the home conversation", () => {
@@ -38,7 +60,14 @@ describe("WorkspaceShell", () => {
     expect(html).toContain("lucide-panel-left");
     expect(html).toContain('aria-controls="workspace-navigation"');
     expect(html).toContain('inert=""');
+    expect(html).toContain('aria-label="调整侧边栏宽度"');
+    expect(html).toContain('aria-valuenow="236"');
+    expect(html).not.toMatch(/aria-label="调整侧边栏宽度"[^>]*><span/);
     expect(html).not.toContain('data-page-glass="true"');
+    expect(html).toContain('href="https://github.com/happy-token/OpenRealtime"');
+    expect(html.match(/href="https:\/\/github\.com\/happy-token\/OpenRealtime"/g)).toHaveLength(1);
+    expect(html).toContain('viewBox="0 0 16 16"');
+    expect(html).toContain('title="在 GitHub 为 OpenRealtime 点 Star"');
   });
 
   it.each([
@@ -59,6 +88,7 @@ describe("WorkspaceShell", () => {
     expect(html).toContain('inert=""');
     expect(html).toContain('data-home-background="true"');
     expect(html).toContain('data-page-glass="true"');
+    expect(html).not.toContain('title="在 GitHub 为 OpenRealtime 点 Star"');
   });
 
   it("keeps the resource library beside roles in primary navigation", () => {
@@ -107,7 +137,8 @@ describe("WorkspaceShell", () => {
     expect(css).toContain('backdrop-filter: blur(var(--panel-blur,30px)) saturate(175%)');
     expect(css).toContain('var(--panel-surface-alpha,.58)');
     expect(css).toContain('.sidebar[data-floating="true"][data-open="true"]');
-    expect(css).toMatch(/\.sidebarToggle\s*\{[^}]*top:\s*18px;[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*8px/s);
+    expect(css).toMatch(/\.sidebarToggle\s*\{[^}]*top:\s*30px;[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*8px/s);
+    expect(css).toContain('.sidebarToggle[data-open="true"] { left: calc(var(--sidebar-width,236px) - 20px); }');
     expect(css).toMatch(/\.sidebarToggle::after\s*\{[^}]*inset:\s*-10px/s);
     expect(css).toMatch(/\.sidebarToggle svg\s*\{[^}]*width:\s*11px;[^}]*height:\s*11px/s);
     expect(css).toMatch(/\.sidebarHoverRail\s*\{[^}]*width:\s*18px;[^}]*height:\s*112px/s);

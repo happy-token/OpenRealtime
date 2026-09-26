@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-export function usePersonalLipsyncReady() {
+export function usePersonalLipsyncReady(enabled = true) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController();
     void fetch("/api/user/lipsync-service", { cache: "no-store", signal: controller.signal })
       .then(async (response) => response.ok ? response.json() as Promise<{ configured?: boolean }> : null)
@@ -15,6 +16,6 @@ export function usePersonalLipsyncReady() {
         if (!controller.signal.aborted) setReady(response.ok && status.ready === true);
       }).catch(() => { if (!controller.signal.aborted) setReady(false); });
     return () => controller.abort();
-  }, []);
+  }, [enabled]);
   return ready;
 }

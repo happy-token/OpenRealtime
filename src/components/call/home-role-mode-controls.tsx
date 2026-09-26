@@ -12,8 +12,9 @@ import type { VoiceVisualTheme } from "./voice-theme";
 import { conversationHref } from "@/components/workspace/workspace-shell";
 import { saveRoleStartIntent } from "@/lib/role-start-intent";
 import { avatarResourceHref } from "@/lib/avatar-workbench-navigation";
-import { WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchRealtimeOption } from "@/components/workspace/workbench-resource-rails";
+import { WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchMediaOption } from "@/components/workspace/workbench-resource-rails";
 import { usePersonalLipsyncReady } from "@/hooks/use-personal-lipsync-ready";
+import { useOfficialRealtimeAvatars } from "@/hooks/use-official-realtime-avatars";
 import styles from "./home-role-mode-controls.module.css";
 
 type Panel = "roles" | "modes" | null;
@@ -31,10 +32,12 @@ interface Props {
   onModeSelect: (mode: RolePresentationMode, actionId?: string, talkingVariantId?: string) => Promise<void>;
   onStart: (mode?: ExperienceMode) => void;
   showRoleSelector?: boolean;
+  showRealtimeOption?: boolean;
+  lipSyncReady?: boolean;
   runtimeLipSyncAvailable: boolean;
 }
 
-export function HomeRoleModeControls({ role, mode, avatar, config, canStart, visualTheme, themes, onVisualThemeChange, onRoleSelect, onModeSelect, onStart, showRoleSelector = true, runtimeLipSyncAvailable }: Props) {
+export function HomeRoleModeControls({ role, mode, avatar, config, canStart, visualTheme, themes, onVisualThemeChange, onRoleSelect, onModeSelect, onStart, showRoleSelector = true, showRealtimeOption = true, lipSyncReady, runtimeLipSyncAvailable }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
   const [roles, setRoles] = useState<RoleRecord[]>([role]);
   const [currentRole, setCurrentRole] = useState(role);
@@ -42,7 +45,9 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
   const [error, setError] = useState("");
   const [savingDefault, setSavingDefault] = useState(false);
   const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
-  const personalLipsyncReady = usePersonalLipsyncReady();
+  const detectedLipsyncReady = usePersonalLipsyncReady(lipSyncReady === undefined);
+  const personalLipsyncReady = lipSyncReady ?? detectedLipsyncReady;
+  const { avatars: officialRealtimeAvatars, personalAvatars: personalRealtimeAvatars, configured: realtimeConfigured } = useOfficialRealtimeAvatars(showRealtimeOption);
   const touchStartY = useRef<number | null>(null);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -98,6 +103,10 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
   }, [panel]);
 
   const actions = useMemo(() => avatar?.actions.filter((action) => !action.deleted_at && action.video_url) ?? [], [avatar]);
+  const realtimeAvatars = [...personalRealtimeAvatars, ...officialRealtimeAvatars];
+  const selectedRealtimeAvatar = realtimeAvatars.find((item) => item.id === currentRole.default_selections?.realtime?.avatar_id)
+    ?? (showRoleSelector ? realtimeAvatars[0] : null) ?? null;
+  const lipSyncAvailable = personalLipsyncReady && runtimeLipSyncAvailable && currentRole.enabled_modes.includes("lip-sync") && actions.length > 0;
   const talkingMaterials = useMemo(() => actions.flatMap((action) => (action.talking_variants ?? [])
     .filter((variant) => !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url)
     .map((variant) => ({ action, variant }))), [actions]);
@@ -212,6 +221,8 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
       <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><small>MODE</small><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label="关闭模式选择" onClick={() => setPanel(null)}><X /></button></header>
       <div className={styles.materialList} data-kind="action">
         {currentRole.enabled_modes.includes("conversation") ? <WorkbenchConversationOption selected={mode === "conversation"} onSelect={() => void selectMode("conversation")} /> : null}
+        {showRealtimeOption && realtimeConfigured && selectedRealtimeAvatar ? <WorkbenchMediaOption name={selectedRealtimeAvatar.displayName} eyebrow="实时数字人 · 点击开始" image={selectedRealtimeAvatar.imageUrl} selected={mode === "realtime" && config.avatarProfileId === selectedRealtimeAvatar.id} axis="horizontal" onSelect={() => window.location.assign(`/conversation?realtime_avatar_id=${encodeURIComponent(selectedRealtimeAvatar.id)}&start=1`)} /> : null}
+        {lipSyncAvailable ? <WorkbenchMediaOption name="离线加口型" eyebrow="实时口型驱动 · 点击开始" image={avatar?.source_image_url} selected={mode === "lip-sync"} axis="horizontal" onSelect={() => { const actionId = selectedActionId ?? actions[0]?.avatar_action_id; if (!actionId) return; saveRoleStartIntent(currentRole.role_id); window.location.assign(conversationHref(currentRole, "lip-sync", actionId)); }} /> : null}
         {actions.map((action, index) => {
           const variants = currentRole.enabled_modes.includes("offline") ? (action.talking_variants ?? []).filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url) : [];
           return <WorkbenchActionFolder key={action.avatar_action_id}
@@ -226,7 +237,6 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
             onCreateTalking={() => window.location.assign(avatarResourceHref({ task: "talking", avatarId: avatar?.avatar_id, actionId: action.avatar_action_id, returnTo: currentRole.role_id }))}
           />;
         })}
-        {currentRole.enabled_modes.includes("realtime") ? <WorkbenchRealtimeOption selected={mode === "realtime"} onSelect={() => void selectMode("realtime")} /> : null}
         {mode === "conversation" ? themes.map((theme) => <button className={styles.themeCard} type="button" key={theme.id} data-selected={visualTheme === theme.id} aria-pressed={visualTheme === theme.id} onClick={() => onVisualThemeChange(theme.id)}><span style={{ background: `linear-gradient(135deg, ${theme.colors.join(",")})` }} /><strong>{theme.name}</strong></button>) : null}
         {actions.length === 0 ? <p className={styles.empty}>当前角色还没有可用动作</p> : null}
       </div>

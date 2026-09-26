@@ -5,6 +5,10 @@ const component = readFileSync(new URL("./role-create-screen.tsx", import.meta.u
 const css = readFileSync(new URL("./role-create-screen.module.css", import.meta.url), "utf8");
 
 describe("role creation progressive flow", () => {
+  it("starts with offline as the default presentation mode", () => {
+    expect(component).toContain('modes: ["offline"], defaultMode: "offline"');
+  });
+
   it("separates multi-select presentation modes from common role settings", () => {
     expect(component).toContain('id="foundation"');
     expect(component).toContain('id="modes"');

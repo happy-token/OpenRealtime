@@ -8,8 +8,6 @@ import {
   ChevronDown,
   ChevronLeft,
   History,
-  GitFork,
-  Star,
   LibraryBig,
   LogIn,
   LogOut,
@@ -30,7 +28,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { RolePresentationMode, RoleRecord } from "@/lib/role-records";
 import { listRecentConversationsCached, type RecentConversation } from "@/lib/recent-conversations-client";
 import { useOfficialRealtimeAvatars } from "@/hooks/use-official-realtime-avatars";
@@ -38,6 +36,18 @@ import { accountIssuerLabel, accountLoginHref, logoutCurrentUser, useCurrentUser
 import styles from "./workspace-shell.module.css";
 
 const SIDEBAR_STATE_KEY = "openrealtime-workspace-sidebar-collapsed";
+const SIDEBAR_WIDTH_KEY = "openrealtime-workspace-sidebar-width";
+const DEFAULT_SIDEBAR_WIDTH = 236;
+const MIN_SIDEBAR_WIDTH = 196;
+const MAX_SIDEBAR_WIDTH = 420;
+
+export function clampSidebarWidth(width: number, viewportWidth: number): number {
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewportWidth - 100, width));
+}
+
+export function formatGithubStars(count: number | null): string {
+  return count === null ? "—" : new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(count).toLowerCase();
+}
 
 export type SidebarMode = "collapsed" | "preview" | "pinned";
 export type SidebarEvent = "hover-enter" | "hover-leave" | "pin" | "collapse";
@@ -75,6 +85,7 @@ export function WorkspaceShell({
   const resourceMode = Boolean(resourceTab) || isResourceWorkspacePath(pathname);
   const { configured: realtimeConfigured } = useOfficialRealtimeAvatars(resourceMode);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("collapsed");
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarReady, setSidebarReady] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -87,6 +98,7 @@ export function WorkspaceShell({
   const [githubStars, setGithubStars] = useState<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number; currentWidth: number } | null>(null);
   const sidebarPreviewOpenTimer = useRef<number | null>(null);
   const sidebarPreviewCloseTimer = useRef<number | null>(null);
   const sidebarOpen = sidebarMode !== "collapsed";
@@ -95,6 +107,8 @@ export function WorkspaceShell({
   useLayoutEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STATE_KEY);
     setSidebarMode(saved === "false" ? "pinned" : "collapsed");
+    const savedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(savedWidth) && savedWidth >= MIN_SIDEBAR_WIDTH) setSidebarWidth(clampSidebarWidth(savedWidth, window.innerWidth));
     const frame = window.requestAnimationFrame(() => setSidebarReady(true));
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -162,6 +176,43 @@ export function WorkspaceShell({
     }
   }
 
+  function persistSidebarWidth(width: number) {
+    const nextWidth = clampSidebarWidth(width, window.innerWidth);
+    setSidebarWidth(nextWidth);
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (window.innerWidth <= 760 || !sidebarOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelSidebarPreviewTimers();
+    sidebarResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: sidebarWidth, currentWidth: sidebarWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = sidebarResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    resize.currentWidth = clampSidebarWidth(resize.startWidth + event.clientX - resize.startX, window.innerWidth);
+    setSidebarWidth(resize.currentWidth);
+  }
+
+  function stopSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = sidebarResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    sidebarResizeRef.current = null;
+    persistSidebarWidth(resize.currentWidth);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function resizeSidebarWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const adjustment = event.key === "ArrowRight" ? 12 : event.key === "ArrowLeft" ? -12 : null;
+    if (adjustment === null && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    persistSidebarWidth(event.key === "Home" ? MIN_SIDEBAR_WIDTH : event.key === "End" ? MAX_SIDEBAR_WIDTH : sidebarWidth + adjustment!);
+  }
+
   function keepSidebarOpenOnNavigation(event: MouseEvent<HTMLElement>) {
     if (sidebarMode !== "preview" || !(event.target instanceof Element)) return;
     if (event.target.closest("a")) setSidebarPinned(true);
@@ -182,7 +233,7 @@ export function WorkspaceShell({
   }
 
   function scheduleSidebarPreviewClose() {
-    if (!window.matchMedia("(min-width: 761px)").matches || sidebarPinned) return;
+    if (!window.matchMedia("(min-width: 761px)").matches || sidebarPinned || sidebarResizeRef.current) return;
     if (sidebarPreviewOpenTimer.current !== null) window.clearTimeout(sidebarPreviewOpenTimer.current);
     sidebarPreviewOpenTimer.current = null;
     if (sidebarPreviewCloseTimer.current !== null) window.clearTimeout(sidebarPreviewCloseTimer.current);
@@ -206,6 +257,7 @@ export function WorkspaceShell({
   }
 
   const sectionSidebar = settingsMode || resourceMode;
+  const sidebarResizeHandle = <div className={styles.sidebarResizeHandle} role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={MAX_SIDEBAR_WIDTH} aria-valuenow={sidebarWidth} tabIndex={0} onPointerDown={startSidebarResize} onPointerMove={moveSidebarResize} onPointerUp={stopSidebarResize} onPointerCancel={stopSidebarResize} onKeyDown={resizeSidebarWithKeyboard} />;
   const currentResourceTab = resourceTab ?? "avatars";
   const resourceHref = (tab: ResourceNavigationTab) => `/resources?tab=${tab}${resourceReturnTo ? `&return_to=${encodeURIComponent(resourceReturnTo)}` : ""}`;
 
@@ -249,6 +301,7 @@ export function WorkspaceShell({
       <NavLink href={resourceHref("tools")} active={currentResourceTab === "tools"} icon={<Wrench />} label="工具" onClick={() => setMobileOpen(false)} />
       <NavLink href={resourceHref("knowledge")} active={currentResourceTab === "knowledge"} icon={<BookOpen />} label="知识库" onClick={() => setMobileOpen(false)} />
     </nav>}
+    {sidebarResizeHandle}
   </aside> : <aside
     id="workspace-navigation"
     className={styles.sidebar}
@@ -319,7 +372,6 @@ export function WorkspaceShell({
       </div>
     </section>
 
-    <a className={styles.githubLink} href="https://github.com/happy-token/OpenRealtime" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 查看并 Star OpenRealtime"><GitFork aria-hidden="true" /><span className={styles.sidebarCopy}>GitHub</span><Star aria-hidden="true" />{githubStars !== null ? <span>{githubStars.toLocaleString()}</span> : <span className={styles.sidebarCopy}>Star</span>}</a>
     <div className={styles.accountArea}>
       {currentUser.status === "signed-in" ? <><button
         className={styles.accountButton}
@@ -342,9 +394,10 @@ export function WorkspaceShell({
         <span className={styles.sidebarCopy}><strong>登录</strong><small>{currentUser.status === "loading" ? "正在检查账户" : currentUser.status === "unavailable" ? "账户服务暂不可用" : "同步个人配置"}</small></span>
       </Link>}
     </div>
+    {sidebarResizeHandle}
   </aside>;
 
-  return <div className={styles.shell} style={{ "--workspace-sidebar-width": sidebarPinned ? "260px" : "0px" } as CSSProperties} data-settings={settingsMode} data-resources={resourceMode} data-session={session} data-floating-sidebar="true" data-sidebar-open={sidebarOpen} data-sidebar-pinned={sidebarPinned} data-sidebar-mode={sidebarMode} data-sidebar-ready={sidebarReady}>
+  return <div className={styles.shell} style={{ "--sidebar-width": `${sidebarWidth}px`, "--workspace-sidebar-width": sidebarPinned ? `${sidebarWidth + 24}px` : "0px" } as CSSProperties} data-settings={settingsMode} data-resources={resourceMode} data-session={session} data-floating-sidebar="true" data-sidebar-open={sidebarOpen} data-sidebar-pinned={sidebarPinned} data-sidebar-mode={sidebarMode} data-sidebar-ready={sidebarReady}>
     <button className={styles.mobileMenu} type="button" aria-label="打开导航" onClick={() => setMobileOpen(true)}><Menu /></button>
     <button
       ref={sidebarToggleRef}
@@ -369,6 +422,7 @@ export function WorkspaceShell({
     {sidebar}
     {mobileOpen ? <button className={styles.mobileBackdrop} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)} /> : null}
     <main className={styles.content} data-home-background={!session}>
+      {pathname === "/conversation" ? <a className={styles.homeGithubStars} href="https://github.com/happy-token/OpenRealtime" target="_blank" rel="noopener noreferrer" aria-label={`在 GitHub 查看 OpenRealtime，${githubStars === null ? "Star 数量暂不可用" : `${githubStars.toLocaleString()} 个 Star`}`} title="在 GitHub 为 OpenRealtime 点 Star"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.23.48-2.69-.94-2.69-.94-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.21 1.87.86 2.33.66.07-.52.28-.86.51-1.06-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" /></svg><span>{formatGithubStars(githubStars)}</span></a> : null}
       {session || immersive ? children : <div className={styles.pageGlass} data-page-glass="true">{children}</div>}
     </main>
   </div>;
@@ -381,6 +435,9 @@ function NavLink({ href, active, icon, label, onClick }: { href: string; active:
 }
 
 export function conversationHref(role: RoleRecord, mode: RolePresentationMode, actionId?: string | null, talkingVariantId?: string | null) {
+  if (mode === "realtime" && role.default_selections?.realtime?.avatar_id) {
+    return `/conversation?realtime_avatar_id=${encodeURIComponent(role.default_selections.realtime.avatar_id)}`;
+  }
   const params = new URLSearchParams({ role_id: role.role_id, role_mode: mode });
   if (mode === "conversation") params.set("experience", "voice");
   else {

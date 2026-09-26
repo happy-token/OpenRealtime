@@ -11,7 +11,7 @@
 .closeButton svg { width: 18px; height: 18px; }
 
 @media (min-width:761px) {
-  :global(body:has([data-sidebar-open="true"])) .panel { left: 260px; }
+  :global(body:has([data-sidebar-open="true"])) .panel { left: calc(var(--sidebar-width,236px) + 24px); }
 }
 
 @media (max-width:760px) {

@@ -425,7 +425,7 @@ def _bailian_tts_instruction(dialect: str) -> str | None:
         "shandong": "山东话",
         "sichuan": "四川话",
     }
-    return f"你正在用{dialect_names[dialect]}说话。" if dialect else None
+    return f"请用{dialect_names[dialect]}表达。" if dialect else None
 
 
 def _build_doubao_session_tts(config: TtsSessionConfig) -> DoubaoDirectTtsEngine:

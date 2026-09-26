@@ -41,23 +41,28 @@ export function AvatarUploadDialog({
   onCreated,
   onRealtimeCreated,
   mode = "avatar",
+  sourceAvatar,
+  sourceName,
 }: {
   onClose: () => void;
   onCreated?: (avatar: OwnedAvatarRecord) => void;
-  onRealtimeCreated?: (avatar: OwnedAvatarRecord) => void;
+  onRealtimeCreated?: (avatar: OwnedAvatarRecord, hostedAvatar: AnamHostedAvatar) => void;
   mode?: "avatar" | "realtime";
+  sourceAvatar?: OwnedAvatarRecord;
+  sourceName?: string;
 }) {
   const ensureProviderKey = useProviderKeyGate();
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [displayName, setDisplayName] = useState(sourceName ?? sourceAvatar?.display_name ?? "");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [anamName, setAnamName] = useState("");
-  const [ownedAvatar, setOwnedAvatar] = useState<OwnedAvatarRecord | null>(null);
+  const [anamName, setAnamName] = useState(sourceAvatar ? suggestAnamAvatarName(sourceName ?? sourceAvatar.display_name) : "");
+  const [ownedAvatar, setOwnedAvatar] = useState<OwnedAvatarRecord | null>(sourceAvatar ?? null);
   const [candidate, setCandidate] = useState<AnamHostedAvatar | null>(null);
+  const previewImageUrl = sourceAvatar?.source_image_url ?? previewUrl;
 
   const requestClose = useCallback(() => {
     if (busy) return;
@@ -127,7 +132,7 @@ export function AvatarUploadDialog({
   }
 
   async function createRealtime() {
-    if (!file || busy || candidate) return;
+    if ((!file && !sourceAvatar) || busy || candidate) return;
     if (!displayName.trim()) { setError("请填写形象名称"); return; }
     if (!isValidAnamAvatarName(anamName)) { setError(ANAM_AVATAR_NAME_REQUIREMENT); return; }
     try {
@@ -135,13 +140,14 @@ export function AvatarUploadDialog({
       setBusy(true);
       setError("");
       let avatar = ownedAvatar;
-      if (!avatar) {
+      if (!avatar && file) {
         const sourceUrl = URL.createObjectURL(file);
         try {
           avatar = await createOwnedAvatar({ displayName: displayName.trim().slice(0, 50), sourceImageDataUrl: await normalizeAvatarSourceImage(sourceUrl) });
           setOwnedAvatar(avatar);
         } finally { URL.revokeObjectURL(sourceUrl); }
       }
+      if (!avatar) throw new Error("请先选择形象图片");
       const response = await fetch(avatar.source_image_url);
       if (!response.ok) throw new Error("形象图片读取失败");
       const blob = await response.blob();
@@ -161,12 +167,16 @@ export function AvatarUploadDialog({
     setBusy(true);
     setError("");
     try {
+      if (sourceAvatar) {
+        onRealtimeCreated?.(sourceAvatar, candidate);
+        return;
+      }
       const avatar = await acceptOwnedAvatarRealtimeBinding(ownedAvatar.avatar_id, {
         provider_avatar_id: candidate.id,
         avatar_model: candidate.activeVersion,
         preview_video_url: candidate.videoUrl,
       });
-      onRealtimeCreated?.(avatar);
+      onRealtimeCreated?.(avatar, candidate);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "实时形象绑定失败"); }
     finally { setBusy(false); }
   }
@@ -183,7 +193,7 @@ export function AvatarUploadDialog({
         </header>
 
         <div className={styles.body}>
-          <div className={styles.intro}><ImagePlus aria-hidden="true" /><div><strong>上传一张清晰的人像图片</strong><span>{mode === "realtime" ? "上传后生成实时驱动效果，确认预览后才会启用。" : "建议正面、无遮挡、光线均匀；创建后会自动成为当前形象。"}</span></div></div>
+          <div className={styles.intro}><ImagePlus aria-hidden="true" /><div><strong>{sourceAvatar ? "使用当前角色形象" : "上传一张清晰的人像图片"}</strong><span>{sourceAvatar ? "使用当前角色的形象图片生成实时数字人，确认效果后加入此角色。" : mode === "realtime" ? "上传后生成实时驱动效果，确认预览后才会启用。" : "建议正面、无遮挡、光线均匀；创建后会自动成为当前形象。"}</span></div></div>
           {candidate ? <div className={styles.candidatePreview}>
             {candidate.videoUrl ? <video src={candidate.videoUrl} controls autoPlay muted loop playsInline aria-label="实时数字人效果预览" /> : <p>实时效果正在处理。请确认后启用，稍后可在形象目录查看预览。</p>}
             <strong>{candidate.displayName}</strong>
@@ -192,18 +202,18 @@ export function AvatarUploadDialog({
           <label
             className={styles.dropzone}
             data-dragging={dragging}
-            data-filled={Boolean(previewUrl)}
+            data-filled={Boolean(previewImageUrl)}
             data-locked={Boolean(ownedAvatar)}
             htmlFor={inputId}
             onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
             onDragOver={(event) => event.preventDefault()}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
-            onDrop={(event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); chooseFile(event.dataTransfer.files[0]); }}
+            onDrop={(event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); if (!sourceAvatar) chooseFile(event.dataTransfer.files[0]); }}
           >
             <input id={inputId} type="file" accept="image/*" disabled={busy || Boolean(ownedAvatar)} onChange={(event) => chooseFile(event.target.files?.[0])} />
-            {previewUrl ? <Image src={previewUrl} alt="待创建形象预览" fill sizes="680px" unoptimized /> : null}
+            {previewImageUrl ? <Image src={previewImageUrl} alt="待创建形象预览" fill sizes="680px" unoptimized /> : null}
             <span className={styles.dropzoneWash} aria-hidden="true" />
-            <span className={styles.uploadPrompt}><Upload aria-hidden="true" /><strong>{file ? "更换图片" : "拖拽图片到这里"}</strong><small>{file ? file.name : "或点击整个区域选择图片"}</small><i>选择图片</i></span>
+            {!sourceAvatar ? <span className={styles.uploadPrompt}><Upload aria-hidden="true" /><strong>{file ? "更换图片" : "拖拽图片到这里"}</strong><small>{file ? file.name : "或点击整个区域选择图片"}</small><i>选择图片</i></span> : null}
           </label>
 
           <label className={styles.nameField}>
@@ -215,7 +225,7 @@ export function AvatarUploadDialog({
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
         </div>
 
-        <footer><button type="button" disabled={busy} onClick={requestClose}>取消</button><button type="button" disabled={busy || (mode === "realtime" ? !candidate && (!file || !displayName.trim() || !isValidAnamAvatarName(anamName)) : !file || !displayName.trim())} onClick={() => void (mode === "realtime" ? candidate ? confirmRealtime() : createRealtime() : createAvatar())}>{busy ? <LoaderCircle aria-hidden="true" /> : mode === "realtime" ? <Play aria-hidden="true" /> : <ImagePlus aria-hidden="true" />}{busy ? "正在处理" : mode === "realtime" ? candidate ? "确认效果并启用" : "生成实时数字人" : "创建形象"}</button></footer>
+        <footer><button type="button" disabled={busy} onClick={requestClose}>取消</button><button type="button" disabled={busy || (mode === "realtime" ? !candidate && ((!file && !sourceAvatar) || !displayName.trim() || !isValidAnamAvatarName(anamName)) : !file || !displayName.trim())} onClick={() => void (mode === "realtime" ? candidate ? confirmRealtime() : createRealtime() : createAvatar())}>{busy ? <LoaderCircle aria-hidden="true" /> : mode === "realtime" ? <Play aria-hidden="true" /> : <ImagePlus aria-hidden="true" />}{busy ? "正在处理" : mode === "realtime" ? candidate ? "确认效果并启用" : "生成实时数字人" : "创建形象"}</button></footer>
       </section>
     </div>,
     document.body,
