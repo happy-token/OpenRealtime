@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "openrealtime-voice-route",
+  "main": "deploy/cloudflare/voice-proxy.js",
+  "compatibility_date": "2026-09-26",
+  "workers_dev": false,
+  "route": {
+    "pattern": "realtime.happy-token.cn/voice",
+    "zone_name": "happy-token.cn"
+  },
+  "vars": {
+    "VOICE_ORIGIN": "https://voice-origin.example.com"
+  }
+}

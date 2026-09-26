@@ -6,6 +6,7 @@ docs/prompts/
 # Secrets
 .env
 .env*.local
+deploy/compose/*.env
 
 # Python
 __pycache__/
@@ -62,6 +63,7 @@ node_modules/
 .next-dev/
 .next-talking-eval/
 .next-e2e-*/
+.wrangler/
 .openrealtime/
 data/avatar-renderer/
 playwright-report/

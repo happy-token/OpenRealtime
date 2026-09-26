@@ -1,0 +1,103 @@
+name: openrealtime
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: openrealtime
+      POSTGRES_USER: openrealtime
+      POSTGRES_PASSWORD: ${OPENREALTIME_POSTGRES_PASSWORD:?Set OPENREALTIME_POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openrealtime -d openrealtime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  migrate:
+    profiles: [setup]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      VOICEAGENT_POSTGRES_DSN: postgresql://openrealtime:${OPENREALTIME_POSTGRES_PASSWORD:?Set OPENREALTIME_POSTGRES_PASSWORD}@db:5432/openrealtime
+      VOICEAGENT_POSTGRES_SCHEMA: ${VOICEAGENT_POSTGRES_SCHEMA:-voiceagent}
+    command: ["python", "scripts/apply_migrations.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  voice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: ./deploy/compose/voice.env
+    environment:
+      VOICEAGENT_POSTGRES_DSN: postgresql://openrealtime:${OPENREALTIME_POSTGRES_PASSWORD:?Set OPENREALTIME_POSTGRES_PASSWORD}@db:5432/openrealtime
+      VOICEAGENT_POSTGRES_SCHEMA: ${VOICEAGENT_POSTGRES_SCHEMA:-voiceagent}
+      VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY: ${VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY:?Set VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY}
+      VOICEAGENT_PUBLIC_ORIGIN: ${OPENREALTIME_PUBLIC_ORIGIN:?Set OPENREALTIME_PUBLIC_ORIGIN}
+      VOICEAGENT_ENDPOINT_AUTH_MODE: public_ticket
+      VOICEAGENT_WS_HOST: 0.0.0.0
+      CONVERSATION_HISTORY_DIR: /data/conversations
+      VOICEAGENT_MEMORY_DIR: /data/memory
+      ROLE_CATALOG_DIR: /data/role-catalog
+      OPENREALTIME_PERSONAL_MOTION_PATH: /data/personal-motion
+    ports:
+      - "127.0.0.1:${OPENREALTIME_VOICE_PORT:-8765}:8765"
+      - "127.0.0.1:${OPENREALTIME_WEB_PORT:-3010}:3010"
+    volumes:
+      - app-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8766), 2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  web:
+    network_mode: service:voice
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_VOICE_WS_URL: ${OPENREALTIME_PUBLIC_VOICE_WS_URL:?Set OPENREALTIME_PUBLIC_VOICE_WS_URL}
+    env_file: ./deploy/compose/web.env
+    environment:
+      VOICEAGENT_POSTGRES_DSN: postgresql://openrealtime:${OPENREALTIME_POSTGRES_PASSWORD:?Set OPENREALTIME_POSTGRES_PASSWORD}@db:5432/openrealtime
+      VOICEAGENT_POSTGRES_SCHEMA: ${VOICEAGENT_POSTGRES_SCHEMA:-voiceagent}
+      VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY: ${VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY:?Set VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY}
+      VOICEAGENT_PUBLIC_ORIGIN: ${OPENREALTIME_PUBLIC_ORIGIN:?Set OPENREALTIME_PUBLIC_ORIGIN}
+      VOICEAGENT_CONTROL_PLANE_URL: http://127.0.0.1:8766
+      VOICEAGENT_ENDPOINT_AUTH_MODE: public_ticket
+      VOICEAGENT_PUBLIC_VOICE_ENABLED: ${VOICEAGENT_PUBLIC_VOICE_ENABLED:-false}
+      AVATAR_CATALOG_DIR: /data/avatar-catalog
+      CONVERSATION_HISTORY_DIR: /data/conversations
+      VOICEAGENT_MEMORY_DIR: /data/memory
+      ROLE_CATALOG_DIR: /data/role-catalog
+      OPENREALTIME_PERSONAL_MOTION_PATH: /data/personal-motion
+      OPENREALTIME_PAID_GENERATION_ENABLED: "false"
+    volumes:
+      - app-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      voice:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/api/health?ready=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  app-data:
