@@ -40,6 +40,7 @@ export function personaErrorStatus(error: unknown, message: string): number {
   if (error instanceof PersonaRequestError) return error.status;
   if (error instanceof SyntaxError) return 400;
   if (/已存在/.test(message)) return 409;
+  if (/内置人设|仍被.*使用/.test(message)) return 409;
   if (/找不到|尚未关联/.test(message)) return 404;
   if (/超过|过大/.test(message)) return 413;
   if (/无效|格式|不匹配|不能为空|缺少/.test(message)) return 400;

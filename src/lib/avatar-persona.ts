@@ -1,5 +1,13 @@
 export const AVATAR_PERSONA_FILENAMES = ["AGENTS.md", "SOUL.md", "IDENTITY.md"] as const;
 export const REQUIRED_AVATAR_PERSONA_FILENAMES = ["SOUL.md", "IDENTITY.md"] as const;
+export const BUILTIN_PERSONA_IDS = [
+  "intellectual-warmth", "sweet-sunshine", "fresh-pastoral", "romantic-french",
+  "soft-luminous", "cool-urban-night", "melancholic-mist",
+] as const;
+
+export function isBuiltinPersonaId(personaId: string): boolean {
+  return (BUILTIN_PERSONA_IDS as readonly string[]).includes(personaId);
+}
 
 export type AvatarPersonaFile = {
   filename: (typeof AVATAR_PERSONA_FILENAMES)[number];

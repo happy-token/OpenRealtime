@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   AVATAR_PERSONA_FILENAMES,
   REQUIRED_AVATAR_PERSONA_FILENAMES,
+  isBuiltinPersonaId,
   type AvatarPersonaFile,
   type AvatarPersonaProfile,
   type PersonaProfile,
@@ -156,6 +157,56 @@ export async function writePersonaIntro(personaId: string, intro: string, root =
     throw error;
   }
   await atomicWriteFile(path.join(personaRoot, "INTRO.txt"), normalized);
+}
+
+export async function renamePersona(personaId: string, displayName: string, root = process.cwd()): Promise<PersonaProfile> {
+  if (!PERSONA_ID_PATTERN.test(personaId)) throw new Error("Persona ID 无效");
+  if (!validDisplayName(displayName)) throw new Error("人设名称无效");
+  const profile = await readPersonaProfile(personaId, root);
+  if (!profile) throw new Error("找不到 Persona");
+  const identity = profile.files.find((file) => file.filename === "IDENTITY.md");
+  if (!identity) throw new Error("Persona 缺少必需文件：IDENTITY.md");
+  const content = identity.content.replace(/^#\s+[^\r\n]*(?:\r?\n)?/, "").trimStart();
+  const next = content ? `# ${displayName.trim()}\n\n${content}` : `# ${displayName.trim()}`;
+  await writeAvatarPersonaFiles(personaId, [{ filename: "IDENTITY.md", content: next }], root);
+  return (await readPersonaProfile(personaId, root)) as PersonaProfile;
+}
+
+export async function archivePersona(personaId: string, root = process.cwd()): Promise<void> {
+  if (!PERSONA_ID_PATTERN.test(personaId)) throw new Error("Persona ID 无效");
+  if (isBuiltinPersonaId(personaId)) throw new Error("内置人设不能删除");
+  const profile = await readPersonaProfile(personaId, root);
+  if (!profile) throw new Error("找不到 Persona");
+  if (profile.linkedAvatarIds.length || await personaIsUsedByRole(personaId, root)) {
+    throw new Error("人设仍被数字人或角色使用，不能删除");
+  }
+  const archiveRoot = path.join(root, ".openrealtime", "persona-trash");
+  await mkdir(archiveRoot, { recursive: true, mode: 0o700 });
+  await rename(path.join(root, "config", "personas", personaId), path.join(archiveRoot, `${personaId}-${Date.now()}-${randomUUID()}`));
+}
+
+async function personaIsUsedByRole(personaId: string, root: string): Promise<boolean> {
+  const sharedCatalogRoot = root === process.cwd() && process.env.ROLE_CATALOG_DIR?.trim()
+    ? path.resolve(process.env.ROLE_CATALOG_DIR.trim()) : path.join(root, ".openrealtime", "role-catalog");
+  if (await roleCatalogUsesPersona(path.join(sharedCatalogRoot, "roles.json"), personaId)) return true;
+  const personalRoot = root === process.cwd() && process.env.OPENREALTIME_PERSONAL_MOTION_PATH?.trim()
+    ? path.resolve(process.env.OPENREALTIME_PERSONAL_MOTION_PATH.trim()) : path.join(root, ".openrealtime", "personal-motion");
+  let owners;
+  try { owners = await readdir(personalRoot, { withFileTypes: true }); }
+  catch (error) { if (isMissingFile(error)) return false; throw error; }
+  for (const owner of owners) {
+    if (owner.isDirectory() && await roleCatalogUsesPersona(path.join(personalRoot, owner.name, "roles", "catalog.json"), personaId)) return true;
+  }
+  return false;
+}
+
+async function roleCatalogUsesPersona(catalogPath: string, personaId: string): Promise<boolean> {
+  let raw;
+  try { raw = await readFile(catalogPath, "utf8"); }
+  catch (error) { if (isMissingFile(error)) return false; throw error; }
+  const records = JSON.parse(raw) as unknown;
+  if (!Array.isArray(records)) throw new Error("角色目录结构异常");
+  return records.some((record) => record && typeof record === "object" && !record.deleted_at && record.persona_id === personaId);
 }
 
 async function readPersonaIntro(personaRoot: string, identityContent: string): Promise<string> {
