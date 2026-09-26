@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+set -a
+source /etc/openrealtime-musetalk.env
+set +a
+cd /opt/openrealtime-musetalk-service
+exec >>/var/log/openrealtime-musetalk.log 2>&1
+exec /opt/openrealtime-musetalk-service/venv/bin/uvicorn deploy.inference_services.app:create_app \
+  --factory --host 127.0.0.1 --port 18191 --workers 1 --no-proxy-headers

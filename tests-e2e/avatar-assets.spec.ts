@@ -365,7 +365,7 @@ test.describe("Avatar asset MVP", () => {
     await expect.poll(() => activeVideo.evaluate((video) => getComputedStyle(video).objectFit)).toBe("contain");
     await expect(stage.getByRole("link", { name: "开始对话", exact: true })).toHaveAttribute(
       "href",
-      "/?avatar_id=companion&avatar_action_id=action-smile&experience=avatar",
+      "/conversation?avatar_id=companion&avatar_action_id=action-smile&experience=avatar",
     );
     await expect(stage.getByText("使用亲和微笑开始对话", { exact: true })).toHaveCount(0);
     await expect(page.getByText("技术信息")).toBeVisible();

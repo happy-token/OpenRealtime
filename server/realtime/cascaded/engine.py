@@ -410,7 +410,8 @@ class CascadedRealtimeConversation:
                     sequence=self._next_sequence,
                 )
             )
-            await self._emit(progress)
+            if progress is not None:
+                await self._emit(progress)
             self._commands_by_idempotency_key[command.idempotency_key] = command
             return
         if isinstance(command, ProjectCommittedItem):
@@ -434,8 +435,15 @@ class CascadedRealtimeConversation:
     async def _report_model_playback(
         self,
         command: ReportPlaybackProgress,
-    ) -> SpeechPlaybackProgress:
+    ) -> SpeechPlaybackProgress | None:
         existing = await self._speech_deliveries.get(command.speech_id)
+        if existing is not None and existing.status in {
+            SpeechDeliveryStatus.COMPLETED,
+            SpeechDeliveryStatus.FAILED,
+            SpeechDeliveryStatus.UNCERTAIN,
+        }:
+            # A queued browser playback event can arrive after speech has settled.
+            return None
         if existing is None or existing.status not in {
             SpeechDeliveryStatus.ACTIVE,
             SpeechDeliveryStatus.INTERRUPTED,
@@ -676,7 +684,7 @@ class CascadedRealtimeConversation:
                 RequestResponse(
                     command_id=f"response:{command.command_id}",
                     idempotency_key=f"response:{command.idempotency_key}",
-                    context=command.context,
+                    context=replace(command.context, response_id=response_id),
                     response_id=response_id,
                     minimum_thread_sequence=thread_sequence,
                     output_item_id=command.output_item_id,
@@ -1181,9 +1189,10 @@ class CascadedRealtimeConversation:
         first_text_deadline = (
             asyncio.get_running_loop().time() + self._response_first_text_timeout_s
         )
+        waiting_for_tool = False
         while True:
             try:
-                if text_sequence == 0:
+                if text_sequence == 0 and not waiting_for_tool:
                     remaining = first_text_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         raise _FirstResponseTextDeadlineExceeded
@@ -1206,20 +1215,21 @@ class CascadedRealtimeConversation:
                     context=response_context,
                     speech_id=speech_id,
                 )
-                await self._tts.send(
-                    StartTts(speech_id=speech_id, context=command.context)
-                )
                 await self._emit_response(
                     ResponseStarted,
                     context=response_context,
                     response_id=command.response_id,
                 )
-                tts_task = asyncio.create_task(
-                    self._pump_tts(command, speech_id=speech_id),
-                    name=f"cascaded-tts-{speech_id}",
-                )
-                self._tts_task_by_response_id[command.response_id] = tts_task
             elif isinstance(event, BrainTextDelta):
+                if tts_task is None:
+                    await self._tts.send(
+                        StartTts(speech_id=speech_id, context=command.context)
+                    )
+                    tts_task = asyncio.create_task(
+                        self._pump_tts(command, speech_id=speech_id),
+                        name=f"cascaded-tts-{speech_id}",
+                    )
+                    self._tts_task_by_response_id[command.response_id] = tts_task
                 text_sequence += 1
                 await self._speech_deliveries.append_text(speech_id, event.delta)
                 await self._input_pipeline.assistant_spoken_text(
@@ -1246,6 +1256,7 @@ class CascadedRealtimeConversation:
                     )
                 )
             elif isinstance(event, BrainToolRequested):
+                waiting_for_tool = True
                 await self._emit_response(
                     ToolRequested,
                     context=replace(

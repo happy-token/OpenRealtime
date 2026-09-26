@@ -1,0 +1,171 @@
+.controls { position: absolute; z-index: 58; inset: 0; pointer-events: none; color: #f6faf9; }
+.controls button,.controls a { font: inherit; }
+.rightHandle,.bottomHandle,.mobileRoleButton { position: absolute; z-index: 70; color: #f6faf9; pointer-events: auto; cursor: pointer; }
+.rightHandle,.bottomHandle {
+  border: 1px solid color-mix(in srgb,var(--text) 17%,rgba(255,255,255,.24));
+  background:
+    linear-gradient(145deg,rgb(255 255 255 / var(--panel-highlight-alpha,.2)),transparent 52%),
+    color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.58) * 100%),transparent);
+  box-shadow: inset 0 1px rgba(255,255,255,.24),0 14px 38px rgba(0,0,0,.22),0 0 24px color-mix(in srgb,var(--accent) 11%,transparent);
+  backdrop-filter: blur(var(--panel-blur,20px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--panel-blur,20px)) saturate(180%);
+  transition: opacity 180ms ease,border-color 180ms ease,background 180ms ease,box-shadow 180ms ease;
+}
+.rightHandle { top: 50%; right: 12px; width: 18px; height: 112px; padding: 0; display: grid; place-items: center; border-radius: 14px; transform: translateY(-50%); }
+.rightHandle span,.handleLine { display: block; border-radius: 999px; background: color-mix(in srgb,var(--text) 44%,transparent); box-shadow: inset 0 1px rgba(255,255,255,.2); transition: background 150ms ease,box-shadow 150ms ease,transform 150ms ease; }
+.rightHandle span { width: 3px; height: 58px; }
+.bottomHandle { left: 50%; bottom: 12px; width: 112px; min-width: 112px; height: 18px; padding: 0 12px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; transform: translateX(-50%); }
+.handleLine { width: 58px; height: 3px; }
+.handleSummary,.bottomHandle svg { display: none; }
+.controls:not([data-open="none"]) .bottomHandle,.controls:not([data-open="none"]) .rightHandle { opacity: .32; }
+.rightHandle:hover,.rightHandle:focus-visible,.rightHandle[aria-expanded="true"],.bottomHandle:hover,.bottomHandle:focus-visible,.bottomHandle[aria-expanded="true"] { border-color: color-mix(in srgb,var(--accent) 34%,rgba(255,255,255,.32)); box-shadow: inset 0 1px rgba(255,255,255,.28),0 18px 46px rgba(0,0,0,.26),0 0 30px color-mix(in srgb,var(--accent) 18%,transparent); }
+.rightHandle:hover span,.rightHandle:focus-visible span,.rightHandle[aria-expanded="true"] span,.bottomHandle:hover .handleLine,.bottomHandle:focus-visible .handleLine,.bottomHandle[aria-expanded="true"] .handleLine { background: color-mix(in srgb,var(--accent) 64%,white); box-shadow: 0 0 18px color-mix(in srgb,var(--accent) 54%,transparent),0 0 5px rgba(255,255,255,.38); transform: scale(1.12); }
+.mobileRoleButton { display: none; }
+.backdrop { position: absolute; z-index: 59; inset: 0; border: 0; background: transparent; pointer-events: auto; cursor: default; }
+.rolePanel,.modePanel {
+  position: absolute;
+  z-index: 62;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb,var(--text) 15%,rgba(255,255,255,.2));
+  border-radius: 26px;
+  background:
+    linear-gradient(132deg,rgb(255 255 255 / var(--panel-highlight-alpha,.18)),transparent 27%,transparent 68%,color-mix(in srgb,var(--accent) 11%,transparent)),
+    color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.58) * 100%),transparent);
+  box-shadow: inset 0 1px rgba(255,255,255,.24),0 26px 80px rgba(0,0,0,.28),0 8px 28px color-mix(in srgb,var(--accent) 10%,transparent);
+  backdrop-filter: blur(var(--panel-blur,30px)) saturate(175%);
+  -webkit-backdrop-filter: blur(var(--panel-blur,30px)) saturate(175%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease,transform 260ms cubic-bezier(.22,1,.36,1);
+}
+.rolePanel[data-open="true"],.modePanel[data-open="true"] { opacity: 1; pointer-events: auto; transform: translate(0,0); }
+.rolePanel { top: 112px; right: 18px; bottom: 68px; width: min(142px,calc(100vw - 36px)); display: grid; grid-template-rows: minmax(0,1fr); transform: translateX(calc(100% + 24px)); }
+.rolePanel,.modePanel { border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.modePanel > header { min-height: 58px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid rgba(228,240,236,.1); }
+.modePanel > header > div { min-width: 0; display: grid; gap: 3px; }
+.modePanel > header small { color: rgba(168,221,201,.66); font-size: .44rem; font-weight: 740; letter-spacing: .12em; }
+.modePanel > header strong { overflow: hidden; font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.modePanel > header button { width: 30px; height: 30px; display: grid; place-items: center; flex: none; border: 0; border-radius: 10px; color: rgba(240,245,244,.7); background: rgba(255,255,255,.06); cursor: pointer; }
+.modePanel > header svg { width: 15px; }
+.roleList { min-height: 0; padding: 15px 5px 26px; display: grid; grid-template-columns: minmax(0,1fr); justify-items: center; align-content: start; gap: 9px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(201,238,222,.78) rgba(255,255,255,.12); scrollbar-gutter: stable; overscroll-behavior: contain; }
+.roleList::-webkit-scrollbar { width: 7px; }
+.roleList::-webkit-scrollbar-track { border-radius: 999px; background: rgba(255,255,255,.12); }
+.roleList::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(201,238,222,.78); }
+.roleList::-webkit-scrollbar-thumb:hover { background: rgba(231,255,245,.95); }
+.roleCard { position: relative; width: 100%; height: 172px; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 18px; color: #f6faf9; background: rgb(20 23 37 / var(--panel-surface-alpha,.3)); box-shadow: inset 0 1px rgb(255 255 255 / var(--panel-highlight-alpha,.07)),0 15px 38px rgba(0,0,0,.28); backdrop-filter: blur(var(--panel-blur,3px)); text-align: left; transform: translateX(-5px) rotate(-2deg); transition: transform 220ms ease,border-color 220ms ease,box-shadow 220ms ease; }
+.roleCard:nth-child(even) { transform: translateX(5px) rotate(2.4deg); }
+.roleCard:nth-child(3n) { transform: translateX(-2px) rotate(.8deg); }
+.roleCard:hover,.roleCard:focus-within { z-index: 3; border-color: rgba(255,255,255,.82); box-shadow: 0 22px 54px rgba(0,0,0,.42); transform: translateY(-4px) rotate(0) scale(1.02); }
+.roleCard[data-selected="true"] { z-index: 2; border-color: rgba(255,255,255,.9); box-shadow: 0 15px 38px rgba(0,0,0,.4),0 0 0 2px color-mix(in srgb,var(--accent) 74%,white); }
+.roleSelectButton { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.roleArtwork,.roleArtwork img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.roleArtwork { display: grid; place-items: center; background: radial-gradient(circle at 50% 34%,rgba(92,139,128,.56),#1b1e27 72%); }
+.roleArtwork img { object-fit: contain; object-position: center; }
+.roleArtwork > svg { width: 35px; color: rgba(204,246,229,.7); }
+.roleArtwork::after { content: ""; position: absolute; inset: 40% 0 0; background: linear-gradient(transparent,rgba(4,6,10,.92)); pointer-events: none; }
+.roleCardCopy { position: absolute; z-index: 1; right: 9px; bottom: 9px; left: 9px; min-width: 0; display: grid; gap: 4px; pointer-events: none; }
+.roleCardCopy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roleCardCopy strong { font-size: .64rem; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
+.roleCardCopy small { max-height: 0; overflow: hidden; color: rgba(255,255,255,.78); font-size: .46rem; line-height: 1.35; overflow-wrap: anywhere; opacity: 0; transition: max-height 180ms ease,opacity 180ms ease; }
+.roleCard:hover .roleCardCopy small,.roleCard:focus-within .roleCardCopy small { max-height: 40px; opacity: 1; }
+.roleSelectedCheck { position: absolute; z-index: 2; top: 8px; right: 8px; width: 17px; color: #a4e4cc; filter: drop-shadow(0 1px 3px #000); }
+.roleCard[data-default="true"] .roleSelectedCheck { top: 38px; }
+.roleDefaultBadge { position: absolute; z-index: 2; top: 8px; right: 8px; min-height: 23px; padding: 0 7px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(232,250,239,.7); border-radius: 999px; color: #f4fff8; background: rgb(8 15 18 / var(--panel-surface-alpha,.3)); box-shadow: 0 2px 10px rgba(0,0,0,.28); backdrop-filter: blur(var(--panel-blur,3px)); font-size: .44rem; font-weight: 750; }
+.roleDefaultBadge svg { width: 11px; height: 11px; color: #c9f4d9; }
+.roleDefaultButton { position: absolute; z-index: 3; top: 43px; left: 8px; min-height: 28px; padding: 0 8px; display: flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgba(231,251,241,.42); border-radius: 999px; color: #fff; background: rgb(8 15 18 / var(--panel-surface-alpha,.3)); backdrop-filter: blur(var(--panel-blur,3px)); font-size: .48rem; cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 180ms ease,transform 180ms ease; }
+.roleDefaultButton svg { width: 12px; }
+.roleCard:hover .roleDefaultButton,.roleCard:focus-within .roleDefaultButton { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.roleDefaultButton:disabled { opacity: 0; pointer-events: none; cursor: default; }
+.roleCard:hover .roleDefaultButton:disabled,.roleCard:focus-within .roleDefaultButton:disabled { opacity: .4; }
+.roleStartButton { position: absolute; z-index: 3; top: 8px; left: 8px; min-height: 28px; padding: 0 9px; color: #fff; font-size: .49rem; font-weight: 720; opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 180ms ease,transform 180ms ease; }
+.roleStartButton svg { width: 12px; height: 12px; }
+.roleCard:hover .roleStartButton,.roleCard:focus-within .roleStartButton { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.roleStartButton:disabled { opacity: 0; pointer-events: none; }
+.roleCard:hover .roleStartButton:disabled,.roleCard:focus-within .roleStartButton:disabled { opacity: .4; }
+.addRoleCard { width: 100%; height: 106px; display: grid; place-items: center; align-content: center; gap: 7px; border: 1px dashed rgba(255,255,255,.28); border-radius: 15px; color: rgba(255,255,255,.7); background: rgba(8,10,16,.2); text-decoration: none; backdrop-filter: blur(var(--panel-blur,10px)); transform: rotate(-2deg); transition: color 180ms ease,border-color 180ms ease,background 180ms ease,transform 180ms ease; }
+.addRoleCard:hover,.addRoleCard:focus-visible { border-color: rgba(255,255,255,.56); color: white; background: rgba(8,10,16,.42); transform: rotate(0) translateY(-4px); }
+.addRoleCard svg { width: 18px; }
+.addRoleCard span { font-size: .48rem; font-weight: 720; }
+.portrait { position: relative; width: 50px; height: 50px; display: grid; place-items: center; overflow: hidden; flex: none; border: 1px solid rgba(228,240,236,.15); border-radius: 6px; background: rgba(255,255,255,.06); }
+.portrait img { object-fit: contain; object-position: center; }
+.portrait > svg { width: 19px; color: #a4e4cc; }
+.modePanel { right: 22px; bottom: 10px; left: calc(var(--workspace-sidebar-width,52px) + 22px); height: 160px; display: grid; grid-template-rows: minmax(0,1fr); transform: translateY(calc(100% + 24px)); }
+.modePanel:has(.materialList > div[data-open="true"]) { height: min(310px,calc(100vh - 150px)); }
+.modePanel > header { display: none; }
+.modeTabs { padding: 11px 22px 3px; display: flex; align-items: center; justify-content: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.modeTabs button { min-height: 34px; padding: 0 13px; flex: none; border: 1px solid rgba(228,240,236,.13); border-radius: 10px; color: rgba(240,245,244,.7); background: transparent; font-size: .6rem; cursor: pointer; }
+.modeTabs button:hover,.modeTabs button[data-selected="true"] { border-color: rgba(166,224,203,.6); color: #fff; }
+.materialList { min-width: 0; padding: 12px 28px 9px; display: flex; align-items: flex-end; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; mask-image: linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent); }
+.materialList::-webkit-scrollbar { display: none; }
+.materialList > * { flex-shrink: 0; }
+.materialList > div { margin-left: -18px; transform: translateY(10px) scale(.9) rotate(1.8deg); }
+.actionGroup,.actionGroup > div { display: contents; }
+.actionGroup h3 { display: none; }
+.materialCard { position: relative; width: 98px; height: 124px; margin-left: -18px; padding: 0; flex: 0 0 98px; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 15px; color: white; background: #13161e; box-shadow: 0 15px 38px rgba(0,0,0,.34); cursor: pointer; transform: translateY(10px) scale(.9) rotate(1.8deg); transform-origin: 50% 100%; transition: transform 420ms cubic-bezier(.22,1,.36,1),border-color 220ms ease; }
+.materialCard:first-child { margin-left: 0; transform: translateY(10px) scale(.9) rotate(-2deg); }
+.materialCard:nth-child(even) { transform: translateY(8px) scale(.92) rotate(-1.2deg); }
+.materialCard:hover,.materialCard:focus-visible { z-index: 12; transform: translateY(2px) scale(.98); }
+.materialCard[data-selected="true"] { z-index: 15; border-color: rgba(255,255,255,.9); box-shadow: 0 22px 54px rgba(0,0,0,.48),0 0 0 2px color-mix(in srgb,var(--accent) 74%,white); transform: translateY(-8px) scale(1.08); }
+.materialImage,.materialImage img,.materialImage video { position: absolute; inset: 0; width: 100%; height: 100%; }
+.materialImage { display: grid; place-items: center; background: #1b1e27; }
+.materialImage img { object-fit: contain; object-position: center; }
+.materialImage video { object-fit: contain; object-position: center; }
+.materialCard::after { content: ""; position: absolute; z-index: 1; inset: 44% 0 0; background: linear-gradient(transparent,rgba(4,6,10,.92)); pointer-events: none; }
+.materialCopy { position: absolute; z-index: 2; right: 9px; bottom: 10px; left: 9px; display: grid; gap: 3px; text-align: left; pointer-events: none; }
+.materialCopy small,.materialCopy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.materialCopy small { color: rgba(255,255,255,.58); font-size: .37rem; }
+.materialCopy strong { font-size: .48rem; }
+.selectedCheck { position: absolute; z-index: 2; top: 8px; right: 8px; width: 15px; color: #a4e4cc; filter: drop-shadow(0 1px 3px #000); }
+.themeCard { width: 104px; min-width: 104px; height: 94px; margin-right: 7px; padding: 7px; display: grid; grid-template-rows: 1fr auto; gap: 5px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; color: white; background: transparent; cursor: pointer; }
+.themeCard[data-selected="true"] { border-color: rgba(166,224,203,.6); }
+.themeCard > span { border-radius: 6px; }
+.themeCard strong { overflow: hidden; font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
+.empty { align-self: center; margin: auto; color: rgba(240,245,244,.57); font-size: .66rem; }
+.modePanel footer { display: none; min-height: 45px; padding: 5px 22px; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(228,240,236,.1); background: rgba(12,17,21,.65); }
+.modePanel footer span { overflow: hidden; color: rgba(240,245,244,.7); font-size: .57rem; text-overflow: ellipsis; white-space: nowrap; }
+.modePanel footer button { min-height: 32px; padding: 0 13px; flex: none; border: 1px solid rgba(166,224,203,.35); border-radius: 10px; color: #fff; background: rgba(83,151,126,.44); font-size: .58rem; cursor: pointer; }
+.modePanel footer button:disabled { opacity: .46; cursor: default; }
+.error { position: absolute; z-index: 80; right: 22px; bottom: 238px; max-width: min(390px,calc(100vw - 44px)); padding: 10px 12px; border: 1px solid rgba(250,126,126,.35); border-radius: 6px; color: #fff; background: rgba(73,29,29,.9); font-size: .64rem; pointer-events: auto; }
+
+@media (max-width: 760px) {
+  .rightHandle { display: none; }
+  .mobileRoleButton { top: 76px; left: 12px; max-width: calc(100vw - 100px); height: 42px; padding: 4px 10px 4px 4px; display: flex; align-items: center; gap: 7px; border: 1px solid rgba(228,240,236,.15); border-radius: 13px; background: rgba(12,17,21,.65); box-shadow: 0 12px 34px rgba(0,0,0,.22); backdrop-filter: blur(var(--panel-blur,18px)); }
+  .mobileRoleButton .portrait { width: 32px; height: 32px; border-radius: 9px; }
+  .mobileRoleButton .portrait svg { width: 15px; }
+  .mobileRoleButton strong { min-width: 0; overflow: hidden; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+  .mobileRoleButton > svg { width: 14px; flex: none; color: rgba(240,245,244,.67); }
+  .roleList { padding: 10px 18px 18px; gap: 16px; }
+  .roleCard { width: 160px; height: 180px; }
+  .roleCardCopy strong { font-size: .78rem; }
+  .roleCardCopy small { max-height: 40px; font-size: .56rem; opacity: 1; }
+  .addRoleCard { width: 160px; height: 134px; }
+  .roleDefaultButton { min-height: 34px; font-size: .56rem; opacity: 1; pointer-events: auto; transform: none; }
+  .roleDefaultButton:disabled,.roleStartButton:disabled { opacity: .4; pointer-events: none; }
+  .roleStartButton { opacity: 1; pointer-events: auto; transform: none; }
+  .bottomHandle { right: 12px; bottom: calc(180px + env(safe-area-inset-bottom)); left: 12px; width: auto; min-width: 0; height: 42px; padding: 0 12px; justify-content: flex-start; border-radius: 14px; transform: none; }
+  .bottomHandle .handleLine { width: 20px; flex: none; }
+  .bottomHandle .handleSummary { min-width: 0; display: block; flex: 1; overflow: hidden; font-size: .62rem; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .bottomHandle > svg { width: 15px; display: block; }
+  .backdrop { background: rgba(0,0,0,.28); }
+  .rolePanel,.modePanel { top: auto; right: 10px; bottom: 10px; left: 10px; width: auto; height: min(70dvh,590px); border-radius: 24px; transform: translateY(calc(100% + 20px)); }
+  .modePanel > header { display: flex; }
+  .modePanel { height: min(68dvh,570px); grid-template-rows: auto minmax(0,1fr) auto; }
+  .modeTabs { padding: 10px 12px; justify-content: flex-start; }
+  .modeTabs button { min-height: 40px; font-size: .68rem; }
+  .materialList { padding: 5px 12px 15px; display: flex; align-content: flex-start; align-items: flex-start; flex-wrap: wrap; gap: 8px; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; mask-image: none; }
+  .actionGroup { display: block; }
+  .actionGroup > div { display: flex; overflow-x: auto; overflow-y: hidden; padding: 10px 9px 12px; scrollbar-width: none; }
+  .actionGroup > div::-webkit-scrollbar { display: none; }
+  .actionGroup { width: 100%; }
+  .actionGroup h3 { margin: 12px 0 8px; display: block; color: rgba(168,221,201,.76); font-size: .58rem; font-weight: 650; }
+  .materialCard { width: 88px; height: 116px; flex-basis: 88px; margin-left: -12px; }
+  .materialList[data-kind="action"] .materialCard { margin: 0; }
+  .themeCard { width: calc(50% - 5px); min-width: 0; margin: 0 0 8px; display: inline-grid; vertical-align: top; }
+  .themeCard:nth-child(even) { margin-left: 8px; }
+  .modePanel footer { min-height: 60px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); display: flex; }
+  .modePanel footer button { min-height: 42px; padding: 0 16px; font-size: .68rem; }
+  .error { right: 12px; bottom: calc(174px + env(safe-area-inset-bottom)); left: 12px; max-width: none; }
+}
+
+@media (hover: none) { .roleCardCopy small { max-height: 40px; opacity: 1; } .roleDefaultButton,.roleStartButton { opacity: 1; pointer-events: auto; transform: none; } .roleDefaultButton:disabled,.roleStartButton:disabled { opacity: .4; pointer-events: none; } }
+@media (prefers-reduced-motion: reduce) { .rolePanel,.modePanel,.roleCard,.roleCardCopy small,.roleDefaultButton,.addRoleCard,.materialCard { transition: none; } }

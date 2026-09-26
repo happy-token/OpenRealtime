@@ -1,0 +1,7 @@
+.wrapper { width: 100%; padding: 0 7px; }
+.optionItem,.highlightItem { justify-content: flex-start !important; min-width: 0; padding: 0 12px !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .78rem !important; }
+.optionItem { color: rgba(255,255,255,.52); }
+.highlightWrapper { border-left: 2px solid rgba(204,238,226,.85); border-radius: 3px; color: #fff; background: rgba(20,28,30,.28); backdrop-filter: blur(var(--panel-blur,12px)); }
+.highlightItem { color: #fff; font-weight: 680; }
+.wrapper [data-rwp]:focus-visible { outline: 2px solid rgba(204,238,226,.85); outline-offset: -2px; }
+@media (max-width: 620px) { .optionItem,.highlightItem { padding: 0 6px !important; font-size: .7rem !important; } }

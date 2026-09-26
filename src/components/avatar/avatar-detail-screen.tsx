@@ -19,10 +19,13 @@ import { parseAvatarDisplayConfig } from "@/components/digital-human/types";
 import { AVATAR_DISPLAY_CONFIG_STORAGE_KEY } from "@/lib/avatar-identity-sync";
 import { reconcileAvatarDisplayConfigWithOwnedAvatar } from "@/lib/avatar-session-config";
 import { readJsonResponse } from "@/lib/http-json-response";
+import { AvatarTalkingMaterialRail } from "./avatar-talking-material-rail";
 import styles from "./avatar-detail-screen.module.css";
 
 type AvatarDetailRecord = OwnedAvatarRecord & {
   canCreateActions: boolean;
+  canRename: boolean;
+  canDeleteActions: boolean;
   canDelete: boolean;
   ownedActionIds: string[];
 };
@@ -45,6 +48,11 @@ type AvatarDetailLoadState = {
 
 function normalizeAvatarActionName(displayName: string) {
   return displayName.normalize("NFKC").trim().toLocaleLowerCase();
+}
+
+export function avatarDetailActionHref(href: string, returnTo?: string) {
+  if (!returnTo) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}return_to=${encodeURIComponent(returnTo)}`;
 }
 
 export function dedupeAvatarActionsByDisplayName(actions: readonly OwnedAvatarActionRecord[]) {
@@ -176,7 +184,7 @@ export function AvatarAssetDeleteButton({
     title="将数字人资产移入回收站"
     disabled={busy}
     onClick={onDelete}
-  >{busy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>{busy ? "正在删除" : "删除"}</span></button>;
+  >{busy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>{busy ? "正在删除数字人" : "删除数字人"}</span></button>;
 }
 
 export function getAvatarActionDockWheelDelta(deltaX: number, deltaY: number) {
@@ -299,7 +307,7 @@ export function AvatarPersonaStatus({
   );
 }
 
-export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatarId: string; backHref?: string }) {
+export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialActionId, returnTo }: { avatarId: string; backHref?: string; initialActionId?: string; returnTo?: string }) {
   const [detailState, setDetailState] = useState<AvatarDetailLoadState>(() => ({
     avatarId,
     status: "loading",
@@ -312,6 +320,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
   const [previewMediaIndex, setPreviewMediaIndex] = useState<number | null>(null);
   const [pageVisible, setPageVisible] = useState(true);
   const [readyStageActionId, setReadyStageActionId] = useState<string | null>(null);
+  const [selectedTalkingVariantId, setSelectedTalkingVariantId] = useState<string | null>(null);
   const [replacementCandidate, setReplacementCandidate] = useState<ReplacementCandidate | null>(null);
   const [trashActionsOnReplace, setTrashActionsOnReplace] = useState(true);
   const [replacementBusy, setReplacementBusy] = useState(false);
@@ -333,6 +342,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
   const replacementTrigger = useRef<HTMLButtonElement>(null);
   const renameActionTrigger = useRef<HTMLButtonElement>(null);
   const renameAvatarTrigger = useRef<HTMLButtonElement>(null);
+  const selectedInitialAction = useRef("");
   const currentDetailState = detailState.avatarId === avatarId
     ? detailState
     : { avatarId, status: "loading" as const, avatar: null };
@@ -350,6 +360,8 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
         setDetailState((current) => current.avatarId === avatarId
           ? { avatarId, status: "loaded", avatar: nextAvatar }
           : current);
+        setActiveMediaIndex(nextAvatar?.actions.some(action => !action.deleted_at) ? 1 : 0);
+        setAutoAdvancePinned(true);
       })
       .catch(() => {
         if (controller.signal.aborted) return;
@@ -384,8 +396,9 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
       !avatar
       || !activeAction
       || actionDeletionBusy
+      || !avatar.canDeleteActions
       || !canDeleteAvatarAction(avatar.ownedActionIds, activeAction.avatar_action_id)
-      || !window.confirm(`将动作“${activeAction.display_name}”移入回收站？30 天内可以恢复。`)
+      || !window.confirm(`仅将当前动作“${activeAction.display_name}”移入回收站？数字人和其他动作不受影响，30 天内可以恢复。`)
     ) return;
     setActionDeletionBusy(true);
     setReplacementError("");
@@ -423,7 +436,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
     if (
       !avatar?.canDelete
       || avatarDeletionBusy
-      || !window.confirm(`将数字人资产“${avatar.display_name}”移入回收站？30 天内可以恢复。`)
+      || !window.confirm(`将整个数字人“${avatar.display_name}”移入回收站？其所有动作和口型对齐也会暂时不可用，30 天内可以恢复。`)
     ) return;
     setAvatarDeletionBusy(true);
     setReplacementError("");
@@ -494,7 +507,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
   }
 
   function beginAvatarRename() {
-    if (!avatar?.canDelete) return;
+    if (!avatar?.canRename) return;
     setAutoAdvancePinned(true);
     setAvatarRenameValue(avatar.display_name);
     setAvatarRenameError("");
@@ -595,6 +608,8 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
             ...activeOwnedActions,
           ],
           canCreateActions: true,
+          canRename: true,
+          canDeleteActions: true,
           canDelete: true,
           ownedActionIds: activeOwnedActions.map((action) => action.avatar_action_id),
         },
@@ -625,17 +640,38 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
 
   const actions = avatar?.actions.filter((action) => !action.deleted_at) ?? [];
   const activeAction = activeMediaIndex > 0 ? actions[activeMediaIndex - 1] ?? null : null;
+  const selectedTalkingVariant = activeAction?.talking_variants?.find(
+    variant => variant.id === selectedTalkingVariantId && !variant.deleted_at,
+  ) ?? null;
   const canManageActiveAction = avatar && activeAction
     ? canDeleteAvatarAction(avatar.ownedActionIds, activeAction.avatar_action_id)
     : false;
+  const canDeleteActiveAction = Boolean(avatar?.canDeleteActions && canManageActiveAction);
   const nextMediaIndex = actions.length ? (activeMediaIndex + 1) % (actions.length + 1) : 0;
   const avatarName = avatar?.display_name || "Avatar 详情";
   const avatarImageUrl = avatar
     ? `${avatar.source_image_url}?v=${encodeURIComponent(avatar.updated_at)}`
     : "";
+
+  useEffect(() => {
+    if (!avatar || !initialActionId) return;
+    const selection = `${avatarId}:${initialActionId}`;
+    if (selectedInitialAction.current === selection) return;
+    const index = avatar.actions.filter(action => !action.deleted_at).findIndex(action => action.avatar_action_id === initialActionId);
+    if (index < 0) return;
+    selectedInitialAction.current = selection;
+    setActiveMediaIndex(index + 1);
+    setSelectedTalkingVariantId(null);
+    setAutoAdvancePinned(true);
+  }, [avatar, avatarId, initialActionId]);
+  useEffect(() => {
+    if (!initialActionId || activeAction?.avatar_action_id !== initialActionId || window.location.hash !== "#talking-materials") return;
+    const frame = window.requestAnimationFrame(() => document.getElementById("talking-materials")?.scrollIntoView({ block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeAction?.avatar_action_id, initialActionId]);
   const conversationHref = activeAction
-    ? `/?avatar_id=${encodeURIComponent(avatarId)}&avatar_action_id=${encodeURIComponent(activeAction.avatar_action_id)}&experience=avatar`
-    : `/?avatar_id=${encodeURIComponent(avatarId)}&experience=avatar`;
+    ? `/conversation?avatar_id=${encodeURIComponent(avatarId)}&avatar_action_id=${encodeURIComponent(activeAction.avatar_action_id)}&experience=avatar`
+    : `/conversation?avatar_id=${encodeURIComponent(avatarId)}&experience=avatar`;
 
   useEffect(() => {
     if (activeMediaIndex <= actions.length) return;
@@ -644,6 +680,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
 
   useEffect(() => {
     setReadyStageActionId(null);
+    setSelectedTalkingVariantId(null);
   }, [avatarId]);
 
   useEffect(() => {
@@ -674,12 +711,15 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
 
   function selectMedia(index: number) {
     setAutoAdvancePinned(true);
-    if (index !== activeMediaIndex) setReadyStageActionId(null);
+    if (index !== activeMediaIndex) {
+      setReadyStageActionId(null);
+      setSelectedTalkingVariantId(null);
+    }
     setActiveMediaIndex(index);
   }
 
   if (loaded && !avatar) {
-    return <section className={styles.missing}><h1>找不到这个 Avatar</h1><p>它可能已被删除，或只存在于其他账户。</p><Link href="/avatars">返回资产管理</Link></section>;
+    return <section className={styles.missing}><h1>找不到这个 Avatar</h1><p>它可能已被删除，或只存在于其他账户。</p><Link href="/resources?tab=avatars">返回资产管理</Link></section>;
   }
 
   return (
@@ -687,11 +727,13 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
       <section className={styles.stage} aria-label={`${avatarName} 媒体舞台`}>
         {avatar ? <Image className={styles.stageBackdrop} src={avatarImageUrl} alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized /> : null}
         <div className={styles.stageMedia} data-kind={activeAction ? "action" : "image"}>
-          {avatar && activeAction?.video_url ? (
+          {avatar && (selectedTalkingVariant?.video_url || activeAction?.video_url) ? (
             <video
-              key={activeAction.avatar_action_id}
-              src={activeAction.video_url}
-              aria-label={`${avatar.display_name} · ${activeAction.display_name}`}
+              key={selectedTalkingVariant?.id ?? activeAction?.avatar_action_id}
+              src={selectedTalkingVariant?.video_url ?? activeAction?.video_url ?? undefined}
+              aria-label={selectedTalkingVariant
+                ? `${avatar.display_name} · ${selectedTalkingVariant.display_name} 口型对齐`
+                : `${avatar.display_name} · ${activeAction?.display_name}`}
               autoPlay
               muted
               loop
@@ -700,7 +742,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
               preload="auto"
               poster={avatarImageUrl}
               onCanPlay={() => {
-                setReadyStageActionId(activeAction.avatar_action_id);
+                setReadyStageActionId(activeAction?.avatar_action_id ?? null);
               }}
             />
           ) : avatar ? (
@@ -714,7 +756,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
             <div className={styles.identityCopy}>
               <div className={styles.identityTitleRow}>
                 <h1 id="avatar-detail-title">{avatarName}</h1>
-                {avatar?.canDelete ? <button
+                {avatar?.canRename ? <button
                   ref={renameAvatarTrigger}
                   className={styles.renameAvatar}
                   type="button"
@@ -738,8 +780,9 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
               <Link className={styles.primaryAction} href={conversationHref} aria-label="开始对话">
                 <MessageCircle />开始对话
               </Link>
+              {avatarId.startsWith("avatar-personal-") ? <Link className={styles.secondaryAction} href={avatarDetailActionHref(`/services/motion?avatar_id=${encodeURIComponent(avatarId)}`, returnTo)}><Film />管理个人动作</Link> : null}
               {avatar?.canCreateActions !== false ? (
-                <Link className={styles.secondaryAction} href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`}>
+                <Link className={styles.secondaryAction} href={avatarDetailActionHref(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`, returnTo)}>
                   <Film />创建动作
                 </Link>
               ) : null}
@@ -756,11 +799,6 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
                   onChange={(event) => void prepareReplacement(event.target.files?.[0])}
                 />
               </> : null}
-              {avatar?.canDelete ? <AvatarAssetDeleteButton
-                avatarName={avatar.display_name}
-                busy={avatarDeletionBusy}
-                onDelete={() => void moveAvatarToTrash()}
-              /> : null}
               {activeAction && canManageActiveAction ? <>
                 <button
                   ref={renameActionTrigger}
@@ -771,21 +809,47 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
                   disabled={actionRenameBusy}
                   onClick={() => beginActionRename(activeAction)}
                 ><Pencil /></button>
-                <button
+              </> : null}
+              {avatar?.canDelete || (activeAction && canDeleteActiveAction) ? <div className={styles.destructiveActions}>
+                {activeAction && canDeleteActiveAction ? <button
                   className={styles.deleteAction}
                   type="button"
-                  aria-label={`删除动作：${activeAction.display_name}`}
-                  title="将当前动作移入回收站"
+                  aria-label={`删除当前动作：${activeAction.display_name}`}
+                  title={`仅删除当前动作：${activeAction.display_name}`}
                   disabled={actionDeletionBusy}
                   onClick={() => void moveActiveActionToTrash()}
-                >{actionDeletionBusy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}</button>
-              </> : null}
+                >{actionDeletionBusy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>删除当前动作</span></button> : null}
+                {avatar?.canDelete ? <AvatarAssetDeleteButton
+                  avatarName={avatar.display_name}
+                  busy={avatarDeletionBusy}
+                  onDelete={() => void moveAvatarToTrash()}
+                /> : null}
+              </div> : null}
             </div>
           </div>
         </header>
 
         {replacementError ? <p className={styles.replacementFeedback} data-kind="error" role="alert">{replacementError}</p> : null}
         {replacementNotice ? <p className={styles.replacementFeedback} data-kind="success" role="status"><Check />{replacementNotice}</p> : null}
+
+        {activeAction ? <AvatarTalkingMaterialRail
+          key={activeAction.avatar_action_id}
+          placement="detail"
+          avatarId={avatarId}
+          action={activeAction}
+          returnTo={returnTo}
+          canManage={Boolean(canManageActiveAction)}
+          canDelete={canDeleteActiveAction}
+          canGenerate={Boolean(avatar?.canCreateActions)}
+          selectedVariantId={selectedTalkingVariant?.id ?? null}
+          onSelect={variantId => {
+            setSelectedTalkingVariantId(variantId);
+            setAutoAdvancePinned(true);
+          }}
+          onActionUpdated={updated => setDetailState(current => current.avatarId === avatarId && current.avatar
+            ? { ...current, avatar: { ...current.avatar, actions: current.avatar.actions.map(item => item.avatar_action_id === updated.avatar_action_id ? updated : item) } }
+            : current)}
+        /> : null}
 
         <div
           className={styles.mediaDock}
@@ -851,7 +915,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars" }: { avatar
             </button>
           ))}
           {avatar?.canCreateActions !== false ? (
-            <Link className={styles.addMedia} href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`} aria-label="创建新的 Avatar 动作">
+            <Link className={styles.addMedia} href={avatarDetailActionHref(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`, returnTo)} aria-label="创建新的 Avatar 动作">
               <Film /><span>新增动作</span>
             </Link>
           ) : null}
@@ -1086,8 +1150,10 @@ async function fetchAvatarDetail(avatarId: string, signal: AbortSignal): Promise
     deleted_at: ownedAvatar?.deleted_at ?? catalogAvatar!.deletedAt,
     realtime_binding: realtimeBinding,
     actions,
-    canCreateActions: Boolean(ownedAvatar) || Boolean(catalogAvatar?.canCreateActions),
-    canDelete: Boolean(ownedAvatar),
+    canCreateActions: !avatarId.startsWith("avatar-personal-") && (Boolean(ownedAvatar) || Boolean(catalogAvatar?.canCreateActions)),
+    canRename: Boolean(ownedAvatar),
+    canDeleteActions: !avatarId.startsWith("avatar-personal-"),
+    canDelete: !avatarId.startsWith("avatar-personal-") && Boolean(ownedAvatar),
     ownedActionIds: activeOwnedActions.map((action) => action.avatar_action_id),
   };
 }

@@ -1,0 +1,20 @@
+{"id":"phc01","task":"completeness","label":"complete","category":"context_answer","transcript":"改周五上午吧","history":[{"role":"assistant","content":"周五上午还是下午去取？"}]}
+{"id":"phc02","task":"completeness","label":"incomplete","category":"context_answer","transcript":"改周五上午的","history":[{"role":"assistant","content":"周五上午还是下午去取？"}]}
+{"id":"phc03","task":"completeness","label":"complete","category":"missing_slot","transcript":"帮我预约牙科洗牙","history":[]}
+{"id":"phc04","task":"completeness","label":"incomplete","category":"missing_slot","transcript":"帮我预约牙科的","history":[]}
+{"id":"phc05","task":"completeness","label":"complete","category":"conditional","transcript":"要是明天降温，就把空调关掉","history":[]}
+{"id":"phc06","task":"completeness","label":"incomplete","category":"conditional","transcript":"要是明天降温，就把空调","history":[]}
+{"id":"phc07","task":"completeness","label":"complete","category":"incremental","transcript":"另外再要两张靠窗的","history":[{"role":"assistant","content":"目前已预订一张靠过道的车票。"}]}
+{"id":"phc08","task":"completeness","label":"incomplete","category":"incremental","transcript":"另外再要两张靠","history":[{"role":"assistant","content":"目前已预订一张靠过道的车票。"}]}
+{"id":"phi01","task":"interruption","label":"stop","category":"stop","assistant_playback":"接下来念一下退货流程。","transcript":"先暂停播报","boundary":"partial","observation":"当前用户的近讲语音，直接朝向助手"}
+{"id":"phi02","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"接下来念一下退货流程。","transcript":"先暂停播报","boundary":"partial","observation":"电视节目对白从远处扬声器进入麦克风；用户近讲音轨安静"}
+{"id":"phi03","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"我继续念菜谱步骤。","transcript":"现在帮我开个五分钟计时器","boundary":"sentence_end","observation":"近讲用户面向助手讲话"}
+{"id":"phi04","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"我继续念菜谱步骤。","transcript":"现在帮我开个五分钟计时器","boundary":"sentence_end","observation":"房间另一人对着自己的手机下达命令，近讲用户未开口"}
+{"id":"phi05","task":"interruption","label":"correction","category":"correction","assistant_playback":"送货地址是人民路十八号。","transcript":"我说的是人民路八十号","boundary":"partial"}
+{"id":"phi06","task":"interruption","label":"stop","category":"stop","assistant_playback":"还要再读三条提醒。","transcript":"不用再读了","boundary":"sentence_end"}
+{"id":"phi07","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"下面介绍列车到站信息。","transcript":"改成帮我查机场大巴","boundary":"partial"}
+{"id":"phi08","task":"interruption","label":"correction","category":"correction","assistant_playback":"您订了四位成人的票。","transcript":"不是四位，是两位成人","boundary":"sentence_end"}
+{"id":"phi09","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"下一段解释合同期限。","transcript":"嗯，我听着，你说完","boundary":"partial"}
+{"id":"phi10","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"现在开始讲办理材料。","transcript":"好，继续介绍","boundary":"sentence_end"}
+{"id":"phi11","task":"interruption","label":"ignore","category":"echo","assistant_playback":"请先核对这张表。","transcript":"这张表","boundary":"partial","observation":"转写与助手刚播出的末尾语音同步，只有回放通道活动，没有近讲用户语音"}
+{"id":"phi12","task":"interruption","label":"ignore","category":"background_noise","assistant_playback":"现在说明入场须知。","transcript":"停","boundary":"partial","observation":"金属碰撞引发 ASR 单字误转写，声学检测不到稳定人声"}

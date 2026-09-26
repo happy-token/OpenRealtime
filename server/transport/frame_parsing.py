@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from server.transport.frames import (
     AvatarPersonaConfigFrame,
+    ToolConfigFrame,
     CancelAssistantResponseFrame,
     ClientConnectionQualityFrame,
     ConfirmationDecisionFrame,
@@ -68,6 +69,8 @@ def parse_inbound_frame(raw_message: str | bytes) -> InboundFrame | None:
             return TtsConfigFrame.model_validate(payload)
         if frame_type == "avatar_persona_config":
             return AvatarPersonaConfigFrame.model_validate(payload)
+        if frame_type == "tool_config":
+            return ToolConfigFrame.model_validate(payload)
         if frame_type == "confirmation_decision":
             return ConfirmationDecisionFrame.model_validate(payload)
     except ValidationError:

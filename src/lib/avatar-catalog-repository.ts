@@ -30,6 +30,15 @@ export async function listOwnedAvatars(root = repositoryRoot()) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
       }));
+      await Promise.all(purged.removedVariantIds.map(async (id) => {
+        try {
+          await unlink(path.join(process.cwd(), "public", "digital-human", "talking-variants", `${id}.mp4`));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            console.warn(`Failed to remove expired talking material ${id}`, error);
+          }
+        }
+      }));
     }
     return purged.records.map(publicRecord);
   });
@@ -210,15 +219,88 @@ export async function updateOwnedAvatarAction(
 
 export async function attachTalkingVariant(avatarId: string, actionId: string, variant: AvatarTalkingVariant, root = repositoryRoot()) {
   validateAvatarId(avatarId);
-  if (!ACTION_ID.test(actionId) || !isTalkingVariant(variant)) throw new Error("讲话变体参数无效");
+  if (!ACTION_ID.test(actionId) || !isTalkingVariant(variant) || variant.deleted_at) throw new Error("讲话变体参数无效");
   return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const avatar = records.find(record => record.avatar_id === avatarId && !record.deleted_at);
     const action = avatar?.actions.find(record => record.avatar_action_id === actionId && !record.deleted_at);
     if (!avatar || !action) throw new Error("找不到基础动作");
     if (action.video_url !== variant.source_video_url) throw new Error("讲话变体底片不匹配");
-    const updated = { ...action, talking_variants: [...(action.talking_variants || []).filter(item => item.id !== variant.id && item.method !== variant.method), variant] };
+    if (action.talking_variants?.some(item => item.id === variant.id && item.deleted_at)) throw new Error("已删除的口型对齐不能重新挂载");
+    const replacedAt = new Date().toISOString();
+    const updated = { ...action, talking_variants: [
+      ...(action.talking_variants || []).filter(item => item.id !== variant.id).map(item => item.method === variant.method && !item.deleted_at
+        ? { ...item, deleted_at: replacedAt }
+        : item),
+      variant,
+    ] };
     await writeCatalog(root, records.map(record => record === avatar ? { ...avatar, updated_at: new Date().toISOString(), actions: avatar.actions.map(item => item === action ? updated : item) } : record));
+    return updated;
+  });
+}
+
+export async function setTalkingVariantDeletion(
+  avatarId: string,
+  actionId: string,
+  variantId: string,
+  deleted: boolean,
+  root = repositoryRoot(),
+) {
+  validateAvatarId(avatarId);
+  if (!ACTION_ID.test(actionId) || !/^[a-z0-9-]{1,100}$/.test(variantId)) throw new Error("口型对齐 ID 无效");
+  return withAvatarCatalogLock(root, async () => {
+    const records = await readCatalog(root);
+    const avatar = records.find(record => record.avatar_id === avatarId && !record.deleted_at);
+    const action = avatar?.actions.find(record => record.avatar_action_id === actionId && !record.deleted_at);
+    const variant = action?.talking_variants?.find(record => record.id === variantId);
+    if (!avatar || !action || !variant) throw new Error("找不到口型对齐");
+    if (!deleted && variant.deleted_at && new Date(variant.deleted_at).valueOf() <= Date.now() - 30 * 24 * 60 * 60 * 1_000) {
+      throw new Error("口型对齐已超过 30 天恢复期限");
+    }
+    if (!deleted && variant.deleted_at && action.talking_variants?.some(item => item.id !== variantId && item.method === variant.method && !item.deleted_at)) {
+      throw new Error("同一生成方式已有其他口型对齐，请先处理现有版本");
+    }
+    const updated: OwnedAvatarActionRecord = {
+      ...action,
+      talking_variants: action.talking_variants?.map(item => item.id === variantId
+        ? { ...item, deleted_at: deleted ? item.deleted_at || new Date().toISOString() : null }
+        : item),
+    };
+    await writeCatalog(root, records.map(record => record === avatar
+      ? { ...avatar, updated_at: new Date().toISOString(), actions: avatar.actions.map(item => item === action ? updated : item) }
+      : record));
+    return updated;
+  });
+}
+
+export async function renameTalkingVariant(
+  avatarId: string,
+  actionId: string,
+  variantId: string,
+  displayName: string,
+  root = repositoryRoot(),
+) {
+  validateAvatarId(avatarId);
+  if (!ACTION_ID.test(actionId) || !/^[a-z0-9-]{1,100}$/.test(variantId)) throw new Error("口型对齐 ID 无效");
+  const name = displayName.trim();
+  if (!name) throw new Error("请填写口型对齐名称");
+  if (name.length > 50) throw new Error("口型对齐名称不能超过 50 字");
+  return withAvatarCatalogLock(root, async () => {
+    const records = await readCatalog(root);
+    const avatar = records.find(record => record.avatar_id === avatarId && !record.deleted_at);
+    const action = avatar?.actions.find(record => record.avatar_action_id === actionId && !record.deleted_at);
+    const variant = action?.talking_variants?.find(record => record.id === variantId);
+    if (!avatar || !action || !variant) throw new Error("找不到口型对齐");
+    if (variant.deleted_at) throw new Error("已删除的口型对齐不能改名");
+    const updated: OwnedAvatarActionRecord = {
+      ...action,
+      talking_variants: action.talking_variants?.map(item => item.id === variantId
+        ? { ...item, display_name: name }
+        : item),
+    };
+    await writeCatalog(root, records.map(record => record === avatar
+      ? { ...avatar, updated_at: new Date().toISOString(), actions: avatar.actions.map(item => item === action ? updated : item) }
+      : record));
     return updated;
   });
 }
@@ -231,6 +313,7 @@ function isTalkingVariant(value: unknown): value is AvatarTalkingVariant {
     && (item.method === "wav2lip" || item.method === "minimax" || item.method === "musetalk" || item.method === "lipforcing")
     && typeof item.source_video_url === "string"
     && item.video_url === `/digital-human/talking-variants/${item.id}.mp4`
+    && (item.deleted_at === undefined || item.deleted_at === null || typeof item.deleted_at === "string")
     && (item.processing === "mouth-only" || (item.processing === "original" && (item.method === "minimax" || item.method === "musetalk" || item.method === "lipforcing"))) && item.validation === "pending";
 }
 
@@ -239,7 +322,11 @@ export async function readOwnedAvatarImage(avatarId: string, root = repositoryRo
   return withAvatarCatalogLock(root, async () => {
     const record = (await readCatalog(root)).find((avatar) => avatar.avatar_id === avatarId);
     if (!record) return null;
-    return { bytes: await readFile(storedImagePath(root, record)), mediaType: record.source_image_media_type };
+    return {
+      bytes: await readFile(storedImagePath(root, record)),
+      mediaType: record.source_image_media_type,
+      version: sourceImageVersion(record),
+    };
   });
 }
 
@@ -247,13 +334,17 @@ function publicRecord(record: StoredAvatar): OwnedAvatarRecord {
   return {
     avatar_id: record.avatar_id,
     display_name: record.display_name,
-    source_image_url: `/api/avatars/${encodeURIComponent(record.avatar_id)}/image`,
+    source_image_url: `/api/avatars/${encodeURIComponent(record.avatar_id)}/image?v=${encodeURIComponent(sourceImageVersion(record))}`,
     created_at: record.created_at,
     updated_at: record.updated_at,
     deleted_at: record.deleted_at,
     realtime_binding: record.realtime_binding,
     actions: record.actions,
   };
+}
+
+function sourceImageVersion(record: StoredAvatar) {
+  return record.source_image_version ?? record.updated_at;
 }
 
 function repositoryRoot() {
@@ -302,20 +393,37 @@ function decodeImage(value: string) {
 function purgeExpired(records: StoredAvatar[]) {
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1_000;
   const removedAvatars: StoredAvatar[] = [];
+  const removedVariantIds = new Set<string>();
   let changed = false;
+  const collectVariant = (variant: AvatarTalkingVariant) => {
+    if (isTalkingVariant(variant)) removedVariantIds.add(variant.id);
+  };
   const retained = records.flatMap((avatar) => {
     if (avatar.deleted_at && new Date(avatar.deleted_at).valueOf() <= cutoff) {
       removedAvatars.push(avatar);
+      avatar.actions.forEach(action => action.talking_variants?.forEach(collectVariant));
       changed = true;
       return [];
     }
-    const actions = avatar.actions.filter((action) => (
-      !action.deleted_at || new Date(action.deleted_at).valueOf() > cutoff
-    ));
+    const actions = avatar.actions.flatMap((action) => {
+      if (action.deleted_at && new Date(action.deleted_at).valueOf() <= cutoff) {
+        action.talking_variants?.forEach(collectVariant);
+        changed = true;
+        return [];
+      }
+      const talkingVariants = action.talking_variants?.filter(variant => {
+        if (!variant.deleted_at || new Date(variant.deleted_at).valueOf() > cutoff) return true;
+        collectVariant(variant);
+        changed = true;
+        return false;
+      });
+      return [{ ...action, ...(talkingVariants ? { talking_variants: talkingVariants } : {}) }];
+    });
     if (actions.length !== avatar.actions.length) changed = true;
     return [{ ...avatar, actions }];
   });
-  return { records: retained, removedAvatars, changed };
+  const referencedIds = new Set(retained.flatMap(avatar => avatar.actions.flatMap(action => action.talking_variants?.map(variant => variant.id) ?? [])));
+  return { records: retained, removedAvatars, removedVariantIds: [...removedVariantIds].filter(id => !referencedIds.has(id)), changed };
 }
 
 function validateAvatarId(value: string) {

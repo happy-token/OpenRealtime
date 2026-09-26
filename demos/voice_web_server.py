@@ -51,6 +51,10 @@ import logging
 import os
 import wave
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from server.voice_session.public_admission import VoiceAdmissionBinding
 
 from server.application.runtime import (
     ApplicationRuntime,
@@ -62,8 +66,10 @@ from server.avatar_assets.composition import (
     build_avatar_asset_runtime_from_env,
 )
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
-from server.brain.base import Brain
 from server.brain.avatar_persona import AvatarPersonaPromptCatalog, SessionAvatarPersona
+from server.brain.session_memory import SessionMemory
+from server.brain.role_model import role_model_id, role_tool_ids
+from server.brain.base import Brain
 from server.brain.chat_brain import ChatBrain
 from server.brain.llm_clients import (
     EchoLlmClient,
@@ -151,6 +157,9 @@ from server.tools.policy_gateway import (
 )
 from server.tools.registry import ToolRegistry
 from server.tools.web_search_source import WebSearchToolSource
+from server.tools.knowledge_base_source import KnowledgeBaseToolSource
+from server.tools.local_catalog_source import LocalCatalogToolSource
+from server.knowledge_base.local_catalog import LocalCatalogKnowledgeBase
 from server.transport.base import AuthenticatedTransportIdentity
 from server.transport.frames import (
     AvatarPersonaConfigFrame,
@@ -161,6 +170,7 @@ from server.transport.frames import (
     SessionCapabilitiesFrame,
     TtsConfigAckFrame,
     TtsConfigFrame,
+    ToolConfigFrame,
 )
 from server.transport.plugins.websocket import (
     StaticBearerWebSocketAuthenticator,
@@ -211,6 +221,8 @@ BELLA_BASE_URL = "https://bella-openapi.ke.com/v1"
 BELLA_LLM_MODEL = "gpt-5.6-sol"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_LLM_MODEL = "deepseek-v4-flash"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+OPENAI_LLM_MODEL = "gpt-4.1-mini"
 
 _application_runtime: ApplicationRuntime | None = None
 _avatar_asset_runtime: AvatarAssetRuntime | None = None
@@ -311,8 +323,23 @@ def _build_endpoint_security():
             continuation_authorizer=_authorize_continuation,
         )
         return registry, functools.partial(serve, authenticator=authenticator)
+    if mode == "public_ticket":
+        from server.voice_session.public_admission import (
+            PublicVoiceTicketAuthenticator,
+            admit_fresh_public_session,
+        )
+
+        registry = EndpointSessionRegistry(
+            supported_protocol_versions=(2,),
+            thread_authorizer=_authorize_requested_thread,
+            continuation_authorizer=_authorize_continuation,
+            fresh_session_admitter=admit_fresh_public_session,
+        )
+        return registry, functools.partial(
+            serve, authenticator=PublicVoiceTicketAuthenticator(),
+        )
     raise RuntimeError(
-        "VOICEAGENT_ENDPOINT_AUTH_MODE must be development or static_bearer"
+        "VOICEAGENT_ENDPOINT_AUTH_MODE must be development, static_bearer, or public_ticket"
     )
 
 
@@ -328,7 +355,8 @@ def _deepseek_api_key() -> str | None:
 
 
 def _llm_credentials_configured() -> bool:
-    return bool(os.environ.get("VOICEAGENT_LLM_API_KEY") or _deepseek_api_key() or _bella_api_key())
+    return bool(os.environ.get("VOICEAGENT_LLM_API_KEY") or _deepseek_api_key()
+                or os.environ.get("OPENAI_API_KEY") or _bella_api_key())
 
 
 def _deepseek_disable_thinking() -> bool:
@@ -338,7 +366,24 @@ def _deepseek_disable_thinking() -> bool:
     return configured.strip().lower() in ("1", "true", "yes")
 
 
-def _build_asr_engine() -> AsrEngine:
+def _bound_key(binding: VoiceAdmissionBinding, provider: str, source: str) -> str:
+    env_name = {
+        "doubao": "DOUBAO_API_KEY", "dashscope": "DASHSCOPE_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY",
+        "custom": "VOICEAGENT_LLM_API_KEY",
+        "bella": "API_KEY",
+    }[provider]
+    key = binding.credentials.get(provider) if source == "personal" else os.environ.get(env_name)
+    if not key:
+        raise RuntimeError(f"{provider} credential is not available for this session")
+    return key
+
+
+def _build_asr_engine(binding: VoiceAdmissionBinding | None = None) -> AsrEngine:
+    if binding is not None:
+        key = _bound_key(binding, binding.asr_provider, binding.asr_source)
+        return (BellaAsrEngine(api_key=key) if binding.asr_provider == "bella"
+                else DoubaoAsrEngine(api_key=key))
     backend = os.environ.get("VOICEAGENT_ASR_BACKEND", "doubao-direct")
     if backend == "bella":
         if _bella_api_key():
@@ -392,7 +437,34 @@ def _build_doubao_session_tts(config: TtsSessionConfig) -> DoubaoDirectTtsEngine
     return tts
 
 
-def _build_session_tts_engine() -> StreamingTtsEngine:
+def _build_session_tts_engine(
+    binding: VoiceAdmissionBinding | None = None,
+) -> StreamingTtsEngine:
+    if binding is not None:
+        key = _bound_key(binding, binding.tts_provider, binding.tts_source)
+        if binding.tts_provider == "dashscope":
+            factories: dict[str, TtsProviderFactory] = {
+                "bailian": lambda config: BailianTtsEngine(
+                    api_key=key,
+                    voice=(os.environ.get("BAILIAN_TTS_VOICE", BAILIAN_DEFAULT_VOICE)
+                           if config.voice == "__active_bailian_clone__" else config.voice),
+                    speech_rate=config.speech_rate,
+                    instruction=_bailian_tts_instruction(config.dialect),
+                ),
+            }
+            return SelectableTtsEngine(
+                factories=factories, provider="bailian",
+                config=TtsSessionConfig(
+                    voice=os.environ.get("BAILIAN_TTS_VOICE", BAILIAN_DEFAULT_VOICE),
+                ),
+            )
+        factories = {
+            "doubao": lambda config: _build_bound_doubao_tts(config, key),
+        }
+        return SelectableTtsEngine(
+            factories=factories, provider="doubao",
+            config=TtsSessionConfig(voice=DOUBAO_DEFAULT_VOICE),
+        )
     factories: dict[str, TtsProviderFactory] = {}
     if os.environ.get("DASHSCOPE_API_KEY"):
         factories["bailian"] = lambda config: BailianTtsEngine(
@@ -420,6 +492,14 @@ def _build_session_tts_engine() -> StreamingTtsEngine:
         )
     )
     return SelectableTtsEngine(factories=factories, provider=provider, config=config)
+
+
+def _build_bound_doubao_tts(config: TtsSessionConfig, key: str) -> DoubaoDirectTtsEngine:
+    tts = DoubaoDirectTtsEngine(
+        api_key=key, voice=config.voice, speech_rate=config.speech_rate,
+    )
+    tts.configure(config)
+    return tts
 
 
 def _supports_tts_preview(tts: object) -> bool:
@@ -475,7 +555,37 @@ async def _preview_voice(
     return output.getvalue(), "audio/wav"
 
 
-def _build_llm_client(telemetry: SessionTelemetry | None = None) -> LlmClient:
+def _build_llm_client(
+    telemetry: SessionTelemetry | None = None,
+    binding: VoiceAdmissionBinding | None = None,
+) -> LlmClient:
+    if binding is not None:
+        key = _bound_key(binding, binding.llm_provider, binding.llm_source)
+        if binding.llm_provider == "deepseek":
+            return OpenAiCompatibleLlmClient(
+                api_key=key,
+                base_url=DEEPSEEK_BASE_URL,
+                model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+                disable_thinking=_deepseek_disable_thinking(),
+                api_style=_llm_api_style(default="responses"),
+                telemetry=telemetry, provider_name="deepseek",
+            )
+        if binding.llm_provider == "openai":
+            return OpenAiCompatibleLlmClient(
+                api_key=key, base_url=OPENAI_BASE_URL,
+                model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+                api_style="chat_completions", telemetry=telemetry,
+                provider_name="openai",
+            )
+        if binding.llm_provider == "bella":
+            return OpenAiCompatibleLlmClient(
+                api_key=key, base_url=BELLA_BASE_URL, model=BELLA_LLM_MODEL,
+                telemetry=telemetry, provider_name="bella",
+            )
+        return OpenAiCompatibleLlmClient(
+            api_key=key, api_style=_llm_api_style(default="chat_completions"),
+            telemetry=telemetry,
+        )
     if os.environ.get("VOICEAGENT_LLM_API_KEY"):
         return OpenAiCompatibleLlmClient(
             api_style=_llm_api_style(default="chat_completions"),
@@ -491,6 +601,14 @@ def _build_llm_client(telemetry: SessionTelemetry | None = None) -> LlmClient:
             api_style=_llm_api_style(default="responses"),
             telemetry=telemetry,
             provider_name="deepseek",
+        )
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key:
+        return OpenAiCompatibleLlmClient(
+            api_key=openai_api_key, base_url=OPENAI_BASE_URL,
+            model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+            api_style="chat_completions", telemetry=telemetry,
+            provider_name="openai",
         )
     api_key = _bella_api_key()
     if api_key:
@@ -516,7 +634,29 @@ def _llm_api_style(*, default: str) -> str:
 
 def _build_tool_calling_llm_client(
     telemetry: SessionTelemetry | None = None,
+    binding: VoiceAdmissionBinding | None = None,
 ) -> ToolCallingLlmClient:
+    if binding is not None:
+        key = _bound_key(binding, binding.llm_provider, binding.llm_source)
+        if binding.llm_provider == "deepseek":
+            return OpenAiCompatibleToolCallingLlmClient(
+                api_key=key, base_url=DEEPSEEK_BASE_URL,
+                model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+                disable_thinking=_deepseek_disable_thinking(), telemetry=telemetry,
+                provider_name="deepseek",
+            )
+        if binding.llm_provider == "openai":
+            return OpenAiCompatibleToolCallingLlmClient(
+                api_key=key, base_url=OPENAI_BASE_URL,
+                model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+                telemetry=telemetry, provider_name="openai",
+            )
+        if binding.llm_provider == "bella":
+            return OpenAiCompatibleToolCallingLlmClient(
+                api_key=key, base_url=BELLA_BASE_URL, model=BELLA_LLM_MODEL,
+                telemetry=telemetry, provider_name="bella",
+            )
+        return OpenAiCompatibleToolCallingLlmClient(api_key=key, telemetry=telemetry)
     if os.environ.get("VOICEAGENT_LLM_API_KEY"):
         return OpenAiCompatibleToolCallingLlmClient(telemetry=telemetry)
     deepseek_api_key = _deepseek_api_key()
@@ -528,6 +668,13 @@ def _build_tool_calling_llm_client(
             disable_thinking=_deepseek_disable_thinking(),
             telemetry=telemetry,
             provider_name="deepseek",
+        )
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if openai_api_key:
+        return OpenAiCompatibleToolCallingLlmClient(
+            api_key=openai_api_key, base_url=OPENAI_BASE_URL,
+            model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+            telemetry=telemetry, provider_name="openai",
         )
     api_key = _bella_api_key()
     if api_key:
@@ -598,9 +745,17 @@ def _build_web_search(telemetry: SessionTelemetry | None = None) -> WebSearch:
     return DeterministicWebSearch()
 
 
-def _build_tool_registry(telemetry: SessionTelemetry | None = None) -> ToolRegistry:
+def _build_tool_registry(
+    telemetry: SessionTelemetry | None = None,
+    knowledge_base: LocalCatalogKnowledgeBase | None = None,
+    custom_tools: LocalCatalogToolSource | None = None,
+    *,
+    include_builtins: bool = True,
+) -> ToolRegistry:
     return ToolRegistry(
-        [ClockToolSource(), WebSearchToolSource(_build_web_search(telemetry))]
+        ([ClockToolSource(), WebSearchToolSource(_build_web_search(telemetry))] if include_builtins else [])
+        + ([KnowledgeBaseToolSource(knowledge_base)] if knowledge_base else [])
+        + ([custom_tools] if custom_tools else [])
     )
 
 
@@ -642,9 +797,15 @@ def _build_brain(
     tool_registry: ToolRegistry | None = None,
     telemetry: SessionTelemetry | None = None,
     avatar_persona: SessionAvatarPersona | None = None,
+    session_memory: SessionMemory | None = None,
+    tool_llm_client: ToolCallingLlmClient | None = None,
+    binding: VoiceAdmissionBinding | None = None,
 ) -> Brain:
-    prompt_transform = avatar_persona.apply if avatar_persona is not None else None
-    if not os.environ.get(_DEMO_TOOLS_ENV_VAR):
+    def prompt_transform(prompt: str) -> str:
+        if avatar_persona is not None:
+            prompt = avatar_persona.apply(prompt)
+        return session_memory.apply(prompt) if session_memory is not None else prompt
+    if tool_registry is None and not os.environ.get(_DEMO_TOOLS_ENV_VAR):
         return ChatBrain(
             llm_client,
             system_prompt_transform=prompt_transform,
@@ -652,7 +813,7 @@ def _build_brain(
         )
     registry = tool_registry or _build_tool_registry(telemetry)
     return ToolCallingBrain(
-        _build_tool_calling_llm_client(telemetry),
+        tool_llm_client or _build_tool_calling_llm_client(telemetry, binding),
         registry,
         system_prompt_transform=prompt_transform,
     )
@@ -870,13 +1031,21 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
     ledger = EventLedger()
     ledger.subscribe(functools.partial(_log_ledger_event, session.session_id))
     ledger.subscribe(telemetry.observe_ledger)
-    tts = _build_session_tts_engine()
+    binding = session.authenticated_identity.admission if session.authenticated_identity else None
+    if os.environ.get("VOICEAGENT_ENDPOINT_AUTH_MODE") == "public_ticket" and binding is None:
+        raise RuntimeError("public voice requires a verified admission")
+    tts = _build_session_tts_engine(binding)
     avatar_persona = _build_session_avatar_persona()
+    session_memory = SessionMemory(identity.user_id)
+    knowledge_base = LocalCatalogKnowledgeBase(identity.user_id) if os.environ.get(_DEMO_TOOLS_ENV_VAR) or binding is not None else None
+    custom_tools = LocalCatalogToolSource(public_only=binding is not None, user_id=identity.user_id) if os.environ.get(_DEMO_TOOLS_ENV_VAR) or binding is not None else None
     tool_registry = (
-        _build_tool_registry(telemetry)
-        if os.environ.get(_DEMO_TOOLS_ENV_VAR)
+        _build_tool_registry(telemetry, knowledge_base, custom_tools, include_builtins=binding is None)
+        if (os.environ.get(_DEMO_TOOLS_ENV_VAR) and binding is None) or binding is not None
         else None
     )
+    if tool_registry is not None:
+        tool_registry.select_tools([])
     tool_control_handler_factory = None
     confirmation_controller = None
     confirmation_authority = None
@@ -919,8 +1088,9 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             "Native Realtime remains experimental"
         )
     elif realtime_engine == "cascaded":
-        asr = _build_asr_engine()
-        llm_client = _build_llm_client(telemetry)
+        asr = _build_asr_engine(binding)
+        llm_client = _build_llm_client(telemetry, binding)
+        tool_llm_client = _build_tool_calling_llm_client(telemetry, binding) if tool_registry is not None else None
         semantic_interruption_classifier = (
             _build_semantic_interruption_classifier(llm_client)
         )
@@ -932,6 +1102,8 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
                     llm_client,
                     telemetry=telemetry,
                     avatar_persona=avatar_persona,
+                    session_memory=session_memory,
+                    binding=binding,
                 )
             )
             if getattr(tts, "synthesize_duplex", None) is not None:
@@ -950,13 +1122,16 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
                 tool_registry=tool_registry,
                 telemetry=telemetry,
                 avatar_persona=avatar_persona,
+                session_memory=session_memory,
+                tool_llm_client=tool_llm_client,
+                binding=binding,
             )
             assert isinstance(tool_brain, ToolCallingBrain)
             speculative_chat = SpeculativeStreamingBrain(
                 BrainStreamingAdapter(
                     ChatBrain(
                         llm_client,
-                        system_prompt_transform=avatar_persona.apply,
+                        system_prompt_transform=lambda prompt: session_memory.apply(avatar_persona.apply(prompt)),
                     )
                 )
             )
@@ -987,7 +1162,7 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             semantic_interruption_timeout_ms=float(
                 os.environ.get("VOICEAGENT_SEMANTIC_INTERRUPTION_TIMEOUT_MS", "800")
             ),
-            eot_classifier=_build_eot_classifier(llm_client),
+            eot_classifier=(None if binding is not None else _build_eot_classifier(llm_client)),
             classifier_timeout_ms=float(
                 os.environ.get("VOICEAGENT_EOT_LLM_TIMEOUT_MS", "5000")
             ),
@@ -1154,12 +1329,37 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             )
         elif isinstance(frame, AvatarPersonaConfigFrame):
             try:
-                avatar_persona.select_avatar(frame.avatar_id)
+                avatar_persona.select(
+                    avatar_id=frame.avatar_id,
+                    persona_id=frame.persona_id,
+                )
             except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
                 logger.exception(
-                    "Avatar Persona selection failed: avatar_id=%r",
+                    "Role Persona selection failed: avatar_id=%r persona_id=%r",
                     frame.avatar_id,
+                    frame.persona_id,
                 )
+        elif isinstance(frame, ToolConfigFrame):
+            session_memory.select_role(frame.role_id)
+            selected_model = role_model_id(identity.user_id, frame.role_id)
+            allowed_tool_ids = role_tool_ids(identity.user_id, frame.role_id)
+            for client in (llm_client, tool_llm_client):
+                if client is not None and hasattr(client, "select_model"):
+                    client.select_model(selected_model)
+            if tool_registry is not None:
+                try:
+                    if knowledge_base is not None:
+                        knowledge_base.select_role(frame.role_id)
+                    allowed_custom = custom_tools.select_role(frame.role_id) if custom_tools is not None else set()
+                    tool_registry.select_tools([
+                        name for name in frame.tool_names
+                        if (binding is None and name == "get_current_datetime" and "tool-current-time" in allowed_tool_ids)
+                        or (binding is None and name == "search_web" and "tool-web-search" in allowed_tool_ids)
+                        or (name == "search_knowledge_base" and knowledge_base is not None and frame.role_id is not None)
+                        or name in allowed_custom
+                    ])
+                except ValueError:
+                    logger.exception("Tool selection failed: tool_names=%r", frame.tool_names)
         elif isinstance(frame, ClientConnectionQualityFrame):
             await ledger.emit(
                 "client.transport_disconnect",
@@ -1267,6 +1467,11 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
         pending_confirmation_authority=confirmation_authority,
         active_conversations=_application_runtime.active_realtime_conversations,
         agent_work_registry=_application_runtime.agent_work_registry,
+        provider_credential_sources=(
+            {"asr": binding.asr_source, "tts": binding.tts_source,
+             "brain": binding.llm_source}
+            if binding is not None else None
+        ),
         initial_frames=(
             SessionCapabilitiesFrame(
                 server_asr=server_asr,

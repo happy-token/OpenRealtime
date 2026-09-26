@@ -20,14 +20,14 @@
   border-color: rgba(218, 227, 255, .28);
   background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .22), transparent 42%), rgba(10, 14, 30, .18);
   box-shadow: 0 18px 48px rgba(2, 5, 15, .3), inset 0 1px rgba(255, 255, 255, .18);
-  backdrop-filter: blur(12px) saturate(138%);
+  backdrop-filter: blur(var(--panel-blur,12px)) saturate(138%);
 }
 .stageActions :global(.voice-start-halo-core) {
   border-color: rgba(220, 230, 255, .34);
   background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, .26), transparent 42%), linear-gradient(145deg, rgba(36, 43, 78, .34), rgba(91, 77, 174, .27) 56%, rgba(45, 133, 158, .22));
   color: #fff;
   box-shadow: 0 14px 34px rgba(3, 6, 18, .34), 0 0 0 5px rgba(132, 118, 255, .09), inset 0 1px rgba(255, 255, 255, .22);
-  backdrop-filter: blur(14px) saturate(145%);
+  backdrop-filter: blur(var(--panel-blur,14px)) saturate(145%);
 }
 .stageActions :global(.voice-start-halo-copy) { color: white; text-shadow: 0 3px 15px rgba(0, 0, 0, .58); }
 .stageActions :global(.voice-start-halo-copy small) { display: none; }
@@ -53,7 +53,7 @@
   border-radius: 50%;
   background: rgba(10, 13, 24, .25);
   box-shadow: 0 14px 36px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .13);
-  backdrop-filter: blur(14px) saturate(130%);
+  backdrop-filter: blur(var(--panel-blur,14px)) saturate(130%);
   transition: transform 360ms var(--ease-out-expo), border-color 220ms ease, background 220ms ease;
 }
 .returnButton svg { width: 21px; height: 21px; transition: transform 360ms var(--ease-out-expo); }

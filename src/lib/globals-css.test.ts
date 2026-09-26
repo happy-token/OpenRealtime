@@ -34,4 +34,14 @@ describe("document scroll ownership", () => {
     expect(css).toMatch(/\.session-layout-menu\[data-open="true"\]\s*{[^}]*transform:\s*translate\(-50%,\s*0\)\s*scale\(1\)/s);
     expect(css).toMatch(/\.session-layout-menu\s*>\s*button\s*{[^}]*justify-items:\s*center[^}]*text-align:\s*center/s);
   });
+
+  it("keeps the home connection state consolidated in the preview status", () => {
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+    const homeHeaderCss = css.slice(
+      css.indexOf('.app-shell[data-entry-stage="home"] .brand'),
+      css.indexOf('.app-shell[data-entry-stage="home"] .settings-button'),
+    );
+
+    expect(homeHeaderCss).toContain('.app-shell[data-entry-stage="home"] .offline-hint { display: none; }');
+  });
 });

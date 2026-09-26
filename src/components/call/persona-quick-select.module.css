@@ -8,7 +8,8 @@
   padding: 0 9px 0 6px;
   border: 1px solid rgba(255, 255, 255, .1);
   border-radius: 12px;
-  background: rgba(255, 255, 255, .03);
+  background: linear-gradient(145deg,rgb(255 255 255 / var(--panel-highlight-alpha,.072)),transparent 70%),rgb(20 23 37 / var(--panel-surface-alpha,.3));
+  backdrop-filter: blur(var(--panel-blur,3px)) saturate(145%);
 }
 
 .chipIcon {

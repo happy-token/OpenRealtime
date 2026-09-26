@@ -18,6 +18,7 @@ test("MuseTalk generation saves the paired material and makes the talking previe
       submissions++;
       return route.fulfill({ status: 202, json: { job: { id: "test-job", state: "processing" } } });
     }
+    if (!submissions) return route.fulfill({ json: { job: null } });
     ready = true;
     return route.fulfill({ json: { job: { id: "test-job", state: "success", variant } } });
   });
@@ -37,8 +38,8 @@ test("session picker selects talking material and persists its paired base witho
   await page.route("**/api/anam/avatars", route => route.fulfill({ json: { avatars: [] } }));
   await page.route("**/api/avatar-assets/actions", route => route.fulfill({ json: { actions: [], selection: null } }));
   await page.route("**/api/avatar-capabilities", route => route.fulfill({ json: Object.fromEntries(["assets", "anam", "heygen", "localRenderer"].map(key => [key, { state: "available", message: "ready" }])) }));
+  await page.addInitScript(() => localStorage.setItem("voice-agent-experience-mode", "avatar"));
   await page.goto("/");
-  await page.getByRole("navigation", { name: "主页呈现模式" }).getByRole("button", { name: "数字人", exact: true }).click();
   await page.getByRole("button", { name: "展开会话配置工作台" }).click();
   await page.getByRole("button", { name: /动作编排/ }).click();
   const picker = page.getByRole("region", { name: "动作编排讲话素材" });

@@ -10,6 +10,7 @@ import {
   readPersonaProfile,
   switchAvatarPersona,
   writeAvatarPersonaFiles,
+  writePersonaIntro,
 } from "./avatar-persona-server";
 
 async function makeRoot() {
@@ -74,7 +75,7 @@ describe("readAvatarPersonaProfile", () => {
       ["companion", ["陪伴", "柔光纯欲"]],
       ["avatar-zhaoning", ["昭宁", "知性温柔"]],
       ["avatar-meichuqing", ["梅初晴", "甜美元气"]],
-      ["avatar-qingyun", ["清韫", "清新田园"]],
+      ["avatar-qingyun", ["清韫", "忧郁薄雾"]],
       ["avatar-selin", ["瑟琳", "浪漫法式"]],
       ["avatar-shiruoshui", ["施若水", "柔光纯欲"]],
       ["avatar-zhaoyue", ["曌月", "冷艳都市"]],
@@ -95,6 +96,17 @@ describe("readAvatarPersonaProfile", () => {
 });
 
 describe("listPersonas", () => {
+  it("uses identity positioning until a separate card intro is saved", async () => {
+    const root = await makeRoot();
+    await seedPersona(root, "intellectual-warmth", "知性温柔");
+    const identityPath = path.join(root, "config", "personas", "intellectual-warmth", "IDENTITY.md");
+    await writeFile(identityPath, "# 知性温柔\n\n- Persona 定位：成熟的文化策展人与阅读顾问。");
+
+    expect((await listPersonas(root))[0].intro).toBe("成熟的文化策展人与阅读顾问。");
+    await writePersonaIntro("intellectual-warmth", "温和、清醒，擅长陪你理清复杂问题。", root);
+    expect((await listPersonas(root))[0].intro).toBe("温和、清醒，擅长陪你理清复杂问题。");
+    expect((await readPersonaProfile("intellectual-warmth", root))?.intro).toBe("温和、清醒，擅长陪你理清复杂问题。");
+  });
   it("lists every Persona directory with its identity heading as the name", async () => {
     const root = await makeRoot();
     await seedPersona(root, "intellectual-warmth", "知性温柔");

@@ -40,7 +40,7 @@ class KnowledgeBaseToolSource:
                 effects=frozenset({ToolEffect.READ_SENSITIVE}),
                 risk=RiskLevel.MEDIUM,
                 idempotency=IdempotencyClass.IDEMPOTENT,
-                latency=LatencyClass.VARIABLE,
+                latency=LatencyClass.FAST,
             )
         ]
 

@@ -1,8 +1,14 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
+import { ProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "./types";
 import { DigitalHumanStage, rendererCanStartConversation, usesOwnedAvatarSourceImage } from "./digital-human-stage";
+
+function renderToStaticMarkup(element: ReactNode) {
+  return renderMarkup(<ProviderKeyGate>{element}</ProviderKeyGate>);
+}
 
 function renderStage(displayConfig = DEFAULT_AVATAR_DISPLAY_CONFIG) {
   return renderToStaticMarkup(

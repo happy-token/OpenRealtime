@@ -15,6 +15,7 @@ const AVATAR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/;
 const PERSONA_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const MAX_FILE_CHARS = 8_000;
 const MAX_TOTAL_CHARS = 16_000;
+const MAX_INTRO_CHARS = 160;
 const PERSONA_FILENAME_SET = new Set<string>(AVATAR_PERSONA_FILENAMES);
 
 export async function readAvatarPersonaProfile(
@@ -98,7 +99,8 @@ export async function listPersonas(root = process.cwd()): Promise<PersonaSummary
     }
     const personaName = identityHeading([{ filename: "IDENTITY.md", content: identityContent }]) ?? personaId;
     const linkedAvatarIds = linkedAvatarIdsForPersona(links, personaId);
-    return { personaId, personaName, linkedAvatarIds };
+    const intro = await readPersonaIntro(path.join(personasRoot, personaId), identityContent);
+    return { personaId, personaName, ...(intro ? { intro } : {}), linkedAvatarIds };
   }));
   return personas.sort((a, b) => a.personaId.localeCompare(b.personaId));
 }
@@ -126,12 +128,44 @@ export async function readPersonaProfile(
   }
   if (files.length === 0) return null;
   const links = await readLinksRecord(root);
+  const intro = await readPersonaIntro(personaRoot, files.find((file) => file.filename === "IDENTITY.md")?.content ?? "");
   return {
     personaId,
     personaName: identityHeading(files) ?? personaId,
+    ...(intro ? { intro } : {}),
     files,
     linkedAvatarIds: linkedAvatarIdsForPersona(links, personaId),
   };
+}
+
+export function normalizePersonaIntro(value: unknown): string {
+  if (typeof value !== "string") throw new Error("Persona 简介格式无效");
+  const intro = value.trim().replace(/\s+/g, " ");
+  if (intro.length > MAX_INTRO_CHARS) throw new Error("Persona 简介超过 160 字");
+  return intro;
+}
+
+export async function writePersonaIntro(personaId: string, intro: string, root = process.cwd()): Promise<void> {
+  if (!PERSONA_ID_PATTERN.test(personaId)) throw new Error("Persona ID 无效");
+  const normalized = normalizePersonaIntro(intro);
+  const personaRoot = path.join(root, "config", "personas", personaId);
+  try {
+    await readFile(path.join(personaRoot, "IDENTITY.md"), "utf8");
+  } catch (error) {
+    if (isMissingFile(error)) throw new Error("找不到 Persona");
+    throw error;
+  }
+  await atomicWriteFile(path.join(personaRoot, "INTRO.txt"), normalized);
+}
+
+async function readPersonaIntro(personaRoot: string, identityContent: string): Promise<string> {
+  try {
+    return normalizePersonaIntro(await readFile(path.join(personaRoot, "INTRO.txt"), "utf8"));
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+  const positioning = identityContent.match(/^\s*[-*]\s*(?:Persona\s*)?(?:定位|简介|风格)\s*[：:]\s*(.+)$/mi)?.[1];
+  return normalizePersonaIntro((positioning || "").slice(0, MAX_INTRO_CHARS));
 }
 
 export async function createPersona(

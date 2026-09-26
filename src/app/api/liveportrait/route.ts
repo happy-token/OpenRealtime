@@ -11,6 +11,7 @@ import {
 import { validAvatarAssetId } from "@/lib/avatar-assets-server";
 import { isLivePortraitActionId } from "@/lib/liveportrait-actions";
 import { parseLivePortraitMotionConfig } from "@/lib/liveportrait-motion-config";
+import { modelServiceConnection } from "@/lib/model-service-connections";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,13 +26,14 @@ export async function GET(request: NextRequest) {
     return json({ error: "不允许从当前来源读取 LivePortrait 状态" }, 403);
   }
   const status = await inspectLivePortraitWorker();
+  const connection = await modelServiceConnection("liveportrait");
   return json({
     ready: status.ready,
     device: status.device,
     weights_bytes: status.weightsBytes,
     issues: status.issues,
     templates: status.templates,
-    local_only: true,
+    local_only: !connection.url,
   }, status.ready ? 200 : 503);
 }
 

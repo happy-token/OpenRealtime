@@ -23,6 +23,7 @@ export interface OwnedAvatarActionRecord {
 
 export interface AvatarTalkingVariant {
   id: string;
+  deleted_at?: string | null;
   display_name: string;
   method: "wav2lip" | "minimax" | "musetalk" | "lipforcing";
   source_video_url: string;

@@ -60,6 +60,13 @@ export interface TtsConfigFrame {
 export interface AvatarPersonaConfigFrame {
   type: "avatar_persona_config";
   avatar_id: string | null;
+  persona_id: string | null;
+}
+
+export interface ToolConfigFrame {
+  type: "tool_config";
+  tool_names: string[];
+  role_id?: string | null;
 }
 
 export interface ConfirmationDecisionFrame {
@@ -78,6 +85,7 @@ export type ClientToServerFrame =
   | ClientConnectionQualityFrame
   | TtsConfigFrame
   | AvatarPersonaConfigFrame
+  | ToolConfigFrame
   | ConfirmationDecisionFrame
   | InputCaptureDiagnostic;
 

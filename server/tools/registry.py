@@ -25,6 +25,7 @@ class ToolRegistry:
         self._bindings = {
             (tool.name, tool.version): tool.to_binding() for tool in tools
         }
+        self._enabled_names: frozenset[str] | None = None
 
     @classmethod
     def from_bindings(cls, bindings: Sequence[ToolBinding]) -> ToolRegistry:
@@ -53,16 +54,27 @@ class ToolRegistry:
             )
             for binding in bindings
         }
+        registry._enabled_names = None
         return registry
 
+    def select_tools(self, names: Sequence[str]) -> None:
+        requested = frozenset(names)
+        unknown = requested.difference(self._by_name)
+        if unknown:
+            raise ValueError(f"unknown tool names: {', '.join(sorted(unknown))}")
+        self._enabled_names = requested
+
+    def _enabled(self, name: str) -> bool:
+        return self._enabled_names is None or name in self._enabled_names
+
     def as_list(self) -> list[CanonicalTool]:
-        return list(self._by_name.values())
+        return [tool for tool in self._by_name.values() if self._enabled(tool.name)]
 
     def get(self, name: str) -> CanonicalTool | None:
-        return self._by_name.get(name)
+        return self._by_name.get(name) if self._enabled(name) else None
 
     def descriptors(self) -> tuple[ToolDescriptor, ...]:
-        return tuple(binding.descriptor for binding in self._bindings.values())
+        return tuple(binding.descriptor for binding in self._bindings.values() if self._enabled(binding.descriptor.name))
 
     def resolve_binding(self, name: str, version: str) -> ToolBinding | None:
-        return self._bindings.get((name, version))
+        return self._bindings.get((name, version)) if self._enabled(name) else None

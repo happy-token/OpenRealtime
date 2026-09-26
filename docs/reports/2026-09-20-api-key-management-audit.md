@@ -1,0 +1,16 @@
+# API key management audit for public trial planning
+
+This report records the code state inspected on 2026-09-20. The public-trial rules in [ADR-0130](../adr/0130-separate-public-trial-from-personal-provider-credentials.md) are design decisions, not claims that the current deployment already enforces them.
+
+| Area | Current code | Gap against the agreed public trial |
+| --- | --- | --- |
+| Personal keys | `src/lib/provider-api-key.ts` supports Anam and MiniMax. A key is encrypted into an HttpOnly cookie for eight hours using the administrator session secret. | No account-backed persistent store, key deletion endpoint, or settings view. |
+| Credential selection | `providerApiKey()` reads a personal cookie and silently falls back to `ANAM_API_KEY` or `MINIMAX_API_KEY`. `/api/provider-key` reports only `configured`. | No explicit per-capability source selection, source disclosure, or prohibition on fallback after personal-key failure. |
+| Access | Anam and MiniMax routes call `canUseAvatarTestApis()`, which admits an administrator session or an explicit local development test mode. Earlier ADRs choose Casdoor identity for user ownership, but this route does not use it. | No public-trial admission or ordinary account authorization. The current administrator cookie is not an ordinary user login. Anonymous visitors must not submit personal keys. |
+| Shared capacity | Anam session creation obtains a provider token without a shared trial lease; the voice backend is separate. | No server-authoritative one-conversation shared cap, three-minute deadline, or capacity release tied to actual session closure. |
+| Realtime voice credentials | `demos/voice_web_server.py` constructs ASR, LLM, and TTS providers from process environment credentials. | A signed-in user's per-capability key cannot yet be selected for a single voice conversation. This requires a trusted identity and server-side configuration path, not browser-sent provider secrets over the voice protocol. |
+| Quota errors | MiniMax maps some balance and rate errors; Anam session errors mostly pass through provider text. Other providers have separate error handling. | No common `busy`, `shared_quota_exhausted`, `personal_quota_exhausted`, `invalid_key`, and `provider_unavailable` states or user-facing guidance. |
+| Paid creation | LTX/MiniMax video creation is blocked in production; Vidu and HappyImage still use server environment keys. `POST /api/happyimage/avatar-images` currently has no authentication or same-origin guard before spending `HAPPYIMAGE_API_KEY`. | Guard the HappyImage route before any public exposure. Public login and personal funding must precede ordinary-user paid creation. HappyImage must attribute quota to the signed-in HappyImage account as already decided in ADR-0094 and ADR-0105. |
+| Secret files | `.env` and `.env.local` are ignored by Git; `.env.example` is tracked. | Deployment must inject real operator keys server-side. Publishing the source or `.env.example` must not publish usable keys. |
+
+The current tests cover encrypted-cookie submission, fallback, and the prompt shown when no Anam or MiniMax key is configured. They do not cover the agreed public-trial capacity, quota failure states, login-backed personal storage, or no-fallback behavior.

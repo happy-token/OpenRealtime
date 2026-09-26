@@ -1,4 +1,4 @@
-.backdrop { position: fixed; z-index: 140; inset: 0; display: block; border: 0; background: rgba(8,10,17,.42); opacity: 0; transition: opacity .22s ease; pointer-events: none; backdrop-filter: blur(8px); }
+.backdrop { position: fixed; z-index: 140; inset: 0; display: block; border: 0; background: rgba(8,10,17,.42); opacity: 0; transition: opacity .22s ease; pointer-events: none; backdrop-filter: blur(var(--panel-blur,8px)); }
 .backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
 
 .panel {
@@ -15,7 +15,7 @@
   border-radius: 50%;
   background: var(--avatar-primary-bg);
   box-shadow: var(--avatar-primary-shadow);
-  backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(var(--panel-blur,18px)) saturate(145%);
   transition: width .34s cubic-bezier(.22,.8,.28,1), height .34s cubic-bezier(.22,.8,.28,1),
     right .3s ease, bottom .3s ease, border-radius .3s ease, border-color .3s ease,
     background .3s ease, box-shadow .3s ease;

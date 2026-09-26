@@ -17,6 +17,7 @@ export default defineConfig({
       "src/hooks/**/*.test.ts",
       "src/components/**/*.test.tsx",
       "src/app/api/**/*.test.ts",
+      "src/app/settings/**/*.test.tsx",
       "src/voice/**/*.test.ts",
     ],
   },

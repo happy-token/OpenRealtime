@@ -18,12 +18,13 @@ import {
 } from "@/voice/session/transcript";
 export { shouldResetTranscriptForSession, mergeAssistantTranscript, settleAssistantTranscript, updateAssistantOutputText, browserSpeechTextForResponse, mergeUserTranscript, updateAssistantCaption } from "@/voice/session/transcript";
 export type { TranscriptEntry, AssistantMessageStatus, AssistantOutputText, UserTranscriptUpdate, AssistantCaptionState, AssistantCaptionUpdate } from "@/voice/session/transcript";
-import type { AvatarPersonaConfigFrame, ServerToClientFrame, TtsConfigFrame } from "@/lib/frames";
+import type { AvatarPersonaConfigFrame, ServerToClientFrame, ToolConfigFrame, TtsConfigFrame } from "@/lib/frames";
 import { BrowserAudioInput } from "@/voice/audio/browser-input";
 import { BrowserAudioOutput } from "@/voice/audio/browser-output";
 import type { AvatarAudioSink } from "@/voice/audio/avatar-output";
 import { DeviceAudioInputRuntime } from "@/voice/audio/input-runtime";
 import { DeviceAudioOutputRuntime } from "@/voice/audio/output-runtime";
+import { readConversationPreferences } from "@/lib/conversation-preferences";
 import {
   type SessionAckV2,
 } from "@/voice/protocol/v2";
@@ -58,10 +59,20 @@ export function ttsConfigPayload(
 
 export function avatarPersonaConfigPayload(
   avatarId: string | null,
+  personaId: string | null = null,
 ): AvatarPersonaConfigFrame {
   return {
     type: "avatar_persona_config",
     avatar_id: avatarId,
+    persona_id: personaId,
+  };
+}
+
+export function toolConfigPayload(toolNames: string[], roleId?: string | null): ToolConfigFrame {
+  return {
+    type: "tool_config",
+    tool_names: [...new Set(toolNames)],
+    ...(roleId ? { role_id: roleId } : {}),
   };
 }
 
@@ -288,8 +299,20 @@ export interface VoiceSessionViewModel {
   ttsPreviewAvailable: boolean;
   ttsConfigStatus: string;
   sessionError: string | null;
+  credentialSummary: string | null;
+  trialSecondsRemaining: number | null;
+  prepareAdmission: (admission: {
+    ticket: string;
+    deadline?: string | null;
+    sources?: {
+      asr: { source: "platform" | "personal" };
+      tts: { source: "platform" | "personal" };
+      llm: { source: "platform" | "personal" };
+      anam?: { source: "platform" | "personal" };
+    };
+  } | null) => void;
   pendingConfirmation: PendingConfirmationView | null;
-  start: () => Promise<void>;
+  start: (provider?: TtsConfigFrame["provider"]) => Promise<void>;
   retryConnection: () => void;
   stop: () => void;
   terminate: () => void;
@@ -305,12 +328,13 @@ export interface VoiceSessionViewModel {
     speechRate: number,
     dialect: TtsConfigFrame["dialect"],
   ) => void;
-  configureAvatarPersona: (avatarId: string | null) => void;
+  configureAvatarPersona: (avatarId: string | null, personaId?: string | null) => void;
+  configureTools: (toolNames: string[], roleId?: string | null) => void;
   setAvatarAudioSink: (sink: AvatarAudioSink | null) => void;
   resolveConfirmation: (approved: boolean) => void;
 }
 
-export function useVoiceSession(): VoiceSessionViewModel {
+export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEnabled?: boolean } = {}): VoiceSessionViewModel {
   const [state, setStateValue] = useState<ConversationState>("idle");
   const [level, setLevel] = useState(0);
   const [caption, setCaption] = useState("");
@@ -323,9 +347,24 @@ export function useVoiceSession(): VoiceSessionViewModel {
   const [ttsPreviewAvailable, setTtsPreviewAvailable] = useState(false);
   const [ttsConfigStatus, setTtsConfigStatus] = useState("");
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [credentialSummary, setCredentialSummary] = useState<string | null>(null);
+  const [trialSecondsRemaining, setTrialSecondsRemaining] = useState<number | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmationView | null>(null);
 
   const transportRef = useRef<BrowserVoiceSessionTransport | null>(null);
+  const preparedAdmissionRef = useRef<{
+    ticket: string;
+    deadline?: string | null;
+    sources?: {
+      asr: { source: "platform" | "personal" };
+      tts: { source: "platform" | "personal" };
+      llm: { source: "platform" | "personal" };
+      anam?: { source: "platform" | "personal" };
+    };
+  } | null>(null);
+  const pendingPublicConnectionRef = useRef<Promise<void> | null>(null);
+  const trialDeadlineRef = useRef<number | null>(null);
+  const publicCapabilitiesReadyRef = useRef<(() => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const pendingTtsConfigRef = useRef<{
     provider: TtsConfigFrame["provider"];
@@ -333,7 +372,11 @@ export function useVoiceSession(): VoiceSessionViewModel {
     speechRate: number;
     dialect: TtsConfigFrame["dialect"];
   } | null>(null);
-  const pendingAvatarPersonaIdRef = useRef<string | null | undefined>(undefined);
+  const pendingAvatarPersonaRef = useRef<{
+    avatarId: string | null;
+    personaId: string | null;
+  } | undefined>(undefined);
+  const pendingToolNamesRef = useRef<{ names: string[]; roleId: string | null } | undefined>(undefined);
   const pendingConfirmationRef = useRef<PendingConfirmationView | null>(null);
   const avatarAudioSinkRef = useRef<AvatarAudioSink | null>(null);
   const outputVolumeRef = useRef(0.8);
@@ -376,7 +419,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
   // Imperative public API: assigned inside the mount effect below (each
   // function closes over that connection's state), invoked via the stable
   // callbacks returned at the bottom of this hook.
-  const startRef = useRef<() => Promise<void>>(async () => {});
+  const startRef = useRef<(provider?: TtsConfigFrame["provider"]) => Promise<void>>(async () => {});
   const retryConnectionRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
   const terminateRef = useRef<() => void>(() => {});
@@ -391,7 +434,11 @@ export function useVoiceSession(): VoiceSessionViewModel {
     speechRate: number,
     dialect: TtsConfigFrame["dialect"],
   ) => void>(() => {});
-  const configureAvatarPersonaRef = useRef<(avatarId: string | null) => void>(() => {});
+  const configureAvatarPersonaRef = useRef<(
+    avatarId: string | null,
+    personaId?: string | null,
+  ) => void>(() => {});
+  const configureToolsRef = useRef<(toolNames: string[], roleId?: string | null) => void>(() => {});
   const resolveConfirmationRef = useRef<(approved: boolean) => void>(() => {});
 
   const setState = useCallback((next: ConversationState) => {
@@ -408,10 +455,22 @@ export function useVoiceSession(): VoiceSessionViewModel {
   }, []);
 
   useEffect(() => {
+    if (!publicVoiceEnabled) return;
+    const timer = window.setInterval(() => {
+      setTrialSecondsRemaining(trialDeadlineRef.current === null
+        ? null : Math.max(0, Math.ceil((trialDeadlineRef.current - Date.now()) / 1000)));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [publicVoiceEnabled]);
+
+  useEffect(() => {
     let hiddenCaptureTimer: ReturnType<typeof setTimeout> | null = null;
     const outputGraph = new BrowserAudioOutput({
       runtime: outputRuntimeRef.current,
       onStarted: (generation) => reportPlaybackProgress(generation, "started"),
+      onResumed: (generation) => {
+        if (speakingGenerationRef.current === generation) setPlaybackActive(true);
+      },
     });
     const inputGraph = new BrowserAudioInput({
       runtime: inputRuntimeRef.current,
@@ -552,7 +611,17 @@ export function useVoiceSession(): VoiceSessionViewModel {
             voiceControllerRef.current.beginContinuation();
             transportRef.current?.reconnect();
           }
-          if (frame.session_disposition === "close") setConnection("error");
+          if (frame.session_disposition === "close") {
+            if (publicVoiceEnabled) {
+              sessionOutputEnabledRef.current = false;
+              trialDeadlineRef.current = null;
+              setTrialSecondsRemaining(null);
+              stopMic();
+              setMicActive(false);
+              setState("idle");
+            }
+            setConnection("error");
+          }
           break;
         case "session_capabilities": {
           serverAsrRef.current = frame.server_asr ?? false;
@@ -561,12 +630,16 @@ export function useVoiceSession(): VoiceSessionViewModel {
           setTtsConfigurable(frame.tts_configurable ?? false);
           setTtsPreviewAvailable(frame.tts_preview ?? false);
           const browserAsr = browserSpeechRecognitionConstructor() !== null;
-          setMicAvailable(serverAsrRef.current || browserAsr);
-          if (!serverAsrRef.current && browserAsr) {
+          setMicAvailable(serverAsrRef.current || (!publicVoiceEnabled && browserAsr));
+          if (publicVoiceEnabled && !serverAsrRef.current) {
+            setCaption("服务端语音识别不可用，请检查 Key 或稍后重试");
+          } else if (!serverAsrRef.current && browserAsr) {
             setCaption("服务端 ASR 未配置，已切换到浏览器实时语音识别");
           } else if (!serverAsrRef.current) {
             setCaption("语音识别不可用，请先使用文字输入");
           }
+          publicCapabilitiesReadyRef.current?.();
+          publicCapabilitiesReadyRef.current = null;
           break;
         }
         case "tts_config_ack":
@@ -754,7 +827,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
             assistantOutputTextRef.current,
             frame.generation as number,
           );
-          if (serverTtsRef.current === false && browserSpeechText) {
+          if (!publicVoiceEnabled && serverTtsRef.current === false && browserSpeechText) {
             speakWithBrowser(
               browserSpeechText,
               frame.generation as number,
@@ -943,10 +1016,82 @@ export function useVoiceSession(): VoiceSessionViewModel {
       rafRef.current = requestAnimationFrame(tickLevel);
     }
 
-    startRef.current = async () => {
+    async function preparePublicConnection(provider: TtsConfigFrame["provider"] = "bailian") {
+      if (transportRef.current?.isOpen && serverAsrRef.current !== null) return;
+      if (pendingPublicConnectionRef.current) return pendingPublicConnectionRef.current;
+      const attempt = (async () => {
+        type PublicAdmissionResult = {
+          ticket?: string;
+          error?: string;
+          deadline?: string | null;
+          sources?: {
+            asr: { source: "platform" | "personal" };
+            tts: { source: "platform" | "personal" };
+            llm: { source: "platform" | "personal" };
+            anam?: { source: "platform" | "personal" };
+          };
+        };
+        let result: PublicAdmissionResult | null = preparedAdmissionRef.current;
+        preparedAdmissionRef.current = null;
+        if (!result) {
+          const response = await fetch("/api/voice/admission", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ttsProvider: provider === "bailian" ? "dashscope" : "doubao" }),
+          });
+          result = await response.json() as PublicAdmissionResult;
+          if (!response.ok || !result?.ticket) throw new Error(result?.error || "语音服务暂时不可用");
+        }
+        if (!result.ticket) throw new Error("语音会话准入无效，请重新开始");
+        trialDeadlineRef.current = result.deadline ? Date.parse(result.deadline) : null;
+        setTrialSecondsRemaining(trialDeadlineRef.current === null
+          ? null : Math.max(0, Math.ceil((trialDeadlineRef.current - Date.now()) / 1000)));
+        if (result.sources) {
+          const label = (source: "platform" | "personal") => source === "personal" ? "我的额度" : "平台额度";
+          const avatar = result.sources.anam ? ` · 数字人：${label(result.sources.anam.source)}` : "";
+          setCredentialSummary(`语音识别：${label(result.sources.asr.source)} · 语音合成：${label(result.sources.tts.source)} · 对话模型：${label(result.sources.llm.source)}${avatar}`);
+        }
+        const configured = process.env.NEXT_PUBLIC_VOICE_WS_URL;
+        const base = configured || `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/voice`;
+        const url = new URL(base, location.href);
+        if (url.protocol !== "ws:" && url.protocol !== "wss:") throw new Error("语音连接地址无效");
+        if (location.protocol === "https:" && url.protocol !== "wss:") throw new Error("语音连接需要安全的 WSS 地址");
+        url.searchParams.set("admission", result.ticket);
+        voiceControllerRef.current.startNewSession();
+        serverAsrRef.current = null;
+        serverTtsRef.current = null;
+        transportRef.current?.dispose();
+        const transport = createTransport(url.href);
+        transportRef.current = transport;
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            publicCapabilitiesReadyRef.current = null;
+            transport.dispose();
+            if (transportRef.current === transport) transportRef.current = null;
+            void fetch(`/api/voice/admission?ticket=${encodeURIComponent(result.ticket!)}`, {
+              method: "DELETE", keepalive: true,
+            }).catch(() => undefined);
+            reject(new Error("语音连接超时，请手动重试"));
+          }, 8000);
+          publicCapabilitiesReadyRef.current = () => {
+            window.clearTimeout(timeout);
+            resolve();
+          };
+          transport.start();
+        });
+      })();
+      pendingPublicConnectionRef.current = attempt;
+      try { await attempt; } finally { pendingPublicConnectionRef.current = null; }
+    }
+
+    startRef.current = async (provider) => {
       if (micActiveRef.current) return;
+      if (publicVoiceEnabled) await preparePublicConnection(provider);
       if (serverAsrRef.current === null) {
         throw new Error("正在等待服务端语音能力信息，请稍后重试");
+      }
+      if (publicVoiceEnabled && (!serverAsrRef.current || !serverTtsRef.current)) {
+        throw new Error("完整语音服务暂时不可用，请检查服务商配置后手动重试");
       }
       const mode = speechInputMode(
         serverAsrRef.current,
@@ -975,6 +1120,17 @@ export function useVoiceSession(): VoiceSessionViewModel {
     };
 
     terminateRef.current = () => {
+      if (publicVoiceEnabled) {
+        transportRef.current?.dispose();
+        transportRef.current = null;
+        serverAsrRef.current = null;
+        serverTtsRef.current = null;
+        setConnection("connecting");
+        setCredentialSummary(null);
+        trialDeadlineRef.current = null;
+        setTrialSecondsRemaining(null);
+        preparedAdmissionRef.current = null;
+      }
       sessionOutputEnabledRef.current = false;
       stopMic();
       setMicActive(false);
@@ -1065,6 +1221,10 @@ export function useVoiceSession(): VoiceSessionViewModel {
       outputGraph.setVolume(volume);
       avatarAudioSinkRef.current?.setVolume(volume);
     };
+    const preferences = readConversationPreferences();
+    setVolumeRef.current(preferences.volume / 100);
+    noiseSuppressionRef.current = preferences.noiseSuppression;
+    bargeInMutedRef.current = !preferences.allowBargeIn;
 
     configureTtsRef.current = (provider, voice, speechRate, dialect) => {
       pendingTtsConfigRef.current = { provider, voice, speechRate, dialect };
@@ -1076,11 +1236,17 @@ export function useVoiceSession(): VoiceSessionViewModel {
       setTtsConfigStatus("");
       transport.send(ttsConfigPayload(provider, voice, speechRate, dialect));
     };
-    configureAvatarPersonaRef.current = (avatarId) => {
-      pendingAvatarPersonaIdRef.current = avatarId;
+    configureAvatarPersonaRef.current = (avatarId, personaId = null) => {
+      pendingAvatarPersonaRef.current = { avatarId, personaId };
       const transport = transportRef.current;
       if (!transport?.isOpen) return;
-      transport.send(avatarPersonaConfigPayload(avatarId));
+      transport.send(avatarPersonaConfigPayload(avatarId, personaId));
+    };
+    configureToolsRef.current = (toolNames, roleId = null) => {
+      pendingToolNamesRef.current = { names: [...new Set(toolNames)], roleId };
+      const transport = transportRef.current;
+      if (!transport?.isOpen) return;
+      transport.send(toolConfigPayload(pendingToolNamesRef.current.names, pendingToolNamesRef.current.roleId));
     };
     resolveConfirmationRef.current = (approved: boolean) => {
       const pending = pendingConfirmationRef.current;
@@ -1110,8 +1276,9 @@ export function useVoiceSession(): VoiceSessionViewModel {
         }
       }, HIDDEN_CAPTURE_TIMEOUT_MS);
     };
-    const transport = new BrowserVoiceSessionTransport({
-      url: `ws://${location.hostname}:8765`,
+    function createTransport(url: string) {
+      const transport = new BrowserVoiceSessionTransport({
+      url,
       controller: voiceControllerRef.current,
       onConnectionState: setConnection,
       onFrame: handleFrame,
@@ -1125,8 +1292,12 @@ export function useVoiceSession(): VoiceSessionViewModel {
             ttsConfig.dialect,
           ));
         }
-        if (pendingAvatarPersonaIdRef.current !== undefined) {
-          transport.send(avatarPersonaConfigPayload(pendingAvatarPersonaIdRef.current));
+        if (pendingAvatarPersonaRef.current !== undefined) {
+          const selection = pendingAvatarPersonaRef.current;
+          transport.send(avatarPersonaConfigPayload(selection.avatarId, selection.personaId));
+        }
+        if (pendingToolNamesRef.current !== undefined) {
+          transport.send(toolConfigPayload(pendingToolNamesRef.current.names, pendingToolNamesRef.current.roleId));
         }
       },
       onDisconnected: () => {
@@ -1137,10 +1308,15 @@ export function useVoiceSession(): VoiceSessionViewModel {
         avatarAudioSinkRef.current?.reset();
         inputGraph.resetForDisconnect();
       },
-    });
-    transportRef.current = transport;
+      });
+      return transport;
+    }
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    transport.start();
+    if (!publicVoiceEnabled) {
+      const transport = createTransport(`ws://${location.hostname}:8765`);
+      transportRef.current = transport;
+      transport.start();
+    }
 
     return () => {
       sessionOutputEnabledRef.current = false;
@@ -1152,7 +1328,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
       if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
       if (hiddenCaptureTimer) clearTimeout(hiddenCaptureTimer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      transport.dispose();
+      transportRef.current?.dispose();
       transportRef.current = null;
       stopMic();
       outputGraph.close();
@@ -1160,7 +1336,10 @@ export function useVoiceSession(): VoiceSessionViewModel {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const start = useCallback(() => startRef.current(), []);
+  const start = useCallback((provider?: TtsConfigFrame["provider"]) => startRef.current(provider), []);
+  const prepareAdmission = useCallback((admission: typeof preparedAdmissionRef.current) => {
+    preparedAdmissionRef.current = admission;
+  }, []);
   const retryConnection = useCallback(() => retryConnectionRef.current(), []);
   const stop = useCallback(() => stopRef.current(), []);
   const terminate = useCallback(() => terminateRef.current(), []);
@@ -1185,7 +1364,13 @@ export function useVoiceSession(): VoiceSessionViewModel {
     [],
   );
   const configureAvatarPersona = useCallback(
-    (avatarId: string | null) => configureAvatarPersonaRef.current(avatarId),
+    (avatarId: string | null, personaId?: string | null) => (
+      configureAvatarPersonaRef.current(avatarId, personaId)
+    ),
+    [],
+  );
+  const configureTools = useCallback(
+    (toolNames: string[], roleId?: string | null) => configureToolsRef.current(toolNames, roleId),
     [],
   );
   const setAvatarAudioSink = useCallback((sink: AvatarAudioSink | null) => {
@@ -1210,6 +1395,9 @@ export function useVoiceSession(): VoiceSessionViewModel {
     ttsPreviewAvailable,
     ttsConfigStatus,
     sessionError,
+    credentialSummary,
+    trialSecondsRemaining,
+    prepareAdmission,
     pendingConfirmation,
     start,
     retryConnection,
@@ -1223,6 +1411,7 @@ export function useVoiceSession(): VoiceSessionViewModel {
     setVolume,
     configureTts,
     configureAvatarPersona,
+    configureTools,
     setAvatarAudioSink,
     resolveConfirmation,
   };

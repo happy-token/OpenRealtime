@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { chmod, lstat, mkdir, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { LIVEPORTRAIT_ACTIONS } from "./liveportrait-actions";
 import type { LivePortraitMotionConfig } from "./liveportrait-motion-config";
+import { modelServiceConnection, probeModelService, type ModelServiceConnection } from "./model-service-connections";
+import { runInferenceServiceJob } from "./lipforcing-service-client";
 
 const execFileAsync = promisify(execFile);
 const MAX_LOG_CHARS = 8_000;
@@ -171,6 +173,11 @@ export async function inspectLivePortraitWorker(projectRoot = process.cwd()): Pr
     id,
     available: await isRegularFile(resolveLivePortraitTemplate(id, projectRoot, runtimeRoot)),
   })));
+  const connection = await modelServiceConnection("liveportrait");
+  if (connection.url) {
+    const probe = await probeModelService("liveportrait", connection);
+    return { ready: probe.ready, device: "remote", weightsBytes: 0, issues: probe.ready ? [] : [probe.message], templates };
+  }
   try {
     const { stdout } = await execFileAsync(wrapperPython, [
       path.join(projectRoot, "scripts/liveportrait_provider.py"),
@@ -211,6 +218,19 @@ export async function inspectLivePortraitDrivingFile({
   projectRoot?: string;
   wrapperPython?: string;
 }) {
+  const connection = await modelServiceConnection("liveportrait");
+  if (connection.url) {
+    const form = new FormData();
+    const extension = path.extname(drivingPath).toLowerCase();
+    const type = extension === ".webm" ? "video/webm" : extension === ".mov" ? "video/quicktime" : "video/mp4";
+    form.set("driving_video", new Blob([new Uint8Array(await readFile(drivingPath))], { type }), `driving${extension}`);
+    const response = await fetch(`${connection.url}/v1/inspect-driving`, {
+      method: "POST", headers: connection.token ? { Authorization: `Bearer ${connection.token}` } : undefined,
+      body: form, cache: "no-store", signal: AbortSignal.timeout(200_000),
+    });
+    if (!response.ok) throw new Error(`LivePortrait 远端 Driving Performance 校验失败（HTTP ${response.status}）`);
+    return parseLivePortraitDrivingInspectionResult(JSON.stringify(await response.json()));
+  }
   const invocation = buildLivePortraitDrivingInspectionInvocation({
     drivingPath,
     projectRoot,
@@ -313,6 +333,7 @@ async function createTask(input: LivePortraitTaskInput) {
     configPath,
     projectRoot,
     wrapperPython: input.wrapperPython,
+    connection: await modelServiceConnection("liveportrait"),
   });
   return { task, reused: false };
 }
@@ -347,8 +368,13 @@ function sourceDigest(bytes: Uint8Array) {
 
 function startRender(
   task: LivePortraitTask,
-  paths: { sourcePath: string; drivingPath: string; outputDir: string; configPath: string; projectRoot: string; wrapperPython?: string },
+  paths: { sourcePath: string; drivingPath: string; outputDir: string; configPath: string; projectRoot: string; wrapperPython?: string; connection: ModelServiceConnection },
 ) {
+  if (paths.connection.url) {
+    updateTask(task.id, { state: "processing" });
+    void renderRemoteTask(task, paths);
+    return;
+  }
   const invocation = buildLivePortraitRenderInvocation({ ...paths });
   const child = spawn(invocation.command, invocation.args, {
     cwd: invocation.cwd,
@@ -357,6 +383,31 @@ function startRender(
   });
   updateTask(task.id, { state: "processing" });
   collectProcessResult(child, task, paths.outputDir);
+}
+
+async function renderRemoteTask(task: LivePortraitTask, paths: {
+  sourcePath: string; drivingPath: string; outputDir: string; configPath: string; connection: ModelServiceConnection;
+}) {
+  try {
+    const sourceExtension = path.extname(paths.sourcePath).toLowerCase();
+    const drivingExtension = path.extname(paths.drivingPath).toLowerCase();
+    const sourceType = sourceExtension === ".png" ? "image/png" : sourceExtension === ".webp" ? "image/webp" : "image/jpeg";
+    const drivingType = drivingExtension === ".webm" ? "video/webm" : drivingExtension === ".mov" ? "video/quicktime" : "video/mp4";
+    const output = await runInferenceServiceJob({
+      baseUrl: paths.connection.url, token: paths.connection.token, jobId: task.id,
+      sourceVideo: await readFile(paths.sourcePath), referenceAudio: await readFile(paths.drivingPath),
+      sourceField: "source_image", referenceField: "driving_video",
+      sourceName: `source${sourceExtension}`, referenceName: `driving${drivingExtension}`,
+      sourceType, referenceType: drivingType, configJson: await readFile(paths.configPath, "utf8"),
+      rightsConfirmed: true, timeoutMs: 960_000,
+    });
+    const resultPath = path.join(paths.outputDir, "output.mp4");
+    await writeFile(resultPath, output, { flag: "wx", mode: 0o600 });
+    finishTask(task.id, { state: "success", resultPath, device: "remote" });
+  } catch (error) {
+    console.error("LivePortrait remote render failed", { taskId: task.id, error });
+    finishTask(task.id, { state: "failed", error: "LivePortrait 远端渲染失败，请检查模型服务日志" });
+  }
 }
 
 function collectProcessResult(child: ChildProcess, task: LivePortraitTask, outputDir: string) {

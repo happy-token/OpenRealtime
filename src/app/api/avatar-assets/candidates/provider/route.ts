@@ -14,6 +14,8 @@ import { getViduGeneration, ViduProviderError } from "@/lib/vidu-video";
 import { downloadLtxResultVideo } from "@/lib/ltx-result-video";
 import { getTrustedLocalLtxTask } from "@/lib/ltx-task-coordinator";
 import { getVideoGeneration, isVideoGenerationProviderError } from "@/lib/video-generation-provider";
+import { resolveProviderApiKey, providerKeyFingerprint } from "@/lib/provider-api-key";
+import { isMiniMaxModelId } from "@/lib/ltx-avatar-action";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
     const result = payload.sourceKind === "vidu"
       ? await readViduResult(payload.taskId)
       : payload.sourceKind === "ltx" || payload.sourceKind === "minimax"
-        ? await readVideoGenerationResult(payload.taskId)
+        ? await readVideoGenerationResult(request, payload.taskId)
         : await readLivePortraitResult(payload.taskId);
     if (payload.avatarId !== result.visualIdentityId) {
       return jsonError("Provider 任务与当前数字人身份不匹配", 409);
@@ -64,21 +66,39 @@ export async function POST(request: Request) {
     return avatarAssetJsonResponse(response, await response.text());
   } catch (error) {
     const known = error instanceof ViduProviderError || isVideoGenerationProviderError(error);
+    const assetServiceUnavailable = isAvatarAssetServiceUnavailable(error);
     console.error("Failed to persist provider Motion Base Candidate", error);
     return jsonError(
-      known ? error.message : "Provider 候选保存失败",
+      known
+        ? error.message
+        : assetServiceUnavailable
+          ? "动作资产服务未启动或暂时无法连接，请启动本地语音服务后重试"
+          : "Provider 候选保存失败",
       known ? error.status : 503,
     );
   }
 }
 
-async function readVideoGenerationResult(taskId: string) {
+function isAvatarAssetServiceUnavailable(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  const cause = "cause" in error ? error.cause : undefined;
+  if (!cause || typeof cause !== "object") return false;
+  const code = "code" in cause ? cause.code : undefined;
+  return code === "ECONNREFUSED" || code === "ECONNRESET" || code === "UND_ERR_CONNECT_TIMEOUT";
+}
+
+async function readVideoGenerationResult(request: Request, taskId: string) {
   const trustedTask = getTrustedLocalLtxTask(taskId);
   if (!trustedTask) throw new Error("视频生成任务不存在、已失效或不是由当前服务创建");
+  const miniMaxKey = await resolveProviderApiKey(request, "minimax");
+  if (isMiniMaxModelId(trustedTask.model) && trustedTask.credentialFingerprint !== (miniMaxKey ? providerKeyFingerprint(miniMaxKey) : undefined)) {
+    throw new Error("请使用创建任务时的 MiniMax API Key 保存结果");
+  }
   const task = await getVideoGeneration({
     LTX_API_KEY: process.env.LTX_API_KEY,
     LTX_API_URL: process.env.LTX_API_URL,
-    MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+    MINIMAX_API_KEY: miniMaxKey,
     MINIMAX_API_URL: process.env.MINIMAX_API_URL,
     MINIMAX_UPLOAD_CACHE_PATH: process.env.MINIMAX_UPLOAD_CACHE_PATH,
   }, taskId, trustedTask.model);

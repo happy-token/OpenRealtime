@@ -10,9 +10,11 @@ import styles from "./persona-quick-select.module.css";
 export function PersonaQuickSelect({
   avatarId,
   avatarDisplayName,
+  placement = "top",
 }: {
   avatarId: string | null;
   avatarDisplayName: string;
+  placement?: "top" | "bottom";
 }) {
   const { linkedPersona, personaOptions, switchState, switchNotice, switchPersona } = usePersonaLink(
     avatarId,
@@ -35,7 +37,8 @@ export function PersonaQuickSelect({
           options={personaSelectOptions(personaOptions, linkedPersona?.personaId ?? null)}
           disabled={switchState === "busy"}
           compact
-          placement="top"
+          cardOptions
+          placement={placement}
           onChange={(value) => {
             if (value === PERSONA_CREATE_OPTION_VALUE) {
               window.open(

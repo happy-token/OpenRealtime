@@ -3,11 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const server = vi.hoisted(() => ({
   readPersonaProfile: vi.fn(),
   writeAvatarPersonaFiles: vi.fn(),
+  writePersonaIntro: vi.fn(),
+  normalizePersonaIntro: vi.fn((value: string) => value.trim()),
 }));
 
 vi.mock("@/lib/avatar-persona-server", () => ({
   readPersonaProfile: server.readPersonaProfile,
   writeAvatarPersonaFiles: server.writeAvatarPersonaFiles,
+  writePersonaIntro: server.writePersonaIntro,
+  normalizePersonaIntro: server.normalizePersonaIntro,
 }));
 
 import { GET, PATCH } from "./route";
@@ -83,6 +87,16 @@ describe("Persona detail route GET", () => {
 });
 
 describe("Persona detail route PATCH", () => {
+  it("saves a card intro without changing the runtime Persona files", async () => {
+    enableLocalTestMode();
+    server.readPersonaProfile.mockResolvedValue({ ...profile, intro: "温和、清醒的阅读伙伴。" });
+
+    const response = await PATCH(patchRequest({ operation: "updateProfile", intro: " 温和、清醒的阅读伙伴。 " }), context);
+
+    expect(response.status).toBe(200);
+    expect(server.writePersonaIntro).toHaveBeenCalledWith("intellectual-warmth", "温和、清醒的阅读伙伴。");
+    expect(server.writeAvatarPersonaFiles).not.toHaveBeenCalled();
+  });
   it("updates Persona files and returns the refreshed profile", async () => {
     enableLocalTestMode();
     server.writeAvatarPersonaFiles.mockResolvedValue(undefined);

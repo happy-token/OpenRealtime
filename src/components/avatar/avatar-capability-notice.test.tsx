@@ -27,10 +27,12 @@ describe("AvatarCapabilityNotice", () => {
 
   it("shows retry when the check fails", () => {
     const html = renderToStaticMarkup(
-      <AvatarCapabilityNotice capability={undefined} error="能力检查超时，请重试。" onRetry={vi.fn()} />,
+      <AvatarCapabilityNotice capability={undefined} error="能力检查超时，请重试。" onRetry={vi.fn()} variant="stage" />,
     );
 
     expect(html).toContain("能力检查超时，请重试。");
-    expect(html).toContain("重新检查");
+    expect(html).toContain("avatar-capability-notice--stage");
+    expect(html).toContain('aria-label="重新检查"');
+    expect(html).toContain('title="重新检查"');
   });
 });

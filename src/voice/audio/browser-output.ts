@@ -35,6 +35,7 @@ export interface BrowserAudioOutputOptions {
   createContext?: () => AudioContext;
   now?: () => number;
   onStarted?: (generation: number) => void;
+  onResumed?: (generation: number) => void;
 }
 
 /** Owns the browser's physical output graph and playback scheduling state. */
@@ -43,6 +44,7 @@ export class BrowserAudioOutput {
   private readonly createContext: () => AudioContext;
   private readonly now: () => number;
   private readonly onStarted?: (generation: number) => void;
+  private readonly onResumed?: (generation: number) => void;
   private context: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
@@ -63,6 +65,7 @@ export class BrowserAudioOutput {
     this.createContext = options.createContext ?? (() => new AudioContext());
     this.now = options.now ?? (() => performance.now());
     this.onStarted = options.onStarted;
+    this.onResumed = options.onResumed;
   }
 
   get scheduledSourceCount(): number {
@@ -138,10 +141,14 @@ export class BrowserAudioOutput {
     source.buffer = buffer;
     source.connect(this.gainNode as GainNode);
     const startAt = Math.max(this.nextPlayTime, context.currentTime);
-    if (outputChunk.pcm16.length > 0 && this.startedGeneration !== generation) {
-      this.startedGeneration = generation;
-      this.startedAt = startAt;
-      this.onStarted?.(generation);
+    if (outputChunk.pcm16.length > 0) {
+      if (this.startedGeneration !== generation) {
+        this.startedGeneration = generation;
+        this.startedAt = startAt;
+        this.onStarted?.(generation);
+      } else if (this.scheduledSources.length === 0) {
+        this.onResumed?.(generation);
+      }
     }
     this.nextPlayTime = startAt + buffer.duration;
     this.scheduledEnd = this.nextPlayTime;

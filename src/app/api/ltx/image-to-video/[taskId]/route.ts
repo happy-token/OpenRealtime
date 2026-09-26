@@ -3,6 +3,8 @@ import { ADMIN_SESSION_COOKIE } from "@/lib/admin-auth";
 import { canUseAvatarTestApis } from "@/lib/avatar-test-access";
 import { getTrustedLocalLtxTask, releaseLocalLtxTask } from "@/lib/ltx-task-coordinator";
 import { getVideoGeneration, isVideoGenerationProviderError } from "@/lib/video-generation-provider";
+import { resolveProviderApiKey, providerKeyFingerprint } from "@/lib/provider-api-key";
+import { isMiniMaxModelId } from "@/lib/ltx-avatar-action";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +16,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tas
     const { taskId } = await context.params;
     const trusted = getTrustedLocalLtxTask(taskId);
     if (!trusted) return json({ error: "视频生成任务不存在、已失效或服务已重启" }, 404);
+    const miniMaxKey = await resolveProviderApiKey(request, "minimax");
+    if (isMiniMaxModelId(trusted.model) && trusted.credentialFingerprint !== (miniMaxKey ? providerKeyFingerprint(miniMaxKey) : undefined)) {
+      return json({ error: "请使用创建任务时的 MiniMax API Key 查询任务" }, 403);
+    }
     const task = await getVideoGeneration(
       {
         LTX_API_KEY: process.env.LTX_API_KEY,
         LTX_API_URL: process.env.LTX_API_URL,
-        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+        MINIMAX_API_KEY: miniMaxKey,
         MINIMAX_API_URL: process.env.MINIMAX_API_URL,
         MINIMAX_UPLOAD_CACHE_PATH: process.env.MINIMAX_UPLOAD_CACHE_PATH,
       },

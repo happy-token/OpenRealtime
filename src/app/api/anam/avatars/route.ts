@@ -11,6 +11,7 @@ import {
   updateAnamAvatarName,
 } from "@/lib/anam-avatars";
 import { hasMatchingImageSignature } from "@/lib/media-signatures";
+import { resolveProviderApiKey } from "@/lib/provider-api-key";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     return json({ error: "不允许从当前来源同步 Anam 形象目录" }, 403);
   }
   try {
-    const catalog = await listAnamAvatars({ ANAM_API_KEY: process.env.ANAM_API_KEY });
+    const catalog = await listAnamAvatars({ ANAM_API_KEY: await resolveProviderApiKey(request, "anam") });
     return json({
       configured: true,
       connected: true,
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const known = error instanceof AnamAvatarError;
     return json({
-      configured: Boolean(process.env.ANAM_API_KEY?.trim()),
+      configured: false,
       connected: false,
       error: known ? error.message : "Anam 形象目录同步失败",
     }, known ? error.status : 500);
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
       return json({ error: "身份源图内容与文件类型不匹配" }, 400);
     }
     const avatar = await createAnamAvatar(
-      { ANAM_API_KEY: process.env.ANAM_API_KEY },
+      { ANAM_API_KEY: await resolveProviderApiKey(request, "anam") },
       {
         displayName,
         image,
@@ -102,7 +103,7 @@ export async function PUT(request: NextRequest) {
       return json({ error: "请提供要修改的 Anam 形象和新名称" }, 400);
     }
     const avatar = await updateAnamAvatarName(
-      { ANAM_API_KEY: process.env.ANAM_API_KEY },
+      { ANAM_API_KEY: await resolveProviderApiKey(request, "anam") },
       { avatarId: payload.avatarId, displayName: payload.displayName },
     );
     return json({ avatar });

@@ -24,11 +24,13 @@ export function AvatarPageShell({
   active,
   back = { href: "/", label: "返回主页" },
   pageTitle,
+  hideNavigation = false,
   children,
 }: {
   active: AvatarPageDestination;
   back?: AvatarPageBackDestination;
   pageTitle?: string;
+  hideNavigation?: boolean;
   children: ReactNode;
 }) {
   const { capabilities, error, retry } = useAvatarCapabilities();
@@ -61,12 +63,12 @@ export function AvatarPageShell({
           <Link className={styles.back} href={back.href} aria-label={back.label}><ArrowLeft aria-hidden="true" /></Link>
           {pageTitle ? <h1 className={styles.pageTitle}>{pageTitle}</h1> : null}
         </div>
-        <nav className={styles.nav} aria-label="Avatar 页面">
+        {!hideNavigation ? <nav className={styles.nav} aria-label="Avatar 页面">
           <span className={styles.navTrack} data-active={active} aria-hidden="true" />
-          <Link href="/avatars" data-active={active === "library"}>资产管理</Link>
+          <Link href="/resources?tab=avatars" data-active={active === "library"}>资产管理</Link>
           <Link href="/avatars/create" data-active={active === "create"}>创建数字人</Link>
           <Link href="/personas" data-active={active === "personas"}>Persona 库</Link>
-        </nav>
+        </nav> : null}
         <span className={styles.wordmark}>OPENREALTIME</span>
       </header>
       <main className={styles.main}>

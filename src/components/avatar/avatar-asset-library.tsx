@@ -3,14 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Film, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound, X } from "lucide-react";
+import { ArrowUpRight, AudioLines, Film, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Plus, Search, Sparkles, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { AvatarAction, AvatarAsset } from "@/lib/avatar-catalog";
 import { summarizeAvatarCapabilities } from "@/lib/avatar-catalog";
 import { isSegmentedAvatarAsset } from "@/lib/avatar-library-catalog-client";
 import { hideIdentityAsset, hideMotionAsset } from "@/lib/digital-human-asset-management";
+import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
+import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { AvatarMediaCoverflow } from "./avatar-media-coverflow";
+import { AvatarTalkingMaterialRail } from "./avatar-talking-material-rail";
 import styles from "./avatar-asset-library.module.css";
 
 export type AvatarLibraryScope = "realtime" | "internal-preset";
@@ -40,18 +43,29 @@ export function shouldAutoAdvanceAvatarCardMedia({
     && playableActionCount > 0;
 }
 
+export function avatarLibraryHref(scope: AvatarLibraryScope, realtimeScope: RealtimeAvatarScope, returnTo?: string) {
+  const params = new URLSearchParams({ tab: "avatars", scope });
+  if (scope === "realtime") params.set("realtime_scope", realtimeScope);
+  if (returnTo) params.set("return_to", returnTo);
+  return `/resources?${params.toString()}`;
+}
+
 export function AvatarAssetLibrary({
   avatars,
   internalPresetIds,
   initialScope = "realtime",
   initialRealtimeScope = "custom",
   loading = false,
+  embedded = false,
+  returnTo,
 }: {
   avatars: AvatarAsset[];
   internalPresetIds: readonly string[];
   initialScope?: AvatarLibraryScope;
   initialRealtimeScope?: RealtimeAvatarScope;
   loading?: boolean;
+  embedded?: boolean;
+  returnTo?: string;
 }) {
   const router = useRouter();
   const [scope, setScope] = useState(initialScope);
@@ -96,7 +110,7 @@ export function AvatarAssetLibrary({
 
   useEffect(() => {
     const activeAvatar = visibleAvatars.find((avatar) => avatar.avatarId === activeActionAvatarId);
-    if (activeActionAvatarId && (!activeAvatar || !activeAvatar.actions.some((action) => action.state === "available" && action.videoUrl))) {
+    if (activeActionAvatarId && (!activeAvatar || !activeAvatar.actions.some((action) => action.state === "available" && !action.pendingModelCount && action.videoUrl))) {
       setActiveActionAvatarId(null);
     }
   }, [activeActionAvatarId, visibleAvatars]);
@@ -126,19 +140,16 @@ export function AvatarAssetLibrary({
   function selectScope(nextScope: AvatarLibraryScope) {
     setActiveActionAvatarId(null);
     setScope(nextScope);
-    const params = new URLSearchParams();
-    params.set("scope", nextScope);
-    if (nextScope === "realtime") params.set("realtime_scope", realtimeScope);
-    router.replace(`/avatars?${params.toString()}`, { scroll: false });
+    router.replace(avatarLibraryHref(nextScope, realtimeScope, returnTo), { scroll: false });
   }
 
   function selectRealtimeScope(nextScope: RealtimeAvatarScope) {
     setRealtimeScope(nextScope);
-    router.replace(`/avatars?scope=realtime&realtime_scope=${nextScope}`, { scroll: false });
+    router.replace(avatarLibraryHref("realtime", nextScope, returnTo), { scroll: false });
   }
 
   return (
-    <section className={styles.library} aria-label="数字人资产" aria-busy={loading || undefined}>
+    <section className={styles.library} data-embedded={embedded} aria-label="数字人资产" aria-busy={loading || undefined}>
       <header className={styles.header}>
         <div className={styles.toolbar}>
           <div className={styles.scopeSwitch} aria-label="Avatar 分类">
@@ -160,11 +171,18 @@ export function AvatarAssetLibrary({
               placeholder="搜索名称或 ID"
             />
           </label>
-          <Link className={styles.trashLink} href="/avatars/trash"><Trash2 />回收站</Link>
-          <Link className={styles.createButton} href="/avatars/create">
+          <Link className={styles.trashLink} href={appendReturnTo("/avatars/trash", returnTo)}><Trash2 />回收站</Link>
+          <Link className={styles.createButton} href={appendReturnTo("/avatars/create", returnTo)}>
             <Plus aria-hidden="true" />
             创建数字人
           </Link>
+        </div>
+        <div className={styles.productionBar}>
+          <div><Film aria-hidden="true" /><span><strong>动作与口型对齐</strong><small>素材归属于数字人；口型对齐继续归属于对应动作。</small></span></div>
+          <nav aria-label="数字人素材制作">
+            <Link href={appendReturnTo("/services/motion", returnTo)}><Sparkles aria-hidden="true" />生成动作</Link>
+            <Link href={appendReturnTo("/services/talking", returnTo)}><AudioLines aria-hidden="true" />制作口型对齐</Link>
+          </nav>
         </div>
       </header>
 
@@ -196,6 +214,7 @@ export function AvatarAssetLibrary({
               internalPreset={internalPresetIdSet.has(avatar.avatarId)}
               segmentedAsset={isSegmentedAvatarAsset(avatar, internalPresetIdSet)}
               expanded={activeActionAvatarId === avatar.avatarId}
+              returnTo={returnTo}
               onExpandedChange={(active) => setActiveActionAvatarId(active ? avatar.avatarId : null)}
               onDeleteAvatar={() => setPendingDeletion({
                 kind: "avatar",
@@ -216,7 +235,7 @@ export function AvatarAssetLibrary({
           <Sparkles aria-hidden="true" />
           <h2>{query ? "没有匹配的 Avatar" : scope === "realtime" ? realtimeScope === "custom" ? "暂无自定义实时 Avatar" : "暂无官方内置 Avatar" : "暂无内部预制形象"}</h2>
           <p>{query ? "尝试搜索其他名称或 ID。" : scope === "realtime" ? realtimeScope === "custom" ? "创建或接入实时驱动 Avatar 后会显示在这里。" : "供应商内置 Avatar 加载后会显示在这里。" : "内部预制形象加载后会显示在这里。"}</p>
-          {!query && scope === "realtime" ? <Link href="/avatars/create">开始创建</Link> : null}
+          {!query && scope === "realtime" ? <Link href={appendReturnTo("/avatars/create", returnTo)}>开始创建</Link> : null}
         </div>
       )}
 
@@ -255,6 +274,7 @@ function AvatarCard({
   internalPreset,
   segmentedAsset,
   expanded,
+  returnTo,
   onExpandedChange,
   onDeleteAvatar,
   onDeleteAction,
@@ -263,25 +283,43 @@ function AvatarCard({
   internalPreset: boolean;
   segmentedAsset: boolean;
   expanded: boolean;
+  returnTo?: string;
   onExpandedChange: (active: boolean) => void;
   onDeleteAvatar: () => void;
   onDeleteAction: (action: AvatarAction) => void;
 }) {
   const summary = summarizeAvatarCapabilities(avatar);
-  const startHref = `/?avatar_id=${encodeURIComponent(avatar.avatarId)}&experience=avatar`;
+  const startHref = `/conversation?avatar_id=${encodeURIComponent(avatar.avatarId)}&experience=avatar`;
   const detailQuery = segmentedAsset
     ? "return_scope=internal-preset"
     : `return_scope=realtime&return_realtime_scope=${avatar.visibility === "private" ? "custom" : "built-in"}`;
-  const detailHref = `/avatars/${encodeURIComponent(avatar.avatarId)}?${detailQuery}`;
+  const detailHref = appendReturnTo(`/avatars/${encodeURIComponent(avatar.avatarId)}?${detailQuery}`, returnTo);
   const playableActions = useMemo(
-    () => avatar.actions.filter((action) => action.state === "available" && Boolean(action.videoUrl)),
+    () => avatar.actions.filter((action) => action.state === "available" && !action.pendingModelCount && Boolean(action.videoUrl)),
     [avatar.actions],
   );
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [previewAction, setPreviewAction] = useState<AvatarAction | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [ownedAvatar, setOwnedAvatar] = useState<OwnedAvatarRecord | null>(null);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [materialsError, setMaterialsError] = useState("");
+  const [materialsRefresh, setMaterialsRefresh] = useState(0);
+  const [selectedTalkingVariantId, setSelectedTalkingVariantId] = useState<string | null>(null);
+  const [materialMenuOpen, setMaterialMenuOpen] = useState(false);
   const detailLinkRef = useRef<HTMLAnchorElement>(null);
   const activeAction = activeMediaIndex > 0 ? playableActions[activeMediaIndex - 1] ?? null : null;
+  const ownedAction = ownedAvatar?.actions.find(action => action.avatar_action_id === activeAction?.avatarActionId && !action.deleted_at);
+  const talkingAction = activeAction ? ownedAction ?? {
+    avatar_action_id: activeAction.avatarActionId,
+    display_name: activeAction.displayName,
+    video_url: activeAction.videoUrl,
+    pending_model_count: activeAction.pendingModelCount,
+    created_at: "",
+    deleted_at: null,
+    talking_variants: [],
+  } : null;
+  const selectedTalkingVariant = talkingAction?.talking_variants?.find(variant => variant.id === selectedTalkingVariantId && !variant.deleted_at) ?? null;
 
   function openDetailFromCard(event: ReactMouseEvent<HTMLElement>) {
     const target = event.target;
@@ -293,6 +331,32 @@ function AvatarCard({
     if (activeMediaIndex <= playableActions.length) return;
     setActiveMediaIndex(0);
   }, [activeMediaIndex, playableActions.length]);
+
+  useEffect(() => {
+    if (!expanded) setMaterialMenuOpen(false);
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!materialMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setMaterialMenuOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [materialMenuOpen]);
+
+  useEffect(() => {
+    if (!expanded || !segmentedAsset) return;
+    const controller = new AbortController();
+    setMaterialsLoading(true);
+    setMaterialsError("");
+    void fetchOwnedAvatar(avatar.avatarId, controller.signal).then(record => {
+      if (!controller.signal.aborted) setOwnedAvatar(record);
+    }).catch(error => {
+      if (!controller.signal.aborted) setMaterialsError(error instanceof Error ? error.message : "口型对齐读取失败");
+    }).finally(() => {
+      if (!controller.signal.aborted) setMaterialsLoading(false);
+    });
+    return () => controller.abort();
+  }, [avatar.avatarId, expanded, materialsRefresh, segmentedAsset]);
 
   useEffect(() => {
     if (!shouldAutoAdvanceAvatarCardMedia({
@@ -328,26 +392,35 @@ function AvatarCard({
         data-internal-preset={internalPreset}
         data-preview-kind={activeAction ? "action" : "image"}
         data-expanded={expanded}
+        data-material-open={expanded && materialMenuOpen}
         data-clickable={!expanded}
+        data-menu-open={menuOpen}
         onClick={expanded ? undefined : openDetailFromCard}
       >
         <div className={styles.visual}>
-          {internalPreset && expanded && playableActions.length ? (
-            <AvatarMediaCoverflow
-              avatarId={avatar.avatarId}
-              avatarName={avatar.displayName}
-              imageUrl={avatar.source.imageUrl}
-              actions={playableActions}
-              activeIndex={activeMediaIndex}
-              active={!previewAction}
-              size="workbench"
-              onActiveIndexChange={setActiveMediaIndex}
-              onCurrentActionClick={setPreviewAction}
-            />
+          {segmentedAsset && expanded && playableActions.length ? (
+            <div className={styles.expandedLayout}>
+              <div className={styles.expandedPreview}>
+                {selectedTalkingVariant ? <div className={styles.talkingPreview}>
+                  <Image className={styles.talkingBackdrop} src={avatar.source.imageUrl} alt="" fill sizes="100vw" unoptimized />
+                  <video key={selectedTalkingVariant.id} src={selectedTalkingVariant.video_url} aria-label={`${avatar.displayName} · ${selectedTalkingVariant.display_name} 口型对齐`} autoPlay muted loop playsInline controls preload="auto" />
+                </div> : <AvatarMediaCoverflow
+                  avatarId={avatar.avatarId}
+                  avatarName={avatar.displayName}
+                  imageUrl={avatar.source.imageUrl}
+                  actions={playableActions}
+                  activeIndex={activeMediaIndex}
+                  active={!previewAction}
+                  size="workbench"
+                  onActiveIndexChange={index => { setActiveMediaIndex(index); setSelectedTalkingVariantId(null); }}
+                  onCurrentActionClick={setPreviewAction}
+                />}
+              </div>
+            </div>
           ) : (
             <div
               className={styles.media}
-              data-has-actions={internalPreset && playableActions.length > 0}
+              data-has-actions={segmentedAsset && playableActions.length > 0}
               data-preview-kind={activeAction ? "action" : "image"}
             >
               {activeAction?.videoUrl ? (
@@ -397,14 +470,52 @@ function AvatarCard({
               )}
             </div>
           )}
+          {segmentedAsset && playableActions.length ? <button
+            className={styles.materialTrigger}
+            type="button"
+            aria-label={`选择 ${avatar.displayName} 的口型对齐`}
+            aria-expanded={expanded && materialMenuOpen}
+            onClick={() => {
+              if (!expanded) {
+                setActiveMediaIndex(activeAction ? activeMediaIndex : 1);
+                setSelectedTalkingVariantId(null);
+                setMaterialMenuOpen(true);
+                onExpandedChange(true);
+              } else {
+                setMaterialMenuOpen(open => !open);
+              }
+            }}
+          ><Film aria-hidden="true" />口型对齐</button> : null}
+          {expanded && materialMenuOpen && talkingAction ? materialsError ? <div className={styles.materialsSideState} role="alert">
+            <span>{materialsError}</span><button type="button" onClick={() => setMaterialsRefresh(value => value + 1)}>重试</button>
+          </div> : materialsLoading ? <div className={styles.materialsSideState} role="status">正在读取口型对齐…</div> : <AvatarTalkingMaterialRail
+            key={talkingAction.avatar_action_id}
+            avatarId={avatar.avatarId}
+            action={talkingAction}
+            returnTo={returnTo}
+            canManage={Boolean(ownedAction) && !avatar.avatarId.startsWith("avatar-personal-")}
+            selectedVariantId={selectedTalkingVariant?.id ?? null}
+            onSelect={variantId => {
+              setSelectedTalkingVariantId(variantId);
+              if (window.matchMedia("(max-width: 680px)").matches) setMaterialMenuOpen(false);
+            }}
+            onActionUpdated={updated => setOwnedAvatar(current => current ? {
+              ...current,
+              actions: current.actions.map(action => action.avatar_action_id === updated.avatar_action_id ? updated : action),
+            } : current)}
+          /> : null}
           <div className={styles.mediaMeta}>
-            {internalPreset && playableActions.length ? (
-              <button type="button" aria-label={`管理 ${avatar.displayName} 的 ${playableActions.length} 个动作`} onClick={() => onExpandedChange(true)}>
+            {segmentedAsset && playableActions.length ? (
+              <button type="button" aria-label={`管理 ${avatar.displayName} 的动作`} onClick={() => {
+                setActiveMediaIndex(1);
+                setSelectedTalkingVariantId(null);
+                onExpandedChange(true);
+              }}>
                 {playableActions.length} 个动作
               </button>
             ) : (
-              <span data-muted={internalPreset && !playableActions.length}>
-                {internalPreset ? "未创建动作" : summary.realtimeLabel || summary.actionLabel}
+              <span data-muted={segmentedAsset && !playableActions.length}>
+                {segmentedAsset ? "未创建动作" : summary.realtimeLabel || summary.actionLabel}
               </span>
             )}
             {!internalPreset && summary.realtimeLabel && avatar.canCreateActions && avatar.actions.length
@@ -429,11 +540,12 @@ function AvatarCard({
               </div>
               {expanded ? <div className={styles.actions}>
                 <Link className={styles.primaryAction} href={startHref} aria-label={`与 ${avatar.displayName} 对话`}><MessageCircle aria-hidden="true" />对话</Link>
-                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`} aria-label={`为 ${avatar.displayName} 创建动作`} title="创建动作"><Plus aria-hidden="true" /></Link>
+                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={`为 ${avatar.displayName} 创建动作`} title="创建动作"><Plus aria-hidden="true" /></Link>
                 <Link className={styles.detailLink} href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`} title="查看详情"><ArrowUpRight aria-hidden="true" /></Link>
-                {internalPreset && expanded && activeAction ? (
+                {segmentedAsset && expanded && activeAction ? (
                   <>
-                    <button
+                    <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={talkingCreationHref(avatar, activeAction, returnTo)} aria-label={`为 ${activeAction.displayName} 制作口型对齐`} title="制作口型对齐"><AudioLines aria-hidden="true" /></Link>
+                    {!selectedTalkingVariant ? <button
                       className={`${styles.secondaryAction} ${styles.iconAction}`}
                       type="button"
                       aria-label={`放大预览：${activeAction.displayName}`}
@@ -441,32 +553,35 @@ function AvatarCard({
                       onClick={() => setPreviewAction(activeAction)}
                     >
                       <Maximize2 aria-hidden="true" />
-                    </button>
-                    <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除动作：${activeAction.displayName}`} title="删除动作" onClick={() => onDeleteAction(activeAction)}>
+                    </button> : null}
+                    {internalPreset ? <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除动作：${activeAction.displayName}`} title="删除动作" onClick={() => onDeleteAction(activeAction)}>
                       <Trash2 aria-hidden="true" />
-                    </button>
+                    </button> : null}
                   </>
                 ) : internalPreset ? (
                   <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除形象：${avatar.displayName}`} title="删除形象" onClick={onDeleteAvatar}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 ) : null}
-                {internalPreset && expanded ? (
-                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={`收起 ${avatar.displayName} 的形象和动作`} title="收起预览" onClick={() => onExpandedChange(false)}>
+                {segmentedAsset && expanded ? (
+                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={`收起 ${avatar.displayName} 的形象和动作`} title="收起预览" onClick={() => { setSelectedTalkingVariantId(null); setMaterialMenuOpen(false); onExpandedChange(false); }}>
                     <Minimize2 aria-hidden="true" />
                   </button>
                 ) : null}
               </div> : (
-                <button className={styles.moreButton} type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-                  <MoreHorizontal aria-hidden="true" />
-                </button>
+                <div className={styles.collapsedActions}>
+                  <Link className={`${styles.quickStart} liquid-glass-button`} data-variant="primary" href={startHref} aria-label={`与 ${avatar.displayName} 对话`}><MessageCircle aria-hidden="true" />对话</Link>
+                  <button className={styles.moreButton} type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                    <MoreHorizontal aria-hidden="true" />
+                  </button>
+                </div>
               )}
             </div>
           </div>
           {!expanded ? (
             <div className={styles.actionMenu} aria-label={`${avatar.displayName} 操作菜单`} hidden={!menuOpen}>
               <Link href={startHref} aria-label={`与 ${avatar.displayName} 对话`}>开始对话</Link>
-              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`} aria-label={`为 ${avatar.displayName} 创建动作`}>创建动作</Link> : null}
+              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={`为 ${avatar.displayName} 创建动作`}>创建动作</Link> : null}
               <Link href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`}>查看详情</Link>
               {internalPreset ? <button type="button" aria-label={`删除形象：${avatar.displayName}`} onClick={onDeleteAvatar}>删除 Avatar</button> : null}
             </div>
@@ -529,4 +644,16 @@ function AvatarCard({
       ) : null}
     </>
   );
+}
+
+function appendReturnTo(href: string, returnTo?: string) {
+  if (!returnTo) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}return_to=${encodeURIComponent(returnTo)}`;
+}
+
+export function talkingCreationHref(avatar: AvatarAsset, action: AvatarAction, returnTo?: string) {
+  const href = avatar.avatarId.startsWith("avatar-personal-")
+    ? `/services/talking?avatar_id=${encodeURIComponent(avatar.avatarId)}&action_id=${encodeURIComponent(action.avatarActionId)}`
+    : `/avatars/create?task=lightweight&avatar_id=${encodeURIComponent(avatar.avatarId)}&avatar_action_id=${encodeURIComponent(action.avatarActionId)}`;
+  return appendReturnTo(href, returnTo);
 }

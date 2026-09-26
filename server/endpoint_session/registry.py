@@ -39,6 +39,9 @@ ThreadAuthorizer = Callable[
 ContinuationAuthorizer = Callable[
     [AuthenticatedTransportIdentity, str, str], Awaitable[bool]
 ]
+FreshSessionAdmitter = Callable[
+    [InMemoryEndpointSession, AuthenticatedTransportIdentity], Awaitable[bool]
+]
 
 
 @dataclass
@@ -70,6 +73,7 @@ class EndpointSessionRegistry:
         development_identity: AuthenticatedTransportIdentity | None = None,
         thread_authorizer: ThreadAuthorizer | None = None,
         continuation_authorizer: ContinuationAuthorizer | None = None,
+        fresh_session_admitter: FreshSessionAdmitter | None = None,
     ) -> None:
         if not supported_protocol_versions or any(
             version < 1 for version in supported_protocol_versions
@@ -81,6 +85,7 @@ class EndpointSessionRegistry:
         self._development_identity = development_identity
         self._thread_authorizer = thread_authorizer
         self._continuation_authorizer = continuation_authorizer
+        self._fresh_session_admitter = fresh_session_admitter
         self._entries: dict[str, _Entry] = {}
         self._default_heartbeat_interval_ms = 30_000
         if development_identity is not None and 2 in supported_protocol_versions:
@@ -208,8 +213,18 @@ class EndpointSessionRegistry:
                 protocol_version=protocol_version,
                 endpoint_identity=endpoint_identity,
             )
+            if entry is None:
+                return
             closed = await entry.session.wait_until_detached_or_closed()
 
+        if (
+            not closed
+            and entry.endpoint_identity is not None
+            and entry.endpoint_identity.admission is not None
+            and getattr(transport, "closed_normally", False)
+        ):
+            await entry.session.close()
+            closed = True
         if closed:
             logger.info("session %s closed", entry.session.session_id)
             self._entries.pop(entry.session.session_id, None)
@@ -259,7 +274,7 @@ class EndpointSessionRegistry:
         client_hello: SessionHelloFrame | None = None,
         protocol_version: int = 1,
         endpoint_identity: AuthenticatedTransportIdentity | None = None,
-    ) -> _Entry:
+    ) -> _Entry | None:
         session_id = str(uuid4())
         session = InMemoryEndpointSession(
             session_id,
@@ -281,6 +296,24 @@ class EndpointSessionRegistry:
         )
         if client_hello is not None:
             session.set_client_hello(client_hello)
+        if self._fresh_session_admitter is not None and endpoint_identity is not None:
+            try:
+                admitted = await self._fresh_session_admitter(session, endpoint_identity)
+            except Exception:
+                logger.exception("endpoint session admission failed")
+                admitted = False
+            if not admitted:
+                await transport.send(
+                    VoiceSessionFailureFrame(
+                        code="authentication_failed",
+                        phase="starting",
+                        retryable=False,
+                        session_disposition="close",
+                        safe_message="语音会话准入已过期，请重新开始。",
+                    )
+                )
+                await transport.close()
+                return None
         resume_token = self._new_resume_token() if protocol_version == 2 else None
         entry = _Entry(
             session=session,
@@ -305,7 +338,22 @@ class EndpointSessionRegistry:
             )
         )
         logger.info("session %s started", session_id)
-        runtime = build_runtime(session)
+        try:
+            runtime = build_runtime(session)
+        except Exception:
+            logger.exception("session %s runtime construction failed", session_id)
+            self._entries.pop(session_id, None)
+            await session.send(
+                VoiceSessionFailureFrame(
+                    code="provider_unavailable",
+                    phase="starting",
+                    retryable=False,
+                    session_disposition="close",
+                    safe_message="语音服务暂时不可用，请稍后手动重试。",
+                )
+            )
+            await session.close()
+            return None
         entry.runtime = runtime
         task = asyncio.create_task(runtime.run())
         entry.runtime_task = task

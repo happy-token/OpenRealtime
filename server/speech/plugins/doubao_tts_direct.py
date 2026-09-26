@@ -488,7 +488,7 @@ class DoubaoDirectTtsEngine:
                     continue
                 parsed = _parse_frame(receive_task.result())
                 if parsed.get("error"):
-                    raise DoubaoTtsError(parsed["message"])
+                    raise DoubaoTtsError(self._safe_error(parsed["message"]))
                 event = parsed["event"]
                 if event == _EVENT_TTS_RESPONSE:
                     yield SynthesizedAudioChunk(
@@ -497,7 +497,7 @@ class DoubaoDirectTtsEngine:
                         is_final=False,
                     )
                 elif event == _EVENT_SESSION_FAILED:
-                    raise DoubaoTtsError(str(_decode_json_payload(parsed["payload"])))
+                    raise DoubaoTtsError(self._safe_error(_decode_json_payload(parsed["payload"])))
                 elif event == _EVENT_SESSION_FINISHED:
                     if not input_finished:
                         raise DoubaoTtsError("provider finished before text input completed")
@@ -535,31 +535,35 @@ class DoubaoDirectTtsEngine:
             task.cancel()
             task.add_done_callback(_consume_task_result)
 
+    def _safe_error(self, detail: object) -> str:
+        message = str(detail)[:1024]
+        return message.replace(self._api_key, "[redacted]") if self._api_key else message
+
     async def _expect(self, connection: Any, expected_event: int, failure_event: int) -> None:
         raw = await connection.recv()
         parsed = _parse_frame(raw)
         if parsed.get("error"):
-            raise DoubaoTtsError(parsed["message"])
+            raise DoubaoTtsError(self._safe_error(parsed["message"]))
         if parsed["event"] == failure_event:
-            raise DoubaoTtsError(str(_decode_json_payload(parsed["payload"])))
+            raise DoubaoTtsError(self._safe_error(_decode_json_payload(parsed["payload"])))
         if parsed["event"] != expected_event:
             raise DoubaoTtsError(
                 f"expected event {expected_event}, got {parsed['event']}: "
-                f"{_decode_json_payload(parsed['payload'])}"
+                f"{self._safe_error(_decode_json_payload(parsed['payload']))}"
             )
 
     async def _stream_audio(self, connection: Any) -> AsyncIterator[SynthesizedAudioChunk]:
         async for raw in connection:
             parsed = _parse_frame(raw)
             if parsed.get("error"):
-                raise DoubaoTtsError(parsed["message"])
+                raise DoubaoTtsError(self._safe_error(parsed["message"]))
             event = parsed["event"]
             if event == _EVENT_TTS_RESPONSE:
                 yield SynthesizedAudioChunk(
                     pcm16=parsed["payload"], sample_rate_hz=self._sample_rate_hz, is_final=False
                 )
             elif event == _EVENT_SESSION_FAILED:
-                raise DoubaoTtsError(str(_decode_json_payload(parsed["payload"])))
+                raise DoubaoTtsError(self._safe_error(_decode_json_payload(parsed["payload"])))
             elif event == _EVENT_SESSION_FINISHED:
                 return
 

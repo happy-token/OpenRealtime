@@ -13,9 +13,13 @@ import {
 export function AvatarLibraryScreen({
   initialScope = "realtime",
   initialRealtimeScope = "custom",
+  embedded = false,
+  returnTo,
 }: {
   initialScope?: AvatarLibraryScope;
   initialRealtimeScope?: RealtimeAvatarScope;
+  embedded?: boolean;
+  returnTo?: string;
 }) {
   const [avatars, setAvatars] = useState<AvatarAsset[] | null>(null);
 
@@ -45,6 +49,8 @@ export function AvatarLibraryScreen({
       internalPresetIds={INTERNAL_AVATAR_PRESET_IDS}
       initialScope={initialScope}
       initialRealtimeScope={initialRealtimeScope}
+      embedded={embedded}
+      returnTo={returnTo}
       loading={avatars === null}
     />
   );

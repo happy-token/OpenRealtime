@@ -47,6 +47,10 @@ class DisconnectingTransport(FakeTransport):
         raise TransportDisconnected("browser closed")
 
 
+class NormalClosingTransport(FakeTransport):
+    closed_normally = True
+
+
 class HoldingTransport(FakeTransport):
     def __init__(
         self,
@@ -126,6 +130,22 @@ async def test_fresh_connection_gets_new_session_and_ack() -> None:
     assert ack.resumed is False
     assert ack.session_id == sessions[0].session_id
     assert runtimes[0].received == [UserTextFrame(text="hi")]
+
+
+async def test_public_normal_close_releases_session_without_reconnect_grace() -> None:
+    identity = AuthenticatedTransportIdentity(
+        tenant_id="public", user_id="guest-1", device_id="browser", admission=object(),
+    )
+    transport = NormalClosingTransport(
+        [SessionHelloFrame(supported_protocol_versions=(2,))],
+        authenticated_identity=identity,
+    )
+    registry = EndpointSessionRegistry(
+        supported_protocol_versions=(2,),
+        fresh_session_admitter=lambda session, trusted: asyncio.sleep(0, result=True),
+    )
+    await registry.handle_connection(transport, RecordingRuntime)
+    assert registry.list_sessions() == []
 
 
 async def test_endpoint_negotiates_one_explicit_v2_protocol_version() -> None:

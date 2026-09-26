@@ -1,0 +1,40 @@
+.loading {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(var(--panel-blur,8px));
+}
+
+@media (min-width: 761px) {
+  :global(body:has([data-sidebar-open="true"])) .loading {
+    left: 260px;
+  }
+}
+
+.indicator {
+  width: 42px;
+  height: 42px;
+  border: 2px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: route-loading-spin 0.8s linear infinite;
+}
+
+.loadingContent {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+@keyframes route-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator { animation-duration: 1.6s; }
+}

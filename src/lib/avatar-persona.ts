@@ -18,6 +18,7 @@ export type AvatarPersonaProfile = {
 export type PersonaProfile = {
   personaId: string;
   personaName: string;
+  intro?: string;
   files: AvatarPersonaFile[];
   linkedAvatarIds: string[];
 };
@@ -25,6 +26,7 @@ export type PersonaProfile = {
 export type PersonaSummary = {
   personaId: string;
   personaName: string;
+  intro?: string;
   linkedAvatarIds: string[];
 };
 
@@ -66,7 +68,7 @@ export function personaSelectOptions(
     options.push({
       value: persona.personaId,
       label: persona.personaName,
-      description: `关联 ${persona.linkedAvatarIds.length} 个数字人`,
+      description: persona.intro || `关联 ${persona.linkedAvatarIds.length} 个数字人`,
     });
   }
   return options;

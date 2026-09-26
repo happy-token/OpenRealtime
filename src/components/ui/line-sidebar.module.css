@@ -1,0 +1,69 @@
+.sidebar {
+  --accent-color: #a855f7;
+  --text-color: #c4c4c4;
+  --marker-color: #6c6c6c;
+  --marker-length: 60px;
+  --marker-gap: 0px;
+  --tick-scale: .5;
+  --max-shift: 30px;
+  --item-gap: 20px;
+  --font-size: 1.1rem;
+
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.markers { padding-left: calc(var(--marker-length) + var(--marker-gap)); }
+.list { width: 100%; min-width: 0; margin: 0; padding: 8px 0; display: flex; flex-direction: column; gap: var(--item-gap); list-style: none; }
+.item { position: relative; min-width: 0; }
+.label {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--text-color));
+  background: none;
+  font: inherit;
+  font-size: var(--font-size);
+  font-weight: 550;
+  line-height: 1.2;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transform: translateX(calc(var(--effect, 0) * var(--max-shift)));
+}
+.label[aria-pressed="true"] { font-weight: 750; text-shadow: 0 2px 12px rgba(0,0,0,.75); }
+.label:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; border-radius: 3px; }
+.label:disabled { opacity: .5; cursor: wait; }
+.text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon { width: 14px; height: 14px; flex: 0 0 auto; display: grid; place-items: center; }
+.icon svg { width: 14px; height: 14px; }
+.index { margin-right: .35rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; opacity: calc(.55 + var(--effect, 0) * .45); }
+.marker {
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--marker-length) - var(--marker-gap));
+  width: var(--marker-length);
+  height: 1px;
+  background-color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--marker-color));
+  transform-origin: left center;
+  transform: translateY(-50%) scaleX(calc(.7 + var(--effect, 0) * .5));
+}
+.markers .item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: calc(100% + var(--item-gap) / 2);
+  left: calc(-1 * var(--marker-length) - var(--marker-gap));
+  width: calc(var(--marker-length) * var(--tick-scale));
+  height: 1px;
+  background-color: var(--marker-color);
+  opacity: .5;
+  transform: translateY(-50%);
+}
+.scaleTick .item:not(:last-child)::after { transform-origin: left center; transform: translateY(-50%) scaleX(calc(.7 + var(--effect, 0) * .6)); }
+.danger { --accent-color: #ffb3bc; --text-color: #e9b9c0; --marker-color: rgba(238,130,142,.5); }
+.danger .label { font-weight: 650; }

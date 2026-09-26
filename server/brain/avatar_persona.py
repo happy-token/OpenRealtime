@@ -47,7 +47,22 @@ class AvatarPersonaPromptCatalog:
         link = self._link_for_avatar(avatar_id)
         if not link:
             return None
-        persona_id = link.persona_id
+        return self.resolve_persona(link.persona_id, link.avatar_display_name)
+
+    def resolve_persona(
+        self,
+        persona_id: str,
+        display_name: str | None = None,
+    ) -> tuple[str, str] | None:
+        """Load one trusted Persona by ID for Avatar and conversation roles."""
+
+        if not _PERSONA_ID.fullmatch(persona_id):
+            raise ValueError("Persona ID is invalid")
+        role_name = display_name.strip() if display_name is not None else None
+        if role_name is not None and (
+            not role_name or len(role_name) > 80 or "\n" in role_name or "\r" in role_name
+        ):
+            raise ValueError("Role display name is invalid")
         persona_dir = self._persona_root / persona_id
         files: list[tuple[str, str]] = []
         total_chars = 0
@@ -76,11 +91,14 @@ class AvatarPersonaPromptCatalog:
         )
         if not rendered:
             return None
-        context = (
-            "# Avatar Context\n"
-            f"The selected Avatar's display name is {link.avatar_display_name}. "
+        identity_context = (
+            "# Role Context\n"
+            f"The selected role's display name is {role_name}. "
             "Use this name when introducing yourself; the Persona remains a reusable style asset.\n\n"
-            "# Persona Context\n"
+            if role_name is not None else ""
+        )
+        context = (
+            f"{identity_context}# Persona Context\n"
             "The following trusted Persona files are linked to the selected Avatar.\n\n"
             f"{rendered}"
         )
@@ -130,17 +148,28 @@ class SessionAvatarPersona:
         self._persona_context: str | None = None
 
     def select_avatar(self, avatar_id: str | None) -> str | None:
+        return self.select(avatar_id=avatar_id)
+
+    def select(
+        self,
+        *,
+        avatar_id: str | None = None,
+        persona_id: str | None = None,
+    ) -> str | None:
         self._avatar_id = None
         self._persona_context = None
-        if avatar_id is None:
+        if persona_id is not None:
+            resolved = self._catalog.resolve_persona(persona_id)
+        elif avatar_id is not None:
+            resolved = self._catalog.resolve(avatar_id)
+        else:
             return None
-        resolved = self._catalog.resolve(avatar_id)
         if resolved is None:
             return None
-        persona_id, context = resolved
-        self._avatar_id = avatar_id
+        selected_persona_id, context = resolved
+        self._avatar_id = avatar_id or f"persona:{selected_persona_id}"
         self._persona_context = context
-        return persona_id
+        return selected_persona_id
 
     def apply(self, base_prompt: str) -> str:
         if self._avatar_id is None or self._persona_context is None:

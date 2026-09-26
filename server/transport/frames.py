@@ -9,7 +9,7 @@ these models only define validated wire data.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -111,7 +111,7 @@ class TtsConfigFrame(BaseModel):
 
 
 class AvatarPersonaConfigFrame(BaseModel):
-    """Selects the trusted Persona linked to an Avatar for this Voice Session."""
+    """Selects a trusted Persona directly or through an Avatar link."""
 
     model_config = ConfigDict(frozen=True)
     type: Literal["avatar_persona_config"] = "avatar_persona_config"
@@ -119,6 +119,21 @@ class AvatarPersonaConfigFrame(BaseModel):
         default=None,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$",
     )
+    persona_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9][a-z0-9-]{1,63}$",
+    )
+
+
+class ToolConfigFrame(BaseModel):
+    """Selects the configured Canonical Tools exposed to this session."""
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["tool_config"] = "tool_config"
+    tool_names: list[
+        Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]{1,63}$")]
+    ] = Field(default_factory=list, max_length=64)
+    role_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$")
 
 
 class ConfirmationDecisionFrame(BaseModel):
@@ -406,6 +421,7 @@ InboundFrame = (
     | ClientConnectionQualityFrame
     | TtsConfigFrame
     | AvatarPersonaConfigFrame
+    | ToolConfigFrame
     | ConfirmationDecisionFrame
 )
 OutboundFrame = (

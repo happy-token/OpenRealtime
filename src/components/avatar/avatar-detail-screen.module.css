@@ -104,7 +104,7 @@
   color: white;
   background: rgba(8,10,16,.25);
   cursor: pointer;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--panel-blur,12px));
   transition: transform var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
 }
 .renameAvatar svg { width: 13px; }
@@ -125,7 +125,7 @@
   font-size: .48rem;
   font-weight: 720;
   white-space: nowrap;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--panel-blur,12px));
 }
 
 .actionCount svg,
@@ -147,7 +147,7 @@
 .statuses span a:hover { text-decoration-color: rgba(255,255,255,.98); }
 
 .stageActions {
-  max-width: min(590px, 56vw);
+  max-width: min(780px, 64vw);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -175,7 +175,7 @@
   font-weight: 750;
   text-decoration: none;
   cursor: pointer;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--panel-blur,14px));
   transition: transform var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
 }
 
@@ -183,8 +183,9 @@
 .secondaryAction { background: rgba(8,10,16,.24); }
 .replaceAction { background: rgba(8,10,16,.24); }
 .renameAction { width: 42px; padding: 0; background: rgba(8,10,16,.24); }
-.deleteAvatarAction { border-color: rgba(238,130,142,.34); color: rgba(255,224,228,.94); background: rgba(73,15,23,.34); }
-.deleteAction { width: 42px; padding: 0; color: rgba(255,205,211,.86); background: rgba(42,7,12,.22); }
+.destructiveActions { padding-left: 12px; display: flex; align-items: center; gap: 7px; border-left: 1px solid rgba(255,255,255,.24); }
+.deleteAvatarAction { border-color: rgba(238,130,142,.48); color: #ffe2e5; background: rgba(73,15,23,.44); }
+.deleteAction { border-color: rgba(255,255,255,.32); color: rgba(255,228,231,.94); background: rgba(42,7,12,.22); }
 .primaryAction:hover,
 .secondaryAction:hover,
 .replaceAction:hover,
@@ -222,7 +223,7 @@
   color: white;
   background: rgba(8,10,16,.5);
   font-size: .5rem;
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--panel-blur,14px));
 }
 
 .replacementFeedback[data-kind="error"] { border-color: rgba(255,145,157,.48); color: #ffd7dc; }
@@ -291,8 +292,8 @@
 }
 
 .dockMedia { display: grid; place-items: center; background: #1b1e27; }
-.dockMedia > img { object-fit: cover; object-position: 50% 35%; }
-.dockMedia > video { object-fit: cover; object-position: center; }
+.dockMedia > img { object-fit: contain; object-position: center; }
+.dockMedia > video { object-fit: contain; object-position: center; }
 .dockMedia > svg { width: 20px; color: rgba(255,255,255,.48); }
 .mediaDock > button::after { content: ""; position: absolute; z-index: 1; inset: 44% 0 0; background: linear-gradient(transparent, rgba(4,6,10,.92)); pointer-events: none; }
 .mediaDock > button small,
@@ -314,7 +315,7 @@
   color: rgba(255,255,255,.7);
   background: rgba(8,10,16,.2);
   text-decoration: none;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--panel-blur,10px));
   transition: color var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast), transform var(--duration-fast);
 }
 
@@ -373,7 +374,7 @@
   display: grid;
   place-items: center;
   background: rgba(5,7,12,.7);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--panel-blur,16px));
   animation: replacementFade 180ms ease both;
 }
 
@@ -406,7 +407,7 @@
 
 .replacementPreview { margin: 17px 20px 0; padding: 10px; display: grid; grid-template-columns: 78px minmax(0,1fr); align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-muted); }
 .replacementPreview > span { position: relative; width: 78px; height: 88px; overflow: hidden; border-radius: 11px; background: var(--surface-solid); }
-.replacementPreview img { object-fit: cover; object-position: 50% 30%; }
+.replacementPreview img { object-fit: contain; object-position: center; }
 .replacementPreview div { min-width: 0; display: grid; gap: 5px; }
 .replacementPreview small { color: var(--text-faint); font-size: .46rem; }
 .replacementPreview strong { overflow: hidden; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -460,7 +461,7 @@
   .detail { padding-top: 88px; }
   .stage { height: min(820px, calc(100svh - 106px)); min-height: 660px; }
   .identityMain { gap: 18px; }
-  .stageActions { max-width: 52vw; }
+  .stageActions { max-width: 60vw; }
   .technicalGrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
@@ -472,15 +473,16 @@
   .identity { top: 22px; right: 21px; left: 21px; }
   .identityMain { grid-template-columns: minmax(0,1fr); align-items: start; gap: 13px; }
   .identity h1 { font-size: clamp(2.5rem, 15vw, 4rem); }
-  .stageActions { width: 100%; max-width: none; flex-wrap: nowrap; justify-content: flex-end; }
+  .stageActions { width: 100%; max-width: none; justify-content: flex-end; }
+  .destructiveActions { width: 100%; padding-left: 0; justify-content: flex-end; border-left: 0; }
+  .deleteAvatarAction,.deleteAction { min-height: 34px; padding: 0 10px; font-size: .5rem; }
+  .deleteAvatarAction span,.deleteAction span { display: inline; }
   .primaryAction { flex: 0 1 auto; }
   .secondaryAction,
-  .replaceAction,
-  .deleteAvatarAction { width: 42px; padding: 0; font-size: 0; }
+  .replaceAction { width: 42px; flex: 0 0 42px; padding: 0; font-size: 0; }
   .secondaryAction svg,
-  .replaceAction svg,
-  .deleteAvatarAction svg { width: 15px; }
-  .deleteAvatarAction span { display: none; }
+  .replaceAction svg { width: 15px; flex: 0 0 auto; }
+  .deleteAvatarAction svg,.deleteAction svg { width: 13px; }
   .replacementFeedback { top: auto; right: 21px; bottom: 220px; left: 21px; }
   .mediaDock { right: 8px; bottom: 10px; left: 8px; padding-inline: 22px; justify-content: flex-start; mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
   .mediaDock > button { width: 88px; height: 116px; flex-basis: 88px; }

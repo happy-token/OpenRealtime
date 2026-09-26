@@ -1,5 +1,9 @@
 # OpenRealtime
 
+**公开体验：** [realtime.happy-token.cn](https://realtime.happy-token.cn) · **源码：** [GitHub](https://github.com/happy-token/OpenRealtime)
+
+Web 体验包含语音对话、实时数字人与离线动作编排。公开体验由站点运营方提供受限的语音额度；自行部署时可用 `.env` 配置平台服务。登录用户可在设置中保存个人供应商凭据和获得允许的口型对齐服务。完整部署需要 Next.js、Python WebSocket 服务和 PostgreSQL，参见[公开站部署指南](docs/deployment/public-trial.md)。
+
 A universal, extensible voice-interaction agent framework: a runtime that owns the voice
 interface (listening/speaking/turn-taking/dialogue-state) and delegates conversational
 intelligence to a built-in or external Brain, over a vendor-neutral transport, ASR/TTS
@@ -17,6 +21,8 @@ every vendor.
 > continue to work without a data migration.
 
 ## Project status
+
+- [公开站部署指南](docs/deployment/public-trial.md) — Cloudflare 前门、运行组件、密钥与发布检查。
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — consolidated Seam map and one-turn walkthrough.
 - [docs/REALTIME-GROUNDING.md](docs/REALTIME-GROUNDING.md) — frozen date/time, live search, trust boundaries, and SentenceEnd prefetch.
@@ -146,9 +152,66 @@ export VOICEAGENT_WS_HOST=127.0.0.1 # reverse proxy terminates public TLS
 ```
 
 The cookie name is `openrealtime_endpoint_token`. Multi-user deployments
-replace `StaticBearerWebSocketAuthenticator` with their own trusted login/session
-authenticator. Requested shared Threads are admitted only after the server-side
+can use `VOICEAGENT_ENDPOINT_AUTH_MODE=public_ticket` with the website's Casdoor
+login and PostgreSQL-backed public voice admission. Requested shared Threads are admitted only after the server-side
 Thread authority confirms access; a Resume Token never grants Thread access.
+
+### Public voice trial and personal API Keys
+
+The **My API Key** link requires ordinary account login. For local development,
+fill the account variables listed in `.env.example` in an ignored `.env.local`:
+Casdoor issuer, client ID and secret, this site's origin, user session secret,
+credential encryption key, and PostgreSQL DSN. Register
+`<VOICEAGENT_PUBLIC_ORIGIN>/api/user/callback` as the Casdoor application's
+redirect URI. Apply migration 0020 before logging in. Until these values are
+configured, `/settings/api-keys` displays setup guidance instead of opening a
+nonfunctional login flow. The administrator login is separate and does not
+identify an ordinary user's saved keys.
+
+Public voice is disabled by default. Apply the PostgreSQL migrations, including
+`0020_web_identity_and_provider_credentials.sql` and `0021_voice_admissions.sql`,
+before enabling it. Configure `VOICEAGENT_POSTGRES_DSN`, a dedicated
+`VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY` (32 random bytes in base64url), Casdoor
+OIDC settings, and `VOICEAGENT_PUBLIC_ORIGIN`. Run the voice process with
+`VOICEAGENT_ENDPOINT_AUTH_MODE=public_ticket`, proxy `/voice` to its WebSocket
+port, and serve that path over WSS on an HTTPS website. Then set
+`VOICEAGENT_PUBLIC_VOICE_ENABLED=true` in the web process. An explicit
+`NEXT_PUBLIC_VOICE_WS_URL` can override the browser's default same-origin
+`/voice` path. The web process refuses to issue trial tickets unless both
+public-voice settings are enabled.
+
+Visitors can start a complete voice conversation without logging in. The
+operator's server-side `.env` keys fund missing provider credentials. A Casdoor
+user can open `/settings/api-keys` to save, replace, or clear personal Anam,
+Doubao, Bella, DashScope, DeepSeek, and MiniMax keys. Stored keys are encrypted in
+PostgreSQL, displayed only by suffix, and used only for that user's requests.
+For realtime providers, a saved personal key wins over the corresponding
+platform key; removing it selects the platform key for the next session.
+Changing or deleting a key revokes active voice admissions bound to its version.
+The browser receives only an opaque, short-lived admission ticket and the
+provider/source labels. It never receives a provider API Key.
+
+Platform ASR and TTS each default to one concurrent conversation, controlled
+independently by `VOICEAGENT_PLATFORM_ASR_CONCURRENCY` and
+`VOICEAGENT_PLATFORM_TTS_CONCURRENCY`. Guest conversations and conversations
+using either platform speech key have a server-enforced 180-second limit by
+default (`VOICEAGENT_PLATFORM_VOICE_SESSION_SECONDS`). A full pool returns a
+visible busy response with manual retry. LLM calls do not consume a speech
+slot. No daily trial count or site-wide minute budget is imposed. Set hard
+spending limits at the provider account before publishing the site. Anam
+sessions using the platform key are limited to `ANAM_AVATAR_ID`; users with
+their own Anam key may choose their own valid Avatar ID. Ordinary users cannot use the
+administrator-only paid creation routes. HappyImage image generation is closed
+to ordinary users until its personal-account quota path is implemented. The
+standalone TTS preview route is also administrator-only because it does not
+hold a voice admission slot.
+
+Provider quota and credential failures are reported after the failed request;
+no reliable read-only balance precheck is currently integrated. ASR/TTS
+failures end the voice session and leave its transcript available. This public
+mode still uses an in-memory Endpoint Session registry, so a reverse proxy
+should keep reconnects on the same voice process. A lost process releases its
+PostgreSQL speech reservation at lease expiry.
 
 Voice Session admission is process-wide and reserves Session, ASR/TTS, memory,
 event-loop and audio-queue capacity before device audio is released. The
@@ -203,6 +266,13 @@ ANAM_API_KEY=...
 ANAM_AVATAR_ID=...
 ANAM_AVATAR_MODEL=cara-4
 ```
+
+Signed-in users save personal Anam and MiniMax keys on `/settings/api-keys`.
+The keys are encrypted in PostgreSQL and remain scoped to the account. Personal
+MiniMax video generation requires the user's own key and never falls back to the
+platform key. Administrator-only creation routes remain behind administrator
+access checks, and paid video generation remains disabled in production until
+its durable task paths and opt-in switch are configured.
 
 The API key stays on the server. `/api/anam/session` returns only a short-lived
 token with `enableAudioPassthrough: true`. The browser sends chunks through
@@ -462,3 +532,14 @@ for shared-directory locking, crash recovery, capability preflight, test profile
 and the Python type-error baseline. Local voice and text chat require no paid
 provider credentials. Hosted avatar sessions require authorized access and
 provider configuration; the UI checks these before offering startup.
+
+Signed-in users can save a completed personal MiniMax video on `/services/motion`,
+create a private Avatar, and attach the saved motion to that Avatar. These assets
+are stored separately from the administrator Avatar catalog and are served only
+to the owning web session. Set `OPENREALTIME_PERSONAL_MOTION_PATH` to an absolute,
+durable directory in production. The private Avatar appears in the digital-human
+catalog; motion management remains on `/services/motion`.
+The owner can bind that Avatar to a private role on `/roles/new`, choose its
+voice, and start a conversation in motion-video mode. The video loops as a
+visual preview while speech plays separately; it is not synchronized lip sync.
+Private roles and their knowledge bindings are scoped to the signed-in owner.

@@ -1,0 +1,11 @@
+.backdrop { position: fixed; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; background: radial-gradient(circle at 72% 32%,color-mix(in srgb,var(--accent) 21%,transparent),transparent 32%),linear-gradient(140deg,var(--bg),var(--bg-soft) 58%,color-mix(in srgb,var(--accent-cyan) 5%,var(--bg))); }
+.backdrop[data-overlay="true"] { position: absolute; }
+.imageBlur,.image,.wash { position: absolute; inset: 0; }
+.imageBlur { background-position: center; background-size: cover; filter: blur(26px) saturate(1.02) brightness(.76); transform: scale(1.16); }
+.image { background-position: center; background-size: contain; background-repeat: no-repeat; filter: blur(5px) brightness(.76); transform: scale(1.02); }
+.wash { background: linear-gradient(90deg,rgba(8,10,17,.46),transparent 48%,rgba(11,12,20,.08)),linear-gradient(0deg,rgba(6,8,15,.6),transparent 42%),color-mix(in srgb,var(--bg) 26%,transparent); }
+:global(body[data-color-scheme="light"]) .wash { background: color-mix(in srgb,var(--bg) 52%,transparent); }
+.voicePreview { position: absolute; inset: 0; display: grid; place-items: center; }
+.voicePreview :global(.orb) { width: min(70vw,980px); height: min(62vh,620px); transform: scale(1.58); }
+.voicePreview :global(.orb-library-aura),.voicePreview :global(.orb-integration-aura) { width: min(38vw,520px); }
+@media (max-width:760px) { .image { background-size: cover; } }

@@ -482,8 +482,8 @@ class RealtimeWebSocketFrameBridge:
         if frame.started and not frame.finished and not frame.stopped:
             await self._conversation.send(
                 ReportPlaybackProgress(
-                    command_id=f"playback:{frame.generation}:started",
-                    idempotency_key=f"playback:{frame.generation}:started",
+                    command_id=f"playback:{frame.generation}:{playback.speech_id}:started",
+                    idempotency_key=f"playback:{frame.generation}:{playback.speech_id}:started",
                     context=self._turn_context(frame.generation),
                     speech_id=playback.speech_id,
                     delivered_text_end=0,
@@ -520,9 +520,9 @@ class RealtimeWebSocketFrameBridge:
             )
         await self._conversation.send(
             ReportPlaybackProgress(
-                command_id=f"playback:{frame.generation}:{'done' if frame.finished else 'stop'}",
+                command_id=f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop'}",
                 idempotency_key=(
-                    f"playback:{frame.generation}:{'done' if frame.finished else 'stop'}"
+                    f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop'}"
                 ),
                 context=self._turn_context(frame.generation),
                 speech_id=playback.speech_id,
@@ -561,10 +561,10 @@ class RealtimeWebSocketFrameBridge:
         await self._conversation.send(
             ReportPlaybackProgress(
                 command_id=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}"
                 ),
                 idempotency_key=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}"
                 ),
                 context=self._turn_context(frame.generation),
                 speech_id=frame.speech_id,

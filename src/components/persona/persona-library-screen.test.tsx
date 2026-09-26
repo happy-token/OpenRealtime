@@ -10,9 +10,9 @@ import { PersonaLibraryScreen } from "./persona-library-screen";
 describe("PersonaLibraryScreen", () => {
   it("renders the intro and the create-Persona card while the list is loading", () => {
     const html = renderToStaticMarkup(<PersonaLibraryScreen />);
-    expect(html).toContain("Persona 库");
+    expect(html).toContain("<h2>人设</h2>");
     expect(html).toContain("正在加载 Persona 列表");
-    expect(html).toContain("创建 Persona");
+    expect(html).toContain("创建人设");
     expect(html).not.toContain("正在为");
   });
 

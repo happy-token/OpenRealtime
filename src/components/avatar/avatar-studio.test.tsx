@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
+import { ProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import { describe, expect, it } from "vitest";
 import { AvatarStudio, isAvatarNameLocked } from "./avatar-studio";
+
+function renderToStaticMarkup(element: ReactNode) {
+  return renderMarkup(<ProviderKeyGate>{element}</ProviderKeyGate>);
+}
 
 describe("AvatarStudio", () => {
   it("chooses the creation task only after the shared Avatar selector", () => {
@@ -81,7 +87,7 @@ describe("AvatarStudio", () => {
     expect(changeTaskBody).not.toContain("setMobileConfigOpen");
   });
 
-  it("switches the stage portrait to cover for non-square avatars so tall or wide images fill the frame", () => {
+  it("keeps non-square stage portraits fully visible without cropping", () => {
     const source = readFileSync(new URL("./avatar-studio.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("./avatar-studio.module.css", import.meta.url), "utf8");
 
@@ -90,7 +96,7 @@ describe("AvatarStudio", () => {
     expect(source.match(/data-fit=\{stagePreviewFit\}/g)).toHaveLength(3);
     expect(source).toContain("setStagePreviewFit(classifyMediaAspectRatio(img.naturalWidth, img.naturalHeight));");
 
-    expect(css).toMatch(/\.stageImage \.stagePortraitImage\[data-fit="landscape"\],\s*\n\.stageImage \.stagePortraitImage\[data-fit="portrait"\] \{ object-fit: cover; \}/);
+    expect(css).toMatch(/\.stageImage \.stagePortraitImage\[data-fit="landscape"\],\s*\n\.stageImage \.stagePortraitImage\[data-fit="portrait"\] \{ object-fit: contain; \}/);
     expect(css).toContain('.stageImage .stagePortraitImage[data-fit="portrait"] { object-position: 50% 22%; }');
   });
 

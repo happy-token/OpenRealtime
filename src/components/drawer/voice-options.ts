@@ -1,5 +1,6 @@
 export const DEFAULT_TTS_VOICE = "zh_male_yuanboxiaoshu_uranus_bigtts";
 export const DIALECT_TTS_VOICE = "zh_female_vv_uranus_bigtts";
+export const TTS_CONFIG_STORAGE_KEY = "voice-agent-tts-config";
 
 export type TtsProvider = "bailian" | "doubao";
 
@@ -67,7 +68,7 @@ export const TTS_DIALECT_OPTIONS = [
 ] as const;
 
 export type TtsVoice = string;
-export type TtsDialect = (typeof TTS_DIALECT_OPTIONS)[number]["value"];
+export type TtsDialect = (typeof BAILIAN_DIALECT_OPTIONS)[number]["value"];
 
 export function isTtsVoice(value: unknown): value is TtsVoice {
   return typeof value === "string" && /^[A-Za-z0-9_-]{2,128}$/.test(value);
@@ -78,5 +79,5 @@ export function findTtsVoice(value: string) {
 }
 
 export function isTtsDialect(value: unknown): value is TtsDialect {
-  return typeof value === "string" && TTS_DIALECT_OPTIONS.some((option) => option.value === value);
+  return typeof value === "string" && BAILIAN_DIALECT_OPTIONS.some((option) => option.value === value);
 }

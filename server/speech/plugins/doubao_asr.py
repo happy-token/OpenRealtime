@@ -134,6 +134,7 @@ class DoubaoAsrSession:
         sample_rate_hz: int | None = None,
         packet_duration_ms: int | None = None,
         commit_wait_ms: float = 512,
+        api_key: str = "",
     ) -> None:
         if (sample_rate_hz is None) != (packet_duration_ms is None):
             raise ValueError(
@@ -163,6 +164,8 @@ class DoubaoAsrSession:
         self._seq = 2
         self._alive = True
         self._updates = asyncio.Condition()
+        self._provider_failure: RuntimeError | None = None
+        self._api_key = api_key
         self._started_at = time.monotonic()
         self._reader_task = asyncio.ensure_future(self._read_loop())
 
@@ -171,6 +174,8 @@ class DoubaoAsrSession:
         return self._alive
 
     async def push_audio(self, pcm16: bytes, *, sample_rate_hz: int) -> None:
+        if self._provider_failure is not None:
+            raise self._provider_failure
         if not self._alive:
             return
         if self._sample_rate_hz is not None and sample_rate_hz != self._sample_rate_hz:
@@ -201,6 +206,8 @@ class DoubaoAsrSession:
         return True
 
     async def consume_transcript(self) -> str:
+        if self._provider_failure is not None:
+            raise self._provider_failure
         async with self._updates:
             revision_before_flush = self._revision
             endpoint_before_flush = self._sentence_end_revision
@@ -239,6 +246,8 @@ class DoubaoAsrSession:
             except TimeoutError:
                 pass
         async with self._updates:
+            if self._provider_failure is not None:
+                raise self._provider_failure
             transcript, self._transcript = self._transcript, ""
             self._committed_transcript = ""
             self._consumed_transcript += transcript
@@ -273,6 +282,8 @@ class DoubaoAsrSession:
                 and self._sentence_end_revision <= after_sentence_end_revision
             ):
                 await self._updates.wait()
+            if self._provider_failure is not None:
+                raise self._provider_failure
             return self._snapshot_unlocked()
 
     async def close(self) -> None:
@@ -291,6 +302,12 @@ class DoubaoAsrSession:
                     continue
                 response = _parse_frame(raw)
                 if response.get("error"):
+                    message = str(response.get("message", ""))[:256]
+                    if self._api_key:
+                        message = message.replace(self._api_key, "[redacted]")
+                    self._provider_failure = RuntimeError(
+                        f"Doubao ASR code={response.get('code')}: {message}"
+                    )
                     logger.warning(
                         "Doubao ASR vendor ended session after %.1fms (code=%s)",
                         (time.monotonic() - self._started_at) * 1000,
@@ -444,4 +461,5 @@ class DoubaoAsrEngine:
             sample_rate_hz=self._sample_rate_hz,
             packet_duration_ms=self._packet_duration_ms,
             commit_wait_ms=self._commit_wait_ms,
+            api_key=self._api_key,
         )

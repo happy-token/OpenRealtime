@@ -1,0 +1,24 @@
+.page { padding: 25px 0 60px; }
+.page header h2 { margin: 0 0 6px; font-size: var(--workspace-section-title-size); }
+.page header p,.page section > p { color: var(--text-dim); font-size: var(--workspace-body-size); line-height: 1.6; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 25px; }
+.columns section { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(135deg,rgb(255 255 255 / var(--panel-highlight-alpha,.072)),transparent 60%),color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 100%),transparent); backdrop-filter: blur(var(--panel-blur,3px)) saturate(145%); }
+.columns h3 { margin: 0 0 12px; font-size: .85rem; }
+.columns h3:not(:first-child) { margin-top: 25px; }
+.document { padding: 12px; display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 7px; background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 72%),transparent); cursor: pointer; }
+.document span { min-width: 0; display: grid; gap: 4px; }
+.document strong { font-size: .76rem; }
+.document small,.document em { color: var(--text-faint); font-size: .68rem; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.columns input:not([type="checkbox"]),.columns textarea { width: 100%; min-height: 38px; padding: 9px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 72%),transparent); font: inherit; font-size: var(--workspace-label-size); margin-bottom: 8px; }
+.columns textarea { resize: vertical; line-height: 1.5; }
+.columns button { min-height: 38px; padding: 0 14px; border: 1px solid var(--accent-border); border-radius: 10px; color: var(--accent-contrast); background: var(--accent); cursor: pointer; }
+.columns button:disabled { opacity: .5; cursor: not-allowed; }
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; min-width: 0; }
+.row button { flex: none; white-space: nowrap; }
+.passsage { margin-top: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 7px; font-size: .73rem; }
+.passsage p { white-space: pre-wrap; line-height: 1.6; }
+.passsage summary { cursor: pointer; font-weight: 600; }
+.passsage a { display: inline-block; margin-top: 9px; color: var(--accent); }
+.error { color: var(--danger); font-size: .75rem; }
+@media (max-width: 1050px) { .columns { grid-template-columns: 1fr; } }

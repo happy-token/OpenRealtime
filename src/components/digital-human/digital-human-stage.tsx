@@ -22,6 +22,9 @@ import { LiveTalkingSession } from "./livetalking-session";
 import { AVATAR_IDENTITY_CHOICES, LIP_SYNC_CHOICES } from "./segmented-avatar-config";
 import type { AvatarDisplayConfig } from "./types";
 import { sampleMediaAmbientColor } from "@/lib/ambient-color";
+import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
+import type { VoiceAdmission } from "@/lib/voice-admission";
+import type { TtsProvider } from "@/components/drawer/voice-options";
 
 interface DigitalHumanStageProps {
   state: ConversationState;
@@ -32,6 +35,9 @@ interface DigitalHumanStageProps {
   captionsEnabled?: boolean;
   onRendererReady?: () => void;
   onAmbientColorChange?: (color: string | null) => void;
+  publicVoiceEnabled?: boolean;
+  ttsProvider?: TtsProvider;
+  onVoiceAdmission?: (admission: VoiceAdmission | null) => void;
 }
 
 export type RendererState = "connecting" | "ready" | "preview" | "degraded" | "error";
@@ -68,7 +74,11 @@ function RenderedDigitalHumanStage({
   captionsEnabled = true,
   onRendererReady,
   onAmbientColorChange,
+  publicVoiceEnabled = false,
+  ttsProvider = "bailian",
+  onVoiceAdmission,
 }: DigitalHumanStageProps) {
+  const ensureProviderKey = useProviderKeyGate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const anamBridgeRef = useRef(new AnamAudioBridge(24_000));
   const liveTalkingBridgeRef = useRef(new LiveTalkingAudioBridge());
@@ -114,6 +124,17 @@ function RenderedDigitalHumanStage({
     let cancelled = false;
     let session: import("@anam-ai/js-sdk").AnamClient | null = null;
     let liveTalkingSession: LiveTalkingSession | null = null;
+    let activeAdmission: VoiceAdmission | null = null;
+
+    function releaseUnboundAdmission() {
+      if (!activeAdmission) return;
+      const ticket = activeAdmission.ticket;
+      activeAdmission = null;
+      onVoiceAdmission?.(null);
+      void fetch(`/api/voice/admission?ticket=${encodeURIComponent(ticket)}`, {
+        method: "DELETE", keepalive: true,
+      }).catch(() => undefined);
+    }
 
     async function connect() {
       bridge.disconnect();
@@ -128,6 +149,25 @@ function RenderedDigitalHumanStage({
       }
       if (displayConfig.renderPath === "segmented") {
         const lipModel = LIP_SYNC_CHOICES.find((choice) => choice.id === displayConfig.segmentedLipSyncId)?.name ?? "分段式 Renderer";
+        if (displayConfig.segmentedAvatarId.startsWith("avatar-personal-")) {
+          try {
+            const avatar = await fetchOwnedAvatar(displayConfig.segmentedAvatarId, requestController.signal);
+            if (!avatar || avatar.deleted_at) throw new Error("个人数字人不存在或已删除");
+            const action = avatar.actions.find(item => item.avatar_action_id === displayConfig.segmentedAvatarActionId && !item.deleted_at && item.video_url);
+            if (displayConfig.segmentedAvatarActionId && !displayConfig.segmentedAvatarActionId.startsWith("builtin:identity-static:") && !action) {
+              throw new Error("所选个人动作不存在或已删除");
+            }
+            if (cancelled) return;
+            setSegmentedVideoUrl(action?.video_url ?? "");
+            setRendererState("preview");
+            setRendererMessage(action ? "个人动作视频已加载" : "个人数字人形象已加载");
+          } catch (error) {
+            if (cancelled || requestController.signal.aborted) return;
+            setRendererState("error");
+            setRendererMessage(error instanceof Error ? error.message : "个人动作读取失败");
+          }
+          return;
+        }
         if (hasSegmentedRuntime) {
           setRendererState("connecting");
           setRendererMessage(`正在检查 ${segmentedRuntime?.displayName ?? "数字人"} 的 Wav2Lip 资产`);
@@ -247,13 +287,37 @@ function RenderedDigitalHumanStage({
       }
       setRendererState("connecting");
       setRendererMessage("正在创建 Anam 实时会话");
+      let admission: VoiceAdmission | null = null;
       try {
+        if (publicVoiceEnabled) {
+          const admissionResponse = await fetch("/api/voice/admission", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ttsProvider: ttsProvider === "bailian" ? "dashscope" : "doubao",
+              avatarProvider: "anam",
+            }),
+            cache: "no-store",
+            signal: requestController.signal,
+          });
+          const admissionResult = await readJsonResponse<VoiceAdmission & { error?: string }>(
+            admissionResponse, "语音服务准入失败",
+          );
+          if (!admissionResponse.ok || !admissionResult.ticket) {
+            throw new Error(admissionResult.error ?? "语音服务暂时不可用");
+          }
+          admission = admissionResult;
+          activeAdmission = admission;
+          onVoiceAdmission?.(admission);
+        }
         const response = await fetch("/api/anam/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(displayConfig.avatarProfileId === "default-anam"
-            ? {}
-            : { avatarId: displayConfig.avatarProfileId }),
+          body: JSON.stringify({
+            ...(displayConfig.avatarProfileId === "default-anam"
+              ? {} : { avatarId: displayConfig.avatarProfileId }),
+            ...(admission ? { admission: admission.ticket } : {}),
+          }),
           cache: "no-store",
           signal: requestController.signal,
         });
@@ -287,6 +351,9 @@ function RenderedDigitalHumanStage({
         setRendererState("ready");
         setRendererMessage(`实时渲染已连接 · 百炼中文音色驱动 · ${payload.avatar_model ?? "cara-4"}`);
       } catch (error) {
+        if (admission) {
+          releaseUnboundAdmission();
+        }
         if (cancelled || requestController.signal.aborted) return;
         setAvatarAudioSink(null);
         bridge.disconnect();
@@ -299,6 +366,7 @@ function RenderedDigitalHumanStage({
     return () => {
       cancelled = true;
       requestController.abort();
+      releaseUnboundAdmission();
       setAvatarAudioSink(null);
       bridge.disconnect();
       liveTalkingBridge.disconnect();
@@ -323,6 +391,9 @@ function RenderedDigitalHumanStage({
     hasSegmentedRuntime,
     segmentedRuntime?.avatarId,
     segmentedRuntime?.displayName,
+    publicVoiceEnabled,
+    ttsProvider,
+    onVoiceAdmission,
   ]);
 
   function retryRenderer() {
@@ -340,7 +411,9 @@ function RenderedDigitalHumanStage({
   );
   const hostedAvatarName = displayConfig.hostedAvatarDisplayName ?? "所选数字人";
   const fallbackImage = displayConfig.renderPath === "segmented"
-    ? selectedOpenTalkingIdentity?.previewImageUrl ?? selectedSegmentedAvatar?.imageUrl
+    ? displayConfig.segmentedAvatarId.startsWith("avatar-personal-")
+      ? `/api/user/avatars/${encodeURIComponent(displayConfig.segmentedAvatarId)}/image`
+      : selectedOpenTalkingIdentity?.previewImageUrl ?? selectedSegmentedAvatar?.imageUrl
     : displayConfig.hostedAvatarImageUrl;
   const segmentedAvatarName = (displayConfig.segmentedDisplayName !== "Shuchang"
     || displayConfig.segmentedAvatarId === "shuchang"
@@ -384,7 +457,7 @@ function RenderedDigitalHumanStage({
         alt=""
         aria-hidden="true"
         fill
-        unoptimized={fallbackImage.startsWith("https://")}
+        unoptimized={fallbackImage.startsWith("https://") || fallbackImage.startsWith("/api/user/")}
         sizes="(max-width: 900px) 100vw, 900px"
       /> : null}
       {fallbackImage ? <Image
@@ -393,7 +466,7 @@ function RenderedDigitalHumanStage({
         alt={`${displayConfig.renderPath === "segmented" ? `${segmentedAvatarName} 数字人测试形象` : `${hostedAvatarName} 数字人形象`}`}
         fill
         priority
-        unoptimized={fallbackImage.startsWith("https://")}
+        unoptimized={fallbackImage.startsWith("https://") || fallbackImage.startsWith("/api/user/")}
         sizes="(max-width: 900px) 100vw, 900px"
         onLoad={handleFallbackImageLoad}
       /> : <div className="digital-human-call-placeholder"><span>AVATAR ASSET</span><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? "数字人形象"}</strong><small>预览资产将在 Renderer 接入后显示</small></div>}
@@ -446,6 +519,9 @@ function RenderedDigitalHumanStage({
           <div className="digital-human-recovery" role={rendererState === "error" ? "alert" : "status"}>
             <span>{rendererMessage}</span>
             <div className="digital-human-recovery-actions">
+              {rendererState === "error" && displayConfig.renderPath === "hosted" && displayConfig.provider === "anam" && rendererMessage.includes("API Key") && (
+                <button type="button" onClick={() => void ensureProviderKey("anam", true).then((ready) => { if (ready) retryRenderer(); }).catch((cause: unknown) => setRendererMessage(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>更换 Anam Key</button>
+              )}
               <button type="button" aria-label="重新连接数字人画面" onClick={retryRenderer}>
                 <RotateCcw aria-hidden="true" />
                 重连画面

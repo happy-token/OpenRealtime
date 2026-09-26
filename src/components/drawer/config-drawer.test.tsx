@@ -134,10 +134,8 @@ describe("ConfigDrawer", () => {
     expect(html).toContain("模型与接口定义");
     expect(html).toContain("系统提示词");
     expect(html).toMatch(/<h4>Persona<\/h4>/);
-    expect(html).toContain("未关联 Persona");
     expect(html).toContain('aria-label="选择 Persona"');
     expect(html).toContain("管理 Persona");
-    expect(html).toMatch(/<a[^>]*href="\/personas\?avatar_id=[^"]*"[^>]*target="_blank"[^>]*>\s*管理 Persona/);
     expect(html).not.toContain("drawer-backdrop");
     expect(html).not.toContain("drawer-header");
     expect(html).not.toContain('role="dialog"');
@@ -507,7 +505,13 @@ describe("ConfigDrawer", () => {
     );
     expect(bailianCloneHtml).toContain('aria-label="克隆音色列表"');
     expect(bailianCloneHtml.indexOf('class="voice-clone-toolbar"')).toBeLessThan(bailianCloneHtml.indexOf('aria-label="克隆音色列表"'));
-    expect(bailianCloneHtml).toContain("傻妞");
+    expect(bailianCloneHtml).toContain("0 个可用音色");
+
+    const embeddedCloneHtml = renderToStaticMarkup(
+      <VoiceClonePanel embedded provider="bailian" selectedVoice="" previewVoice={null} previewState="idle" onSelect={() => {}} onPreview={() => {}} />,
+    );
+    expect(embeddedCloneHtml).toContain("新建克隆");
+    expect(embeddedCloneHtml).toContain('data-embedded="true"');
   });
 
   it("keeps the workbench general and conversation controls concise", () => {

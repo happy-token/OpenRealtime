@@ -58,13 +58,15 @@ def _control_message(task_id: str, name: str, payload: dict[str, Any]) -> str:
 
 
 class BellaAsrSession:
-    def __init__(self, connection: ClientConnection, task_id: str) -> None:
+    def __init__(self, connection: ClientConnection, task_id: str, api_key: str = "") -> None:
         self._connection = connection
         self._task_id = task_id
         self._transcript = ""
         self._revision = 0
         self._sentence_end_revision = 0
         self._alive = True
+        self._api_key = api_key
+        self._provider_failure: BellaAsrError | None = None
         self._updates = asyncio.Condition()
         self._started_at = time.monotonic()
         self._pushed_since_consume = False
@@ -75,6 +77,8 @@ class BellaAsrSession:
         return self._alive
 
     async def push_audio(self, pcm16: bytes, *, sample_rate_hz: int) -> None:
+        if self._provider_failure is not None:
+            raise self._provider_failure
         if not self._alive:
             return
         if not self._pushed_since_consume:
@@ -94,6 +98,8 @@ class BellaAsrSession:
 
     async def consume_transcript(self) -> str:
         async with self._updates:
+            if self._provider_failure is not None:
+                raise self._provider_failure
             transcript, self._transcript = self._transcript, ""
             self._pushed_since_consume = False
             return transcript
@@ -119,6 +125,8 @@ class BellaAsrSession:
                 and self._sentence_end_revision <= after_sentence_end_revision
             ):
                 await self._updates.wait()
+            if self._provider_failure is not None:
+                raise self._provider_failure
             return self._snapshot_unlocked()
 
     async def close(self) -> None:
@@ -149,12 +157,17 @@ class BellaAsrSession:
                                 self._sentence_end_revision = self._revision
                             self._updates.notify_all()
                 elif name == "TaskFailed":
+                    detail = str(payload.get("message", ""))[:1024]
+                    if self._api_key:
+                        detail = detail.replace(self._api_key, "[redacted]")
+                    self._provider_failure = BellaAsrError(detail)
                     logger.warning(
                         "Bella ASR TaskFailed after %.1fms: %s",
                         (time.monotonic() - self._started_at) * 1000,
-                        payload.get("message", ""),
+                        detail,
                     )
                     self._alive = False
+                    break
         except ConnectionClosed as exc:
             logger.warning(
                 "Bella ASR session closed after %.1fms: %s",
@@ -226,7 +239,7 @@ class BellaAsrEngine:
             )
         )
         started_task_id = await self._await_started(connection)
-        return BellaAsrSession(connection, started_task_id)
+        return BellaAsrSession(connection, started_task_id, self._api_key)
 
     async def _await_started(self, connection: ClientConnection) -> str:
         async for raw in connection:
@@ -237,5 +250,6 @@ class BellaAsrEngine:
             if header.get("name") == "TranscriptionStarted":
                 return str(header.get("task_id", ""))
             if header.get("name") == "TaskFailed":
-                raise BellaAsrError(str(event.get("payload", {}).get("message", "")))
+                detail = str(event.get("payload", {}).get("message", ""))[:1024]
+                raise BellaAsrError(detail.replace(self._api_key, "[redacted]"))
         raise BellaAsrError("connection closed before TranscriptionStarted")

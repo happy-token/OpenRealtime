@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronDown, FileText, Link2, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, FileText, Link2, Plus } from "lucide-react";
 import type { AvatarPersonaFile, PersonaProfile, PersonaSummary } from "@/lib/avatar-persona";
 import {
   buildPersonaSavePayload,
@@ -35,9 +35,13 @@ function withIdentityHeading(name: string, body: string): string {
 export function PersonaLibraryScreen({
   linkingAvatarId,
   linkingAvatarDisplayName = "",
+  onCreated,
+  embedded = false,
 }: {
   linkingAvatarId?: string;
   linkingAvatarDisplayName?: string;
+  onCreated?: () => void;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [personas, setPersonas] = useState<PersonaSummary[] | null>(null);
@@ -46,12 +50,14 @@ export function PersonaLibraryScreen({
   const [profiles, setProfiles] = useState<Record<string, PersonaProfile>>({});
   const [profileState, setProfileState] = useState<Record<string, LoadState>>({});
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
+  const [introDrafts, setIntroDrafts] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<Record<string, ActionState>>({});
   const [saveNotice, setSaveNotice] = useState<Record<string, string>>({});
   const [linkState, setLinkState] = useState<Record<string, ActionState>>({});
   const [linkNotice, setLinkNotice] = useState("");
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createIntro, setCreateIntro] = useState("");
   const [createId, setCreateId] = useState("");
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
   const [createState, setCreateState] = useState<ActionState>("idle");
@@ -84,6 +90,7 @@ export function PersonaLibraryScreen({
           if (!payload.profile) throw new Error("Persona 不存在");
           setProfiles((current) => ({ ...current, [next]: payload.profile as PersonaProfile }));
           setDrafts((current) => ({ ...current, [next]: personaDraftFromFiles((payload.profile as PersonaProfile).files) }));
+          setIntroDrafts((current) => ({ ...current, [next]: payload.profile?.intro ?? "" }));
           setProfileState((state) => ({ ...state, [next]: "loaded" }));
         })
         .catch(() => setProfileState((state) => ({ ...state, [next]: "error" })));
@@ -94,19 +101,24 @@ export function PersonaLibraryScreen({
     const profile = profiles[personaId];
     const draft = drafts[personaId];
     if (!profile || !draft) return;
-    const payload = buildPersonaSavePayload(profile.files, draft);
-    if (payload.files.length === 0) return;
+    const changedFiles = buildPersonaSavePayload(profile.files, draft).files;
+    const intro = introDrafts[personaId] ?? profile.intro ?? "";
+    const introChanged = intro.trim() !== (profile.intro ?? "");
+    if (changedFiles.length === 0 && !introChanged) return;
     setSaveState((state) => ({ ...state, [personaId]: "busy" }));
     setSaveNotice((notice) => ({ ...notice, [personaId]: "正在保存…" }));
     try {
       const response = await fetch(`/api/personas/${encodeURIComponent(personaId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ operation: "updateProfile", ...(changedFiles.length ? { files: changedFiles } : {}), ...(introChanged ? { intro } : {}) }),
       });
       const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "Persona 保存失败");
       if (!response.ok || !body.profile) throw new Error(body.error || "Persona 保存失败");
       setProfiles((current) => ({ ...current, [personaId]: body.profile as PersonaProfile }));
+      setIntroDrafts((current) => ({ ...current, [personaId]: body.profile?.intro ?? "" }));
+      setPersonas((current) => current?.map((persona) => persona.personaId === personaId
+        ? { ...persona, intro: body.profile?.intro } : persona) ?? current);
       setSaveState((state) => ({ ...state, [personaId]: "done" }));
       setSaveNotice((notice) => ({ ...notice, [personaId]: "已保存，下一轮对话生效" }));
     } catch (error) {
@@ -170,6 +182,7 @@ export function PersonaLibraryScreen({
         body: JSON.stringify({
           personaId,
           files,
+          ...(createIntro.trim() ? { intro: createIntro } : {}),
           ...(linkingAvatarId ? { avatarId: linkingAvatarId, avatarDisplayName: linkingAvatarDisplayName } : {}),
         }),
       });
@@ -179,14 +192,20 @@ export function PersonaLibraryScreen({
         router.push(`/avatars/${encodeURIComponent(linkingAvatarId)}`);
         return;
       }
+      if (onCreated) {
+        onCreated();
+        return;
+      }
       const created = body.profile;
       setPersonas((current) => [...(current ?? []), {
         personaId: created.personaId,
         personaName: created.personaName,
+        intro: created.intro,
         linkedAvatarIds: created.linkedAvatarIds,
       }].sort((a, b) => a.personaId.localeCompare(b.personaId)));
       setCreating(false);
       setCreateName("");
+      setCreateIntro("");
       setCreateId("");
       setCreateDraft({});
       setCreateState("idle");
@@ -198,17 +217,17 @@ export function PersonaLibraryScreen({
   }
 
   return (
-    <section className={styles.screen}>
+    <section className={styles.screen} data-embedded={embedded}>
       <header className={styles.intro}>
         <span>PERSONA LIBRARY</span>
-        <h2>Persona 库</h2>
-        <p>关联现有 Persona，或创建全新的人格配置文件，供数字人在对话与实时模式中共用。</p>
+        <h2>人设</h2>
+        <p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p>
       </header>
 
       {linkingAvatarId ? (
         <div className={styles.linkingBanner} role="status">
           <Link2 />
-          <span>正在为 <strong>{linkingAvatarDisplayName || linkingAvatarId}</strong> 选择 Persona</span>
+          <span>正在为 <strong>{linkingAvatarDisplayName || linkingAvatarId}</strong> 选择人设</span>
           {linkNotice ? <small role="alert">{linkNotice}</small> : null}
         </div>
       ) : null}
@@ -222,17 +241,17 @@ export function PersonaLibraryScreen({
             const profile = profiles[persona.personaId];
             const draft = drafts[persona.personaId] ?? {};
             return (
-              <article key={persona.personaId} className={styles.card} data-expanded={expanded}>
+              <article key={persona.personaId} className={`${styles.card} liquid-glass-surface`} data-expanded={expanded}>
                 <button
                   type="button"
                   className={styles.cardHeader}
                   aria-expanded={expanded}
                   onClick={() => toggleExpand(persona.personaId)}
                 >
-                  <span className={styles.cardIcon}><Sparkles /></span>
                   <span className={styles.cardTitle}>
                     <strong>{persona.personaName}</strong>
-                    <small>{persona.personaId} · 关联 {persona.linkedAvatarIds.length} 个数字人</small>
+                    <span className={styles.cardIntro}>{persona.intro || "为这个 Persona 添加一段简介"}</span>
+                    <small>关联 {persona.linkedAvatarIds.length} 个数字人</small>
                   </span>
                   <ChevronDown className={styles.cardChevron} />
                 </button>
@@ -240,7 +259,8 @@ export function PersonaLibraryScreen({
                 {linkingAvatarId ? (
                   <button
                     type="button"
-                    className={styles.linkButton}
+                    className={`${styles.linkButton} liquid-glass-button`}
+                    data-variant="primary"
                     disabled={linkState[persona.personaId] === "busy"}
                     onClick={() => void linkPersona(persona.personaId)}
                   >
@@ -254,6 +274,16 @@ export function PersonaLibraryScreen({
                       <p className={styles.notice}>正在加载 Persona 内容…</p>
                     ) : (
                       <>
+                        <label className={styles.editorField}>
+                          <span>卡片简介</span>
+                          <textarea
+                            value={introDrafts[persona.personaId] ?? profile.intro ?? ""}
+                            maxLength={160}
+                            aria-label={`${persona.personaName}的卡片简介`}
+                            placeholder="用一两句话描述这个 Persona 的性格或定位"
+                            onChange={(event) => setIntroDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))}
+                          />
+                        </label>
                         {profile.files.filter((file) => file.filename !== "AGENTS.md").map((file) => (
                           <label key={file.filename} className={styles.editorField}>
                             <span><FileText />{file.filename}</span>
@@ -288,8 +318,9 @@ export function PersonaLibraryScreen({
                         <div className={styles.saveRow}>
                           <button
                             type="button"
-                            className={styles.saveButton}
-                            disabled={saveState[persona.personaId] === "busy" || !isPersonaDraftDirty(profile.files, draft)}
+                            className={`${styles.saveButton} liquid-glass-button`}
+                            data-variant="primary"
+                            disabled={saveState[persona.personaId] === "busy" || (!isPersonaDraftDirty(profile.files, draft) && (introDrafts[persona.personaId] ?? profile.intro ?? "").trim() === (profile.intro ?? ""))}
                             onClick={() => void saveDraft(persona.personaId)}
                           >
                             {saveState[persona.personaId] === "busy" ? "保存中…" : "保存修改"}
@@ -309,7 +340,7 @@ export function PersonaLibraryScreen({
             );
           })}
 
-          <article className={styles.card} data-expanded={creating} data-create="true">
+          <article className={`${styles.card} liquid-glass-surface`} data-expanded={creating} data-create="true">
             <button
               type="button"
               className={styles.cardHeader}
@@ -318,7 +349,7 @@ export function PersonaLibraryScreen({
             >
               <span className={styles.cardIcon}><Plus /></span>
               <span className={styles.cardTitle}>
-                <strong>创建 Persona</strong>
+                <strong>创建人设</strong>
                 <small>从头定义一个新的人格配置文件</small>
               </span>
               <ChevronDown className={styles.cardChevron} />
@@ -326,10 +357,10 @@ export function PersonaLibraryScreen({
             {creating ? (
               <div className={styles.cardBody}>
                 <label className={styles.editorField}>
-                  <span>Persona 名称</span>
+                  <span>人设名称</span>
                   <input
                     value={createName}
-                    aria-label="Persona 名称"
+                    aria-label="人设名称"
                     placeholder="例如 温柔知性的伙伴"
                     onChange={(event) => setCreateName(event.target.value)}
                   />
@@ -342,6 +373,10 @@ export function PersonaLibraryScreen({
                     placeholder="例如 sweet-sunshine"
                     onChange={(event) => setCreateId(event.target.value)}
                   />
+                </label>
+                <label className={styles.editorField}>
+                  <span>卡片简介</span>
+                  <textarea value={createIntro} maxLength={160} aria-label="新人设的卡片简介" placeholder="用一两句话描述性格或定位" onChange={(event) => setCreateIntro(event.target.value)} />
                 </label>
                 {CREATE_FIELDS.filter(([, , , required]) => required).map(([filename, label, description]) => (
                   <label key={filename} className={styles.editorField}>
@@ -371,7 +406,8 @@ export function PersonaLibraryScreen({
                 <div className={styles.saveRow}>
                   <button
                     type="button"
-                    className={styles.saveButton}
+                    className={`${styles.saveButton} liquid-glass-button`}
+                    data-variant="primary"
                     disabled={createState === "busy"}
                     onClick={() => void submitCreate()}
                   >

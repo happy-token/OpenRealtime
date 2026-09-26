@@ -119,6 +119,9 @@ class InMemoryEndpointSession:
         if transport is not None:
             await transport.close()
 
+    async def wait_until_closed(self) -> None:
+        await self._closed.wait()
+
     async def attach(
         self, transport: TransportAdapter, frame_iterator: AsyncIterator[InboundFrame] | None = None
     ) -> None:

@@ -6,6 +6,23 @@ import { ClientVoiceSessionController } from "./controller";
 
 
 describe("ClientVoiceSessionController", () => {
+  it("starts a new public voice conversation without reusing the previous resume token", () => {
+    const controller = new ClientVoiceSessionController({
+      input: new DeviceAudioInputRuntime({ maxBufferFrames: 8 }),
+      output: new DeviceAudioOutputRuntime(),
+    });
+    controller.acceptSession({
+      type: "session_ack", session_id: "old", resume_token: "old-token",
+      resumed: false, protocol_version: 2,
+    });
+    controller.observeJournal(12);
+    controller.startNewSession();
+    expect(controller.createHello()).toMatchObject({
+      resume_session_id: null, resume_token: null,
+      last_session_sequence: 0, last_journal_sequence: 0,
+    });
+  });
+
   it("releases only the matching input epoch and builds semantic resume state", () => {
     const input = new DeviceAudioInputRuntime({ maxBufferFrames: 8 });
     const output = new DeviceAudioOutputRuntime();

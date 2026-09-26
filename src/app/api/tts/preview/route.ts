@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ADMIN_SESSION_COOKIE } from "@/lib/admin-auth";
+import { canUseAvatarTestApis } from "@/lib/avatar-test-access";
 
 const CONTROL_PLANE_URL =
   process.env.VOICEAGENT_CONTROL_PLANE_URL ?? "http://127.0.0.1:8766";
 
 export async function GET(request: NextRequest) {
+  if (!canUseAvatarTestApis(request, request.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
+    return NextResponse.json({ error: "语音试听暂未向普通用户开放" }, { status: 403 });
+  }
   const target = new URL("/tts/preview", CONTROL_PLANE_URL);
   target.search = request.nextUrl.search;
   try {

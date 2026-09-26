@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { AvatarAsset } from "@/lib/avatar-catalog";
-import { AvatarAssetLibrary, shouldAutoAdvanceAvatarCardMedia } from "./avatar-asset-library";
+import { AvatarAssetLibrary, avatarLibraryHref, shouldAutoAdvanceAvatarCardMedia, talkingCreationHref } from "./avatar-asset-library";
 import { AvatarLibraryScreen } from "./avatar-library-screen";
 
 vi.mock("next/navigation", () => ({
@@ -116,7 +116,7 @@ describe("AvatarAssetLibrary", () => {
     expect(html).not.toContain("可使用图片");
     expect(html).toContain("1 个动作");
     expect(html).toContain('href="/avatars/create?task=action&amp;avatar_id=avatar-lin"');
-    expect(html).toContain('href="/?avatar_id=avatar-lin&amp;experience=avatar"');
+    expect(html).toContain('href="/conversation?avatar_id=avatar-lin&amp;experience=avatar"');
     expect(html).not.toContain(">Liv<");
     expect(html).not.toContain(">陪伴<");
     expect(html).not.toContain("未配置");
@@ -134,7 +134,7 @@ describe("AvatarAssetLibrary", () => {
 
     expect(html).toContain("Liv");
     expect(html).toContain("Anam 内置 · 仅实时驱动");
-    expect(html).toContain('href="/?avatar_id=avatar-stock-liv&amp;experience=avatar"');
+    expect(html).toContain('href="/conversation?avatar_id=avatar-stock-liv&amp;experience=avatar"');
     expect(html).not.toContain(">Lin<");
     expect(html).not.toContain(">陪伴<");
     expect(html).not.toContain("/actions/create");
@@ -151,8 +151,8 @@ describe("AvatarAssetLibrary", () => {
 
     expect(html).toContain("陪伴");
     expect(html).toContain('data-scope="internal-preset"');
-    expect(html).toContain('href="/?avatar_id=companion&amp;experience=avatar"');
-    expect(html).toContain('aria-label="管理 陪伴 的 1 个动作"');
+    expect(html).toContain('href="/conversation?avatar_id=companion&amp;experience=avatar"');
+    expect(html).toContain('aria-label="管理 陪伴 的动作"');
     expect(html).toContain("1 个动作");
     expect(html).toContain('href="/avatars/create?task=action&amp;avatar_id=companion"');
     expect(html).toContain('aria-label="删除形象：陪伴"');
@@ -230,5 +230,44 @@ describe("AvatarAssetLibrary", () => {
       menuOpen: false,
       playableActionCount: localSegmentedAvatar.actions.length,
     })).toBe(true);
+  });
+
+  it("keeps motion and talking production inside the digital-human library", () => {
+    const html = renderToStaticMarkup(
+      <AvatarAssetLibrary
+        avatars={[internalPresetAvatar, localSegmentedAvatar]}
+        internalPresetIds={["companion"]}
+        initialScope="internal-preset"
+      />,
+    );
+
+    expect(html).toContain("动作与口型对齐");
+    expect(html).toContain('href="/services/motion"');
+    expect(html).toContain('href="/services/talking"');
+  });
+
+  it("preserves role context across avatar scopes and asset creation links", () => {
+    expect(avatarLibraryHref("internal-preset", "custom", "role-personal-123"))
+      .toBe("/resources?tab=avatars&scope=internal-preset&return_to=role-personal-123");
+
+    const html = renderToStaticMarkup(
+      <AvatarAssetLibrary
+        avatars={[internalPresetAvatar]}
+        internalPresetIds={["companion"]}
+        initialScope="internal-preset"
+        returnTo="role-personal-123"
+      />,
+    );
+    expect(html).toContain('href="/avatars/create?return_to=role-personal-123"');
+    expect(html).toContain('href="/avatars/trash?return_to=role-personal-123"');
+    expect(html).toContain('href="/services/motion?return_to=role-personal-123"');
+  });
+
+  it("routes static presets through the materializing studio and personal avatars through the talking service", () => {
+    const action = internalPresetAvatar.actions[0];
+    expect(talkingCreationHref(internalPresetAvatar, action, "role-create"))
+      .toBe("/avatars/create?task=lightweight&avatar_id=companion&avatar_action_id=builtin%3Aopentalking%3Acompanion&return_to=role-create");
+    expect(talkingCreationHref({ ...privateAvatar, avatarId: "avatar-personal-123" }, privateAvatar.actions[0], "role-personal-123"))
+      .toBe("/services/talking?avatar_id=avatar-personal-123&action_id=action-idle&return_to=role-personal-123");
   });
 });

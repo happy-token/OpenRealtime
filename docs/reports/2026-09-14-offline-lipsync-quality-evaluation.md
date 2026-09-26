@@ -70,14 +70,14 @@ MuseTalk 的 VAE 使用 `latent_dist.sample()`，原始推理入口没有固定�
 
 新完整任务于 05:03:06–05:47:10 UTC 运行，约 44 分 04 秒，包含加载、预处理和输出校验；不以该耗时作为画质选择依据。抽查 12 个全脸时间点，并检查所有 15 个 16 帧分段边界的前两帧及首帧，未观察到明显新增口部崩坏；guidance 2.0 的张口幅度更明显。抽帧检查不等价于“完全无闪烁”的证明，保留完整对照视频供观看。
 
-四个完整交付文件通过严格解码（`ffmpeg -xerror`）、实际可解码帧数、帧率和时长检查，结果保存为 `final-media-validation.json`。无声讲话素材与原动作严格等长，没有借助变速或音频偏移获得评分提升。
+四个完整交付文件通过严格解码（`ffmpeg -xerror`）、实际可解码帧数、帧率和时长检查，结果保存为 `final-media-validation.json`。无声口型对齐与原动作严格等长，没有借助变速或音频偏移获得评分提升。
 
 ## 当前产品能力的边界
 
 应用现有动作编排不是逐句音频驱动：
 
 - `src/lib/musetalk-talking-worker.ts` 使用固定参考音频（可由 `MUSETALK_REFERENCE_AUDIO` 指定）。
-- `scripts/generate_musetalk_talking.sh` 生成无声讲话素材。
+- `scripts/generate_musetalk_talking.sh` 生成无声口型对齐。
 - `src/components/digital-human/motion-orchestration.tsx` 根据讲话状态切换 `loop muted` 的待机/讲话视频，并保持动作播放位置。
 
 因此，本轮同步评分只表示视频与**生成时参考音频**的对应程度。高质量循环素材能改善“看起来在讲话”的自然度，不能保证任意实时回复逐字对齐。若后续要求真实逐句对齐，必须使用实际回复音频生成或驱动口型。离线样片筛选与这一产品能力不能混为一谈。
@@ -90,7 +90,7 @@ MuseTalk 的 VAE 使用 `latent_dist.sample()`，原始推理入口没有固定�
 
 - `full-g2.0-preview.mp4`：最终完整预览，带参考语音，1280×720、10.04 秒。
 - `full-guidance-comparison.mp4`：旧 guidance 1.5 与新 2.0 的完整近景对照。
-- `full-g2.0-talking-material.mp4`：等长无声讲话素材，251 帧，未自动发布到应用。
+- `full-g2.0-talking-material.mp4`：等长无声口型对齐，251 帧，未自动发布到应用。
 - `full-boundary-contact.png`：全部 15 处分段边界对照；每行一个边界，左右各为旧/新配置的连续三帧。
 - `full-face-contact.jpg`：完整动作的 12 个全脸抽查时间点。
 - `full-sync-g1.5.log`、`full-sync-g2.0.log`：完整动作同步评估。

@@ -8,6 +8,9 @@ it("persists orchestration and only resolves a variant attached to the selected 
   const avatar = { avatar_id: "avatar-test", actions: [{ avatar_action_id: "action-test", video_url: "/idle.mp4", talking_variants: [{ id: "talk-test", source_video_url: "/idle.mp4", video_url: "/talk.mp4" }] }] } as OwnedAvatarRecord;
   expect(resolveMotionPair(avatar, config)).toEqual({ idle: "/idle.mp4", talking: "/talk.mp4" });
   expect(resolveMotionPair(avatar, { ...config, motionTalkingVariantId: "other" })).toBeNull();
+  avatar.actions[0].talking_variants![0].deleted_at = "2026-09-20T00:00:00.000Z";
+  expect(resolveMotionPair(avatar, config)).toBeNull();
+  avatar.actions[0].talking_variants![0].deleted_at = null;
   avatar.actions[0].video_url = "/replaced.mp4";
   expect(resolveMotionPair(avatar, config)).toBeNull();
 });
@@ -32,6 +35,7 @@ it("lists each talking variant directly even when the base has pending lip model
       { id: "muse", method: "musetalk", source_video_url: "/idle", video_url: "/muse" },
       { id: "lip", method: "lipforcing", source_video_url: "/idle", video_url: "/lip" },
       { id: "mini", method: "minimax", source_video_url: "/idle", video_url: "/mini" },
+      { id: "trashed", method: "musetalk", source_video_url: "/idle", video_url: "/trashed", deleted_at: "today" },
       { id: "stale", method: "wav2lip", source_video_url: "/old", video_url: "/stale" },
     ] },
     { avatar_action_id: "deleted", deleted_at: "today", video_url: "/idle", talking_variants: [{ id: "gone", source_video_url: "/idle", video_url: "/gone" }] },

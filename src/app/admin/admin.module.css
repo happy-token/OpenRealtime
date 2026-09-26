@@ -59,7 +59,7 @@
 .errorBanner svg { width: 16px; }
 
 .summaryGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
-.summaryCard { min-height: 125px; padding: 17px 18px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--admin-line); border-radius: 14px; background: var(--admin-panel); backdrop-filter: blur(16px); }
+.summaryCard { min-height: 125px; padding: 17px 18px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--admin-line); border-radius: 14px; background: var(--admin-panel); backdrop-filter: blur(var(--panel-blur,16px)); }
 .summaryCard > span { color: var(--admin-muted); font-size: .68rem; }
 .summaryCard > strong { font-size: clamp(1.7rem, 3vw, 2.5rem); font-weight: 540; letter-spacing: -.05em; }
 .summaryCard > small { color: #5f687d; font-size: .62rem; }
@@ -132,7 +132,7 @@
 .metricTable td small { margin-top: 3px; color: #50596d; font-size: .53rem; }
 .metricTable tbody tr:hover { background: rgba(255,255,255,.018); }
 
-.confirmBackdrop { position: fixed; z-index: 50; inset: 0; padding: 20px; display: grid; place-items: center; background: rgba(3,5,9,.72); backdrop-filter: blur(9px); }
+.confirmBackdrop { position: fixed; z-index: 50; inset: 0; padding: 20px; display: grid; place-items: center; background: rgba(3,5,9,.72); backdrop-filter: blur(var(--panel-blur,9px)); }
 .confirmDialog { position: relative; width: min(100%, 430px); padding: 25px; display: grid; gap: 16px; border: 1px solid rgba(255,99,105,.28); border-radius: 18px; background: linear-gradient(145deg,rgba(255,77,83,.055),rgba(15,18,28,.98) 34%); box-shadow: 0 30px 90px rgba(0,0,0,.46); }
 .confirmClose { position: absolute; right: 12px; top: 12px; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; color: #6f798e; background: transparent; cursor: pointer; }
 .confirmClose:hover { color: #dce2ee; background: rgba(255,255,255,.04); }
@@ -157,7 +157,7 @@
 .detailHeader p { margin: 0; color: var(--admin-muted); font-size: .65rem; }
 .headerBadges { display: flex; gap: 6px; padding-bottom: 5px; }
 .segmented { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--admin-line); border-radius: 9px; }
-.segmented button { height: 27px; padding: 0 9px; display: flex; align-items: center; gap: 5px; border: 0; border-radius: 6px; color: var(--admin-muted); background: transparent; cursor: pointer; font-size: .58rem; }
+.segmented button { height: 27px; padding: 0 9px; display: flex; align-items: center; gap: 5px; border: 0; border-radius: 10px; color: var(--admin-muted); background: transparent; cursor: pointer; font-size: .58rem; }
 .segmented button[data-active="true"] { color: var(--admin-ink); background: color-mix(in srgb,var(--accent) 12%,transparent); }
 .segmented svg { width: 12px; }
 .logList { max-height: 680px; overflow-y: auto; }
@@ -174,7 +174,7 @@
 .empty { padding: 34px !important; margin: 0; text-align: center; color: #596276; font-size: .66rem; }
 
 .loginShell { display: grid; place-items: center; }
-.loginCard { width: min(100%, 390px); padding: 34px; display: grid; gap: 13px; border: 1px solid var(--admin-line); border-radius: 20px; background: color-mix(in srgb,var(--surface-raised) 86%,transparent); box-shadow: 0 36px 90px rgba(0,0,0,.38); backdrop-filter: blur(20px); }
+.loginCard { width: min(100%, 390px); padding: 34px; display: grid; gap: 13px; border: 1px solid var(--admin-line); border-radius: 20px; background: color-mix(in srgb,var(--surface-raised) 86%,transparent); box-shadow: 0 36px 90px rgba(0,0,0,.38); backdrop-filter: blur(var(--panel-blur,20px)); }
 .loginIcon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; color: var(--admin-accent); background: color-mix(in srgb,var(--accent) 10%,transparent); }
 .loginIcon svg { width: 21px; }
 .loginCard h1 { margin: -7px 0 0; font-size: 1.75rem; letter-spacing: -.04em; }

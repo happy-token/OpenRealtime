@@ -1,0 +1,42 @@
+# Public website API key management plan
+
+Status: implementation in progress. The public voice ticket path, separate PostgreSQL ASR/TTS leases, three-minute deadline, account-backed encrypted keys, Casdoor login, settings UI, personal-key revocation, and provider-specific ASR/TTS failure messages are implemented behind an opt-in deployment flag. The [code audit](../reports/2026-09-20-api-key-management-audit.md) records the earlier state; [ADR-0130](../adr/0130-separate-public-trial-from-personal-provider-credentials.md) remains the product boundary.
+
+## User-visible contract
+
+1. A visitor without an account can try a published Avatar's complete voice conversation. The website operator's server-side `.env` keys fund that experience. It lasts at most three minutes by default and does not permit paid asset creation.
+2. A signed-in user can save personal keys for supported providers. Each realtime capability shows whether it uses that user's key or the platform key. A saved personal key is used only for requests by its owner. No personal key means the corresponding realtime capability uses the platform key; deliberately clearing a key returns that capability to the platform key.
+3. A configured personal key that fails validation, expires, reaches quota, or loses permission never falls back to a platform key. The source remains visible and the user is told what to correct. A platform key failure likewise never switches to a user's key.
+4. Personal-key settings show provider, masked suffix, and current known status, with replace and delete actions. They never return the plaintext after save. The UI explains before saving that a personal key is used only for that account's initiated requests and can be removed.
+5. Before a paid request, show availability or insufficient quota only when the provider offers a reliable read-only status endpoint. Otherwise report quota failure from the actual request. Distinguish platform quota, personal quota, invalid key, speech capacity, and provider outage. Do not call a rate-limit response “out of credits” without provider evidence.
+6. If ASR or TTS runs out of quota during a voice session, end that voice session with a clear reason and keep its existing conversation record. The user can update a personal key or wait for platform quota, then start another voice session. No automatic key, browser-speech, or text-mode substitution occurs.
+
+## Admission and duration
+
+- Maintain separate server-authoritative capacity pools for use of the platform ASR and platform TTS credentials. Each starts at one concurrent conversation and has a deployment setting. Platform LLM usage alone takes neither speech slot.
+- A conversation requiring both platform ASR and TTS acquires both slots atomically before starting. A conversation using only one platform speech credential acquires only that service's slot; thus one platform-ASR-only and one platform-TTS-only conversation may run together.
+- On capacity failure, return a stable `speech_capacity_full` state and a safe retry hint. The page retains its configuration and offers manual retry; there is no unbounded queue or automatic retry loop.
+- Unauthenticated voice trials always use the three-minute default limit. Signed-in conversations use that limit when either ASR or TTS uses a platform key. A signed-in conversation with personal ASR and TTS keys has no platform speech duration limit even if it uses the platform LLM key. Enforce the deadline server-side and give a visible warning before a normal end.
+- Hold a capacity lease for the actual voice-session lifetime, including the supported reconnect grace. Release on confirmed closure or lease expiry after lost workers; use a distributed store and heartbeat so multiple web or voice processes cannot each admit their own “first” session. A key deletion or replacement revokes affected active credential bindings before further provider requests.
+- There is no per-visitor daily attempt count or site-wide daily trial-minute budget. Before public exposure, the operator-funded provider accounts must stop at exhausted quota or have hard spending limits.
+
+## Trust and storage boundaries
+
+- Reuse the project's chosen Casdoor identity for ordinary user accounts. Keep administrator authorization separate. Guest trial admission is a narrow server-issued capability, not an administrator session or a browser-provided user ID.
+- Persist personal keys encrypted at rest under the verified account subject in the server database. Use a dedicated encryption secret or managed key, separate from the administrator session secret. Store only nonsecret display metadata alongside ciphertext; never return, log, or expose either personal or platform plaintext keys to the browser.
+- Replace the current eight-hour encrypted-cookie key store with account-backed storage. Authenticate and check same-origin/CSRF protection on save, replace, status, and delete. Deleting removes the active record and prevents subsequent use; active sessions bound to that key must stop before another request can use the old value.
+- Resolve the credential source on the server for each capability and pin the selected source and credential version to the voice session or paid task. The browser may request an experience but cannot submit another user's identity, choose an unauthorized account, or override the server's source decision.
+- The voice backend currently creates ASR, LLM, and TTS providers from process-wide environment variables. Replace this with per-session credential-aware provider construction or an equivalent isolated provider context. Never mutate global environment or a shared engine's key when one user's session begins.
+- Give each paid creation/task/result route an owner and a stable credential binding. Personal-key removal or rotation must not cause task polling to silently switch to the operator key; show a recoverable “original credential required” state where the provider requires the original account.
+- `.env` keys belong only on the server deployment; `.env.example` stays placeholders. Public source distribution must never include usable credentials. The public WebSocket path needs trusted session admission; the local static-bearer/demo identity path is not a multi-user public login.
+
+## Rollout gates
+
+1. **Close current paid-route gaps.** Guard `POST /api/happyimage/avatar-images` before any public access. Keep Vidu, LTX, LiveAvatar, and other `.env`-funded paid creation paths closed to ordinary users until each has verified ownership, personal funding, and production task persistence. HappyImage generation uses the signed-in user's HappyImage account quota, per ADR-0094 and ADR-0105.
+2. **Establish ordinary identity and durable secret storage.** Integrate Casdoor user sessions, encrypted account-bound credentials, masked settings, save/replace/delete, and server-only credential resolution. Remove the admin-session-secret dependency from personal-key encryption.
+3. **Make the full realtime path account-aware.** Connect Anam, ASR, LLM, and TTS to per-session credential resolution. A missing personal key uses the platform key for that capability; failure of a configured personal key does not. Show the effective source before session start.
+4. **Enforce platform speech capacity.** Add distributed ASR and TTS leases, a server-side duration deadline, reconnect-safe release, and explicit busy handling. LLM does not consume these leases.
+5. **Unify availability and quota outcomes.** Add provider-specific error translators behind stable public reason codes, optional read-only quota checks, and voice-session failure behavior that preserves the conversation record.
+6. **Verify before opening public routes.** Exercise two-process admission races, mixed platform/personal ASR and TTS sessions, key deletion during a session, wrong-account task access, quota exhaustion before and during a call, browser/API secret leakage, and all paid-route authorization gates. Keep ordinary paid operations disabled until their own gate passes.
+
+The README documents the opt-in public voice configuration and its remaining deployment constraints. A live Casdoor login and real-provider voice call still require environment-specific acceptance testing before publishing the site. HappyImage personal-account funding and other paid creation paths remain closed to ordinary users. Provider balance prechecks should only be added after verifying a reliable read-only endpoint for each provider.

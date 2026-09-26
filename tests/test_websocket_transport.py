@@ -1,7 +1,10 @@
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
+from websockets.exceptions import ConnectionClosedError
 
+from server.endpoint_session.in_memory_session import InMemoryEndpointSession
 from server.transport import frames
 from server.transport.base import AuthenticatedTransportIdentity
 from server.transport.frame_parsing import parse_inbound_frame
@@ -14,6 +17,7 @@ from server.transport.frames import (
     PlaybackProgressFrame,
     PlaybackQualityFrame,
     TtsConfigFrame,
+    ToolConfigFrame,
     UserTextFrame,
 )
 from server.transport.plugins.websocket import (
@@ -50,6 +54,13 @@ class FakeConnection:
         self.closed = True
 
 
+class AbruptConnection(FakeConnection):
+    async def _iter(self) -> AsyncIterator[str]:
+        async for message in super()._iter():
+            yield message
+        raise ConnectionClosedError(None, None)
+
+
 async def _collect(adapter: WebSocketTransportAdapter) -> list:
     return [frame async for frame in adapter.receive()]
 
@@ -63,6 +74,35 @@ async def test_receive_parses_user_text_frame():
     assert frames == [UserTextFrame(text="hello")]
 
 
+async def test_receive_abrupt_close_ends_stream_without_internal_error():
+    adapter = WebSocketTransportAdapter(
+        AbruptConnection(['{"type":"user_text","text":"hello"}'])
+    )
+
+    assert await _collect(adapter) == [UserTextFrame(text="hello")]
+
+
+async def test_abrupt_close_detaches_endpoint_session_for_reconnect():
+    adapter = WebSocketTransportAdapter(
+        AbruptConnection(['{"type":"user_text","text":"hello"}'])
+    )
+    session = InMemoryEndpointSession("voice-abrupt", adapter, adapter.receive())
+    received = []
+
+    async def read_frames() -> None:
+        async for frame in session.receive():
+            received.append(frame)
+
+    reader = asyncio.create_task(read_frames())
+    try:
+        closed = await asyncio.wait_for(session.wait_until_detached_or_closed(), 1)
+        assert closed is False
+        assert received == [UserTextFrame(text="hello")]
+    finally:
+        await session.close()
+        await reader
+
+
 async def test_receive_parses_cancel_assistant_response_frame():
     connection = FakeConnection(['{"type":"cancel_assistant_response"}'])
     adapter = WebSocketTransportAdapter(connection)
@@ -74,13 +114,29 @@ async def test_receive_parses_cancel_assistant_response_frame():
 
 async def test_receive_parses_avatar_persona_selection_without_prompt_content():
     connection = FakeConnection(
-        ['{"type":"avatar_persona_config","avatar_id":"avatar-zhaoning"}']
+        ['{"type":"avatar_persona_config","avatar_id":null,"persona_id":"intellectual-warmth"}']
     )
     adapter = WebSocketTransportAdapter(connection)
 
     received = await _collect(adapter)
 
-    assert received == [AvatarPersonaConfigFrame(avatar_id="avatar-zhaoning")]
+    assert received == [AvatarPersonaConfigFrame(
+        avatar_id=None,
+        persona_id="intellectual-warmth",
+    )]
+
+
+async def test_receive_parses_role_tool_selection():
+    connection = FakeConnection(
+        ['{"type":"tool_config","tool_names":["search_web","get_current_datetime"]}']
+    )
+    adapter = WebSocketTransportAdapter(connection)
+
+    received = await _collect(adapter)
+
+    assert received == [ToolConfigFrame(
+        tool_names=["search_web", "get_current_datetime"],
+    )]
 
 
 def test_removed_v1_audio_chunk_frame_is_rejected() -> None:

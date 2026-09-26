@@ -1,0 +1,9 @@
+.rings { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; border-radius: 50%; pointer-events: auto; }
+.rings canvas { display: block; width: 100%; height: 100%; }
+.fallback { position: absolute; inset: 0; display: none; place-items: center; pointer-events: none; }
+.fallback i { position: absolute; width: 72%; height: 72%; border: 2px solid rgba(109,231,255,.65); border-radius: 50%; box-shadow: 0 0 15px rgba(109,231,255,.3); animation: fallbackPulse 2.8s ease-in-out infinite; }
+.fallback i:nth-child(2) { width: 88%; height: 88%; border-color: rgba(161,141,255,.52); animation-delay: -.9s; }
+.fallback i:nth-child(3) { width: 58%; height: 58%; border-color: rgba(173,245,255,.42); animation-delay: -1.8s; }
+.rings[data-unavailable="true"] .fallback { display: grid; }
+@keyframes fallbackPulse { 0%,100% { opacity: .46; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.05); } }
+@media (prefers-reduced-motion: reduce) { .fallback i { animation: none; } }

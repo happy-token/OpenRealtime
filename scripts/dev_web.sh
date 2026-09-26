@@ -11,4 +11,4 @@ if [ "${OPENREALTIME_WAIT_FOR_AVATAR_SERVICES:-false}" = "true" ]; then
   bash scripts/avatar_services.sh wait
 fi
 
-exec pnpm exec next dev --hostname 127.0.0.1 --port "${OPENREALTIME_WEB_PORT:-3010}"
+exec pnpm exec next dev --turbopack --hostname 127.0.0.1 --port "${OPENREALTIME_WEB_PORT:-3010}"

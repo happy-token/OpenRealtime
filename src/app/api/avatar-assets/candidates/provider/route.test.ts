@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { providerKeyFingerprint } from "@/lib/provider-api-key";
 
 const mocks = vi.hoisted(() => ({
   persist: vi.fn(),
@@ -46,6 +47,7 @@ import { POST } from "./route";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
 
@@ -97,7 +99,8 @@ describe("provider Motion Base ingest", () => {
   });
 
   it("persists a MiniMax result through the compatible LTX candidate source using its trusted Avatar binding", async () => {
-    mocks.trustedLtx.mockReturnValue({ visualIdentityId: "shuchang", model: "MiniMax-H3", task: { taskId: "task_123456" } });
+    vi.stubEnv("MINIMAX_API_KEY", "test-minimax-key");
+    mocks.trustedLtx.mockReturnValue({ visualIdentityId: "shuchang", model: "MiniMax-H3", credentialFingerprint: providerKeyFingerprint("test-minimax-key"), task: { taskId: "task_123456" } });
     mocks.getLtx.mockResolvedValue({ state: "success", videoUrl: "https://media.ltx.test/result.mp4" });
     mocks.downloadLtx.mockResolvedValue({
       bytes: Uint8Array.from([0, 0, 0, 12, 102, 116, 121, 112]),
@@ -119,5 +122,21 @@ describe("provider Motion Base ingest", () => {
     const response = await POST(request("shuchang"));
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: "Provider 候选保存失败" });
+  });
+
+  it("explains when the local action asset service is unavailable", async () => {
+    successfulViduResult();
+    const unavailable = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8766"), { code: "ECONNREFUSED" }),
+    });
+    mocks.persist.mockRejectedValue(unavailable);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request("shuchang"));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "动作资产服务未启动或暂时无法连接，请启动本地语音服务后重试",
+    });
   });
 });

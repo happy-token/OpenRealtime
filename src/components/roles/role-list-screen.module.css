@@ -1,0 +1,78 @@
+.page { width: min(1280px,calc(100% - 64px)); margin: 0 auto; padding: 54px 0 72px; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 40px; }
+.heading { min-width: 220px; }
+.header h1 { margin: 0 0 7px; font-size: clamp(1.72rem,2.6vw,2.35rem); font-weight: 690; letter-spacing: -.04em; }
+.header p { max-width: 560px; margin: 0; color: var(--text-dim); font-size: .82rem; line-height: 1.55; }
+.headerActions { min-width: 0; padding-top: 7px; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.createButton { min-height: 42px; padding: 0 17px; flex: none; font-size: .76rem; font-weight: 680; text-decoration: none; white-space: nowrap; }
+.createButton svg { width: 16px; }
+.search { width: clamp(220px,27vw,360px); height: 42px; padding: 0 14px; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border-strong); border-radius: 999px; background: rgb(20 23 37 / var(--panel-surface-alpha,.3)); backdrop-filter: blur(var(--panel-blur,3px)); transition: border-color 180ms ease,box-shadow 180ms ease; }
+.search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent); }
+.search svg { width: 16px; color: var(--text-faint); }
+.search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .8rem; }
+.search input::placeholder { color: var(--text-faint); }
+.list { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 18px; }
+.roleCard { position: relative; min-width: 0; aspect-ratio: 4 / 5; overflow: hidden; border-radius: 22px; isolation: isolate; transition: transform 220ms ease, box-shadow 220ms ease,border-color 220ms ease; }
+.roleCard:hover,.roleCard:focus-within { transform: translateY(-4px); box-shadow: inset 0 1px rgb(255 255 255 / var(--panel-highlight-alpha,.07)),0 28px 64px rgb(6 9 18 / .22); }
+.roleCard[data-selected="true"] { border-color: color-mix(in srgb,var(--accent) 72%,white); box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 76%,white),0 24px 66px color-mix(in srgb,var(--accent) 22%,transparent); }
+.roleCard[data-selected="true"]:hover,.roleCard[data-selected="true"]:focus-within { box-shadow: inset 0 0 0 2px color-mix(in srgb,var(--accent) 82%,white),0 30px 72px color-mix(in srgb,var(--accent) 28%,transparent); }
+.portrait,.portrait img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.portrait { z-index: -2; display: grid; place-items: center; background: radial-gradient(circle at 50% 32%,color-mix(in srgb,var(--accent) 38%,#344252),#111720 72%); }
+.portrait img { object-fit: contain; object-position: center; transition: filter 300ms ease; }
+.roleCard:hover .portrait img { filter: brightness(1.04); }
+.portrait i { width: 110px; height: 110px; border: 1px solid color-mix(in srgb,var(--accent) 52%,transparent); border-radius: 50%; box-shadow: 0 0 70px color-mix(in srgb,var(--accent) 20%,transparent); }
+.portrait svg { position: absolute; width: 28px; color: var(--accent); }
+.cardShade { position: absolute; z-index: -1; inset: 0; background: linear-gradient(rgb(6 9 18 / .68),transparent 28%,transparent 54%,rgb(6 9 18 / .94)); pointer-events: none; }
+.selectSurface { position: absolute; z-index: 1; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.selectSurface:focus-visible { outline: 2px solid color-mix(in srgb,var(--accent) 78%,white); outline-offset: -5px; }
+.selectedBadge { position: absolute; z-index: 4; top: 52px; right: 14px; min-height: 28px; padding: 0 9px; display: flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb,var(--accent) 70%,white); border-radius: 999px; color: white; background: color-mix(in srgb,var(--accent) 54%,rgb(8 11 18 / .64)); box-shadow: 0 8px 24px rgb(0 0 0 / .2); font-size: .61rem; font-weight: 720; backdrop-filter: blur(var(--panel-blur,10px)); pointer-events: none; }
+.selectedBadge svg { width: 13px; height: 13px; }
+.roleCopy { position: absolute; z-index: 3; top: 17px; right: 100px; left: 18px; display: grid; gap: 3px; color: white; text-shadow: 0 2px 14px rgb(0 0 0 / .75); pointer-events: none; }
+.roleCopy > strong { overflow: hidden; font-size: 1.18rem; letter-spacing: -.03em; text-overflow: ellipsis; white-space: nowrap; }
+.roleCopy > small { overflow: hidden; color: rgb(255 255 255 / .7); font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
+.cardActions { position: absolute; z-index: 3; right: 18px; bottom: 56px; left: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; pointer-events: auto; }
+.startButton,.detailButton { min-height: 36px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px; color: white; font-size: .68rem; font-weight: 720; text-decoration: none; transition: transform 180ms ease,border-color 180ms ease,background 180ms ease; }
+.startButton svg,.detailButton svg { width: 14px; height: 14px; }
+.detailButton { border: 1px solid rgb(255 255 255 / .34); background: rgb(8 11 18 / .46); box-shadow: inset 0 1px rgb(255 255 255 / .1); backdrop-filter: blur(var(--panel-blur,10px)); }
+.detailButton:hover { border-color: rgb(255 255 255 / .68); background: rgb(8 11 18 / .68); transform: translateY(-2px); }
+.detailButton:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.capabilities { position: absolute; z-index: 3; right: 18px; bottom: 17px; left: 18px; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.capabilities > span { min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; pointer-events: none; }
+.capabilities em { padding: 3px 7px; border: 1px solid rgb(255 255 255 / .26); border-radius: 999px; color: rgb(255 255 255 / .8); background: rgb(8 11 18 / .3); font-size: .59rem; font-style: normal; backdrop-filter: blur(var(--panel-blur,3px)); }
+.capabilities em[data-primary="true"] { border-color: rgb(255 255 255 / .6); color: white; }
+.capabilities > button { width: 1.5rem; height: 1.5rem; padding: 0; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 10px; color: rgb(255 255 255 / .68); background: transparent; cursor: pointer; }
+.capabilities > button:hover { color: #ffafb4; background: rgb(93 24 35 / .48); }
+.capabilities > button:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.capabilities > button svg { width: .59rem; height: .59rem; }
+.defaultButton,.defaultBadge { position: absolute; z-index: 4; top: 14px; right: 14px; min-height: 30px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid rgb(255 255 255 / .35); border-radius: 999px; color: white; background: rgb(8 11 18 / .52); box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: .64rem; font-weight: 680; backdrop-filter: blur(var(--panel-blur,10px)); }
+.defaultButton { cursor: pointer; }
+.defaultButton:hover { border-color: rgb(255 255 255 / .7); background: rgb(8 11 18 / .7); }
+.defaultButton:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+.defaultButton:disabled { opacity: .5; cursor: wait; }
+.defaultButton svg,.defaultBadge svg { width: 13px; height: 13px; }
+.state { grid-column: 1 / -1; margin-top: 36px; padding: 34px 0; border-top: 1px solid var(--border); }
+.state strong { font-size: .95rem; }
+.state p { margin: 7px 0 0; color: var(--text-dim); font-size: .8rem; }
+.deleteBackdrop { position: fixed; z-index: 120; inset: 0; padding: 20px; display: grid; place-items: center; background: rgb(4 7 13 / .66); backdrop-filter: blur(var(--panel-blur,12px)); }
+.deleteDialog { width: min(420px,100%); padding: 20px; border: 1px solid color-mix(in srgb,#ff737d 30%,var(--border)); border-radius: 20px; color: var(--text); background: color-mix(in srgb,var(--surface-solid) 92%,transparent); box-shadow: 0 28px 90px rgb(0 0 0 / .42),inset 0 1px rgb(255 255 255 / .08); }
+.deleteDialog header { display: grid; grid-template-columns: 36px minmax(0,1fr) 32px; align-items: center; gap: 10px; }
+.deleteDialog header > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; color: #ff8f97; background: rgb(105 28 39 / .32); }
+.deleteDialog header svg { width: 16px; }
+.deleteDialog header small { color: #ff939b; font-size: .47rem; font-weight: 760; letter-spacing: .13em; }
+.deleteDialog h2 { margin: 3px 0 0; font-size: .88rem; }
+.deleteDialog header > button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; color: var(--text-dim); background: var(--bg-soft); cursor: pointer; }
+.deleteDialog p { margin: 18px 0; color: var(--text-dim); font-size: .7rem; line-height: 1.65; }
+.deleteDialog p strong { display: block; margin-bottom: 3px; color: var(--text); }
+.deleteDialog footer { display: flex; justify-content: flex-end; gap: 8px; }
+.deleteDialog footer button { min-height: 36px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--bg-soft); font: inherit; font-size: .62rem; cursor: pointer; }
+.deleteDialog footer button[data-danger="true"] { border-color: rgb(255 105 115 / .32); color: #fff; background: rgb(159 45 57 / .72); }
+.deleteDialog footer button:disabled { opacity: .5; cursor: wait; }
+.deleteDialog footer svg { width: 13px; }
+.loading { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap: 18px; }
+.loading i { aspect-ratio: 4 / 5; border-radius: 22px; background: linear-gradient(90deg,transparent,color-mix(in srgb,var(--surface-solid) 64%,transparent),transparent); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (max-width: 980px) { .header { align-items: flex-start; } .headerActions { flex: 1; } .search { width: min(300px,100%); } }
+@media (max-width: 760px) { .page { width: min(100% - 36px,720px); padding-top: 72px; } .header { flex-direction: column; gap: 20px; } .headerActions { width: 100%; padding-top: 0; } .search { width: 100%; flex: 1; } .list,.loading { margin-top: 30px; } }
+@media (max-width: 560px) { .header h1 { font-size: 1.65rem; } .header p { font-size: .78rem; } .headerActions { gap: 8px; } .createButton { padding: 0 13px; } .list,.loading { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } .roleCopy { top: 11px; right: 84px; left: 11px; gap: 2px; } .roleCopy > strong { font-size: .88rem; } .roleCopy > small { font-size: .55rem; } .cardActions { right: 10px; bottom: 42px; left: 10px; gap: 5px; } .startButton,.detailButton { min-height: 30px; padding: 0 9px; gap: 5px; font-size: .58rem; } .startButton svg,.detailButton svg { width: 12px; height: 12px; } .capabilities { right: 10px; bottom: 10px; left: 10px; gap: 3px; } .capabilities em { padding: 2px 5px; font-size: .47rem; white-space: nowrap; } .capabilities > button { width: 1.25rem; height: 1.25rem; } .capabilities > button svg { width: .47rem; height: .47rem; } .defaultButton,.defaultBadge { top: 8px; right: 8px; min-height: 27px; padding: 0 8px; font-size: .56rem; } .selectedBadge { top: 41px; right: 8px; min-height: 25px; padding: 0 7px; } .selectedBadge span { display: none; } }
+@media (max-width: 390px) { .createButton { width: 42px; padding: 0; font-size: 0; } .createButton svg { margin: 0; } }
+@media (prefers-reduced-motion: reduce) { .loading i,.portrait img,.roleCard,.startButton,.detailButton { animation: none; transition: none; } }

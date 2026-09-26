@@ -1,0 +1,28 @@
+.avatarGrid,.personaGrid { display: grid; gap: 10px; }
+.avatarGrid { grid-template-columns: repeat(3,minmax(0,1fr)); padding-top: 12px; gap: 7px; }
+.avatarCard { position: relative; min-width: 0; padding: 6px 6px 9px; display: grid; gap: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; color: #fff; background: rgba(255,255,255,.025); font: inherit; text-align: left; cursor: pointer; transition: transform 180ms ease,border-color 180ms ease,background-color 180ms ease; }
+.avatarCard:hover,.avatarCard:focus-visible { transform: translateY(-2px); border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.055); }
+.avatarCard:focus-visible,.personaCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.avatarCard[data-selected="true"] { border-color: color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.14)); background: color-mix(in srgb,var(--accent) 10%,rgba(255,255,255,.04)); box-shadow: none; }
+.avatarMedia { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 10px; background: #080a10; }
+.avatarMedia img { object-fit: contain; object-position: center; }
+.avatarCopy { min-width: 0; padding-inline: 3px; display: grid; gap: 5px; }
+.avatarCopy strong,.avatarCopy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatarCopy strong { font-size: .58rem; }
+.avatarCopy small { color: rgba(240,243,255,.42); font-size: .49rem; }
+.check { position: absolute; z-index: 2; top: 11px; right: 11px; width: 15px; color: #fff; filter: drop-shadow(0 2px 5px #000); }
+.personaGrid { grid-template-columns: repeat(auto-fill,minmax(200px,1fr)); }
+.personaCard { position: relative; min-height: 118px; padding: 16px 32px 16px 16px; display: flex; flex-direction: column; gap: 8px; border-radius: 18px; color: var(--text); text-align: left; cursor: pointer; transition: transform 180ms ease,border-color 180ms ease; }
+.personaCard:hover { transform: translateY(-3px); border-color: var(--accent-border); }
+.personaCard:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.personaCard strong { font-size: .83rem; }
+.personaCard span { display: -webkit-box; overflow: hidden; color: var(--text-dim); font-size: .68rem; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.personaCard[data-selected="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-border),0 15px 32px rgb(0 0 0 / .16); }
+.personaCard .check { color: var(--accent); filter: none; }
+@media (max-width: 760px) { .avatarGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 560px) { .personaGrid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .avatarCard,.personaCard { transition: none; } }
+.personaGrid { grid-template-columns: 1fr; gap: 6px; }
+.personaCard:hover { transform: none; }
+.personaCard { min-height: 68px; padding: 11px 36px 11px 13px; gap: 4px; border-radius: 12px; }
+.personaCard span { -webkit-line-clamp: 1; }

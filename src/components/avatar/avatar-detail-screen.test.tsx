@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,6 +13,7 @@ import {
   getAvatarActionDockWheelDelta,
   shouldPlayAvatarActionDockPreview,
   shouldAutoAdvanceAvatarDetailMedia,
+  avatarDetailActionHref,
 } from "./avatar-detail-screen";
 
 describe("AvatarPersonaStatus", () => {
@@ -55,6 +57,13 @@ describe("AvatarPersonaStatus", () => {
 });
 
 describe("AvatarDetailScreen", () => {
+  it("preserves role context in action-management links", () => {
+    expect(avatarDetailActionHref("/services/motion?avatar_id=avatar-personal-123", "role-personal-123"))
+      .toBe("/services/motion?avatar_id=avatar-personal-123&return_to=role-personal-123");
+    expect(avatarDetailActionHref("/avatars/create?task=action&avatar_id=avatar-123", "role-create"))
+      .toBe("/avatars/create?task=action&avatar_id=avatar-123&return_to=role-create");
+  });
+
   it("keeps image-only Avatars conversational and invites action creation", () => {
     const html = renderToStaticMarkup(<AvatarDetailScreen avatarId="avatar-123" />);
     expect(html).toContain("开始对话");
@@ -106,6 +115,14 @@ describe("AvatarDetailScreen", () => {
     expect(html).toContain('aria-label="新的动作名称"');
     expect(html).toContain("不会重新生成视频或影响口型模型");
     expect(html).toContain("保存名称");
+  });
+
+  it("allows owned personal avatars and actions to use the same rename controls", () => {
+    const source = readFileSync(new URL("./avatar-detail-screen.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("canRename: Boolean(ownedAvatar)");
+    expect(source).toContain("ownedActionIds: activeOwnedActions.map");
+    expect(source).not.toContain('ownedActionIds: avatarId.startsWith("avatar-personal-") ? []');
   });
 
   it("renders a digital-human rename dialog without implying asset replacement", () => {
@@ -161,7 +178,7 @@ describe("AvatarDetailScreen", () => {
       onDelete={() => {}}
     />);
 
-    expect(html).toContain("<span>删除</span>");
+    expect(html).toContain("<span>删除数字人</span>");
     expect(html).toContain('aria-label="删除数字人资产：数字人2"');
     expect(html).toContain("将数字人资产移入回收站");
   });

@@ -67,6 +67,7 @@ def test_knowledge_base_source_exposes_a_single_search_tool():
 
     assert len(tools) == 1
     assert tools[0].name == "search_knowledge_base"
+    assert tools[0].latency is LatencyClass.FAST
     assert tools[0].parameters == {
         "type": "object",
         "properties": {"query": {"type": "string"}},
@@ -137,6 +138,28 @@ def test_registry_aggregates_sources_and_supports_lookup():
     assert {tool.name for tool in registry.as_list()} == {"a", "b"}
     assert registry.get("a") is not None
     assert registry.get("missing") is None
+
+
+def test_registry_can_limit_tools_for_one_role_session():
+    first = SkillToolSource([SkillDeclaration(name="a", description="d", handler=_handler)])
+    second = SkillToolSource([SkillDeclaration(name="b", description="d", handler=_handler)])
+    registry = ToolRegistry([first, second])
+
+    registry.select_tools(["b"])
+
+    assert [tool.name for tool in registry.as_list()] == ["b"]
+    assert registry.get("a") is None
+    assert registry.get("b") is not None
+    assert [descriptor.name for descriptor in registry.descriptors()] == ["b"]
+
+
+def test_registry_rejects_unknown_role_tool_names():
+    registry = ToolRegistry([SkillToolSource([
+        SkillDeclaration(name="a", description="d", handler=_handler),
+    ])])
+
+    with pytest.raises(ValueError, match="unknown tool names"):
+        registry.select_tools(["missing"])
 
 
 def test_empty_registry_has_no_tools():

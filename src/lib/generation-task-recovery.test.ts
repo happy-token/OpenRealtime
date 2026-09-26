@@ -3,6 +3,7 @@ import {
   clearRecoverableGenerationTask,
   readRecoverableGenerationTask,
   saveRecoverableGenerationTask,
+  shouldRecoverGenerationSubmission,
 } from "./generation-task-recovery";
 
 function storage() {
@@ -23,12 +24,16 @@ describe("generation task recovery", () => {
       requestId: "request-1",
       provider: "minimax",
       taskId: "task-1",
+      displayName: "忧郁共鸣",
+      sourceId: "melancholy-empathy",
       startedAt: 1_000,
     }, local);
     expect(readRecoverableGenerationTask("avatar-1", "action", local, 2_000)).toMatchObject({
       requestId: "request-1",
       taskId: "task-1",
       provider: "minimax",
+      displayName: "忧郁共鸣",
+      sourceId: "melancholy-empathy",
     });
   });
 
@@ -58,5 +63,22 @@ describe("generation task recovery", () => {
     }, local);
     clearRecoverableGenerationTask("avatar-1", "action", local);
     expect(readRecoverableGenerationTask("avatar-1", "action", local)).toBeUndefined();
+  });
+
+  it("does not start refresh recovery while the original paid submission is still running", () => {
+    expect(shouldRecoverGenerationSubmission({
+      requestId: "request-1",
+      taskId: "",
+      provider: "minimax",
+      taskState: "queueing",
+      submissionInFlight: true,
+    })).toBe(false);
+    expect(shouldRecoverGenerationSubmission({
+      requestId: "request-1",
+      taskId: "",
+      provider: "minimax",
+      taskState: "queueing",
+      submissionInFlight: false,
+    })).toBe(true);
   });
 });

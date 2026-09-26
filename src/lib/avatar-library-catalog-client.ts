@@ -1,6 +1,6 @@
 import type { AnamHostedAvatar } from "./anam-avatars";
 import { buildAvatarCatalog, type AvatarAction, type AvatarAsset, type AvatarCatalogRecords } from "./avatar-catalog";
-import { fetchOwnedAvatars } from "./avatar-catalog-client";
+import { fetchOwnedAvatars, fetchPersonalAvatars } from "./avatar-catalog-client";
 import type { OwnedAvatarRecord } from "./avatar-records";
 import { BUILTIN_AVATAR_ACTIONS } from "./builtin-avatar-actions";
 import { readJsonResponse } from "./http-json-response";
@@ -70,8 +70,9 @@ export async function loadCurrentAvatarCatalog(
 ): Promise<AvatarAsset[]> {
   const includeHostedAvatars = options.includeHostedAvatars ?? true;
   const includeOwnedBuiltinActions = options.includeOwnedBuiltinActions ?? false;
-  const [ownedResult, anamResult] = await Promise.allSettled([
+  const [ownedResult, personalResult, anamResult] = await Promise.allSettled([
     fetchOwnedAvatars(signal),
+    fetchPersonalAvatars(signal),
     includeHostedAvatars
       ? fetch("/api/anam/avatars", { cache: "no-store", signal }).then(async (response) => {
         const payload = await readJsonResponse<{ avatars?: AnamHostedAvatar[] }>(response, "Anam 目录读取失败");
@@ -80,9 +81,11 @@ export async function loadCurrentAvatarCatalog(
       })
       : Promise.resolve<AnamHostedAvatar[]>([]),
   ]);
-  const owned = ownedResult.status === "fulfilled"
+  const adminOwned = ownedResult.status === "fulfilled"
     ? collapseDuplicateOwnedAvatars(ownedResult.value)
     : [];
+  const personalOwned = personalResult.status === "fulfilled" ? personalResult.value : [];
+  const owned = [...adminOwned, ...personalOwned];
   const internalCatalog = readInternalAvatarPresetCatalog();
   const records: AvatarCatalogRecords = {
     avatars: [
@@ -145,7 +148,9 @@ export async function loadCurrentAvatarCatalog(
       });
     }
   }
-  const catalog = buildAvatarCatalog(records);
+  const catalog = buildAvatarCatalog(records).map(avatar => avatar.avatarId.startsWith("avatar-personal-")
+    ? { ...avatar, canCreateActions: false }
+    : avatar);
   return includeOwnedBuiltinActions ? mergeOwnedBuiltinAvatarActions(catalog) : catalog;
 }
 

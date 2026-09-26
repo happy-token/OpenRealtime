@@ -24,4 +24,11 @@ describe("SessionRecoveryNotice", () => {
   it("stays hidden for a healthy session", () => {
     expect(renderToStaticMarkup(<SessionRecoveryNotice connection="open" micError={null} micAvailable sessionError={null} {...handlers} />)).toBe("");
   });
+
+  it("keeps a public voice capacity failure in the voice retry flow", () => {
+    const html = renderToStaticMarkup(<SessionRecoveryNotice connection="connecting" micError="平台语音服务当前满员" micAvailable={false} sessionError={null} voiceOnly {...handlers} />);
+    expect(html).toContain("平台语音服务当前满员");
+    expect(html).toContain("手动重试");
+    expect(html).not.toContain("改用文字");
+  });
 });

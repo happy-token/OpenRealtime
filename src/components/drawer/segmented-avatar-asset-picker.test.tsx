@@ -50,7 +50,7 @@ describe("SegmentedAvatarAssetPicker", () => {
     expect(html).toContain('aria-label="数字人1 形象与动作"');
     expect(html).toContain("1 个动作");
     expect(html).toContain("查看形象与动作");
-    expect(html).toContain('href="/avatars?scope=internal-preset"');
+    expect(html).toContain('href="/resources?tab=avatars&amp;scope=internal-preset"');
     expect(html).not.toContain('href="/avatars/avatar-digital-human-1"');
     expect(html).toContain('aria-label="更多操作：数字人1"');
     expect(html).toContain('aria-label="浏览 数字人1 的形象与动作"');
@@ -117,7 +117,7 @@ it("shows talking clips for owned avatars with realtime bindings and confirms th
     selectedAvatarId="" selectedActionId="" disabled={false} active onSelect={() => {}}
   />);
   expect(html).toContain('src="/talking.mp4"');
-  expect(html).toContain('aria-label="确认使用讲话素材：柔和回应 · MuseTalk"');
+  expect(html).toContain('aria-label="确认使用口型对齐：柔和回应 · MuseTalk"');
   expect(html).toContain('data-actions-only="true"');
-  expect(html).toContain("1 个讲话素材");
+  expect(html).toContain("1 个口型对齐");
 });

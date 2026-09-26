@@ -5,6 +5,8 @@ changes should add or improve a Protocol conformer rather than special-case the 
 
 ## Development setup
 
+The public trial and self-hosted deployment have different credential boundaries; see [the deployment guide](docs/deployment/public-trial.md). Never include a real `.env`, provider token, private portrait, or licensed media in a pull request.
+
 Follow [README.md](README.md)'s Requirements/Setup/Run sections to get the backend (`uv sync`)
 and the web demo (`pnpm install && pnpm dev`) running locally. No provider credentials are
 required for the deterministic default stack.

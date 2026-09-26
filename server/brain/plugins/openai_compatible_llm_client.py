@@ -77,6 +77,7 @@ class OpenAiCompatibleLlmClient:
             base_url or os.environ.get("VOICEAGENT_LLM_BASE_URL") or "https://api.openai.com/v1"
         ).rstrip("/")
         self._model = model or os.environ.get("VOICEAGENT_LLM_MODEL") or "gpt-4o-mini"
+        self._default_model = self._model
         self._disable_thinking = (
             disable_thinking
             if disable_thinking is not None
@@ -92,6 +93,12 @@ class OpenAiCompatibleLlmClient:
         self._timeout_s = timeout_s
         self._telemetry = telemetry
         self._provider_name = provider_name
+
+    def select_model(self, model: str | None) -> None:
+        """Select an operator-configured model for future requests in this session."""
+        if model is not None and (len(model) > 120 or not all(ch.isalnum() or ch in "._:/-" for ch in model)):
+            raise ValueError("invalid model id")
+        self._model = model or self._default_model
 
     async def complete(self, *, system_prompt: str, user_text: str) -> str:
         # Reuse the cancellation-aware streaming path even for callers that

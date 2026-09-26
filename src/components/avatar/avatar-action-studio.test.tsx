@@ -1,22 +1,54 @@
 import { readFileSync } from "node:fs";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
+import { ProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import { describe, expect, it } from "vitest";
 import { VIDEO_GENERATION_MODELS } from "@/lib/ltx-avatar-action";
 import { AvatarActionStudio, estimateGenerationProgress, formatElapsedTime } from "./avatar-action-studio";
 
+function renderToStaticMarkup(element: ReactNode) {
+  return renderMarkup(<ProviderKeyGate>{element}</ProviderKeyGate>);
+}
+
 describe("AvatarActionStudio", () => {
+  it("uses the focused motion form without duplicate creation modes or a side preview", () => {
+    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded focusedCreation />);
+
+    expect(html).toContain('data-motion-creation="focused"');
+    expect(html).toContain("多段式合成");
+    expect(html).toContain("视频生成");
+    expect(html).not.toContain('aria-label="动作创作方式"');
+    expect(html).not.toContain("上传动作");
+    expect(html).not.toContain('aria-label="动作效果预览"');
+    expect(html).not.toContain('data-floating-preview="true"');
+    expect(html).toContain('aria-label="供应商与模型"');
+    expect(html).toContain('aria-label="动作提示词内容"');
+    expect(html).not.toContain('aria-label="查看当前视频生成提示词"');
+    expect(html).not.toContain(">动作名称</span>");
+    expect(html).toContain('aria-label="生成结果操作"');
+  });
+
+  it("defaults to video generation and presents the creation modes as a dropdown list", () => {
+    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded />);
+
+    expect(html).toMatch(/aria-label="动作创作方式"[\s\S]*?<strong>视频生成<\/strong>/);
+    expect(html).toContain('role="listbox" aria-label="动作创作方式选项"');
+    expect(html).toContain("提示词驱动 · 默认");
+    expect(html).toContain("正在检测服务");
+    expect(html).not.toContain('role="tablist" aria-label="创建 Avatar 动作方式"');
+  });
+
   it("offers a compact action picker, separate upload entry, and continuous strength control", () => {
-    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />);
+    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" onChangeAvatar={() => undefined} />);
     expect(html).toContain("当前共享 Avatar");
     expect(html).toContain("上一步：返回选择 Avatar 形象");
     expect(html).toContain("上一步");
     expect(html).not.toContain(">更换<");
     expect(html).toContain("动作创作");
-    expect(html).toContain("创建 Avatar 动作方式");
+    expect(html).toContain('aria-label="动作创作方式"');
     expect(html).toContain("LivePortrait");
     expect(html).toContain("视频生成");
-    expect(html).toContain('data-provider="liveportrait"');
-    expect(html).toContain("提示词驱动");
+    expect(html).toContain("提示词驱动 · 默认");
     expect(html).not.toContain("LivePortrait 动作创作");
     expect(html).not.toContain("02 / LivePortrait");
     expect(html).not.toContain("Step 02 / Preview");
@@ -64,7 +96,7 @@ describe("AvatarActionStudio", () => {
   });
 
   it("keeps action selection on the left and uses the right side as one preview canvas", () => {
-    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />);
+    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" onChangeAvatar={() => undefined} />);
 
     expect(html).toContain('data-floating-preview="true"');
     expect(html).not.toContain('aria-label="切换内置动作参考"');
@@ -85,6 +117,9 @@ describe("AvatarActionStudio", () => {
     expect(html).toContain("自定义提示词");
     expect(html).not.toContain('aria-label="LTX 自定义提示词"');
     expect(html).not.toContain('role="dialog"');
+    expect(html).toContain("高级选项");
+    expect(html).toContain("画幅、清晰度与参考素材");
+    expect(html).toMatch(/<details[^>]*>[\s\S]*?aria-label="数字人形象角色"/);
   });
 
   it("offers each reviewed companion style directly in the prompt selection list", () => {
@@ -104,7 +139,7 @@ describe("AvatarActionStudio", () => {
   });
 
   it("keeps the preview action label provider-neutral and free of leading icons", () => {
-    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded />);
+    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" />);
     const ltxHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="ltx" />);
 
     expect(livePortraitHtml).toMatch(/<button[^>]*data-generate-action="true"[^>]*>生成动作<\/button>/);
@@ -114,7 +149,7 @@ describe("AvatarActionStudio", () => {
   });
 
   it("uses one unnumbered custom list style for LivePortrait actions and LTX prompts", () => {
-    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded />);
+    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" />);
     const ltxHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="ltx" />);
 
     expect(livePortraitHtml).toContain('role="combobox" aria-label="动作选项"');
@@ -127,18 +162,18 @@ describe("AvatarActionStudio", () => {
   });
 
   it("presents LivePortrait action selection and upload as parallel compact sources", () => {
-    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded />);
+    const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" />);
     const uploadHintId = html.match(/aria-label="上传动作" aria-describedby="([^"]+)"/)?.[1];
 
     expect(html).toContain('aria-label="动作来源"');
     expect(uploadHintId).toBeTruthy();
-    expect(html).toContain(`id="${uploadHintId}" role="tooltip">MP4、WebM 或 MOV，最大 50MB</span>`);
+    expect(html).toContain(`id="${uploadHintId}" role="tooltip">LivePortrait 服务未就绪，暂时无法上传动作</span>`);
     expect(html).toContain(">上传动作</strong>");
     expect(html).not.toContain(">上传动作参考</strong>");
   });
 
   it("keeps the action name field and preview action in one stable footer", () => {
-    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded />);
+    const livePortraitHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" />);
     const ltxHtml = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded initialProvider="ltx" />);
     const stableFooter = /role="group" aria-label="动作名称与生成"[\s\S]*>动作名称<\/span>[\s\S]*data-generate-action="true"/;
 
@@ -177,7 +212,7 @@ describe("AvatarActionStudio", () => {
 
     expect(css).toMatch(/\.actionSelectTrigger \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
     expect(css).toMatch(/\.actionSelectMenu > button \{[^}]*min-height: var\(--avatar-action-menu-row-height\)/);
-    expect(css).toMatch(/\.actionSourcePicker \{[^}]*grid-template-columns: minmax\(0,1fr\) minmax\(0,1fr\)/);
+    expect(css).toMatch(/\.creationModeRow \{[^}]*grid-template-columns: minmax\(0,1fr\) auto/);
     expect(css).toMatch(/\.uploadMotion > button:first-child \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
     expect(css).toMatch(/\.promptViewButton \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
   });
@@ -227,17 +262,17 @@ describe("AvatarActionStudio", () => {
     const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
     const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
     const triggerRule = css.match(/\.actionSelectTrigger \{[^}]*\}/)?.[0] || "";
-    const menuRule = css.match(/\.actionSelectMenu \{[^}]*\}/)?.[0] || "";
+    const menuRule = css.match(/^\.actionSelectMenu \{[^}]*\}/m)?.[0] || "";
 
-    expect(source.match(/<GenerationParameterSelect/g)).toHaveLength(4);
+    expect(source.match(/<GenerationParameterSelect/g)).toHaveLength(5);
     expect(source).toContain("aria-activedescendant={videoVendorMenuOpen");
     expect(source).not.toContain("miniMaxAvatarInput");
     expect(source).not.toContain("数字人资产形象");
     expect(css).not.toContain(".miniMaxParameterGrid select");
     expect(triggerRule).toContain("var(--action-glass-surface)");
-    expect(triggerRule).toContain("backdrop-filter: blur(20px) saturate(150%)");
+    expect(triggerRule).toContain("backdrop-filter: blur(var(--panel-blur,20px)) saturate(150%)");
     expect(menuRule).toContain("var(--action-glass-menu)");
-    expect(menuRule).toContain("backdrop-filter: blur(26px) saturate(155%)");
+    expect(menuRule).toContain("backdrop-filter: blur(var(--panel-blur,26px)) saturate(155%)");
     expect(css).toContain('.actionSelect[data-open="true"] { z-index: 40; }');
     expect(css).toMatch(/\.parameterSelect \.actionSelectMenu \{[^}]*border-radius: 16px/);
     expect(css).toMatch(/\.miniMaxVideoInput \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
@@ -257,7 +292,7 @@ describe("AvatarActionStudio", () => {
 
   it("hides the generation progress indicator while idle and keeps the accept flow reachable", () => {
     const livePortraitHtml = renderToStaticMarkup(
-      <AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />,
+      <AvatarActionStudio avatarId="avatar-123" embedded initialProvider="liveportrait" onChangeAvatar={() => undefined} />,
     );
 
     expect(livePortraitHtml).not.toContain("排队中");
@@ -271,7 +306,9 @@ describe("AvatarActionStudio", () => {
 
     expect(source).toContain('const busy = taskState === "queueing" || taskState === "processing";');
     expect(source).toContain('taskState === "queueing" ? "排队中…" : "视频生成中…"');
-    expect(source).toContain("已用时 {formatElapsedTime(elapsedMs)} · 刷新后会自动恢复");
+    expect(source).toContain("`已用时 ${formatElapsedTime(elapsedMs)} · 刷新后会自动恢复`");
+    expect(source).toContain("`${pollWarning} · 正在自动重试`");
+    expect(source).toContain("submissionInFlight,");
     expect(source).toContain('saveRecoverableGenerationTask({');
     expect(source).toContain('requestId,');
     expect(source).toContain('/api/ltx/image-to-video?request_id=');
@@ -281,7 +318,7 @@ describe("AvatarActionStudio", () => {
     const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
 
     expect(source).toMatch(/<strong role="status" aria-live="polite">\{taskState === "queueing"/);
-    expect(source).toContain('<span aria-live="off">已用时 {formatElapsedTime(elapsedMs)}');
+    expect(source).toContain('<span aria-live="off">{pollWarning ?');
   });
 
   it("estimates generation progress with an asymptotic curve capped below 100%, per provider duration", () => {
@@ -319,7 +356,11 @@ describe("AvatarActionStudio", () => {
       <AvatarActionStudio avatarId="avatar-123" embedded onChangeAvatar={() => undefined} />,
     );
 
-    expect(withHandler).toBe(withoutHandler);
+    expect(withHandler).toContain('aria-label="动作创作方式"');
+    expect(withoutHandler).toContain('aria-label="动作创作方式"');
+    expect(withHandler).toContain('data-floating-preview="true"');
+    expect(withoutHandler).toContain('data-floating-preview="true"');
+    expect(withHandler.replaceAll(/_R_[^" ]+/g, "react-id")).toBe(withoutHandler.replaceAll(/_R_[^" ]+/g, "react-id"));
     expect(withoutHandler).not.toContain('role="dialog"');
   });
 
@@ -338,7 +379,7 @@ describe("AvatarActionStudio", () => {
     expect(css).not.toMatch(/\.embedded \.controls \{[^}]*position: fixed/);
   });
 
-  it("switches the preview frame to cover for non-square media so tall or wide content fills the frame", () => {
+  it("keeps non-square preview media fully visible without cropping", () => {
     const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
 
@@ -348,7 +389,7 @@ describe("AvatarActionStudio", () => {
     expect(source).toContain("setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))");
     expect(source).toContain("setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))");
 
-    expect(css).toMatch(/\.previewFrame img\[data-fit="landscape"\],\s*\n\.previewFrame img\[data-fit="portrait"\],\s*\n\.previewFrame video\[data-fit="landscape"\],\s*\n\.previewFrame video\[data-fit="portrait"\] \{ object-fit: cover; \}/);
+    expect(css).toMatch(/\.previewFrame img\[data-fit="landscape"\],\s*\n\.previewFrame img\[data-fit="portrait"\],\s*\n\.previewFrame video\[data-fit="landscape"\],\s*\n\.previewFrame video\[data-fit="portrait"\] \{ object-fit: contain; \}/);
     expect(css).toContain('.previewFrame img[data-fit="portrait"],\n.previewFrame video[data-fit="portrait"] { object-position: 50% 22%; }');
   });
 

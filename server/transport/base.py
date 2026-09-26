@@ -8,8 +8,11 @@ Adapter.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from server.voice_session.public_admission import VoiceAdmissionBinding
 
 from server.transport.frames import InboundFrame, OutboundFrame
 
@@ -25,6 +28,7 @@ class AuthenticatedTransportIdentity:
     tenant_id: str
     user_id: str
     device_id: str
+    admission: VoiceAdmissionBinding | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if any(

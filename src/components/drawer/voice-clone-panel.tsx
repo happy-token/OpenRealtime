@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 import { mergeBailianClonedVoiceCatalog } from "@/lib/bailian-voice-clones";
 import { readJsonResponse } from "@/lib/http-json-response";
-import { BAILIAN_CLONED_VOICE_OPTIONS, type TtsProvider } from "./voice-options";
+import { BAILIAN_CLONED_VOICE_OPTIONS, BAILIAN_TTS_VOICE_OPTIONS, type TtsProvider } from "./voice-options";
 
 interface ClonedVoice {
   id: string;
@@ -36,9 +37,26 @@ interface VoiceClonePanelProps {
   previewState: "idle" | "loading" | "playing";
   onSelect: (voiceId: string, label: string) => void;
   onPreview: (voiceId: string, label: string) => void;
+  managementOnly?: boolean;
+  embedded?: boolean;
+  allowManagement?: boolean;
+  onCatalogChange?: () => void;
+  composerOpen?: boolean;
+  onComposerOpenChange?: (open: boolean) => void;
+  hideToolbar?: boolean;
+  externalComposerTriggerRef?: RefObject<HTMLButtonElement | null>;
 }
 
 type SourceKind = "recording" | "upload";
+
+export function canDeleteClonedVoice(voiceId: string, allowManagement: boolean) {
+  return allowManagement
+    && voiceId !== BAILIAN_CLONED_VOICE_OPTIONS[0].value;
+}
+
+export function canRepairMissingCloneSelection(catalogLoaded: boolean, catalogAvailable: boolean) {
+  return catalogLoaded && catalogAvailable;
+}
 
 export function VoiceClonePanel({
   provider,
@@ -47,12 +65,22 @@ export function VoiceClonePanel({
   previewState,
   onSelect,
   onPreview,
+  managementOnly = false,
+  embedded = false,
+  allowManagement = true,
+  onCatalogChange,
+  composerOpen: controlledComposerOpen,
+  onComposerOpenChange,
+  hideToolbar = false,
+  externalComposerTriggerRef,
 }: VoiceClonePanelProps) {
   const [voices, setVoices] = useState<ClonedVoice[]>([]);
   const [activeVoiceId, setActiveVoiceId] = useState<string | null>(null);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [catalogAvailable, setCatalogAvailable] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [catalogNotice, setCatalogNotice] = useState("");
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [localComposerOpen, setLocalComposerOpen] = useState(false);
   const [sourceKind, setSourceKind] = useState<SourceKind>("recording");
   const [displayName, setDisplayName] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -69,9 +97,22 @@ export function VoiceClonePanel({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
+  const composerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const composerDialogRef = useRef<HTMLDivElement | null>(null);
+  const recordingRef = useRef(recording);
+  const submittingRef = useRef(submitting);
+  recordingRef.current = recording;
+  submittingRef.current = submitting;
+  const composerOpen = controlledComposerOpen ?? localComposerOpen;
+
+  const updateComposerOpen = useCallback((next: boolean) => {
+    if (controlledComposerOpen === undefined) setLocalComposerOpen(next);
+    onComposerOpenChange?.(next);
+  }, [controlledComposerOpen, onComposerOpenChange]);
 
   const loadVoices = useCallback(async () => {
     if (provider !== "bailian") return;
+    setCatalogLoaded(false);
     try {
       const response = await fetch("/api/voice-clones", { cache: "no-store" });
       const payload = await readJsonResponse<{
@@ -80,15 +121,19 @@ export function VoiceClonePanel({
         voices?: ClonedVoice[];
         error?: string;
       }>(response, "克隆音色目录请求失败");
+      setCatalogAvailable(!payload.error);
       setConfigured(Boolean(payload.configured));
       setActiveVoiceId(typeof payload.activeVoiceId === "string" ? payload.activeVoiceId : null);
       setVoices(Array.isArray(payload.voices) ? payload.voices : []);
       setCatalogNotice(payload.error || "");
     } catch {
       setConfigured(false);
+      setCatalogAvailable(false);
       setActiveVoiceId(null);
       setVoices([]);
       setCatalogNotice("克隆音色目录暂不可用");
+    } finally {
+      setCatalogLoaded(true);
     }
   }, [provider]);
 
@@ -107,10 +152,49 @@ export function VoiceClonePanel({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [managingVoiceId, pendingDeleteVoiceId]);
 
+  useEffect(() => {
+    if (!embedded || !composerOpen) return;
+    const dialog = composerDialogRef.current;
+    const trigger = externalComposerTriggerRef?.current ?? composerTriggerRef.current;
+    const focusableSelector = 'button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    const initialFocus = dialog?.querySelector<HTMLElement>("[data-clone-initial-focus]")
+      ?? dialog?.querySelector<HTMLElement>(focusableSelector);
+    initialFocus?.focus();
+    const keepFocusInside = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !submittingRef.current) {
+        if (recordingRef.current) stopRecording();
+        updateComposerOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", keepFocusInside);
+    return () => {
+      document.removeEventListener("keydown", keepFocusInside);
+      trigger?.focus();
+    };
+  }, [composerOpen, embedded, externalComposerTriggerRef, updateComposerOpen]);
+
   const displayedVoices = useMemo(() => {
     if (provider !== "bailian") return [];
+    if (!activeVoiceId) return voices;
     const activeEnvironmentVoice: ClonedVoice = {
-      id: activeVoiceId || BAILIAN_CLONED_VOICE_OPTIONS[0].value,
+      id: activeVoiceId,
       displayName: BAILIAN_CLONED_VOICE_OPTIONS[0].label,
       status: "OK",
       createdAt: null,
@@ -121,7 +205,10 @@ export function VoiceClonePanel({
 
   useEffect(() => {
     const placeholderId = BAILIAN_CLONED_VOICE_OPTIONS[0].value;
-    if (provider !== "bailian" || selectedVoice !== placeholderId) return;
+    if (!canRepairMissingCloneSelection(catalogLoaded, catalogAvailable)
+      || managementOnly
+      || provider !== "bailian"
+      || selectedVoice !== placeholderId) return;
     const activeVoice = displayedVoices.find((voice) => voice.id === activeVoiceId);
     if (activeVoiceId && activeVoice) {
       onSelect(activeVoiceId, activeVoice.displayName);
@@ -132,8 +219,12 @@ export function VoiceClonePanel({
       voice.displayName.trim().toLocaleLowerCase()
       === BAILIAN_CLONED_VOICE_OPTIONS[0].label.trim().toLocaleLowerCase()
     ));
-    if (providerVoice) onSelect(providerVoice.id, providerVoice.displayName);
-  }, [activeVoiceId, displayedVoices, onSelect, provider, selectedVoice, voices]);
+    if (providerVoice) {
+      onSelect(providerVoice.id, providerVoice.displayName);
+      return;
+    }
+    onSelect(BAILIAN_TTS_VOICE_OPTIONS[0].value, BAILIAN_TTS_VOICE_OPTIONS[0].label);
+  }, [activeVoiceId, catalogAvailable, catalogLoaded, displayedVoices, managementOnly, onSelect, provider, selectedVoice, voices]);
 
   async function startRecording() {
     setSubmitNotice("");
@@ -206,7 +297,8 @@ export function VoiceClonePanel({
       if (!response.ok || !payload.voice) throw new Error(payload.error || "克隆音色创建失败");
       setVoices((current) => [payload.voice!, ...current.filter((voice) => voice.id !== payload.voice!.id)]);
       onSelect(payload.voice.id, payload.voice.displayName);
-      setComposerOpen(false);
+      onCatalogChange?.();
+      updateComposerOpen(false);
       setDisplayName("");
       setRightsConfirmed(false);
       resetSample();
@@ -238,6 +330,7 @@ export function VoiceClonePanel({
       if (!response.ok || !payload.voice) throw new Error(payload.error || "音色名称修改失败");
       setVoices((current) => current.map((item) => item.id === voice.id ? { ...item, displayName: payload.voice!.displayName } : item));
       if (selectedVoice === voice.id) onSelect(voice.id, payload.voice.displayName);
+      onCatalogChange?.();
       setEditingVoiceId(null);
       setCatalogNotice(`已将音色重命名为“${payload.voice.displayName}”`);
     } catch (error) {
@@ -264,14 +357,10 @@ export function VoiceClonePanel({
       const remaining = voices.filter((item) => item.id !== voice.id);
       setVoices(remaining);
       if (selectedVoice === voice.id) {
-        const fallback = mergeBailianClonedVoiceCatalog({
-          id: activeVoiceId || BAILIAN_CLONED_VOICE_OPTIONS[0].value,
-          displayName: BAILIAN_CLONED_VOICE_OPTIONS[0].label,
-          status: "OK",
-          createdAt: null,
-        }, remaining)[0];
-        if (fallback) onSelect(fallback.id, fallback.displayName);
+        onSelect(BAILIAN_TTS_VOICE_OPTIONS[0].value, BAILIAN_TTS_VOICE_OPTIONS[0].label);
       }
+      if (activeVoiceId === voice.id) setActiveVoiceId(null);
+      onCatalogChange?.();
       setPendingDeleteVoiceId(null);
       setCatalogNotice(`“${voice.displayName}”已从百炼音色目录删除`);
     } catch (error) {
@@ -290,26 +379,29 @@ export function VoiceClonePanel({
   }
 
   return (
-    <details className="config-card voice-clone-card voice-library-disclosure">
+    <details className="config-card voice-clone-card voice-library-disclosure" data-embedded={embedded} open={embedded || managementOnly || undefined}>
       <summary className="config-card-heading voice-clone-heading">
         <span className="config-step"><UserRound /></span>
         <div><h4>克隆音色</h4><p>{provider === "bailian" ? `${displayedVoices.length} 个可用音色` : "当前供应商暂未接入克隆接口"}</p></div>
         <ChevronDown className="voice-library-chevron" />
       </summary>
 
-      <div className="voice-clone-toolbar">
+      {!hideToolbar ? <div className="voice-clone-toolbar">
+        {embedded ? <span><strong>克隆音色</strong><small>{provider === "bailian" ? `${displayedVoices.length} 个可用音色` : "当前供应商暂未开放"}</small></span> : null}
         <button
+          ref={composerTriggerRef}
           type="button"
           className="voice-clone-add"
           disabled={provider !== "bailian"}
           onClick={() => {
-            setComposerOpen((open) => !open);
+            if (composerOpen && recording) stopRecording();
+            updateComposerOpen(!composerOpen);
             setSubmitNotice("");
           }}
         >
-          {composerOpen ? <X /> : <Plus />}{composerOpen ? "关闭" : "添加音色"}
+          {composerOpen ? <X /> : <Plus />}{composerOpen ? "关闭" : embedded ? "新建克隆" : "添加音色"}
         </button>
-      </div>
+      </div> : null}
 
       {provider === "bailian" ? (
         <div className="voice-catalog-list cloned-voice-list" aria-label="克隆音色列表">
@@ -318,18 +410,22 @@ export function VoiceClonePanel({
             const previewing = previewVoice === voice.id;
             const isLoading = previewing && previewState === "loading";
             const isPlaying = previewing && previewState === "playing";
-            const manageable = voice.id !== BAILIAN_CLONED_VOICE_OPTIONS[0].value;
+            const manageable = allowManagement && voice.id !== BAILIAN_CLONED_VOICE_OPTIONS[0].value;
+            const deletable = canDeleteClonedVoice(voice.id, allowManagement);
             return <div className="provider-voice-row cloned-voice-row" data-selected={selected} key={voice.id}>
-              <button type="button" className="provider-voice-select" aria-pressed={selected} disabled={voice.status === "UNDEPLOYED"} onClick={() => onSelect(voice.id, voice.displayName)}>
+              {managementOnly ? <div className="provider-voice-select">
+                <span className="provider-voice-avatar"><UserRound /></span>
+                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? "部署中 · 暂不可用" : voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}</small></span>
+              </div> : <button type="button" className="provider-voice-select" aria-pressed={selected} disabled={voice.status === "UNDEPLOYED"} onClick={() => onSelect(voice.id, voice.displayName)}>
                 <span className="provider-voice-avatar">{selected ? <Check /> : <UserRound />}</span>
                 <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? "部署中 · 暂不可用" : selected ? `已选中 · ${voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}` : voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}</small></span>
-              </button>
+              </button>}
               <div className="voice-clone-row-actions">
-                <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.displayName}`} disabled={voice.status === "UNDEPLOYED" || (previewState === "loading" && !previewing)} onClick={() => onPreview(voice.id, voice.displayName)}>
+                {!managementOnly ? <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.displayName}`} disabled={voice.status === "UNDEPLOYED" || (previewState === "loading" && !previewing)} onClick={() => onPreview(voice.id, voice.displayName)}>
                   {isLoading ? <span className="preview-spinner" /> : isPlaying ? <Square /> : <Play />}
-                </button>
+                </button> : null}
                 {manageable ? <button type="button" aria-label={`重命名 ${voice.displayName}`} title="重命名" onClick={() => { setEditingVoiceId(voice.id); setEditingDisplayName(voice.displayName); setPendingDeleteVoiceId(null); }}><Pencil /></button> : null}
-                {manageable ? <button type="button" data-danger="true" aria-label={`删除 ${voice.displayName}`} title="删除" onClick={() => { setPendingDeleteVoiceId(voice.id); setEditingVoiceId(null); }}><Trash2 /></button> : null}
+                {deletable ? <button type="button" data-danger="true" aria-label={`删除 ${voice.displayName}`} title="删除" onClick={() => { setPendingDeleteVoiceId(voice.id); setEditingVoiceId(null); }}><Trash2 /></button> : null}
               </div>
               {editingVoiceId === voice.id ? <div className="voice-clone-inline-manager">
                 <input value={editingDisplayName} maxLength={32} aria-label={`新的音色名称：${voice.displayName}`} autoFocus onChange={(event) => setEditingDisplayName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameVoice(voice); if (event.key === "Escape") setEditingVoiceId(null); }} />
@@ -340,25 +436,30 @@ export function VoiceClonePanel({
           })}
         </div>
       ) : (
-        <div className="empty-cloned-voices"><CircleAlert /><span><strong>火山克隆音色尚未接入</strong><small>请切换到阿里云百炼创建或管理克隆音色</small></span></div>
+        <div className="empty-cloned-voices"><CircleAlert /><span><strong>豆包 TTS 克隆暂未支持</strong><small>该能力按量收费，当前仅开放阿里云百炼克隆</small></span></div>
       )}
 
       {catalogNotice ? <p className="voice-clone-notice" role="status">{catalogNotice}</p> : null}
 
       {composerOpen && provider === "bailian" ? (
-        <div className="voice-clone-composer">
+        <ModalPortal enabled={embedded}>
+        <div className={embedded ? "voice-clone-modal-backdrop" : undefined} onMouseDown={(event) => { if (embedded && event.target === event.currentTarget && !submitting) { if (recording) stopRecording(); updateComposerOpen(false); } }}>
+        <div ref={composerDialogRef} className="voice-clone-composer" role={embedded ? "dialog" : undefined} aria-modal={embedded || undefined} aria-label={embedded ? "新建克隆音色" : undefined} tabIndex={embedded ? -1 : undefined}>
+          {embedded ? <div className="voice-clone-composer-heading"><span><small>VOICE CLONE</small><strong>新建克隆音色</strong></span><button type="button" aria-label="关闭新建克隆音色" disabled={submitting} onClick={() => { if (recording) stopRecording(); updateComposerOpen(false); }}><X /></button></div> : null}
           <div className="voice-clone-source-switch" role="tablist" aria-label="音色样本来源">
             <button type="button" role="tab" aria-selected={sourceKind === "recording"} data-active={sourceKind === "recording"} onClick={() => { setSourceKind("recording"); resetSample(); }}><Mic />直接录音</button>
             <button type="button" role="tab" aria-selected={sourceKind === "upload"} data-active={sourceKind === "upload"} onClick={() => { setSourceKind("upload"); resetSample(); }}><Upload />上传文件</button>
           </div>
 
-          <label className="voice-clone-name"><span>音色名称</span><input value={displayName} maxLength={32} placeholder="例如：我的自然声线" onChange={(event) => setDisplayName(event.target.value)} /></label>
+          <label className="voice-clone-name"><span>音色名称</span><input data-clone-initial-focus value={displayName} maxLength={32} placeholder="例如：我的自然声线" onChange={(event) => setDisplayName(event.target.value)} /></label>
+
+          <div className="voice-clone-script"><small>朗读参考</small><p>你好，这是我的音色样本。我会保持自然、稳定的语速，清晰地读完这段文字，让系统准确学习我的声音特点。</p></div>
 
           {sourceKind === "recording" ? (
             <div className="voice-recording-studio" data-recording={recording}>
               <div className="voice-recording-meter" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
               <strong>{recording ? "正在录制" : audioFile ? "录音已准备" : "录制 10–20 秒清晰语音"}</strong>
-              <p>建议朗读：你好，这是我的音色样本。我正在用自然、稳定的语速完成这段录音。</p>
+              <p>请在安静环境中使用正常语速，录制 10–20 秒清晰语音。</p>
               <div className="voice-recording-actions">
                 {!recording && !audioFile ? <button type="button" onClick={() => void startRecording()}><Mic />开始录音</button> : null}
                 {recording ? <button type="button" data-danger="true" onClick={stopRecording}><Pause />停止 · {formatSeconds(recordingSeconds)}</button> : null}
@@ -382,23 +483,29 @@ export function VoiceClonePanel({
             {submitting ? <span className="preview-spinner" /> : <Plus />}{submitting ? "正在创建…" : "创建克隆音色"}
           </button>
         </div>
+        </div>
+        </ModalPortal>
       ) : null}
 
-      {pendingDeleteVoice ? <div className="avatar-asset-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => {
+      {pendingDeleteVoice ? <ModalPortal enabled={embedded}><div className="avatar-asset-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => {
         if (event.target === event.currentTarget && !managingVoiceId) setPendingDeleteVoiceId(null);
       }}>
         <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="voice-clone-delete-title" aria-describedby="voice-clone-delete-description">
           <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
           <div><small>DELETE CLONED VOICE</small><h3 id="voice-clone-delete-title">确认删除这个克隆音色？</h3></div>
-          <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>删除后会同步从阿里云百炼音色目录移除，当前配置中的引用将失效，且无法恢复。</p>
+          <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>删除后会同步从阿里云百炼音色目录移除，且无法恢复。{pendingDeleteVoice.id === activeVoiceId ? "该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。" : "当前配置中的引用将失效。"}</p>
           <div className="avatar-asset-delete-dialog-actions">
             <button type="button" autoFocus disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => setPendingDeleteVoiceId(null)}>取消</button>
             <button type="button" data-danger="true" disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => void deleteVoice(pendingDeleteVoice)}><Trash2 />{managingVoiceId === pendingDeleteVoice.id ? "正在删除…" : "确认删除"}</button>
           </div>
         </section>
-      </div> : null}
+      </div></ModalPortal> : null}
     </details>
   );
+}
+
+function ModalPortal({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  return enabled && typeof document !== "undefined" ? createPortal(children, document.body) : children;
 }
 
 function formatSeconds(seconds: number) {

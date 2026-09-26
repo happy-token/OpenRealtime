@@ -1,11 +1,25 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const REMOTE_AVATAR_PREVIEW =
   "https://newgxnc1uqs0jnqm.public.blob.vercel-storage.com/avatar-previews/oF0ubkPo7fSzdMoGJpMSXaT2cxSVr2_N/one-shot_oF0ubkPo7fSzdMoGJpMSXaT2cxSVr2_N_thinkres-digital-twin1787325233514-cropped-FgaBhvzV7gk2KWNypH6AwFqIoCIBzE.png";
 const REMOTE_STOCK_AVATAR =
   "https://newgxnc1uqs0jnqm.public.blob.vercel-storage.com/avatars/stock/mia_studio.webp";
 
-test("activating digital-human mode exposes its avatar workspace", async ({ page }) => {
+async function selectAvatarMode(page: Page, name: "离线" | "离线加口型" | "实时") {
+  await page.evaluate((mode) => {
+    localStorage.setItem("voice-agent-experience-mode", "avatar");
+    const current = JSON.parse(localStorage.getItem("voice-agent-avatar-display-config") || "{}") as Record<string, unknown>;
+    localStorage.setItem("voice-agent-avatar-display-config", JSON.stringify({
+      ...current,
+      renderPath: mode === "实时" ? "hosted" : mode === "离线" ? "orchestrated" : "segmented",
+      segmentedAvatarId: current.segmentedAvatarId || "companion",
+      segmentedAvatarActionId: current.segmentedAvatarActionId || "builtin:opentalking:companion",
+    }));
+  }, name);
+  await page.reload();
+}
+
+test("activating lip-sync mode exposes avatar and action edge controls", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("voice-agent-avatar-display-config", JSON.stringify({
       renderPath: "segmented",
@@ -27,22 +41,21 @@ test("activating digital-human mode exposes its avatar workspace", async ({ page
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ avatars: [] }) });
   });
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "数字人", exact: true }).click();
-  await page.getByRole("button", { name: "展开会话配置工作台" }).click();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await selectAvatarMode(page, "离线加口型");
 
-  await expect(page.getByRole("heading", { name: "选择与你对话的数字人" })).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "数字人驱动方式" })).toBeVisible();
-  await page.getByRole("button", { name: /多段式合成/ }).click();
-  await expect(page.getByRole("heading", { name: "本机口型模型" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: /Wav2Lip 96/ })).toBeEnabled();
-  await expect(page.getByRole("radio", { name: /Wav2Lip 96/ })).toBeChecked();
+  await expect(page.getByRole("navigation", { name: "主页呈现模式" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "打开数字人形象" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "打开动作列表" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "打开口型对齐" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "本机口型模型" })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /Wav2Lip 96/ })).toHaveCount(0);
   await expect(page.getByText("DH_live_mini v1")).toHaveCount(0);
   await expect(page.getByText("LiteAvatar")).toHaveCount(0);
   await expect(page.getByText("FeatherTalk")).toHaveCount(0);
 });
 
-test("browsing an Avatar action does not change the session configuration until confirmed", async ({ page }) => {
+test("selecting an avatar action updates the session configuration immediately", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("voice-agent-experience-mode", "avatar");
     localStorage.setItem("voice-agent-avatar-display-config", JSON.stringify({
@@ -88,41 +101,17 @@ test("browsing an Avatar action does not change the session configuration until 
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ actions: [], selection: null }) });
   });
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "展开会话配置工作台" }).click();
-  await page.getByRole("button", { name: /多段式合成/ }).click();
-
-  await expect(page.getByText("内置 Avatar", { exact: true })).toBeVisible();
-  await expect(page.getByText("2 个形象", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /自定义/ })).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(2);
-  const card = page.getByRole("article", { name: "陪伴 形象与动作" });
-  const workbench = page.getByRole("region", { name: "会话配置工作台" });
-  const avatarCards = page.getByRole("article");
-  await expect(workbench).toHaveAttribute("data-state", "compact");
-  await expect(avatarCards.nth(1)).toHaveAttribute("aria-label", "陪伴 形象与动作");
-  await card.getByRole("button", { name: "展开 陪伴 的形象和动作" }).click();
-  await expect(workbench).toHaveAttribute("data-state", "compact");
-  await expect(card).toHaveAttribute("data-focused", "true");
-  const layerBrowser = card.getByRole("group", { name: "陪伴 形象与动作层叠浏览" });
-  await expect(layerBrowser).toBeVisible();
-  await expect(layerBrowser.getByRole("button", { name: "预览 陪伴 形象" })).toHaveAttribute("aria-current", "true");
-  await expect(page.getByRole("article", { name: "Shuchang 形象与动作" })).toBeHidden();
-  await expect(card.getByText("当前预览：形象 · 陪伴")).toBeVisible();
-  await expect(card).toHaveAttribute("data-selected", "true");
-  await card.getByRole("button", { name: "浏览 陪伴 的下一个媒体" }).click();
-
-  await expect(layerBrowser.getByRole("button", { name: "预览动作：陪伴 · 内置动作" })).toHaveAttribute("aria-current", "true");
-  await expect(layerBrowser.locator("video[autoplay]")).toHaveCount(1);
-  await expect(card).toHaveAttribute("data-selected", "false");
-  await expect(card.getByText("当前预览：动作 · 陪伴 · 内置动作")).toBeVisible();
-  await expect(card.getByRole("button", { name: "使用动作：陪伴 · 内置动作", exact: true })).toBeEnabled();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("voice-agent-avatar-display-config") || "{}") as { segmentedAvatarActionId?: string })).toMatchObject({
-    segmentedAvatarActionId: "",
-  });
-
-  await card.getByRole("button", { name: "使用动作：陪伴 · 内置动作", exact: true }).click();
-  await expect(card).toHaveAttribute("data-selected", "true");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await selectAvatarMode(page, "离线加口型");
+  await page.getByRole("button", { name: "打开数字人形象" }).click();
+  await page.getByRole("complementary", { name: "数字人形象" }).getByRole("button", { name: "选择陪伴" }).click();
+  await page.getByRole("button", { name: "打开动作列表" }).click();
+  const actionChoice = page.getByRole("complementary", { name: "动作" }).getByRole("button", { name: "选择陪伴 · 内置动作" });
+  const actionPreview = actionChoice.getByLabel("陪伴 · 内置动作 动作预览");
+  await expect(actionChoice).toBeEnabled();
+  await expect(actionChoice).toHaveAttribute("aria-pressed", "true");
+  await actionChoice.hover();
+  await expect.poll(() => actionPreview.evaluate((video: HTMLVideoElement) => !video.paused && video.currentTime > 0)).toBe(true);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("voice-agent-avatar-display-config") || "{}") as { segmentedAvatarActionId?: string }))
     .toMatchObject({ segmentedAvatarActionId: "builtin:opentalking:companion" });
 });
@@ -157,15 +146,14 @@ test("can switch back to Shuchang realtime idle after selecting another built-in
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ actions: [], selection: null }) });
   });
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "展开会话配置工作台" }).click();
-  await page.getByRole("button", { name: /多段式合成/ }).click();
-
-  const shuchangCard = page.getByRole("article", { name: "Shuchang 形象与动作" });
-  await shuchangCard.getByRole("button", { name: "展开 Shuchang 的形象和动作" }).click();
-  await shuchangCard.getByRole("button", { name: "浏览 Shuchang 的下一个媒体" }).click();
-  await expect(shuchangCard.getByRole("button", { name: "使用动作：实时待机" })).toBeEnabled();
-  await shuchangCard.getByRole("button", { name: "使用动作：实时待机" }).click();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await selectAvatarMode(page, "离线加口型");
+  await page.getByRole("button", { name: "打开数字人形象" }).click();
+  await page.getByRole("complementary", { name: "数字人形象" }).getByRole("button", { name: "选择Shuchang" }).click();
+  await page.getByRole("button", { name: "打开动作列表" }).click();
+  const realtimeIdle = page.getByRole("complementary", { name: "动作" }).getByRole("button", { name: "选择实时待机" });
+  await expect(realtimeIdle).toBeEnabled();
+  await realtimeIdle.click();
 
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("voice-agent-avatar-display-config") || "{}") as {
     segmentedAvatarId?: string;
@@ -201,24 +189,24 @@ test("digital-human workspace accepts hosted avatar preview images", async ({ pa
       }),
     });
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "数字人", exact: true }).click();
-  await page.getByRole("button", { name: "展开会话配置工作台" }).click();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await selectAvatarMode(page, "实时");
+  await page.getByRole("button", { name: "打开数字人形象" }).click();
+  const avatarPanel = page.getByRole("complementary", { name: "数字人形象" });
 
   await expect.poll(async () => ({
     runtimeError: runtimeErrors.find((message) => message.includes("Invalid src prop")) ?? "",
-    ready: await page.getByText("Remote Avatar").isVisible(),
+    ready: await avatarPanel.getByRole("button", { name: "选择Remote Avatar" }).isVisible(),
   })).toEqual({ runtimeError: "", ready: true });
-  await expect(page.getByText("Remote Avatar")).toBeVisible();
-  await expect(page.getByText("Mia")).toBeVisible();
+  await expect(avatarPanel.getByRole("button", { name: "选择Remote Avatar" })).toBeVisible();
+  await expect(avatarPanel.getByRole("button", { name: "选择Mia" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Remote Avatar 自定义数字人" }).click();
+  await avatarPanel.getByRole("button", { name: "选择Remote Avatar" }).click();
   await expect(page.getByAltText("Remote Avatar 数字人预览")).toBeVisible();
   await expect(page.getByText(/你好，我是/)).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("voice-agent-avatar-display-config") || "{}") as { avatarProfileId?: string }))
     .toMatchObject({ avatarProfileId: "remote-avatar" });
-
-  await expect(page.getByRole("button", { name: "Remote Avatar 自定义数字人 · 当前使用" })).toBeVisible();
+  await expect(avatarPanel.getByRole("button", { name: "选择Remote Avatar" })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("prepared segmented avatar starts a moving lip-sync renderer and receives TTS audio", async ({ page }) => {
@@ -386,7 +374,7 @@ test("prepared segmented avatar starts a moving lip-sync renderer and receives T
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ code: 0 }) });
   });
 
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   const start = page.getByRole("button", { name: "主页开始对话" });
   await expect(start).toBeEnabled();
   await expect(page.getByText("与 Shuchang 对话")).toBeVisible();

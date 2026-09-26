@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const repository = vi.hoisted(() => ({ findOwnedAvatar: vi.fn(), attachTalkingVariant: vi.fn() }));
 vi.mock("./avatar-catalog-repository", () => repository);
-import { readTalkingSource, startTalkingJob } from "./musetalk-talking-worker";
+import { acceptTalkingJob, readTalkingSource, startTalkingJob } from "./musetalk-talking-worker";
 beforeEach(() => vi.clearAllMocks());
 describe("MuseTalk source generation", () => {
   it.each(["https://example.com/video.mp4", "http://127.0.0.1/secret", "/api/avatars/private/image", "/digital-human/../../.env", "/digital-human/a.mp4?url=x"])("rejects unsupported or escaping source %s", async source => {
@@ -19,6 +19,27 @@ describe("MuseTalk source generation", () => {
 });
 
 describe("MuseTalk durable job recovery", () => {
+  it("attaches a preview only after explicit acceptance", async () => {
+    const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const root = await mkdtemp(path.join(os.tmpdir(), "openrealtime-musetalk-review-"));
+    vi.stubEnv("MUSETALK_JOB_ROOT", root);
+    const id = "musetalk-22222222-2222-4222-8222-222222222222";
+    const variant = { id, method: "musetalk", source_video_url: "/digital-human/action.mp4", video_url: `/digital-human/talking-variants/${id}.mp4` };
+    const media = path.join(process.cwd(), "public", "digital-human", "talking-variants", `${id}.mp4`);
+    await mkdir(path.dirname(media), { recursive: true });
+    await writeFile(media, "preview");
+    await mkdir(path.join(root, id));
+    await writeFile(path.join(root, id, "job.json"), JSON.stringify({ id, state: "ready_for_review", avatarId: "avatar-review", actionId: "action-review", variant }));
+    repository.attachTalkingVariant.mockResolvedValue({ avatar_action_id: "action-review", talking_variants: [variant] });
+    await expect(acceptTalkingJob("avatar-review", "action-review", id)).resolves.toMatchObject({ job: { state: "success" } });
+    expect(repository.attachTalkingVariant).toHaveBeenCalledWith("avatar-review", "action-review", variant);
+    await expect(acceptTalkingJob("avatar-review", "action-review", id)).rejects.toThrow("待确认");
+    vi.unstubAllEnvs();
+    await rm(media, { force: true });
+    await rm(root, { recursive: true, force: true });
+  });
   it("recovers an interrupted job as retry-blocked after process memory loss", async () => {
     const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
     const os = await import("node:os");

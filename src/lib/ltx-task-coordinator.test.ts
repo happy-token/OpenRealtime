@@ -83,6 +83,13 @@ describe("LTX task coordinator", () => {
     await releaseLocalLtxTask("task_123456", "failed");
   });
 
+  it("rejects reuse of a request ID across owners or changed parameters", async () => {
+    await createOrReuseLocalLtxTask({ ...provenance, visualIdentityId: "user-upload:alice" }, async () => task("task_owner_a"), { requestId: "shared-request" });
+    const submit = vi.fn(async () => task("task_owner_b"));
+    await expect(createOrReuseLocalLtxTask({ ...provenance, visualIdentityId: "user-upload:bob" }, submit, { requestId: "shared-request" })).rejects.toThrow("请求 ID");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
 
   it("reuses a completed successful result instead of buying the same generation again", async () => {
     await createOrReuseLocalLtxTask(provenance, async () => task("task_success"));

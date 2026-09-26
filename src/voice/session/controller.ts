@@ -125,6 +125,20 @@ export class ClientVoiceSessionController {
     this.currentPhase = "starting";
   }
 
+  startNewSession(): void {
+    this.sessionId = null;
+    this.resumeToken = null;
+    this.threadId = null;
+    this.previousVoiceSessionId = null;
+    this.inputEpoch = null;
+    this.lastSessionSequence = 0;
+    this.lastJournalSequence = 0;
+    this.playback = undefined;
+    this.currentPhase = "inactive";
+    this.input.reset();
+    this.output.reset();
+  }
+
   observeJournal(sequence: number): void {
     this.lastJournalSequence = Math.max(this.lastJournalSequence, sequence);
   }

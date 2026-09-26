@@ -10,6 +10,8 @@ import {
   listOwnedAvatars,
   readOwnedAvatarImage,
   replaceOwnedAvatarSourceImage,
+  renameTalkingVariant,
+  setTalkingVariantDeletion,
   updateOwnedAvatar,
   updateOwnedAvatarAction,
 } from "./avatar-catalog-repository";
@@ -66,12 +68,103 @@ describe("Avatar catalog repository", () => {
     await expect(attachTalkingVariant("avatar-123", "base", { ...variant, source_video_url: "/other.mp4" }, root)).rejects.toThrow("不匹配");
   });
 
+  it("deletes and restores one talking material without changing its action or sibling", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    const variant = (id: string, method: "musetalk" | "lipforcing") => ({
+      id, display_name: id, method, source_video_url: "/base.mp4",
+      video_url: `/digital-human/talking-variants/${id}.mp4`, processing: "original" as const, validation: "pending" as const,
+    });
+    await attachTalkingVariant("avatar-123", "base", variant("talk-muse", "musetalk"), root);
+    await attachTalkingVariant("avatar-123", "base", variant("talk-lip", "lipforcing"), root);
+
+    const deleted = await setTalkingVariantDeletion("avatar-123", "base", "talk-muse", true, root);
+    expect(deleted.video_url).toBe("/base.mp4");
+    expect(deleted.talking_variants?.find(item => item.id === "talk-muse")?.deleted_at).toBeTruthy();
+    expect(deleted.talking_variants?.find(item => item.id === "talk-lip")?.deleted_at).toBeUndefined();
+    await setTalkingVariantDeletion("avatar-123", "base", "talk-muse", false, root);
+    expect((await findOwnedAvatar("avatar-123", root))?.actions[0].talking_variants?.find(item => item.id === "talk-muse")?.deleted_at).toBeNull();
+  });
+
+  it("renames a talking material without changing the video or its siblings", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    const variant = (id: string) => ({
+      id, display_name: id, method: "musetalk" as const, source_video_url: "/base.mp4",
+      video_url: `/digital-human/talking-variants/${id}.mp4`, processing: "original" as const, validation: "pending" as const,
+    });
+    await attachTalkingVariant("avatar-123", "base", variant("talk-old"), root);
+    await attachTalkingVariant("avatar-123", "base", { ...variant("talk-new"), method: "lipforcing" }, root);
+
+    const updated = await renameTalkingVariant("avatar-123", "base", "talk-old", "  晨间版  ", root);
+    expect(updated.talking_variants?.find(item => item.id === "talk-old")).toMatchObject({
+      display_name: "晨间版", video_url: "/digital-human/talking-variants/talk-old.mp4",
+    });
+    expect(updated.talking_variants?.find(item => item.id === "talk-old")?.deleted_at).toBeUndefined();
+    expect(updated.talking_variants?.find(item => item.id === "talk-new")?.display_name).toBe("talk-new");
+    expect((await findOwnedAvatar("avatar-123", root))?.actions[0].talking_variants?.find(item => item.id === "talk-old")?.display_name).toBe("晨间版");
+    await expect(renameTalkingVariant("avatar-123", "base", "talk-old", " ", root)).rejects.toThrow("请填写口型对齐名称");
+    await expect(renameTalkingVariant("avatar-123", "base", "talk-old", "x".repeat(51), root)).rejects.toThrow("50");
+    await setTalkingVariantDeletion("avatar-123", "base", "talk-old", true, root);
+    await expect(renameTalkingVariant("avatar-123", "base", "talk-old", "Other", root)).rejects.toThrow("已删除");
+  });
+
+  it("keeps a deleted version when regenerating the same method and blocks conflicting restoration", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    const variant = (id: string) => ({
+      id, display_name: id, method: "musetalk" as const, source_video_url: "/base.mp4",
+      video_url: `/digital-human/talking-variants/${id}.mp4`, processing: "original" as const, validation: "pending" as const,
+    });
+    await attachTalkingVariant("avatar-123", "base", variant("talk-old"), root);
+    await setTalkingVariantDeletion("avatar-123", "base", "talk-old", true, root);
+    await expect(attachTalkingVariant("avatar-123", "base", variant("talk-old"), root)).rejects.toThrow("不能重新挂载");
+    await attachTalkingVariant("avatar-123", "base", variant("talk-new"), root);
+    await expect(setTalkingVariantDeletion("avatar-123", "base", "talk-old", false, root)).rejects.toThrow("已有其他口型对齐");
+    expect((await findOwnedAvatar("avatar-123", root))?.actions[0].talking_variants).toHaveLength(2);
+  });
+
+  it("moves the previous active version to the recycle bin when replacing a method", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    const variant = (id: string) => ({
+      id, display_name: id, method: "musetalk" as const, source_video_url: "/base.mp4",
+      video_url: `/digital-human/talking-variants/${id}.mp4`, processing: "original" as const, validation: "pending" as const,
+    });
+    await attachTalkingVariant("avatar-123", "base", variant("talk-old"), root);
+    const updated = await attachTalkingVariant("avatar-123", "base", variant("talk-new"), root);
+    expect(updated.talking_variants).toHaveLength(2);
+    expect(updated.talking_variants?.find(item => item.id === "talk-old")?.deleted_at).toBeTruthy();
+    expect(updated.talking_variants?.find(item => item.id === "talk-new")?.deleted_at).toBeUndefined();
+  });
+
+  it("purges an expired talking material while retaining its parent action", async () => {
+    const root = await repositoryRoot();
+    await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
+    await appendOwnedAvatarAction("avatar-123", { avatar_action_id: "base", display_name: "Base", video_url: "/base.mp4" }, root);
+    await attachTalkingVariant("avatar-123", "base", {
+      id: "talk-expired", display_name: "Old", method: "musetalk", source_video_url: "/base.mp4",
+      video_url: "/digital-human/talking-variants/talk-expired.mp4", processing: "original", validation: "pending",
+    }, root);
+    const catalog = path.join(root, "catalog.json");
+    const records = JSON.parse(await readFile(catalog, "utf8"));
+    records[0].actions[0].talking_variants[0].deleted_at = "2020-01-01T00:00:00.000Z";
+    await writeFile(catalog, JSON.stringify(records));
+
+    await expect(setTalkingVariantDeletion("avatar-123", "base", "talk-expired", false, root)).rejects.toThrow("恢复期限");
+    expect((await listOwnedAvatars(root))[0].actions[0]).toMatchObject({ avatar_action_id: "base", video_url: "/base.mp4", talking_variants: [] });
+  });
+
   it("persists one immutable source image under avatar_id", async () => {
     const root = await repositoryRoot();
     const avatar = await createOwnedAvatar({ displayName: "Lin", sourceImageDataUrl: jpeg, avatarId: "avatar-123" }, root);
 
     expect(avatar).toMatchObject({ avatar_id: "avatar-123", display_name: "Lin" });
-    expect(avatar.source_image_url).toBe("/api/avatars/avatar-123/image");
+    expect(avatar.source_image_url).toMatch(/^\/api\/avatars\/avatar-123\/image\?v=/);
     expect(await listOwnedAvatars(root)).toEqual([avatar]);
     expect((await readOwnedAvatarImage("avatar-123", root))?.mediaType).toBe("image/jpeg");
   });

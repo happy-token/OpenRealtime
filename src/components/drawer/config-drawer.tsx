@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { DEFAULT_ALLOW_BARGE_IN } from "@/hooks/use-voice-session";
+import { readConversationPreferences, writeConversationPreferences } from "@/lib/conversation-preferences";
 import type { VoiceVisualTheme } from "@/components/call/voice-theme";
 import type { AvatarDisplayConfig, ExperienceMode } from "@/components/digital-human/types";
 import { HostedAvatarCatalog } from "@/components/digital-human/hosted-avatar-catalog";
@@ -167,6 +168,7 @@ interface ConfigDrawerProps {
   ttsDialect: TtsDialect;
   ttsConfigurable: boolean;
   ttsPreviewAvailable: boolean;
+  publicVoiceEnabled?: boolean;
   ttsConfigStatus: string;
   onTtsVoiceChange: (voice: TtsVoice) => void;
   onTtsRuntimeConfigChange?: (config: TtsRuntimeConfig) => void;
@@ -202,6 +204,7 @@ export function ConfigDrawer({
   ttsDialect,
   ttsConfigurable,
   ttsPreviewAvailable,
+  publicVoiceEnabled = false,
   ttsConfigStatus,
   onTtsVoiceChange,
   onTtsRuntimeConfigChange,
@@ -229,6 +232,8 @@ export function ConfigDrawer({
   const [previewVoice, setPreviewVoice] = useState<TtsVoice | null>(null);
   const [previewNotice, setPreviewNotice] = useState("");
   const [playbackVolume, setPlaybackVolume] = useState(DEFAULT_VOLUME_PERCENT);
+  const [allowBargeIn, setAllowBargeIn] = useState(DEFAULT_ALLOW_BARGE_IN);
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
   const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => ttsConfigurable ? "doubao" : "bailian");
   const [bailianVoice, setBailianVoice] = useState<string>(BAILIAN_CLONED_VOICE_OPTIONS[0].value);
   const [bailianVoiceLabel, setBailianVoiceLabel] = useState<string>(BAILIAN_CLONED_VOICE_OPTIONS[0].label);
@@ -283,7 +288,11 @@ export function ConfigDrawer({
   }, [sessionWorkbench]);
 
   useEffect(() => {
-    setVolume(DEFAULT_VOLUME_PERCENT / 100);
+    const preferences = readConversationPreferences();
+    setPlaybackVolume(preferences.volume);
+    setAllowBargeIn(preferences.allowBargeIn);
+    setNoiseSuppressionEnabled(preferences.noiseSuppression);
+    setVolume(preferences.volume / 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- set the initial volume once
   }, []);
 
@@ -580,6 +589,7 @@ export function ConfigDrawer({
   }
 
   async function toggleVoicePreview(provider: TtsProvider, voice: TtsVoice, voiceLabel: string) {
+    if (publicVoiceEnabled) return;
     const isCurrentPreview = previewVoice === voice;
     if (isCurrentPreview && previewState === "loading") {
       previewRequestRef.current?.abort();
@@ -942,106 +952,107 @@ export function ConfigDrawer({
 
               {activeTab === "model" && (
                 <div className="drawer-tab-content">
-                  <div className="drawer-panel-intro">
-                    <span>MODEL &amp; PERSONA</span>
-                    <h3>模型指令与角色配置</h3>
-                    <p>选择国内外模型或定义兼容接口，再配置共用的系统提示词与 Persona。</p>
-                  </div>
-                  <section className="config-card">
-                    <div className="config-card-heading">
-                      <span className="config-step"><BrainCircuit /></span>
-                      <div><h4>模型供应商</h4></div>
-                      <InfoHint text="选择模型服务商后，会同步推荐模型、协议和接口默认值。" />
+                    <div className="drawer-panel-intro">
+                      <span>MODEL &amp; PERSONA</span>
+                      <h3>模型指令与角色配置</h3>
+                      <p>选择国内外模型或定义兼容接口，再配置共用的系统提示词与 Persona。</p>
                     </div>
-                    <div className="model-provider-select-row">
-                      <SelectMenu value={modelProvider} options={MODEL_PROVIDER_MENU_OPTIONS} ariaLabel="模型供应商" onChange={selectModelProvider} />
-                      <span className="provider-chip"><i />{selectedModelProvider.region}</span>
-                      <InfoHint text={`${selectedModelProvider.label}：${selectedModelProvider.description}`} />
-                    </div>
-                  </section>
-
-                  <details className="config-card config-card-disclosure">
-                    <summary className="config-card-heading">
-                      <span className="config-step"><Settings2 /></span>
-                      <div><h4>模型与接口定义</h4><p>{modelId || "未选择模型"} · {MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label}</p></div>
-                      <ChevronDown className="config-disclosure-chevron" />
-                    </summary>
-                    <div className="config-disclosure-body">
-                      <div className="model-interface-form">
-                        <label>
-                          <span>推荐模型</span>
-                          <SelectMenu value={selectedModelProvider.models.some((model) => model.value === modelId) ? modelId : selectedModelProvider.models[0].value} options={selectedModelProvider.models} ariaLabel="推荐模型" onChange={setModelId} />
-                        </label>
-                        <label>
-                          <span>协议</span>
-                          <SelectMenu value={modelProtocol} options={MODEL_PROTOCOL_OPTIONS} ariaLabel="大模型接口协议" onChange={(value) => setModelProtocol(value as ModelProtocol)} />
-                        </label>
-                        <label className="model-field-wide"><span>Model ID</span><input value={modelId} aria-label="大模型 Model ID" placeholder="例如 qwen3.7-flash" onChange={(event) => setModelId(event.target.value)} /></label>
-                        {modelProvider === "bailian" && <label className="model-field-wide"><span>Workspace ID</span><input value={modelWorkspaceId} aria-label="百炼 Workspace ID" placeholder="业务空间 ID" onChange={(event) => setModelWorkspaceId(event.target.value)} /></label>}
-                        <label className="model-field-wide"><span>Base URL</span><input value={modelBaseUrl} aria-label="大模型 Base URL" placeholder="https://api.example.com/v1" onChange={(event) => setModelBaseUrl(event.target.value)} /></label>
-                        <label className="model-field-wide"><span className="model-field-label">API Key 环境变量 <InfoHint text="这里只定义服务端变量名，不在浏览器保存真实密钥。" /></span><input value={modelApiKeyEnv} aria-label="API Key 环境变量" placeholder="VOICEAGENT_LLM_API_KEY" onChange={(event) => setModelApiKeyEnv(event.target.value)} /></label>
+                    <section className="config-card">
+                      <div className="config-card-heading">
+                        <span className="config-step"><BrainCircuit /></span>
+                        <div><h4>模型供应商</h4></div>
+                        <InfoHint text="选择模型服务商后，会同步推荐模型、协议和接口默认值。" />
                       </div>
-                      <p className="model-runtime-note" data-ready={modelProtocol === "openai-chat-completions" ? "true" : "false"}><BrainCircuit />{modelProtocol === "openai-chat-completions" ? "当前 Python 运行时可复用 OpenAI-compatible 客户端；发布 Profile API 后动态生效。" : "接口定义已保存；此原生协议还需要新增服务端 Adapter 后才能运行。"}</p>
-                    </div>
-                  </details>
-                  <details className="config-card config-card-disclosure">
-                    <summary className="config-card-heading">
-                      <span className="config-step"><BrainCircuit /></span>
-                      <div><h4>系统提示词</h4><p>System Prompt · {systemPrompt.length} 字符</p></div>
-                      <ChevronDown className="config-disclosure-chevron" />
-                    </summary>
-                    <div className="config-disclosure-body">
-                      <label className="model-prompt-editor">
-                        <span>决定模型的基础身份、边界和回复规则</span>
-                        <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} aria-label="系统提示词" />
-                        <small>{systemPrompt.length} 字符 · 发布 Profile API 后生效</small>
-                      </label>
-                    </div>
-                  </details>
-                  <section className="config-card">
-                    <div className="config-card-heading">
-                      <span className="config-step"><FileText /></span>
-                      <div><h4>Persona</h4></div>
-                      <InfoHint text="关联的 Persona 会按 OpenClaw 角色文件顺序注入当前会话的系统提示词；在 Persona 库中编辑后下一轮对话生效，USER 与 MEMORY 仍由用户和会话单独管理。" />
-                    </div>
-                    <div className="persona-select-row">
-                      <SelectMenu
-                        ariaLabel="选择 Persona"
-                        value={linkedPersona?.personaId ?? ""}
-                        options={personaSelectOptions(personaOptions, linkedPersona?.personaId ?? null)}
-                        disabled={switchState === "busy"}
-                        onChange={(value) => {
-                          if (value === PERSONA_CREATE_OPTION_VALUE) {
-                            window.open(
-                              `/personas?avatar_id=${encodeURIComponent(personaManageAvatarId ?? "")}&avatar_display_name=${encodeURIComponent(personaManageAvatarName)}`,
-                              "_blank",
-                              "noreferrer",
-                            );
-                            return;
-                          }
-                          if (!value || value === linkedPersona?.personaId) return;
-                          void switchPersona(value);
-                        }}
-                      />
-                      <a
-                        className="config-primary-button"
-                        href={`/personas?avatar_id=${encodeURIComponent(personaManageAvatarId ?? "")}&avatar_display_name=${encodeURIComponent(personaManageAvatarName)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        管理 Persona
-                      </a>
-                    </div>
-                    {linkedPersonaState === "loading" && (
-                      <p className="config-note">正在读取当前数字人的默认 Persona…</p>
-                    )}
-                    {linkedPersonaState === "error" && (
-                      <p className="config-note" role="alert">Persona 配置暂时无法读取，运行时将保留基础系统提示词。</p>
-                    )}
-                    {switchNotice && (
-                      <p className="config-note" role={switchState === "error" ? "alert" : "status"}>{switchNotice}</p>
-                    )}
-                  </section>
+                      <div className="model-provider-select-row">
+                        <SelectMenu value={modelProvider} options={MODEL_PROVIDER_MENU_OPTIONS} ariaLabel="模型供应商" onChange={selectModelProvider} />
+                        <span className="provider-chip"><i />{selectedModelProvider.region}</span>
+                        <InfoHint text={`${selectedModelProvider.label}：${selectedModelProvider.description}`} />
+                      </div>
+                    </section>
+
+                    <details className="config-card config-card-disclosure">
+                      <summary className="config-card-heading">
+                        <span className="config-step"><Settings2 /></span>
+                        <div><h4>模型与接口定义</h4><p>{modelId || "未选择模型"} · {MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label}</p></div>
+                        <ChevronDown className="config-disclosure-chevron" />
+                      </summary>
+                      <div className="config-disclosure-body">
+                        <div className="model-interface-form">
+                          <label>
+                            <span>推荐模型</span>
+                            <SelectMenu value={selectedModelProvider.models.some((model) => model.value === modelId) ? modelId : selectedModelProvider.models[0].value} options={selectedModelProvider.models} ariaLabel="推荐模型" onChange={setModelId} />
+                          </label>
+                          <label>
+                            <span>协议</span>
+                            <SelectMenu value={modelProtocol} options={MODEL_PROTOCOL_OPTIONS} ariaLabel="大模型接口协议" onChange={(value) => setModelProtocol(value as ModelProtocol)} />
+                          </label>
+                          <label className="model-field-wide"><span>Model ID</span><input value={modelId} aria-label="大模型 Model ID" placeholder="例如 qwen3.7-flash" onChange={(event) => setModelId(event.target.value)} /></label>
+                          {modelProvider === "bailian" && <label className="model-field-wide"><span>Workspace ID</span><input value={modelWorkspaceId} aria-label="百炼 Workspace ID" placeholder="业务空间 ID" onChange={(event) => setModelWorkspaceId(event.target.value)} /></label>}
+                          <label className="model-field-wide"><span>Base URL</span><input value={modelBaseUrl} aria-label="大模型 Base URL" placeholder="https://api.example.com/v1" onChange={(event) => setModelBaseUrl(event.target.value)} /></label>
+                          <label className="model-field-wide"><span className="model-field-label">API Key 环境变量 <InfoHint text="这里只定义服务端变量名，不在浏览器保存真实密钥。" /></span><input value={modelApiKeyEnv} aria-label="API Key 环境变量" placeholder="VOICEAGENT_LLM_API_KEY" onChange={(event) => setModelApiKeyEnv(event.target.value)} /></label>
+                        </div>
+                        <p className="model-runtime-note" data-ready={modelProtocol === "openai-chat-completions" ? "true" : "false"}><BrainCircuit />{modelProtocol === "openai-chat-completions" ? "当前 Python 运行时可复用 OpenAI-compatible 客户端；发布 Profile API 后动态生效。" : "接口定义已保存；此原生协议还需要新增服务端 Adapter 后才能运行。"}</p>
+                      </div>
+                    </details>
+                    <details className="config-card config-card-disclosure">
+                      <summary className="config-card-heading">
+                        <span className="config-step"><BrainCircuit /></span>
+                        <div><h4>系统提示词</h4><p>System Prompt · {systemPrompt.length} 字符</p></div>
+                        <ChevronDown className="config-disclosure-chevron" />
+                      </summary>
+                      <div className="config-disclosure-body">
+                        <label className="model-prompt-editor">
+                          <span>决定模型的基础身份、边界和回复规则</span>
+                          <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} aria-label="系统提示词" />
+                          <small>{systemPrompt.length} 字符 · 发布 Profile API 后生效</small>
+                        </label>
+                      </div>
+                    </details>
+                    <section className="config-card">
+                      <div className="config-card-heading">
+                        <span className="config-step"><FileText /></span>
+                        <div><h4>Persona</h4></div>
+                        <InfoHint text="关联的 Persona 会按 OpenClaw 角色文件顺序注入当前会话的系统提示词；在 Persona 库中编辑后下一轮对话生效，USER 与 MEMORY 仍由用户和会话单独管理。" />
+                      </div>
+                      <div className="persona-select-row">
+                        <SelectMenu
+                          ariaLabel="选择 Persona"
+                          value={linkedPersona?.personaId ?? ""}
+                          options={personaSelectOptions(personaOptions, linkedPersona?.personaId ?? null)}
+                          cardOptions
+                          disabled={switchState === "busy"}
+                          onChange={(value) => {
+                            if (value === PERSONA_CREATE_OPTION_VALUE) {
+                              window.open(
+                                `/personas?avatar_id=${encodeURIComponent(personaManageAvatarId ?? "")}&avatar_display_name=${encodeURIComponent(personaManageAvatarName)}`,
+                                "_blank",
+                                "noreferrer",
+                              );
+                              return;
+                            }
+                            if (!value || value === linkedPersona?.personaId) return;
+                            void switchPersona(value);
+                          }}
+                        />
+                        <a
+                          className="config-primary-button"
+                          href={`/personas?avatar_id=${encodeURIComponent(personaManageAvatarId ?? "")}&avatar_display_name=${encodeURIComponent(personaManageAvatarName)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          管理 Persona
+                        </a>
+                      </div>
+                      {linkedPersonaState === "loading" && (
+                        <p className="config-note">正在读取当前数字人的默认 Persona…</p>
+                      )}
+                      {linkedPersonaState === "error" && (
+                        <p className="config-note" role="alert">Persona 配置暂时无法读取，运行时将保留基础系统提示词。</p>
+                      )}
+                      {switchNotice && (
+                        <p className="config-note" role={switchState === "error" ? "alert" : "status"}>{switchNotice}</p>
+                      )}
+                    </section>
                 </div>
               )}
 
@@ -1072,7 +1083,7 @@ export function ConfigDrawer({
                     <details className="config-card voice-library-disclosure">
                       <summary className="config-card-heading">
                         <span className="config-step"><Mic2 /></span>
-                        <div><h4>内置音色</h4><p>{ttsProvider === "bailian" ? `${BAILIAN_TTS_VOICE_OPTIONS.length} 个百炼音色` : `${TTS_VOICE_OPTIONS.length} 个火山音色`}{!ttsPreviewAvailable ? " · 服务重启后启用真实试听" : ""}</p></div>
+                        <div><h4>内置音色</h4><p>{ttsProvider === "bailian" ? `${BAILIAN_TTS_VOICE_OPTIONS.length} 个百炼音色` : `${TTS_VOICE_OPTIONS.length} 个火山音色`}{publicVoiceEnabled ? " · 公开体验请在会话中试听" : !ttsPreviewAvailable ? " · 服务重启后启用真实试听" : ""}</p></div>
                         <ChevronDown className="voice-library-chevron" />
                       </summary>
                       <div className="voice-catalog-list" aria-label="内置音色列表">
@@ -1086,7 +1097,7 @@ export function ConfigDrawer({
                               <span className="provider-voice-avatar">{selected ? <Check /> : voice.label.slice(0, 1)}</span>
                               <span><strong>{voice.label}</strong><small>{selected ? `已选中 · ${voice.description}` : voice.description}</small></span>
                             </button>
-                            <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.label}`} disabled={previewState === "loading" && !previewing} onClick={() => toggleVoicePreview(ttsProvider, voice.value, voice.label)}>
+                            <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.label}`} disabled={publicVoiceEnabled || (previewState === "loading" && !previewing)} onClick={() => toggleVoicePreview(ttsProvider, voice.value, voice.label)}>
                               {isLoading ? <span className="preview-spinner" /> : isPlaying ? <Square /> : <Play />}
                             </button>
                           </div>;
@@ -1094,14 +1105,14 @@ export function ConfigDrawer({
                       </div>
                     </details>
 
-                    <VoiceClonePanel
+                    {!publicVoiceEnabled && <VoiceClonePanel
                       provider={ttsProvider}
                       selectedVoice={bailianVoice}
                       previewVoice={previewVoice}
                       previewState={previewState}
                       onSelect={selectBailianVoice}
                       onPreview={(voiceId, label) => toggleVoicePreview("bailian", voiceId, label)}
-                    />
+                    />}
                   </div>
 
                   <section className="config-card">
@@ -1111,7 +1122,7 @@ export function ConfigDrawer({
                       {ttsProvider === "bailian" ? <SelectMenu value={bailianDialect} options={BAILIAN_DIALECT_OPTIONS} ariaLabel="百炼 TTS 方言" placement="top" onChange={setBailianDialect} /> : <SelectMenu value={ttsDialect} options={TTS_DIALECT_OPTIONS} ariaLabel="豆包 TTS 方言" placement="top" onChange={onTtsDialectChange} />}
                     </div>
                     <div className="drawer-row"><div className="drawer-row-label"><span>语速</span><span className="drawer-row-hint">相对默认 {ttsSpeechRate === 0 ? "不变" : `${ttsSpeechRate > 0 ? "+" : ""}${ttsSpeechRate}%`}</span></div><input type="range" min={-50} max={100} value={ttsSpeechRate} aria-label="TTS 语速" onChange={(event) => onTtsSpeechRateChange(Number(event.target.value))} /></div>
-                    <div className="drawer-row"><div className="drawer-row-label"><span>播放音量</span><span className="drawer-row-hint">本地播放 {playbackVolume}%</span></div><input type="range" min={0} max={100} value={playbackVolume} aria-label="本地播放音量" onChange={(event) => { const volume = Number(event.target.value); setPlaybackVolume(volume); setVolume(volume / 100); }} /></div>
+                    <div className="drawer-row"><div className="drawer-row-label"><span>播放音量</span><span className="drawer-row-hint">本地播放 {playbackVolume}%</span></div><input type="range" min={0} max={100} value={playbackVolume} aria-label="本地播放音量" onChange={(event) => { const volume = Number(event.target.value); setPlaybackVolume(volume); setVolume(volume / 100); writeConversationPreferences({ ...readConversationPreferences(), volume }); }} /></div>
                     {(previewNotice || ttsConfigStatus) && <p className="voice-config-status" role="status">{previewNotice || localizedTtsStatus(ttsConfigStatus)}</p>}
                   </section>
                 </div>
@@ -1161,7 +1172,7 @@ export function ConfigDrawer({
                         <span>允许随时打断 <InfoHint text="AI 播放期间继续收音，由服务端判断是否打断。" /></span>
                       </div>
                       <label className="switch">
-                        <input type="checkbox" defaultChecked={DEFAULT_ALLOW_BARGE_IN} onChange={(event) => setBargeInMuted(!event.target.checked)} />
+                        <input type="checkbox" checked={allowBargeIn} onChange={(event) => { setAllowBargeIn(event.target.checked); setBargeInMuted(!event.target.checked); writeConversationPreferences({ ...readConversationPreferences(), allowBargeIn: event.target.checked }); }} />
                         <span className="switch-track" />
                       </label>
                     </div>
@@ -1170,7 +1181,7 @@ export function ConfigDrawer({
                         <span>浏览器降噪 / 回声消除 <InfoHint text="通话中切换时会重新建立麦克风采集。" /></span>
                       </div>
                       <label className="switch">
-                        <input type="checkbox" defaultChecked onChange={(event) => setNoiseSuppression(event.target.checked)} />
+                        <input type="checkbox" checked={noiseSuppressionEnabled} onChange={(event) => { setNoiseSuppressionEnabled(event.target.checked); setNoiseSuppression(event.target.checked); writeConversationPreferences({ ...readConversationPreferences(), noiseSuppression: event.target.checked }); }} />
                         <span className="switch-track" />
                       </label>
                     </div>

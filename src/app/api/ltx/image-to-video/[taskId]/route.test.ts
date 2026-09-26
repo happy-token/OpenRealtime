@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { providerKeyCookieName, providerKeyFingerprint, sealProviderKey } from "@/lib/provider-api-key";
 
 const mocks = vi.hoisted(() => ({
   trusted: vi.fn(),
@@ -23,12 +24,13 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function request(taskId = "task_123456") {
+function request(taskId = "task_123456", cookie?: string) {
   return new NextRequest(`http://127.0.0.1:3010/api/ltx/image-to-video/${taskId}`, {
     headers: {
       host: "127.0.0.1:3010",
       origin: "http://127.0.0.1:3010",
       "sec-fetch-site": "same-origin",
+      ...(cookie ? { cookie } : {}),
     },
   });
 }
@@ -63,5 +65,16 @@ describe("LTX task status route", () => {
     });
     expect(mocks.release).toHaveBeenCalledWith("task_123456", "success");
     expect(mocks.status).toHaveBeenCalledWith(expect.anything(), "task_123456", "ltx-2-3-fast");
+  });
+
+  it("rejects a MiniMax task queried with a different user's key", async () => {
+    enableLocalTestMode();
+    vi.stubEnv("MINIMAX_API_KEY", "");
+    vi.stubEnv("VOICEAGENT_ADMIN_SESSION_SECRET", "s".repeat(32));
+    mocks.trusted.mockReturnValue({ model: "MiniMax-H3", credentialFingerprint: providerKeyFingerprint("owner-minimax-key") });
+    const cookie = `${providerKeyCookieName("minimax")}=${sealProviderKey("other-minimax-key")}`;
+    const response = await GET(request("task_123456", cookie), { params: Promise.resolve({ taskId: "task_123456" }) });
+    expect(response.status).toBe(403);
+    expect(mocks.status).not.toHaveBeenCalled();
   });
 });

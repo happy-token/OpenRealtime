@@ -6,6 +6,7 @@ export function resolveNextDistDir(nodeEnv: string | undefined, override?: strin
 }
 
 const nextConfig: NextConfig = {
+  compress: true,
   distDir: resolveNextDistDir(process.env.NODE_ENV, process.env.OPENREALTIME_NEXT_DIST_DIR),
   images: {
     remotePatterns: [

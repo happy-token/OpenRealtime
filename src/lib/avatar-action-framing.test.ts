@@ -25,11 +25,13 @@ describe("Avatar action preview framing", () => {
     expect(coverflowCss).toMatch(/\.media\s*>\s*video\s*{[^}]*object-fit:\s*contain/s);
     expect(libraryCss).toMatch(/\.collapsedActionVideo\s*{[^}]*object-fit:\s*contain/s);
     expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*object-fit:\s*contain/s);
-    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\[data-fit="cover"\]\s*{[^}]*object-fit:\s*cover/s);
     expect(globalCss).toMatch(/\.segmented-avatar-card-stage\s*>\s*\.segmented-avatar-card-action-video\s*{[^}]*object-fit:\s*contain/s);
+    expect(globalCss).toMatch(/\.avatar-motion-card-preview\s*>\s*video,[^{]*\{[^}]*object-fit:\s*contain/s);
+    expect(globalCss).toMatch(/\.digital-human-call-image\s*\{[^}]*object-fit:\s*contain/s);
+    expect(globalCss).toMatch(/\.digital-human-live-video\s*\{[^}]*object-fit:\s*contain/s);
   });
 
-  it("uses the selected action as a blurred full-bleed backdrop on the session main screen", () => {
+  it("uses one stable, fully visible action video on the session main screen", () => {
     const workspaceSource = readFileSync(
       new URL("../components/call/home-preview-workspace.tsx", import.meta.url),
       "utf8",
@@ -38,12 +40,28 @@ describe("Avatar action preview framing", () => {
       new URL("../components/call/preview-workspace-lab.module.css", import.meta.url),
       "utf8",
     );
+    const mainPreviewSource = workspaceSource.slice(
+      workspaceSource.indexOf("function MainAvatarMotionPreview"),
+      workspaceSource.indexOf("function OfflineMotionPreview"),
+    );
+    const offlinePreviewSource = workspaceSource.slice(
+      workspaceSource.indexOf("function OfflineMotionPreview"),
+      workspaceSource.indexOf("export function HomePreviewWorkspace"),
+    );
 
-    expect(workspaceSource.match(/<source src=\{motion\}/g)).toHaveLength(2);
-    expect(workspaceSource).toContain("styles.avatarPreviewMotionBackdrop");
-    expect(workspaceSource).toContain("styles.avatarPreviewForeground");
-    expect(workspaceCss).toMatch(/\.avatarPreview\s*>\s*\.avatarPreviewMotionBackdrop\s*{[^}]*object-fit:\s*cover[^}]*filter:[^}]*blur\([^}]*brightness\(\.76\)/s);
+    expect(mainPreviewSource).not.toContain("avatarPreviewMotionBackdrop");
+    expect(mainPreviewSource.match(/<video\b/g)).toHaveLength(1);
+    expect(mainPreviewSource).toContain("poster={choice.preview}");
+    expect(mainPreviewSource).toContain("data-fit={fit}");
+    expect(mainPreviewSource).toMatch(/className=\{styles\.avatarPreviewForeground\}[^>]*src=\{motion\}/);
+    expect(offlinePreviewSource.match(/<video\b/g)).toHaveLength(1);
+    expect(offlinePreviewSource).toContain("poster={choice.preview}");
+    expect(offlinePreviewSource).toContain("data-fit={fit}");
+    expect(offlinePreviewSource).toContain("resolveAvatarStagePreviewSource");
+    expect(offlinePreviewSource).toContain("onError={() => setMotionFailed(true)}");
+    expect(offlinePreviewSource).toContain("const activeUrl = motionFailed ? talkingUrl");
     expect(workspaceCss).toMatch(/\.workspace\[data-mode="avatar"\]\s+\.preview::before\s*{[^}]*rgba\(5, 7, 13, \.14\)/s);
-    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*object-fit:\s*contain/s);
+    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/s);
+    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\[data-fit="cover"\]\s*{[^}]*object-fit:\s*cover/s);
   });
 });

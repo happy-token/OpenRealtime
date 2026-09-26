@@ -103,12 +103,14 @@ describe("BrowserAudioOutput", () => {
   it("assembles the graph once and schedules chunks without gaps", () => {
     const fake = fakeContext();
     const started: number[] = [];
+    const resumed: number[] = [];
     const runtime = new DeviceAudioOutputRuntime();
     runtime.beginEpoch("output-1");
     const output = new BrowserAudioOutput({
       runtime,
       createContext: () => fake.context as unknown as AudioContext,
       onStarted: (generation) => started.push(generation),
+      onResumed: (generation) => resumed.push(generation),
     });
 
     output.play({
@@ -129,11 +131,42 @@ describe("BrowserAudioOutput", () => {
     });
 
     expect(started).toEqual([3]);
+    expect(resumed).toEqual([]);
     expect(fake.gain.gain.value).toBe(0.8);
     expect(fake.sources).toHaveLength(2);
     expect(fake.sources[0].start).toHaveBeenCalledWith(1);
     expect(fake.sources[1].start).toHaveBeenCalledWith(1.000125);
     expect(output.scheduledSourceCount).toBe(2);
+  });
+
+  it("notifies when a later TTS chunk resumes after the playback queue drains", () => {
+    const fake = fakeContext();
+    const started = vi.fn();
+    const resumed = vi.fn();
+    const runtime = new DeviceAudioOutputRuntime();
+    runtime.beginEpoch("output-1");
+    const output = new BrowserAudioOutput({
+      runtime,
+      createContext: () => fake.context as unknown as AudioContext,
+      onStarted: started,
+      onResumed: resumed,
+    });
+    const chunk = {
+      pcm16Base64: "AAAAAA==",
+      sampleRateHz: 16_000,
+      generation: 3,
+      speechId: "speech-3",
+      sequence: 0,
+      isFinal: false,
+    };
+
+    expect(output.play(chunk)).toBe(true);
+    fake.sources[0].ended?.();
+    expect(output.scheduledSourceCount).toBe(0);
+    expect(output.play({ ...chunk, sequence: 1, isFinal: true })).toBe(true);
+
+    expect(started).toHaveBeenCalledOnce();
+    expect(resumed).toHaveBeenCalledExactlyOnceWith(3);
   });
 
   it("stops an interrupted generation and returns v2 playback truth", () => {

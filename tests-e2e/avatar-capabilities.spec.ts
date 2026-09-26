@@ -6,8 +6,8 @@ test("shows missing avatar access before starting without an extra homepage text
       state: "login_required", message: "请先登录管理员账号，再使用此能力。",
     }]),
   ) }));
+  await page.addInitScript(() => localStorage.setItem("voice-agent-experience-mode", "avatar"));
   await page.goto("/");
-  await page.getByRole("navigation", { name: "主页呈现模式" }).getByRole("button", { name: "数字人", exact: true }).click();
   await expect(page.getByText("请先登录管理员账号，再使用此能力。")).toBeVisible();
   await expect(page.getByRole("link", { name: "管理员登录" })).toBeVisible();
   await expect(page.getByRole("button", { name: "使用文字对话" })).toHaveCount(0);
@@ -20,8 +20,8 @@ test("capability fetch failures are actionable and recover on retry", async ({ p
     : route.fulfill({ json: Object.fromEntries(["assets", "anam", "heygen", "localRenderer"].map((key) => [key, {
       state: "available", message: "配置已就绪，启动时会检查服务连接。",
     }])) }));
+  await page.addInitScript(() => localStorage.setItem("voice-agent-experience-mode", "avatar"));
   await page.goto("/");
-  await page.getByRole("navigation", { name: "主页呈现模式" }).getByRole("button", { name: "数字人", exact: true }).click();
   await expect(page.getByText("能力信息暂时不可用，请重试。")).toBeVisible();
   fail = false;
   await page.getByRole("button", { name: "重新检查" }).click();

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { providerKeyFingerprint } from "@/lib/provider-api-key";
 
 const mocks = vi.hoisted(() => ({
   trusted: vi.fn(),
@@ -40,7 +41,8 @@ function request() {
 describe("LTX result proxy", () => {
   it("serves only a completed trusted task through same-origin bytes", async () => {
     enableLocalTestMode();
-    mocks.trusted.mockReturnValue({ visualIdentityId: "avatar-123", model: "MiniMax-H3" });
+    vi.stubEnv("MINIMAX_API_KEY", "test-minimax-key");
+    mocks.trusted.mockReturnValue({ visualIdentityId: "avatar-123", model: "MiniMax-H3", credentialFingerprint: providerKeyFingerprint("test-minimax-key") });
     mocks.status.mockResolvedValue({ state: "success", videoUrl: "https://media.ltx.test/result.mp4" });
     mocks.download.mockResolvedValue({ bytes: Uint8Array.from([0, 0, 0, 12]), mediaType: "video/mp4" });
     const response = await GET(request(), { params: Promise.resolve({ taskId: "task_123456" }) });

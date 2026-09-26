@@ -12,6 +12,7 @@ const STALE_LOCK_MS = 30_000;
 
 export type LtxTaskProvenance = {
   visualIdentityId: string;
+  credentialFingerprint?: string;
   sourceSha256: string;
   prompt: string;
   model: VideoGenerationModelId;
@@ -79,9 +80,10 @@ export async function createOrReuseLocalLtxTask(
   const claim = await withLedgerLock(storagePath, async () => {
     const records = await readLedger(storagePath);
     pruneExpiredRecords(records);
-    const existing = records.find((record) =>
-      (requestId && record.requestIds.includes(requestId))
-      || ((record.state !== "terminal" || record.outcome === "success") && provenanceKey(record) === key));
+    const byRequestId = requestId ? records.find(record => record.requestIds.includes(requestId)) : undefined;
+    if (byRequestId && provenanceKey(byRequestId) !== key) throw new Error("生成请求 ID 已被其他参数使用");
+    const existing = byRequestId || records.find((record) =>
+      (record.state !== "terminal" || record.outcome === "success") && provenanceKey(record) === key);
     if (existing) {
       if (requestId && !existing.requestIds.includes(requestId)) existing.requestIds.push(requestId);
       existing.updatedAt = new Date().toISOString();
@@ -186,6 +188,7 @@ function rememberTrusted(record: LtxSubmissionRecord) {
 function provenanceOf(value: LtxTaskProvenance): LtxTaskProvenance {
   return {
     visualIdentityId: value.visualIdentityId,
+    credentialFingerprint: value.credentialFingerprint,
     sourceSha256: value.sourceSha256,
     prompt: value.prompt,
     model: value.model,
@@ -200,6 +203,7 @@ function provenanceOf(value: LtxTaskProvenance): LtxTaskProvenance {
 function provenanceKey(value: LtxTaskProvenance) {
   return createHash("sha256").update(JSON.stringify([
     value.visualIdentityId,
+    value.credentialFingerprint ?? null,
     value.sourceSha256,
     value.prompt,
     value.model,

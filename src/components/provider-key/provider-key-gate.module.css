@@ -1,0 +1,32 @@
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(90dvh, 620px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid rgba(194, 210, 226, .24);
+  border-radius: 8px;
+  background: #252b36;
+  color: #f5f7fa;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+}
+.dialog::backdrop { background: rgba(4, 9, 17, .72); }
+.dialog form { display: grid; gap: 14px; padding: 24px; }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.icon { display: grid; place-items: center; width: 38px; height: 38px; color: #93d8c6; background: rgba(90, 181, 158, .14); border-radius: 6px; }
+.icon svg { width: 20px; height: 20px; }
+.header button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: transparent; color: #b7c3d0; cursor: pointer; }
+.header button svg { width: 18px; height: 18px; }
+.dialog h2 { margin: 0; font-size: 20px; line-height: 1.35; }
+.dialog p { margin: 0; color: #c8d1da; font-size: 14px; line-height: 1.6; }
+.dialog label { margin-top: 8px; font-size: 13px; font-weight: 600; }
+.dialog input { width: 100%; min-width: 0; height: 42px; padding: 0 12px; border: 1px solid #677889; border-radius: 10px; background: #161d26; color: white; font-size: 15px; }
+.dialog input:focus-visible, .dialog button:focus-visible, .dialog a:focus-visible { outline: 2px solid #93d8c6; outline-offset: 2px; }
+.dialog a { color: #acd9f1; font-size: 13px; }
+.dialog .error { color: #ffb9aa; }
+.dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.dialog footer button { min-width: 76px; height: 38px; padding: 0 12px; border: 1px solid #667485; border-radius: 10px; color: white; cursor: pointer; }
+.dialog button:disabled { opacity: .5; cursor: not-allowed; }
+.cancel { background: transparent; }
+.confirm { display: inline-flex; gap: 8px; align-items: center; justify-content: center; background: #247b6d; border-color: #247b6d !important; }
+.spin { width: 16px; height: 16px; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

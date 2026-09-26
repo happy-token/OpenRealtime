@@ -5,6 +5,8 @@ const server = vi.hoisted(() => ({
   createPersona: vi.fn(),
   readPersonaProfile: vi.fn(),
   switchAvatarPersona: vi.fn(),
+  writePersonaIntro: vi.fn(),
+  normalizePersonaIntro: vi.fn((value: string) => value.trim()),
 }));
 
 vi.mock("@/lib/avatar-persona-server", () => ({
@@ -12,6 +14,8 @@ vi.mock("@/lib/avatar-persona-server", () => ({
   createPersona: server.createPersona,
   readPersonaProfile: server.readPersonaProfile,
   switchAvatarPersona: server.switchAvatarPersona,
+  writePersonaIntro: server.writePersonaIntro,
+  normalizePersonaIntro: server.normalizePersonaIntro,
 }));
 
 import { GET, POST } from "./route";
@@ -83,6 +87,18 @@ function postRequest(body: object) {
 }
 
 describe("Personas create route", () => {
+  it("creates a Persona with separate card intro", async () => {
+    enableLocalTestMode();
+    server.readPersonaProfile.mockResolvedValue({ personaId: "brand-new", personaName: "全新人格", intro: "清醒温柔的伙伴。", files: [], linkedAvatarIds: [] });
+
+    const response = await POST(postRequest({ personaId: "brand-new", intro: " 清醒温柔的伙伴。 ", files: [
+      { filename: "IDENTITY.md", content: "# 全新人格" },
+      { filename: "SOUL.md", content: "性格" },
+    ] }));
+
+    expect(response.status).toBe(200);
+    expect(server.writePersonaIntro).toHaveBeenCalledWith("brand-new", "清醒温柔的伙伴。");
+  });
   it("creates a Persona without linking an Avatar", async () => {
     enableLocalTestMode();
     server.createPersona.mockResolvedValue(undefined);

@@ -1,0 +1,19 @@
+.page { width: min(100%, 760px); margin: 0 auto; padding: 28px 24px 64px; }
+.page > a { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); text-decoration: none; font-size: 14px; }
+.page > a svg { width: 16px; height: 16px; }
+.card { margin-top: 36px; padding: 34px; border: 1px solid var(--border-color, rgba(255,255,255,.12)); border-radius: 22px; background: var(--surface, rgba(255,255,255,.04)); }
+.card > span { color: var(--text-secondary); font-size: 13px; }
+.card h1 { margin: 8px 0; font-size: 28px; }
+.card p { margin: 0 0 28px; color: var(--text-secondary); }
+.card form { display: grid; gap: 12px; }
+.card label { font-size: 14px; font-weight: 600; }
+.card input { min-height: 44px; padding: 10px 12px; border: 1px solid var(--border-color, rgba(255,255,255,.16)); border-radius: 10px; background: transparent; color: inherit; }
+.card input[type="file"] { height: auto; }
+.card button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; min-height: 46px; border: 0; border-radius: 10px; cursor: pointer; background: #9bdcff; color: #102332; font-weight: 700; }
+.card button:disabled { opacity: .5; cursor: not-allowed; }
+.card button svg { width: 18px; height: 18px; }
+.error { color: #fca5a5 !important; }
+.review { display: grid; gap: 12px; margin-top: 20px; }
+.review video { width: 100%; max-height: 420px; border-radius: 12px; background: #111; }
+.review p { margin: 0; }
+.review button { min-height: 46px; }

@@ -62,6 +62,8 @@ TEST_ENDPOINT_IDENTITY = AuthenticatedTransportIdentity(
 _ENV_VARS = (
     "API_KEY",
     "DEEPSEEK_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_LLM_MODEL",
     "VOICEAGENT_LLM_API_KEY",
     "VOICEAGENT_LLM_BASE_URL",
     "VOICEAGENT_LLM_MODEL",
@@ -167,6 +169,58 @@ def test_build_brain_returns_tool_calling_brain_when_demo_tools_set(monkeypatch)
     brain = voice_web_server._build_brain(voice_web_server.EchoLlmClient())
 
     assert isinstance(brain, ToolCallingBrain)
+
+
+def test_public_knowledge_registry_excludes_builtin_and_custom_tools(monkeypatch):
+    monkeypatch.delenv("VOICEAGENT_DEMO_TOOLS", raising=False)
+    knowledge = voice_web_server.LocalCatalogKnowledgeBase("issuer#user")
+    registry = voice_web_server._build_tool_registry(knowledge_base=knowledge, include_builtins=False)
+    assert [tool.name for tool in registry.as_list()] == ["search_knowledge_base"]
+
+
+def test_explicit_public_registry_uses_tool_brain_without_demo_flag(monkeypatch):
+    monkeypatch.delenv("VOICEAGENT_DEMO_TOOLS", raising=False)
+    registry = voice_web_server._build_tool_registry(
+        knowledge_base=voice_web_server.LocalCatalogKnowledgeBase("issuer#user"),
+        include_builtins=False,
+    )
+    assert isinstance(voice_web_server._build_brain(EchoLlmClient(), tool_registry=registry), ToolCallingBrain)
+
+
+def test_public_tool_client_uses_the_admitted_personal_llm_key(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("VOICEAGENT_LLM_API_KEY", "platform-key")
+    binding = SimpleNamespace(
+        llm_provider="deepseek", llm_source="personal",
+        credentials={"deepseek": "personal-key"},
+    )
+    client = voice_web_server._build_tool_calling_llm_client(binding=binding)
+    assert client._api_key == "personal-key"
+
+
+def test_public_clients_use_the_admitted_openai_key(monkeypatch):
+    from types import SimpleNamespace
+
+    binding = SimpleNamespace(
+        llm_provider="openai", llm_source="personal",
+        credentials={"openai": "personal-openai-key"},
+    )
+    client = voice_web_server._build_llm_client(binding=binding)
+    tool_client = voice_web_server._build_tool_calling_llm_client(binding=binding)
+    for selected in (client, tool_client):
+        assert selected._api_key == "personal-openai-key"
+        assert selected._base_url == "https://api.openai.com/v1"
+        assert selected._model == "gpt-4.1-mini"
+
+
+def test_openai_platform_key_is_used_when_no_other_llm_is_configured(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "platform-openai-key")
+    client = voice_web_server._build_llm_client()
+    tool_client = voice_web_server._build_tool_calling_llm_client()
+    for selected in (client, tool_client):
+        assert selected._api_key == "platform-openai-key"
+        assert selected._base_url == "https://api.openai.com/v1"
 
 
 def test_build_llm_client_uses_explicit_generic_deepseek_config(monkeypatch):

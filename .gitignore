@@ -61,6 +61,7 @@ research-assets/avatar-evaluation/
 node_modules/
 .next/
 .next-dev/
+.next-*/
 .next-talking-eval/
 .next-e2e-*/
 .wrangler/

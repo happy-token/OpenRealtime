@@ -1,5 +1,5 @@
 import { authorizeAvatarAssetRequest, jsonError } from "@/lib/avatar-assets-server";
-import { createPersona, listPersonas, readPersonaProfile, switchAvatarPersona } from "@/lib/avatar-persona-server";
+import { createPersona, listPersonas, normalizePersonaIntro, readPersonaProfile, switchAvatarPersona, writePersonaIntro } from "@/lib/avatar-persona-server";
 import { parsePersonaFiles, personaErrorStatus, readBoundedJson } from "@/lib/persona-api-helpers";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +24,14 @@ export async function POST(request: Request) {
       files?: unknown;
       avatarId?: unknown;
       avatarDisplayName?: unknown;
+      intro?: unknown;
     };
     if (typeof payload.personaId !== "string") return jsonError("Persona ID 无效", 400);
 
     const files = parsePersonaFiles(payload.files);
+    const intro = payload.intro === undefined ? undefined : normalizePersonaIntro(payload.intro);
     await createPersona(payload.personaId, files);
+    if (intro !== undefined) await writePersonaIntro(payload.personaId, intro);
 
     if (typeof payload.avatarId === "string") {
       const avatarDisplayName = typeof payload.avatarDisplayName === "string" ? payload.avatarDisplayName : undefined;

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+
+from websockets.exceptions import ConnectionClosedError
 
 from server.conversation_journal import (
     ConversationItemDraft,
@@ -19,11 +22,13 @@ from server.transport.frames import (
     ConfirmationRequestedFrame,
     ConfirmationResolutionFrame,
     SessionHelloFrame,
+    UserTextFrame,
     VoiceSessionEventTailFrame,
     VoiceSessionPhaseChangedFrame,
     VoiceSessionReadyFrame,
     VoiceSessionSnapshotFrame,
 )
+from server.transport.plugins.websocket import WebSocketTransportAdapter
 from server.voice_session.admission import LocalVoiceSessionAdmissionController
 from server.voice_session.endpoint_bridge import VoiceSessionWebSocketSession
 from server.voice_session.models import VoiceSessionIdentity
@@ -101,6 +106,22 @@ class ExplodingEpochTransport(EpochTransport):
         yield self._frame
         await asyncio.sleep(0)
         raise RuntimeError("private provider detail")
+
+
+class AbruptWebSocketConnection:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.close_code = 1006
+
+    async def __aiter__(self):
+        yield input_epoch("input-1").model_dump_json()
+        raise ConnectionClosedError(None, None)
+
+    async def send(self, message: str) -> None:
+        self.sent.append(message)
+
+    async def close(self) -> None:
+        pass
 
 
 class QueuedEpochTransport:
@@ -193,6 +214,49 @@ async def test_production_endpoint_releases_audio_only_after_runtime_barriers() 
     assert runtime_factory.conversation.closed is True
 
 
+async def test_text_input_activates_session_without_microphone_epoch() -> None:
+    transport = QueuedEpochTransport()
+    identity = VoiceSessionIdentity(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        device_id="device-1",
+        voice_session_id="voice-text-only",
+        thread_id="thread-1",
+    )
+    endpoint = VoiceSessionWebSocketSession(
+        identity=identity,
+        context=InteractionContext(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            device_id=identity.device_id,
+            voice_session_id=identity.voice_session_id,
+            thread_id=identity.thread_id,
+            turn_id="turn-1",
+            generation=1,
+        ),
+        profile="cascaded-default",
+        runtime_factory=RecordingRuntimeFactory(),
+        journal=InMemoryConversationJournal(),
+        transport=transport,
+        admission=LocalVoiceSessionAdmissionController(),
+    )
+    run_task = asyncio.create_task(endpoint.run())
+    try:
+        await transport.frames.put(UserTextFrame(text="你好"))
+        for _ in range(100):
+            if any(isinstance(frame, VoiceSessionReadyFrame) for frame in transport.sent):
+                break
+            await asyncio.sleep(0)
+        ready = next(
+            frame for frame in transport.sent if isinstance(frame, VoiceSessionReadyFrame)
+        )
+        assert ready.input_epoch == "text-only:voice-text-only"
+        assert endpoint._runtime.phase.value == "active"
+    finally:
+        run_task.cancel()
+        await asyncio.gather(run_task, return_exceptions=True)
+
+
 async def test_endpoint_sanitizes_unhandled_runtime_failure() -> None:
     transport = ExplodingEpochTransport()
     runtime_factory = RecordingRuntimeFactory()
@@ -230,6 +294,43 @@ async def test_endpoint_sanitizes_unhandled_runtime_failure() -> None:
     assert failure.retryable is False
     assert failure.session_disposition == "close"
     assert "private provider detail" not in failure.safe_message
+
+
+async def test_abrupt_websocket_close_does_not_report_internal_error() -> None:
+    connection = AbruptWebSocketConnection()
+    identity = VoiceSessionIdentity(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        device_id="device-1",
+        voice_session_id="voice-disconnected",
+        thread_id="thread-1",
+    )
+    endpoint = VoiceSessionWebSocketSession(
+        identity=identity,
+        context=InteractionContext(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            device_id=identity.device_id,
+            voice_session_id=identity.voice_session_id,
+            thread_id=identity.thread_id,
+            turn_id="turn-1",
+            generation=1,
+        ),
+        profile="cascaded-default",
+        runtime_factory=RecordingRuntimeFactory(),
+        journal=InMemoryConversationJournal(),
+        transport=WebSocketTransportAdapter(connection),
+        admission=LocalVoiceSessionAdmissionController(),
+    )
+
+    await asyncio.wait_for(endpoint.run(), 1)
+
+    sent_frames = [json.loads(message) for message in connection.sent]
+    assert any(frame.get("type") == "voice_session_ready" for frame in sent_frames)
+    assert not any(
+        frame.get("type") == "voice_session_failure" and frame.get("code") == "internal_error"
+        for frame in sent_frames
+    )
 
 
 async def test_reconnect_barrier_restates_authoritative_pending_confirmation() -> None:

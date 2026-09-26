@@ -15,10 +15,10 @@ describe("avatar capability preflight", () => {
     expect(data.anam.state).toBe("login_required");
     expect(JSON.stringify(data)).not.toContain("secret-provider-key");
   });
-  it("reports missing credentials and disabled local rendering separately", () => {
+  it("allows Anam setup at use time while still reporting disabled local rendering", () => {
     const data = avatarCapabilities(request, true, true, { NODE_ENV: "production" });
     expect(data.assets.state).toBe("available");
-    expect(data.anam.state).toBe("not_configured");
+    expect(data.anam.state).toBe("available");
     expect(data.localRenderer.state).toBe("not_configured");
   });
   it("admits explicitly enabled local preview but does not claim provider health", () => {

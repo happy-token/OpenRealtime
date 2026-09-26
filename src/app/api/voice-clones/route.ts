@@ -59,10 +59,13 @@ export async function GET(request: NextRequest) {
   const labels = await readLabels();
   try {
     const voices = await listBailianClonedVoices(labels);
+    const configuredActiveVoiceId = process.env.BAILIAN_TTS_VOICE?.trim() || null;
     return json({
       provider: "bailian",
       ...configuration,
-      activeVoiceId: process.env.BAILIAN_TTS_VOICE?.trim() || null,
+      activeVoiceId: configuredActiveVoiceId && voices.some((voice) => voice.id === configuredActiveVoiceId)
+        ? configuredActiveVoiceId
+        : null,
       voices,
     });
   } catch (error) {

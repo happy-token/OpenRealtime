@@ -23,6 +23,17 @@
   --font-body: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "SF Mono", "Menlo", "Consolas", monospace;
 
+  --workspace-page-title-size: clamp(1.72rem, 2.6vw, 2.35rem);
+  --workspace-section-title-size: 1.05rem;
+  --workspace-body-size: .84rem;
+  --workspace-label-size: .78rem;
+  --workspace-caption-size: .7rem;
+
+  --panel-surface-alpha: .3;
+  --panel-highlight-alpha: .072;
+  --panel-soft-alpha: .03;
+  --panel-blur: 3px;
+
   --duration-fast: 180ms;
   --duration-normal: 420ms;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);

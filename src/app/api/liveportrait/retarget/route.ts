@@ -9,6 +9,7 @@ import { canUseAvatarTestApis, isSameOriginAvatarMutation } from "@/lib/avatar-t
 import { hasMatchingImageSignature } from "@/lib/media-signatures";
 import { inspectLivePortraitWorker } from "@/lib/liveportrait-worker";
 import { parseLivePortraitRetargetConfig } from "@/lib/liveportrait-retarget-config";
+import { modelServiceConnection } from "@/lib/model-service-connections";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,7 +26,8 @@ export async function POST(request: NextRequest) {
   ) {
     return NextResponse.json({ error: "不允许从当前来源创建 LivePortrait 姿态预览" }, { status: 403 });
   }
-  if (process.env.NODE_ENV === "production") {
+  const connection = await modelServiceConnection("liveportrait");
+  if (process.env.NODE_ENV === "production" && !connection.url) {
     return NextResponse.json({ error: "LivePortrait 姿态预览仅在本地工作台可用" }, { status: 503 });
   }
 
@@ -62,6 +64,22 @@ export async function POST(request: NextRequest) {
 
     const status = await inspectLivePortraitWorker();
     if (!status.ready) return NextResponse.json({ error: status.issues[0] || "LivePortrait Runtime 尚未就绪" }, { status: 503 });
+
+    if (connection.url) {
+      const extension = source.type === "image/png" ? ".png" : source.type === "image/webp" ? ".webp" : ".jpg";
+      const remoteForm = new FormData();
+      remoteForm.set("source_image", new Blob([sourceBytes], { type: source.type }), `source${extension}`);
+      remoteForm.set("config_json", JSON.stringify(retargetConfig));
+      remoteForm.set("rights_confirmed", "true");
+      const remote = await fetch(`${connection.url}/v1/retarget`, {
+        method: "POST", headers: connection.token ? { Authorization: `Bearer ${connection.token}` } : undefined,
+        body: remoteForm, cache: "no-store", signal: AbortSignal.timeout(900_000),
+      });
+      if (!remote.ok) return NextResponse.json({ error: `LivePortrait 远端姿态预览失败（HTTP ${remote.status}）` }, { status: 502 });
+      return new NextResponse(await remote.arrayBuffer(), {
+        status: 200, headers: { "Cache-Control": "no-store", "Content-Type": "image/png" },
+      });
+    }
 
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "openrealtime-retarget-"));
     const extension = source.type === "image/png" ? ".png" : source.type === "image/webp" ? ".webp" : ".jpg";

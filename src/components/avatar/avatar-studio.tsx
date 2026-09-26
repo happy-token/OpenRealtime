@@ -32,6 +32,7 @@ import { AvatarLightweightConfig } from "./avatar-lightweight-config";
 import { AvatarActionStudio } from "./avatar-action-studio";
 import { StudioConfigOverlay } from "./studio-config-overlay";
 import styles from "./avatar-studio.module.css";
+import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 
 type SourceMode = "library" | "upload" | "happyimage";
 type CreationTask = AvatarCreationTask;
@@ -41,10 +42,29 @@ type BusyState = "" | "image" | "save" | "anam" | "accept";
 export function AvatarStudio({
   initialTask = "realtime",
   initialAvatarId = "",
+  initialActionId = "",
+  initialTalkingMethod,
+  returnToRoleId,
+  returnToRoleCreate = false,
+  onComplete,
+  onActionPreviewChange,
+  singleTask = false,
 }: {
   initialTask?: CreationTask;
   initialAvatarId?: string;
+  initialActionId?: string;
+  initialTalkingMethod?: "lipforcing";
+  returnToRoleId?: string;
+  returnToRoleCreate?: boolean;
+  onComplete?: (result: { avatarId: string; actionId?: string }) => void;
+  onActionPreviewChange?: (preview: { url: string; name: string } | null) => void;
+  singleTask?: boolean;
 } = {}) {
+  const returnToRole = () => {
+    if (returnToRoleId) window.location.assign(`/roles/${encodeURIComponent(returnToRoleId)}`);
+    else if (returnToRoleCreate) window.location.assign("/roles/new");
+  };
+  const ensureProviderKey = useProviderKeyGate();
   const [task, setTask] = useState<CreationTask>(initialTask);
   const [visitedTasks, setVisitedTasks] = useState<CreationTask[]>([initialTask]);
   const [mode, setMode] = useState<SourceMode>("library");
@@ -227,6 +247,8 @@ export function AvatarStudio({
         setCreatedAvatar(avatar);
         setAnamDisplayName(suggestAnamAvatarName(avatar.display_name));
         setCurrentStep(2);
+        if (nextTask === "lightweight") onComplete?.({ avatarId: avatar.avatar_id });
+        if (returnToRoleId) returnToRole();
         return;
       }
       const sourceImageUrl = await normalizeAvatarSourceImage(source.imageUrl);
@@ -238,6 +260,8 @@ export function AvatarStudio({
       setCreatedAvatar(avatar);
       setAnamDisplayName(suggestAnamAvatarName(avatar.display_name));
       setCurrentStep(2);
+      if (nextTask === "lightweight") onComplete?.({ avatarId: avatar.avatar_id });
+      if (returnToRoleId) returnToRole();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Avatar 保存失败");
     } finally {
@@ -249,6 +273,12 @@ export function AvatarStudio({
     if (!createdAvatar || busy) return;
     if (!isValidAnamAvatarName(anamDisplayName)) {
       setError(ANAM_AVATAR_NAME_REQUIREMENT);
+      return;
+    }
+    try {
+      if (!await ensureProviderKey("anam")) return;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法检查 Anam API Key");
       return;
     }
     setBusy("anam");
@@ -282,6 +312,8 @@ export function AvatarStudio({
       setAnamCandidate(null);
       setCurrentStep(3);
       setMobileConfigOpen(false);
+      onComplete?.({ avatarId: avatar.avatar_id });
+      if (returnToRoleCreate) returnToRole();
     } catch (acceptError) {
       setError(acceptError instanceof Error ? acceptError.message : "实时形象保存失败");
     } finally {
@@ -318,7 +350,7 @@ export function AvatarStudio({
     || (source && mode !== "library" ? defaultAvatarName : "未命名 Avatar");
   const avatarNameLocked = isAvatarNameLocked(mode);
   return (
-    <section className={styles.studio} aria-label="创建数字人工作区">
+    <section className={styles.studio} aria-label="创建数字人工作区" data-single-task={singleTask || undefined}>
       {currentStep < 3 ? <div className={styles.creationWorkspace} data-stage={currentStep === 0 ? "select" : "configure"}>
         {currentStep === 0 ? (
           <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="配置 Avatar" icon={<Sparkles aria-hidden="true" />}>
@@ -389,7 +421,7 @@ export function AvatarStudio({
               <div className={styles.nextTaskChoices} role="group" aria-label="选择下一步操作">
                 <button className={styles.nextTaskChoice} type="button"
                   disabled={!source || (avatarNameLocked && !displayName.trim()) || Boolean(busy)}
-                  onClick={() => void createAvatar("realtime")}>
+                  onClick={() => void createAvatar(task)}>
                   <span className={styles.nextTaskIcon}>{busy === "save" ? <LoaderCircle className={styles.spin} /> : <Play />}</span>
                   <span><strong>继续配置驱动方式</strong></span><ArrowRight />
                 </button>
@@ -475,7 +507,7 @@ export function AvatarStudio({
           <div className={styles.driveView} hidden={task !== "realtime"}>
             <StudioConfigOverlay open={task === "realtime" && mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="实时驱动配置" icon={<Play aria-hidden="true" />}>
             <aside className={styles.taskSidebar}>
-              <AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />
+              <AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} tasks={singleTask ? ["realtime"] : undefined} />
               <section className={styles.selectedAvatar} aria-label="当前共享 Avatar">
                 <button className={styles.selectedAvatarImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
                 <div><strong>{createdAvatar.display_name}</strong></div>
@@ -512,8 +544,15 @@ export function AvatarStudio({
                     </button>
                   </div>
                 )}
-                {error ? <p className={styles.error} role="alert">{error}</p> : null}
-                <footer><button type="button" onClick={() => changeTask("action")}><Film />继续创建动作</button><Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link></footer>
+                {error ? <p className={styles.error} role="alert">{error}
+                  {error.includes("API Key") && <button className={styles.keyReset} type="button" onClick={() => void ensureProviderKey("anam", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>更换 Anam Key</button>}
+                </p> : null}
+                <footer>
+                  {returnToRoleCreate && createdAvatar.realtime_binding
+                    ? <button type="button" onClick={returnToRole}><ArrowLeft />返回创建角色</button>
+                    : !singleTask ? <button type="button" onClick={() => changeTask("action")}><Film />继续创建动作</button> : null}
+                  <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
+                </footer>
               </section>
             </aside>
             </StudioConfigOverlay>
@@ -530,20 +569,32 @@ export function AvatarStudio({
           {visitedTasks.includes("action") ? <div className={styles.driveView} hidden={task !== "action"}><AvatarActionStudio
             key={createdAvatar.avatar_id}
             active={task === "action"}
-            configHeader={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />}
+            configHeader={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} tasks={singleTask ? ["action"] : undefined} />}
             avatarId={createdAvatar.avatar_id}
             embedded
+            focusedCreation={singleTask}
+            onPreviewChange={onActionPreviewChange}
             previewImageUrl={selectedAvatarImageUrl}
             onChangeAvatar={changeAvatar}
             onPreviewAvatar={() => setPreviewOpen(true)}
             mobileConfigOpen={task === "action" && mobileConfigOpen}
             onMobileConfigOpenChange={setMobileConfigOpen}
+            onSaved={(action) => {
+              onComplete?.({ avatarId: createdAvatar.avatar_id, actionId: action.avatar_action_id });
+              if (returnToRoleId || returnToRoleCreate) returnToRole();
+            }}
           /></div> : null}
           {visitedTasks.includes("lightweight") ? <div className={styles.driveView} hidden={task !== "lightweight"}>
             <AvatarLightweightConfig key={createdAvatar.avatar_id} avatar={createdAvatar} active={task === "lightweight"}
-              header={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} />}
+              initialActionId={initialActionId}
+              initialMethod={initialTalkingMethod}
+              header={<AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} tasks={singleTask ? ["lightweight"] : undefined} />}
               open={task === "lightweight" && mobileConfigOpen} onOpenChange={setMobileConfigOpen}
-              onCreateAction={() => changeTask("action")} />
+              onCreateAction={() => changeTask("action")}
+              onSaved={() => {
+                onComplete?.({ avatarId: createdAvatar.avatar_id, actionId: initialActionId || undefined });
+                if (returnToRoleId || returnToRoleCreate) returnToRole();
+              }} />
           </div> : null}
           </>
         ) : null}
@@ -556,6 +607,7 @@ export function AvatarStudio({
           <p>现在可以使用这个 Avatar 开始对话测试。</p>
           <div>
             <button type="button" onClick={() => setCurrentStep(2)}><ArrowLeft aria-hidden="true" />上一步</button>
+            {returnToRoleCreate ? <button type="button" onClick={returnToRole}>返回创建角色</button> : null}
             <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
             <button type="button" onClick={() => changeTask("action")}><Film aria-hidden="true" />继续创建动作</button>
           </div>
@@ -605,4 +657,3 @@ function suggestNextNumberedAvatarName(displayNames: string[]) {
   }
   return `数字人${highestNumber + 1}`;
 }
-

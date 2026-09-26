@@ -116,7 +116,7 @@
 
 .copy small { color: rgba(255,255,255,.58); font-size: .56rem; }
 .copy h2 { margin: 5px 0 11px; font-family: var(--font-display); font-size: clamp(1.5rem, 2.5vw, 2.35rem); line-height: 1; letter-spacing: -.055em; }
-.copy > span { min-height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(9,10,16,.38); color: rgba(255,255,255,.84); font-size: .55rem; backdrop-filter: blur(13px); }
+.copy > span { min-height: 30px; padding: 0 12px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(9,10,16,.38); color: rgba(255,255,255,.84); font-size: .55rem; backdrop-filter: blur(var(--panel-blur,13px)); }
 .copy svg { width: 12px; height: 12px; }
 
 .card:not([data-position="active"]) .copy { transform: translateY(5px); }
@@ -139,7 +139,7 @@
   font-size: .53rem;
   opacity: 0;
   transform: translateY(-6px);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--panel-blur,14px));
   transition: opacity 300ms ease, transform 500ms cubic-bezier(.16,1,.3,1);
 }
 
@@ -160,7 +160,7 @@
   color: white;
   cursor: pointer;
   transform: translateY(-50%);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(var(--panel-blur,16px));
   transition: background 200ms ease, transform 300ms ease;
 }
 

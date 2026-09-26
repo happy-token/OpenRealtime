@@ -37,8 +37,8 @@ def test_avatar_persona_prompt_loads_linked_markdown_in_openclaw_order(tmp_path)
 
     assert catalog.system_prompt_for_avatar("avatar-zhaoning", "BASE") == (
         "BASE\n\n"
-        "# Avatar Context\n"
-        "The selected Avatar's display name is 昭宁. Use this name when introducing "
+        "# Role Context\n"
+        "The selected role's display name is 昭宁. Use this name when introducing "
         "yourself; the Persona remains a reusable style asset.\n\n"
         "# Persona Context\n"
         "The following trusted Persona files are linked to the selected Avatar.\n\n"
@@ -108,6 +108,26 @@ def test_session_avatar_persona_switches_and_clears_the_active_prompt(tmp_path):
     assert context.apply("BASE") == "BASE"
 
 
+def test_session_persona_can_be_selected_without_an_avatar(tmp_path):
+    persona_root = tmp_path / "personas"
+    persona_dir = persona_root / "intellectual-warmth"
+    persona_dir.mkdir(parents=True)
+    (persona_dir / "IDENTITY.md").write_text("# 产品顾问", encoding="utf-8")
+    (persona_dir / "SOUL.md").write_text("清晰而耐心", encoding="utf-8")
+    context = SessionAvatarPersona(
+        AvatarPersonaPromptCatalog(
+            persona_root=persona_root,
+            links_path=tmp_path / "missing-links.json",
+        )
+    )
+
+    assert context.select(
+        persona_id="intellectual-warmth",
+    ) == "intellectual-warmth"
+    assert "# Role Context" not in context.apply("BASE")
+    assert "## SOUL.md" in context.apply("BASE")
+
+
 def test_missing_persona_catalog_keeps_the_default_brain_prompt(tmp_path):
     catalog = AvatarPersonaPromptCatalog(
         persona_root=tmp_path / "personas",
@@ -147,7 +167,7 @@ def test_link_with_missing_persona_files_keeps_the_default_brain_prompt(tmp_path
         ("companion", "陪伴", "柔光纯欲"),
         ("avatar-zhaoning", "昭宁", "知性温柔"),
         ("avatar-meichuqing", "梅初晴", "甜美元气"),
-        ("avatar-qingyun", "清韫", "清新田园"),
+        ("avatar-qingyun", "清韫", "忧郁薄雾"),
         ("avatar-selin", "瑟琳", "浪漫法式"),
         ("avatar-shiruoshui", "施若水", "柔光纯欲"),
         ("avatar-zhaoyue", "曌月", "冷艳都市"),

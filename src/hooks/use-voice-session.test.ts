@@ -22,6 +22,7 @@ import {
   updateAssistantOutputText,
   browserSpeechTextForResponse,
   avatarPersonaConfigPayload,
+  toolConfigPayload,
 } from "./use-voice-session";
 
 describe("voice playback safety defaults", () => {
@@ -59,14 +60,25 @@ describe("session TTS selection", () => {
 });
 
 describe("Avatar Persona selection", () => {
-  it("sends only the stable Avatar ID and never browser-authored prompt text", () => {
+  it("sends only stable resource IDs and never browser-authored prompt text", () => {
     expect(avatarPersonaConfigPayload("avatar-zhaoning")).toEqual({
       type: "avatar_persona_config",
       avatar_id: "avatar-zhaoning",
+      persona_id: null,
     });
-    expect(avatarPersonaConfigPayload(null)).toEqual({
+    expect(avatarPersonaConfigPayload(null, "intellectual-warmth")).toEqual({
       type: "avatar_persona_config",
       avatar_id: null,
+      persona_id: "intellectual-warmth",
+    });
+  });
+});
+
+describe("role tool selection", () => {
+  it("deduplicates canonical function names", () => {
+    expect(toolConfigPayload(["search_web", "get_current_datetime", "search_web"])).toEqual({
+      type: "tool_config",
+      tool_names: ["search_web", "get_current_datetime"],
     });
   });
 });

@@ -11,6 +11,7 @@ interface SessionRecoveryNoticeProps {
   onRetryConnection: () => void;
   onRetryMicrophone: () => void;
   onUseText: () => void;
+  voiceOnly?: boolean;
 }
 
 type RecoveryIssue = {
@@ -21,7 +22,9 @@ type RecoveryIssue = {
   retry: "connection" | "microphone" | null;
 };
 
-export function resolveSessionRecoveryIssue({ connection, micError, micAvailable, sessionError }: Pick<SessionRecoveryNoticeProps, "connection" | "micError" | "micAvailable" | "sessionError">): RecoveryIssue | null {
+export function resolveSessionRecoveryIssue({ connection, micError, micAvailable, sessionError, voiceOnly }: Pick<SessionRecoveryNoticeProps, "connection" | "micError" | "micAvailable" | "sessionError" | "voiceOnly">): RecoveryIssue | null {
+  if (voiceOnly && micError) return { kind: "response", title: "语音会话未开始", message: micError, retryLabel: "手动重试", retry: "microphone" };
+  if (voiceOnly && connection === "error") return { kind: "connection", title: "语音连接失败", message: sessionError || "请手动重试语音会话。", retryLabel: "手动重试", retry: "microphone" };
   if (connection === "reconnecting") return { kind: "connection", title: "连接中断，正在恢复…", message: "输入的文字会保留，也可以立即重试。", retryLabel: "立即重试", retry: "connection" };
   if (connection === "error") return { kind: "connection", title: "连接未恢复", message: "请重试连接或改用文字，输入的草稿会保留。", retryLabel: "重试连接", retry: "connection" };
   if (sessionError) return { kind: "response", title: "本轮回复未完成", message: sessionError, retryLabel: "重新连接", retry: "connection" };
@@ -39,7 +42,7 @@ export function SessionRecoveryNotice(props: SessionRecoveryNoticeProps) {
     <div className="session-recovery-copy"><strong>{issue.title}</strong><span>{issue.message}</span></div>
     <div className="session-recovery-actions">
       {retry && <button type="button" onClick={retry}><RefreshCw aria-hidden="true" />{issue.retryLabel}</button>}
-      <button type="button" onClick={props.onUseText}><Keyboard aria-hidden="true" />改用文字</button>
+      {!props.voiceOnly && <button type="button" onClick={props.onUseText}><Keyboard aria-hidden="true" />改用文字</button>}
     </div>
   </section>;
 }

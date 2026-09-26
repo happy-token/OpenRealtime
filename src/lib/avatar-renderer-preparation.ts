@@ -17,6 +17,7 @@ export function resolveAvatarRendererBinding(
   config: AvatarDisplayConfig,
 ): AvatarRendererBinding | null {
   if (config.renderPath !== "segmented"
+    || config.segmentedAvatarId.startsWith("avatar-personal-")
     || (config.segmentedLipSyncId !== "wav2lip256" && config.segmentedLipSyncId !== "wav2lip96")) return null;
   const modelId = config.segmentedLipSyncId;
   const modelSize = modelId === "wav2lip256" ? 256 : 96;

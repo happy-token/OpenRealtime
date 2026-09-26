@@ -6,12 +6,15 @@ import { promisify } from "node:util";
 import { attachTalkingVariant, findOwnedAvatar } from "./avatar-catalog-repository";
 import { avatarAssetControlRequest } from "./avatar-assets-server";
 import type { AvatarTalkingVariant } from "./avatar-records";
+import { modelServiceConnection } from "./model-service-connections";
+import { runLipForcingServiceJob } from "./lipforcing-service-client";
 
 const exec = promisify(execFile);
 const LIMIT = 50 * 1024 * 1024;
 export type TalkingJob = {
   id: string;
-  state: "queued" | "processing" | "success" | "failed";
+  state: "queued" | "processing" | "ready_for_review" | "success" | "failed";
+  previewOnly?: boolean;
   avatarId?: string;
   actionId?: string;
   sourceUrl?: string;
@@ -71,7 +74,7 @@ export async function readTalkingSource(source: string): Promise<Buffer> {
   return readFile(file);
 }
 
-export async function startTalkingJob(avatarId: string, actionId: string): Promise<TalkingJob> {
+export async function startTalkingJob(avatarId: string, actionId: string, previewOnly = false, uploadedAudio?: Buffer): Promise<TalkingJob> {
   const avatar = await findOwnedAvatar(avatarId);
   const action = avatar?.actions.find(item => item.avatar_action_id === actionId && !item.deleted_at);
   if (!avatar || avatar.deleted_at || !action?.video_url) throw new Error("找不到可用动作底片");
@@ -79,11 +82,12 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
   const source = action.video_url;
   const current = await getTalkingJob(avatarId, actionId);
   const matchesCurrentSource = !current?.sourceUrl || current.sourceUrl === source;
-  if (current && matchesCurrentSource && (current.state === "queued" || current.state === "processing" || current.retryBlocked)) return current;
-  const existing = action.talking_variants?.find(v => v.method === "musetalk" && v.source_video_url === action.video_url);
+  if (current && matchesCurrentSource && (current.state === "queued" || current.state === "processing" || current.state === "ready_for_review" || current.retryBlocked)) return current;
+  const existing = action.talking_variants?.find(v => v.method === "musetalk" && !v.deleted_at && v.source_video_url === action.video_url);
   if (existing) return { id: existing.id, state: "success", variant: existing };
+  const connection = await modelServiceConnection("musetalk");
   const host = process.env.MUSETALK_SSH_HOST?.trim() || "dev";
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._@-]*$/.test(host)) throw new Error("GPU SSH 配置无效");
+  if (!connection.url && !/^[a-zA-Z0-9][a-zA-Z0-9._@-]*$/.test(host)) throw new Error("GPU SSH 配置无效");
   const now = new Date().toISOString();
   const job: TalkingJob = {
     id: `musetalk-${randomUUID()}`,
@@ -91,6 +95,7 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
     avatarId,
     actionId,
     sourceUrl: source,
+    previewOnly,
     createdAt: now,
     updatedAt: now,
   };
@@ -105,19 +110,35 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
     try {
       await mkdir(local, { recursive: true });
       await writeFile(path.join(local, "source.mp4"), await readTalkingSource(source));
-      const reference = process.env.MUSETALK_REFERENCE_AUDIO || path.join(process.cwd(), "research-assets/avatar-evaluation/2026-09-08/soft-response/reference.wav");
+      let reference = process.env.MUSETALK_REFERENCE_AUDIO || path.join(process.cwd(), "research-assets/avatar-evaluation/2026-09-08/soft-response/reference.wav");
       const remote = `/root/lipsync-eval/openrealtime-talking/${job.id}`;
       const runtime = process.env.MUSETALK_REMOTE_ROOT || "/root/lipsync-eval/musetalk";
       const python = process.env.MUSETALK_REMOTE_PYTHON || "/root/lipsync-eval/venv-musetalk/bin/python";
       const sshArgs = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host];
       const run = async (command: string, args: string[], timeout = 60_000) => exec(command, args, { timeout, maxBuffer: 8 * 1024 * 1024 });
-      await run("ssh", [...sshArgs, `mkdir -p ${quote(remote)}`]);
-      await run("scp", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", path.join(local, "source.mp4"), `${host}:${remote}/source.mp4`]);
-      await run("scp", ["-o", "BatchMode=yes", reference, `${host}:${remote}/reference.wav`]);
-      await run("scp", ["-o", "BatchMode=yes", path.join(process.cwd(), "scripts/generate_musetalk_talking.sh"), `${host}:${remote}/run.sh`]);
-      const result = await run("ssh", [...sshArgs, `timeout 1800 bash ${quote(remote + "/run.sh")} ${quote(remote)} ${quote(runtime)} ${quote(python)}`], 1_830_000);
-      await writeFile(path.join(local, "inference.log"), result.stdout + result.stderr);
-      await run("scp", ["-o", "BatchMode=yes", `${host}:${remote}/output.mp4`, path.join(local, "output.mp4")]);
+      if (uploadedAudio) {
+        const input = path.join(local, "reference.input");
+        reference = path.join(local, "reference.wav");
+        await writeFile(input, uploadedAudio, { mode: 0o600 });
+        await run("ffmpeg", ["-v", "error", "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", reference]);
+      }
+      if (connection.url) {
+        const output = await runLipForcingServiceJob({
+          baseUrl: connection.url, token: connection.token, jobId: job.id,
+          sourceVideo: await readFile(path.join(local, "source.mp4")),
+          referenceAudio: await readFile(reference), rightsConfirmed: true,
+          timeoutMs: 1_830_000,
+        });
+        await writeFile(path.join(local, "output.mp4"), output, { mode: 0o600 });
+      } else {
+        await run("ssh", [...sshArgs, `mkdir -p ${quote(remote)}`]);
+        await run("scp", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", path.join(local, "source.mp4"), `${host}:${remote}/source.mp4`]);
+        await run("scp", ["-o", "BatchMode=yes", reference, `${host}:${remote}/reference.wav`]);
+        await run("scp", ["-o", "BatchMode=yes", path.join(process.cwd(), "scripts/generate_musetalk_talking.sh"), `${host}:${remote}/run.sh`]);
+        const result = await run("ssh", [...sshArgs, `timeout 1800 bash ${quote(remote + "/run.sh")} ${quote(remote)} ${quote(runtime)} ${quote(python)}`], 1_830_000);
+        await writeFile(path.join(local, "inference.log"), result.stdout + result.stderr);
+        await run("scp", ["-o", "BatchMode=yes", `${host}:${remote}/output.mp4`, path.join(local, "output.mp4")]);
+      }
       await run("ffmpeg", ["-v", "error", "-i", path.join(local, "output.mp4"), "-f", "null", "-"]);
       const output = path.join(process.cwd(), "public", "digital-human", "talking-variants");
       await mkdir(output, { recursive: true });
@@ -125,9 +146,9 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
       await rename(path.join(local, "output.mp4"), publishedPath);
       const variant: AvatarTalkingVariant = { id: job.id, display_name: `${action.display_name.slice(0, 80)} · MuseTalk 1.5`, method: "musetalk", source_video_url: source, video_url: `/digital-human/talking-variants/${job.id}.mp4`, processing: "original", validation: "pending" };
       // Re-check source identity and deletion under the catalog lock before publishing.
-      await attachTalkingVariant(avatarId, actionId, variant);
+      if (!previewOnly) await attachTalkingVariant(avatarId, actionId, variant);
       job.variant = variant;
-      job.state = "success";
+      job.state = previewOnly ? "ready_for_review" : "success";
       job.updatedAt = new Date().toISOString();
       await persistJob(job);
     } catch (error) {
@@ -135,13 +156,24 @@ export async function startTalkingJob(avatarId: string, actionId: string): Promi
       job.state = "failed";
       job.retryBlocked = true;
       job.updatedAt = new Date().toISOString();
-      job.error = "MuseTalk 讲话素材生成失败。为避免远端任务仍在运行时重复消耗 GPU，请先检查任务日志和远端输出。";
+      job.error = "MuseTalk 口型对齐生成失败。为避免远端任务仍在运行时重复消耗 GPU，请先检查任务日志和远端输出。";
       await persistJob(job).catch(persistError => console.error("Cannot persist failed talking job", persistError));
       console.error(`Talking job ${job.id} failed`, error);
       await writeFile(path.join(local, "error.log"), String(error)).catch(logError => console.error("Cannot save talking job error", logError));
     }
   });
   return job;
+}
+
+export async function acceptTalkingJob(avatarId: string, actionId: string, jobId: string) {
+  const job = await getTalkingJob(avatarId, actionId);
+  if (!job || job.id !== jobId || job.state !== "ready_for_review" || !job.variant) throw new Error("找不到待确认的口型对齐");
+  if (!job.variant.video_url.endsWith(`/${job.id}.mp4`) || !(await stat(path.join(process.cwd(), "public", "digital-human", "talking-variants", `${job.id}.mp4`))).isFile()) throw new Error("讲话视频不可用");
+  const action = await attachTalkingVariant(avatarId, actionId, job.variant);
+  job.state = "success";
+  job.updatedAt = new Date().toISOString();
+  await persistJob(job);
+  return { job, action };
 }
 
 
@@ -185,7 +217,7 @@ function isTalkingJob(value: unknown): value is TalkingJob {
   if (!value || typeof value !== "object") return false;
   const job = value as Partial<TalkingJob>;
   return typeof job.id === "string"
-    && ["queued", "processing", "success", "failed"].includes(job.state ?? "")
+    && ["queued", "processing", "ready_for_review", "success", "failed"].includes(job.state ?? "")
     && typeof job.avatarId === "string"
     && typeof job.actionId === "string";
 }

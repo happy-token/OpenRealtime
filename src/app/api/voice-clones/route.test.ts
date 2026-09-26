@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
-import { DELETE, PATCH, POST } from "./route";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DELETE, GET, PATCH, POST } from "./route";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("voice clone route", () => {
   it("rejects cross-origin enrollment before reading an audio body", async () => {
@@ -54,5 +59,23 @@ describe("voice clone route", () => {
 
     expect(rename.status).toBe(400);
     expect(deletion.status).toBe(400);
+  });
+
+  it("does not keep a deleted environment voice in the returned catalog", async () => {
+    vi.stubEnv("DASHSCOPE_API_KEY", "secret");
+    vi.stubEnv("BAILIAN_TTS_VOICE", "cosyvoice-v3-flash-openrt-deleted");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      output: { voice_list: [] },
+    }), { status: 200 })));
+
+    const response = await GET(new NextRequest("http://localhost:3010/api/voice-clones", {
+      headers: { origin: "http://localhost:3010" },
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      activeVoiceId: null,
+      voices: [],
+    });
   });
 });

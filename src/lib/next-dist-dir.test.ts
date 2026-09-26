@@ -12,4 +12,8 @@ describe("Next.js build output isolation", () => {
   it("allows an isolated output directory for a concurrent E2E server", () => {
     expect(resolveNextDistDir("development", ".next-e2e-3000")).toBe(".next-e2e-3000");
   });
+
+  it("compresses text responses in production", () => {
+    expect(nextConfig.compress).toBe(true);
+  });
 });

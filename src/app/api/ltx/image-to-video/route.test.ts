@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { providerKeyFingerprint, providerKeyCookieName, sealProviderKey } from "@/lib/provider-api-key";
 
 const mocks = vi.hoisted(() => ({
   readImage: vi.fn(),
@@ -46,7 +47,7 @@ function enableLocalTestMode() {
   vi.stubEnv("MINIMAX_API_KEY", "minimax-test-key");
 }
 
-function request(overrides: Record<string, unknown> = {}) {
+function request(overrides: Record<string, unknown> = {}, cookie?: string) {
   const body = JSON.stringify({
     avatarId: "avatar-123",
     prompt: "front-facing idle",
@@ -63,6 +64,7 @@ function request(overrides: Record<string, unknown> = {}) {
       "sec-fetch-site": "same-origin",
       "content-type": "application/json",
       "content-length": String(Buffer.byteLength(body)),
+      ...(cookie ? { cookie } : {}),
     },
     body,
   });
@@ -93,6 +95,16 @@ function multipartRequest() {
 }
 
 describe("LTX image-to-video route", () => {
+  it("offers MiniMax at use time when the server has no provider key", async () => {
+    enableLocalTestMode();
+    vi.stubEnv("MINIMAX_API_KEY", "");
+    vi.stubEnv("LTX_API_KEY", "");
+    const response = await GET(new NextRequest("http://127.0.0.1:3010/api/ltx/image-to-video", {
+      headers: { host: "127.0.0.1:3010", referer: "http://127.0.0.1:3010/", "sec-fetch-site": "same-origin" },
+    }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ready: true, configured_models: expect.arrayContaining(["MiniMax-H3"]) });
+  });
   it("does not advertise in-memory LTX coordination as ready in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("LTX_API_KEY", "test-key");
@@ -156,6 +168,24 @@ describe("LTX image-to-video route", () => {
       imageDataUrl: expect.stringMatching(/^data:image\/webp;base64,/),
     }));
     expect(mocks.prepareFrame).toHaveBeenCalledWith(expect.any(Uint8Array), "image/png", "16:9");
+  });
+
+  it("accepts a user MiniMax key without an environment key and scopes the task to that key", async () => {
+    enableLocalTestMode();
+    vi.stubEnv("MINIMAX_API_KEY", "");
+    vi.stubEnv("VOICEAGENT_ADMIN_SESSION_SECRET", "s".repeat(32));
+    const key = "user-minimax-key";
+    const cookie = `${providerKeyCookieName("minimax")}=${sealProviderKey(key)}`;
+    mocks.readImage.mockResolvedValue({ bytes: Uint8Array.from([137, 80, 78, 71]), mediaType: "image/png" });
+    mocks.createTask.mockImplementation(async (_provenance, create) => ({ task: await create(), reused: false }));
+    mocks.submit.mockResolvedValue({ taskId: "task_123456", state: "queueing", model: "MiniMax-H3" });
+    const response = await POST(request({ model: "MiniMax-H3" }, cookie));
+    expect(response.status).toBe(202);
+    expect(mocks.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      credentialFingerprint: providerKeyFingerprint(key),
+    }), expect.any(Function), expect.anything());
+    expect(mocks.submit).toHaveBeenCalledWith(expect.objectContaining({ MINIMAX_API_KEY: key }), expect.anything());
+    expect(JSON.stringify(await response.json())).not.toContain(key);
   });
 
   it("accepts a multimodal reference video with explicit role and generation parameters", async () => {

@@ -4,6 +4,8 @@ import { canUseAvatarTestApis } from "@/lib/avatar-test-access";
 import { downloadLtxResultVideo } from "@/lib/ltx-result-video";
 import { getTrustedLocalLtxTask } from "@/lib/ltx-task-coordinator";
 import { getVideoGeneration, isVideoGenerationProviderError } from "@/lib/video-generation-provider";
+import { resolveProviderApiKey, providerKeyFingerprint } from "@/lib/provider-api-key";
+import { isMiniMaxModelId } from "@/lib/ltx-avatar-action";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,11 +18,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ tas
     const { taskId } = await context.params;
     const trusted = getTrustedLocalLtxTask(taskId);
     if (!trusted) return json("视频生成任务不存在、已失效或服务已重启", 404);
+    const miniMaxKey = await resolveProviderApiKey(request, "minimax");
+    if (isMiniMaxModelId(trusted.model) && trusted.credentialFingerprint !== (miniMaxKey ? providerKeyFingerprint(miniMaxKey) : undefined)) {
+      return json("请使用创建任务时的 MiniMax API Key 读取结果", 403);
+    }
     const task = await getVideoGeneration(
       {
         LTX_API_KEY: process.env.LTX_API_KEY,
         LTX_API_URL: process.env.LTX_API_URL,
-        MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+        MINIMAX_API_KEY: miniMaxKey,
         MINIMAX_API_URL: process.env.MINIMAX_API_URL,
       },
       taskId,

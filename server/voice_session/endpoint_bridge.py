@@ -12,6 +12,7 @@ from typing import Protocol
 from server.conversation_journal import ConversationJournal, JournalScope
 from server.core.interaction_context import InteractionContext
 from server.realtime.protocol import RealtimeCommand, RealtimeConversation, RealtimeEvent
+from server.realtime.protocol.events import RealtimeCapabilityFailed
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.runtime import RealtimeRuntimeFactory
 from server.realtime.transport.websocket import (
@@ -26,6 +27,7 @@ from server.transport.frames import (
     ConfirmationRequestedFrame,
     ConfirmationResolutionFrame,
     OutboundFrame,
+    UserTextFrame,
     VoiceSessionEventTailFrame,
     VoiceSessionPhaseChangedFrame,
     VoiceSessionReadyFrame,
@@ -51,6 +53,7 @@ from server.voice_session.runtime import (
     VoiceSessionConversationUnavailable,
     VoiceSessionRuntime,
 )
+from server.voice_session.speech_failure import provider_failure_frame
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +296,7 @@ class VoiceSessionWebSocketSession:
         active_conversations: ActiveRealtimeConversations | None = None,
         agent_work_registry: AgentWorkRegistryRebuilder | None = None,
         initial_frames: tuple[OutboundFrame, ...] = (),
+        provider_credential_sources: dict[str, str] | None = None,
     ) -> None:
         self._identity = identity
         self._context = context
@@ -306,6 +310,7 @@ class VoiceSessionWebSocketSession:
         self._inbound_fallback = inbound_fallback
         self._confirmation_decision_handler = confirmation_decision_handler
         self._initial_frames = initial_frames
+        self._provider_credential_sources = provider_credential_sources
         self._journal_recovery = _JournalRecovery(
             journal=journal,
             scope=JournalScope.from_context(context),
@@ -600,14 +605,35 @@ class VoiceSessionWebSocketSession:
 
     async def _pump_inbound(self, bridge: RealtimeWebSocketFrameBridge) -> None:
         async for frame in self._transport.receive():
+            runtime = self._runtime
+            if (
+                isinstance(frame, UserTextFrame)
+                and runtime is not None
+                and runtime.phase is VoiceSessionPhase.STARTING
+            ):
+                await runtime.mark_client_audio_ready(
+                    input_epoch=f"text-only:{self._identity.voice_session_id}"
+                )
             await bridge.handle_inbound(frame)
 
-    @staticmethod
     async def _pump_realtime_events(
+        self,
         conversation: RealtimeConversation,
         bridge: RealtimeWebSocketFrameBridge,
     ) -> None:
         async for event in conversation.events():
+            if (
+                self._provider_credential_sources is not None
+                and isinstance(event, RealtimeCapabilityFailed)
+                and event.capability in {"asr", "tts", "brain"}
+            ):
+                await self._transport.send(provider_failure_frame(
+                    event.capability,
+                    self._provider_credential_sources[event.capability],
+                    event.error,
+                ))
+                await self._transport.close()
+                return
             await bridge.handle_event(event)
 
     async def _pump_voice_events(self, runtime: VoiceSessionRuntime) -> None:

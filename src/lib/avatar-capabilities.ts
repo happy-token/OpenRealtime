@@ -27,7 +27,7 @@ export function avatarCapabilities(
   try { rendererReady = resolveAvatarRendererRuntime(env) !== null; } catch { /* Invalid config stays unavailable. */ }
   return {
     assets: assetAccess ? { state: "available", message: "可以管理数字人资产。" } : access,
-    anam: assetAccess ? configured(Boolean(env.ANAM_API_KEY?.trim()), "Anam 尚未配置，请联系管理员配置后重试。") : access,
+    anam: assetAccess ? { state: "available", message: "启动时可填写 Anam API Key。" } : access,
     heygen: assetAccess ? configured(Boolean(env.LIVEAVATAR_API_KEY?.trim() && env.LIVEAVATAR_AVATAR_ID?.trim()), "HeyGen 尚未配置凭据或形象，请联系管理员。") : access,
     localRenderer: !policy.enabled
       ? { state: "not_configured", message: "此环境尚未启用本地数字人预览。" }

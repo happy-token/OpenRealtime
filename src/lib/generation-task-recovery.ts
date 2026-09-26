@@ -6,6 +6,7 @@ export type RecoverableGenerationTask = {
   requestId: string;
   provider: RecoverableGenerationProvider;
   taskId?: string;
+  displayName?: string;
   sourceId?: string;
   sourceUrl?: string;
   startedAt: number;
@@ -53,6 +54,26 @@ export function clearRecoverableGenerationTask(
   storage.removeItem(generationTaskStorageKey(avatarId, purpose));
 }
 
+export function shouldRecoverGenerationSubmission({
+  requestId,
+  taskId,
+  provider,
+  taskState,
+  submissionInFlight,
+}: {
+  requestId: string;
+  taskId: string;
+  provider: RecoverableGenerationProvider;
+  taskState: string;
+  submissionInFlight: boolean;
+}) {
+  return Boolean(requestId)
+    && !taskId
+    && (provider === "ltx" || provider === "minimax")
+    && taskState === "queueing"
+    && !submissionInFlight;
+}
+
 function isRecoverableTask(value: unknown): value is RecoverableGenerationTask {
   if (!value || typeof value !== "object") return false;
   const task = value as Partial<RecoverableGenerationTask>;
@@ -61,6 +82,7 @@ function isRecoverableTask(value: unknown): value is RecoverableGenerationTask {
     && typeof task.requestId === "string"
     && ["liveportrait", "ltx", "minimax"].includes(task.provider ?? "")
     && (task.taskId === undefined || typeof task.taskId === "string")
+    && (task.displayName === undefined || typeof task.displayName === "string")
     && (task.sourceId === undefined || typeof task.sourceId === "string")
     && (task.sourceUrl === undefined || typeof task.sourceUrl === "string")
     && typeof task.startedAt === "number"

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, RefreshCw, Upload, Wand2, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, Maximize2, Minimize2, RefreshCw, Upload, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type CSSProperties, type KeyboardEvent } from "react";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
 import { StudioConfigOverlay } from "./studio-config-overlay";
@@ -10,7 +10,8 @@ import {
   appendOwnedAvatarAction,
   fetchOwnedAvatar,
 } from "@/lib/avatar-catalog-client";
-import type { OwnedAvatarRecord } from "@/lib/avatar-records";
+import type { OwnedAvatarActionRecord, OwnedAvatarRecord } from "@/lib/avatar-records";
+import { hasGeneratedAvatarAction } from "@/lib/avatar-action-generation-guard";
 import { prepareAvatarRendererAsset } from "@/lib/avatar-renderer-preparation-client";
 import { LIVEPORTRAIT_ACTIONS, type LivePortraitActionId } from "@/lib/liveportrait-actions";
 import {
@@ -22,7 +23,9 @@ import {
   clearRecoverableGenerationTask,
   readRecoverableGenerationTask,
   saveRecoverableGenerationTask,
+  shouldRecoverGenerationSubmission,
 } from "@/lib/generation-task-recovery";
+import { pollRecoverableGenerationTask } from "@/lib/generation-task-poll";
 import { classifyMediaAspectRatio, type MediaAspectBucket } from "@/lib/media-aspect-fit";
 import {
   VIDEO_GENERATION_DEFAULT_MODELS,
@@ -44,6 +47,7 @@ import {
   type MiniMaxResolution,
 } from "@/lib/minimax-video-options";
 import styles from "./avatar-action-studio.module.css";
+import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 
 type TaskState = "idle" | "queueing" | "processing" | "success" | "failed";
 type RuntimeState = "checking" | "ready" | "error";
@@ -110,10 +114,10 @@ function GenerationParameterSelect({
   disabled = false,
   onChange,
 }: {
-  label: string;
+  label?: string;
   ariaLabel: string;
   value: string;
-  options: ReadonlyArray<{ value: string; label: string; detail?: string }>;
+  options: ReadonlyArray<{ value: string; label: string; detail?: string; disabled?: boolean }>;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
@@ -122,6 +126,7 @@ function GenerationParameterSelect({
   const root = useRef<HTMLDivElement>(null);
   const listboxId = useId();
   const selected = options.find((option) => option.value === value) ?? options[0];
+  const enabledOptions = options.filter((option) => !option.disabled);
 
   useEffect(() => {
     if (!open) return;
@@ -137,7 +142,7 @@ function GenerationParameterSelect({
   }, [disabled]);
 
   function select(nextValue: string) {
-    if (disabled) return;
+    if (disabled || options.find((option) => option.value === nextValue)?.disabled) return;
     setFocusedValue(nextValue);
     setOpen(false);
     onChange(nextValue);
@@ -147,9 +152,11 @@ function GenerationParameterSelect({
     if (event.key === "Escape") return setOpen(false);
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      const currentIndex = options.findIndex((option) => option.value === focusedValue);
+      if (!enabledOptions.length) return;
+      const currentIndex = enabledOptions.findIndex((option) => option.value === focusedValue);
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      setFocusedValue(options[(currentIndex + direction + options.length) % options.length].value);
+      const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + enabledOptions.length) % enabledOptions.length;
+      setFocusedValue(enabledOptions[nextIndex].value);
       setOpen(true);
       return;
     }
@@ -164,7 +171,7 @@ function GenerationParameterSelect({
   }
 
   return <div className={styles.miniMaxParameterField}>
-    <span>{label}</span>
+    {label ? <span>{label}</span> : null}
     <div
       className={`${styles.actionSelect} ${styles.parameterSelect}`}
       ref={root}
@@ -199,8 +206,10 @@ function GenerationParameterSelect({
             type="button"
             role="option"
             aria-selected={option.value === value}
+            aria-disabled={option.disabled || undefined}
             data-focused={option.value === focusedValue}
-            onPointerEnter={() => setFocusedValue(option.value)}
+            disabled={option.disabled}
+            onPointerEnter={() => { if (!option.disabled) setFocusedValue(option.value); }}
             onClick={() => select(option.value)}
           >
             <span className={styles.actionOptionCopy}><strong>{option.label}</strong>{option.detail ? <small>{option.detail}</small> : null}</span>
@@ -215,12 +224,15 @@ function GenerationParameterSelect({
 export function AvatarActionStudio({
   avatarId,
   embedded = false,
-  initialProvider = "liveportrait",
+  initialProvider = "ltx",
   previewImageUrl = "",
   onChangeAvatar,
   onPreviewAvatar,
   mobileConfigOpen,
   onMobileConfigOpenChange,
+  onSaved,
+  onPreviewChange,
+  focusedCreation = false,
   configHeader,
   active = true,
 }: {
@@ -234,13 +246,17 @@ export function AvatarActionStudio({
   onPreviewAvatar?: () => void;
   mobileConfigOpen?: boolean;
   onMobileConfigOpenChange?: (open: boolean) => void;
+  onSaved?: (action: OwnedAvatarActionRecord) => void;
+  onPreviewChange?: (preview: { url: string; name: string } | null) => void;
+  focusedCreation?: boolean;
 }) {
   const mediaRoot = useRef<HTMLElement>(null);
+  const ensureProviderKey = useProviderKeyGate();
   useEffect(() => {
     if (!active) mediaRoot.current?.querySelectorAll("video").forEach(video => video.pause());
   }, [active]);
   const [avatar, setAvatar] = useState<OwnedAvatarRecord | null>(null);
-  const [provider, setProvider] = useState<ActionProvider>(initialProvider);
+  const [provider, setProvider] = useState<ActionProvider>(focusedCreation ? "ltx" : initialProvider);
   const [livePortraitRuntime, setLivePortraitRuntime] = useState<RuntimeState>("checking");
   const [livePortraitRuntimeMessage, setLivePortraitRuntimeMessage] = useState("");
   const [ltxRuntime, setLtxRuntime] = useState<RuntimeState>("checking");
@@ -281,7 +297,10 @@ export function AvatarActionStudio({
   const [submissionRequestId, setSubmissionRequestId] = useState("");
   const [taskProvider, setTaskProvider] = useState<TaskProvider>("liveportrait");
   const [resultUrl, setResultUrl] = useState("");
+  const [resultMaximized, setResultMaximized] = useState(false);
   const [error, setError] = useState("");
+  const [pollWarning, setPollWarning] = useState("");
+  const [submissionInFlight, setSubmissionInFlight] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedActionId, setSavedActionId] = useState("");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -301,6 +320,10 @@ export function AvatarActionStudio({
   const videoVendorListboxId = useId();
   const uploadMotionHintId = useId();
   const miniMaxUploadHintId = useId();
+
+  useEffect(() => {
+    onPreviewChange?.(resultUrl ? { url: resultUrl, name: actionName } : null);
+  }, [actionName, onPreviewChange, resultUrl]);
 
   const checkLivePortraitRuntime = useCallback(async () => {
     setLivePortraitRuntime("checking");
@@ -342,18 +365,44 @@ export function AvatarActionStudio({
   useEffect(() => {
     const recovered = readRecoverableGenerationTask(avatarId, "action");
     if (!recovered) return;
+    if (focusedCreation && recovered.provider === "liveportrait") return;
     generationStartedAtRef.current = recovered.startedAt;
     setElapsedMs(Math.max(0, Date.now() - recovered.startedAt));
     setSubmissionRequestId(recovered.requestId);
     setTaskProvider(recovered.provider);
     setTaskId(recovered.taskId ?? "");
     setTaskState("queueing");
+    if (recovered.displayName) {
+      setActionName(recovered.displayName);
+      setLtxActionName(recovered.displayName);
+    }
+    const recoveredPrompt = VIDEO_PROMPT_STYLES.find((style) => style.name === recovered.displayName)
+      ?? VIDEO_PROMPT_STYLES.find((style) => style.id === recovered.sourceId);
+    if (recoveredPrompt) {
+      setVideoPromptChoiceId(recoveredPrompt.id);
+      setFocusedVideoPromptChoiceId(recoveredPrompt.id);
+      setLtxPrompt(composeVideoGenerationPrompt("video-conversation", recoveredPrompt.id));
+    }
     if (recovered.provider === "liveportrait") setProvider("liveportrait");
     else {
       setProvider("ltx");
       setVideoVendor(recovered.provider);
     }
-  }, [avatarId]);
+  }, [avatarId, focusedCreation]);
+
+  useEffect(() => {
+    if (!submissionRequestId || taskProvider === "liveportrait" || !actionName.trim()) return;
+    saveRecoverableGenerationTask({
+      avatarId,
+      purpose: "action",
+      requestId: submissionRequestId,
+      provider: taskProvider,
+      taskId: taskId || undefined,
+      displayName: actionName.trim(),
+      sourceId: VIDEO_PROMPT_STYLES.find((style) => style.name === actionName.trim())?.id ?? videoPromptChoiceId,
+      startedAt: generationStartedAtRef.current,
+    });
+  }, [actionName, avatarId, submissionRequestId, taskId, taskProvider, videoPromptChoiceId]);
 
   useEffect(() => {
     if (!drivingFile) {
@@ -394,31 +443,44 @@ export function AvatarActionStudio({
   }, [promptModalOpen]);
 
   const pollTask = useCallback(async (id: string, taskSource: TaskProvider, signal?: AbortSignal) => {
+    const endpoint = taskSource === "liveportrait"
+      ? `/api/liveportrait/${encodeURIComponent(id)}`
+      : `/api/ltx/image-to-video/${encodeURIComponent(id)}`;
     try {
-      const endpoint = taskSource === "liveportrait"
-        ? `/api/liveportrait/${encodeURIComponent(id)}`
-        : `/api/ltx/image-to-video/${encodeURIComponent(id)}`;
-      const response = await fetch(endpoint, { cache: "no-store", signal });
-      const payload = await response.json() as { state?: TaskState; result_url?: string; error?: string };
-      if (!response.ok) throw new Error(payload.error || "动作状态读取失败");
-      const next = payload.state ?? "failed";
-      setTaskState(next);
-      if (next === "success" && payload.result_url) {
-        setResultUrl(payload.result_url);
-        setPreviewMode("result");
+      const outcome = await pollRecoverableGenerationTask(endpoint, fetch, signal);
+      if (outcome.kind === "retry") {
+        setPollWarning(outcome.message);
+        return undefined;
       }
-      if (next === "failed") setError(payload.error || "动作生成失败");
-      return next;
+      setPollWarning("");
+      setError("");
+      if (outcome.kind === "failed") {
+        setError(outcome.message);
+        setTaskState("failed");
+        return "failed" as const;
+      }
+      setTaskState(outcome.state);
+      if (outcome.state === "success" && outcome.resultUrl) {
+        setResultUrl(outcome.resultUrl);
+        setPreviewMode("result");
+        setResultMaximized(true);
+      }
+      return outcome.state;
     } catch (pollError) {
       if (pollError instanceof Error && pollError.name === "AbortError") return undefined;
-      setError(pollError instanceof Error ? pollError.message : "动作状态读取失败");
-      setTaskState("failed");
-      return "failed" as const;
+      setPollWarning("视频生成状态暂时无法读取");
+      return undefined;
     }
   }, []);
 
   useEffect(() => {
-    if (!submissionRequestId || taskId || (taskProvider !== "ltx" && taskProvider !== "minimax") || taskState !== "queueing") return;
+    if (!shouldRecoverGenerationSubmission({
+      requestId: submissionRequestId,
+      taskId,
+      provider: taskProvider,
+      taskState,
+      submissionInFlight,
+    })) return;
     let cancelled = false;
     let controller: AbortController | null = null;
     let timer = window.setTimeout(async function recoverSubmission() {
@@ -434,7 +496,26 @@ export function AvatarActionStudio({
           submission_state?: string;
           error?: string;
         };
-        if (!response.ok) throw new Error(payload.error || "生成任务恢复失败");
+        if (response.status === 404) {
+          clearRecoverableGenerationTask(avatarId, "action");
+          setSubmissionRequestId("");
+          setTaskState("idle");
+          setPollWarning("");
+          setError("上次生成记录已失效，请重新生成");
+          return;
+        }
+        if (!response.ok) {
+          if (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) {
+            setPollWarning(payload.error || "生成任务恢复暂时不可用");
+            if (!cancelled) timer = window.setTimeout(recoverSubmission, 2_000);
+            return;
+          }
+          setTaskState("failed");
+          setError(payload.error || "生成任务恢复失败");
+          return;
+        }
+        setPollWarning("");
+        setError("");
         if (payload.submission_state === "submission_unknown") {
           setTaskState("failed");
           setError(payload.error || "任务提交结果无法确认，为避免重复扣费，系统不会自动重试。");
@@ -456,8 +537,8 @@ export function AvatarActionStudio({
         if (!cancelled) timer = window.setTimeout(recoverSubmission, 2_000);
       } catch (recoveryError) {
         if (recoveryError instanceof Error && recoveryError.name === "AbortError") return;
-        setTaskState("failed");
-        setError(recoveryError instanceof Error ? recoveryError.message : "生成任务恢复失败");
+        setPollWarning(recoveryError instanceof Error ? recoveryError.message : "生成任务恢复暂时不可用");
+        if (!cancelled) timer = window.setTimeout(recoverSubmission, 2_000);
       }
     }, 100);
     return () => {
@@ -465,7 +546,7 @@ export function AvatarActionStudio({
       controller?.abort();
       window.clearTimeout(timer);
     };
-  }, [avatarId, submissionRequestId, taskId, taskProvider, taskState]);
+  }, [avatarId, submissionInFlight, submissionRequestId, taskId, taskProvider, taskState]);
 
   useEffect(() => {
     if (!taskId || (taskState !== "queueing" && taskState !== "processing")) return;
@@ -495,6 +576,10 @@ export function AvatarActionStudio({
 
   async function generatePreview() {
     const activeRuntime = provider === "ltx" ? ltxRuntime : livePortraitRuntime;
+    if (selectedPromptAlreadyGenerated) {
+      setError("这个预设已经生成过动作，请直接使用已有动作，避免重复消耗额度。");
+      return;
+    }
     if (
       !avatar
       || activeRuntime !== "ready"
@@ -502,7 +587,16 @@ export function AvatarActionStudio({
       || (provider === "ltx" && !ltxPrompt.trim())
       || (provider === "liveportrait" && motionSourceMode === "upload" && !drivingFile)
     ) return;
+    if (provider === "ltx" && videoVendor === "minimax") {
+      try {
+        if (!await ensureProviderKey("minimax")) return;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "无法检查 MiniMax API Key");
+        return;
+      }
+    }
     submissionLock.current = true;
+    setSubmissionInFlight(true);
     const requestId = crypto.randomUUID();
     const nextTaskProvider: TaskProvider = provider === "liveportrait" ? "liveportrait" : videoVendor;
     generationStartedAtRef.current = Date.now();
@@ -516,10 +610,13 @@ export function AvatarActionStudio({
         purpose: "action",
         requestId,
         provider: nextTaskProvider,
+        displayName: actionName,
+        sourceId: videoPromptChoiceId,
         startedAt: generationStartedAtRef.current,
       });
     }
     setError("");
+    setPollWarning("");
     setSavedActionId("");
     try {
       let response: Response;
@@ -584,6 +681,8 @@ export function AvatarActionStudio({
           requestId,
           provider: nextTaskProvider,
           taskId: payload.task_id,
+          displayName: actionName,
+          sourceId: videoPromptChoiceId,
           startedAt: generationStartedAtRef.current,
         });
       }
@@ -594,11 +693,12 @@ export function AvatarActionStudio({
       setError(generationError instanceof Error ? generationError.message : "动作生成失败");
     } finally {
       submissionLock.current = false;
+      setSubmissionInFlight(false);
     }
   }
 
   function selectProvider(nextProvider: ActionProvider) {
-    if (busy || nextProvider === provider) return;
+    if (busy || nextProvider === provider || (nextProvider === "liveportrait" && livePortraitRuntime !== "ready")) return;
     setProvider(nextProvider);
     setActionMenuOpen(false);
     setLtxPromptMenuOpen(false);
@@ -658,6 +758,11 @@ export function AvatarActionStudio({
       setError("动作参考不能超过 50MB");
       return;
     }
+    setProvider("liveportrait");
+    setActionMenuOpen(false);
+    setLtxPromptMenuOpen(false);
+    setVideoModelMenuOpen(false);
+    setVideoVendorMenuOpen(false);
     setDrivingFile(file);
     setMotionSourceMode("upload");
     const nextName = file.name.replace(/\.[^.]+$/, "").slice(0, 50) || "自定义参考动作";
@@ -901,17 +1006,18 @@ export function AvatarActionStudio({
       if (motion.phase !== "ready") throw new Error("动作仍在适配，请稍后再次创建");
       const playback = motion.renditions.find((item) => item.phase === "approved" && item.artifact_id);
       const videoUrl = playback?.artifact_id ? `/api/avatar-assets/artifacts/${encodeURIComponent(playback.artifact_id)}` : resultUrl;
-      await appendOwnedAvatarAction(avatar.avatar_id, {
+      const savedAction = await appendOwnedAvatarAction(avatar.avatar_id, {
         avatar_action_id: motion.avatar_action_id,
         display_name: actionName,
         video_url: videoUrl,
         pending_model_count: 1,
       });
-      setSavedActionId(motion.avatar_action_id);
+      setSavedActionId(savedAction.avatar_action_id);
       clearRecoverableGenerationTask(avatar.avatar_id, "action");
       setSubmissionRequestId("");
       onMobileConfigOpenChange?.(false);
-      void prepareAllEnabledModels(avatar, motion.avatar_action_id);
+      void prepareAllEnabledModels(avatar, savedAction.avatar_action_id);
+      onSaved?.(savedAction);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "动作资产创建失败");
     } finally {
@@ -939,6 +1045,9 @@ export function AvatarActionStudio({
   const generationProgress = busy ? estimateGenerationProgress(elapsedMs, taskProvider) : 0;
   const selectedAction = LIVEPORTRAIT_ACTIONS.find((action) => action.id === selectedActionId) ?? LIVEPORTRAIT_ACTIONS[0];
   const selectedLtxPrompt = VIDEO_PROMPT_CHOICES.find((choice) => choice.id === videoPromptChoiceId) ?? VIDEO_PROMPT_CHOICES[0];
+  const selectedPromptAlreadyGenerated = provider === "ltx"
+    && selectedLtxPrompt.id !== "custom"
+    && hasGeneratedAvatarAction(avatar?.actions ?? [], selectedLtxPrompt.name);
   const selectedVideoVendor = VIDEO_GENERATION_PROVIDERS.find((item) => item.id === videoVendor) ?? VIDEO_GENERATION_PROVIDERS[0];
   const availableVideoModels = VIDEO_GENERATION_MODELS.filter((model) => model.provider === videoVendor);
   const selectedVideoModel = VIDEO_GENERATION_MODELS.find((model) => model.id === ltxModel) ?? VIDEO_GENERATION_MODELS[0];
@@ -955,20 +1064,30 @@ export function AvatarActionStudio({
     : videoVendor === "minimax" ? miniMaxReferencePreviewUrl : "";
   const showingResult = previewMode === "result" && Boolean(resultUrl);
   const showingReference = previewMode === "reference" && Boolean(referencePreviewUrl);
+  const actionProviderOptions = [
+    { value: "ltx", label: "视频生成", detail: "提示词驱动 · 默认" },
+    {
+      value: "liveportrait",
+      label: "LivePortrait",
+      detail: livePortraitRuntime === "ready" ? "动作迁移" : livePortraitRuntime === "checking" ? "正在检测服务" : "服务未启动 · 暂不可选",
+      disabled: livePortraitRuntime !== "ready",
+    },
+  ] as const;
   return (
     <section
       ref={mediaRoot}
       className={`${styles.studio} ${embedded ? styles.embedded : ""}`}
       aria-labelledby="action-studio-title"
+      data-motion-creation={focusedCreation ? "focused" : "full"}
       {...(embedded ? { "data-transition": "in-page" } : {})}
     >
       <header className={styles.intro}>
-        <p>Avatar Action / LivePortrait + 视频生成</p>
+        <p>{focusedCreation ? "MULTI-SEGMENT MOTION" : "Avatar Action / LivePortrait + 视频生成"}</p>
         {!embedded ? <h1 id="action-studio-title">创建动作</h1> : null}
-        <span>从当前 Avatar 源图生成可复用动作，并为所有已启用口型模型准备资产。</span>
+        <span>{focusedCreation ? "选择动作风格并生成，结果将在资源库主屏直接预览。" : "从当前 Avatar 源图生成可复用动作，并为所有已启用口型模型准备资产。"}</span>
       </header>
 
-      <div className={styles.layout}>
+      <div className={styles.layout} data-result-maximized={showingResult && resultMaximized}>
         {!embedded ? <aside className={styles.sourcePanel}>
           <span>当前 Avatar 形象</span>
           <div className={styles.sourceImage}>
@@ -982,26 +1101,44 @@ export function AvatarActionStudio({
           const controlsPanel = (
           <div className={styles.controls}>
           {configHeader}
-          {embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label="数字人形象 · 当前共享 Avatar">
+          {!focusedCreation && embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label="数字人形象 · 当前共享 Avatar">
             <button type="button" aria-label={`预览 ${avatar?.display_name || avatarId}`} onClick={onPreviewAvatar}>
               {avatar ? <Image src={previewImageUrl || avatar.source_image_url} alt="" fill sizes="56px" unoptimized /> : <LoaderCircle className={styles.spin} />}
             </button>
             <span><strong>{avatar?.display_name || "正在读取…"}</strong></span>
             <button type="button" aria-label="上一步：返回选择 Avatar 形象" onClick={onChangeAvatar}><ArrowLeft aria-hidden="true" />上一步</button>
           </section> : null}
-          <div className={styles.sectionHeading}>
+          {focusedCreation ? <span className={styles.focusedModeBadge}>多段式合成</span> : <div className={styles.sectionHeading}>
             <h2 {...(embedded ? { id: "action-studio-title" } : {})}>{embedded ? "动作创作" : "动作来源"}</h2>
-          </div>
-          <div className={styles.enginePicker} role="tablist" aria-label="创建 Avatar 动作方式">
-            <span className={styles.enginePickerTrack} data-provider={provider} aria-hidden="true" />
-            <button type="button" role="tab" aria-selected={provider === "liveportrait"} data-active={provider === "liveportrait"} disabled={busy} onClick={() => selectProvider("liveportrait")}>
-              <strong>LivePortrait</strong><small>动作迁移</small>
-            </button>
-            <button type="button" role="tab" aria-selected={provider === "ltx"} data-active={provider === "ltx"} disabled={busy} onClick={() => selectProvider("ltx")}>
-              <strong>视频生成</strong><small>提示词驱动</small>
-            </button>
-          </div>
-          {provider === "liveportrait" ? <>
+          </div>}
+          {!focusedCreation ? <div className={styles.creationModeField}>
+            <span>创作方式</span>
+            <div className={styles.creationModeRow}>
+              <GenerationParameterSelect
+                ariaLabel="动作创作方式"
+                value={provider}
+                disabled={busy}
+                options={actionProviderOptions}
+                onChange={(value) => selectProvider(value as ActionProvider)}
+              />
+              <div className={styles.uploadMotion} data-active={motionSourceMode === "upload"}>
+                <button
+                  type="button"
+                  aria-label={drivingFile ? `上传动作，已选择 ${drivingFile.name}` : "上传动作"}
+                  aria-describedby={uploadMotionHintId}
+                  disabled={busy || livePortraitRuntime !== "ready"}
+                  onClick={() => drivingInput.current?.click()}
+                >
+                  <Upload aria-hidden="true" />
+                  <span><strong>上传动作</strong></span>
+                </button>
+                {drivingFile ? <button type="button" aria-label="移除动作参考" disabled={busy} onClick={() => { setDrivingFile(null); setMotionSourceMode("template"); setActionName(selectedAction.name); setLivePortraitActionName(selectedAction.name); setPreviewMode("avatar"); setResultUrl(""); setSavedActionId(""); }}><X /></button> : null}
+                <input ref={drivingInput} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" onChange={(event) => { selectDrivingFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+                <span className={styles.uploadMotionHint} id={uploadMotionHintId} role="tooltip">{livePortraitRuntime === "ready" ? "MP4、WebM 或 MOV，最大 50MB" : "LivePortrait 服务未就绪，暂时无法上传动作"}</span>
+              </div>
+            </div>
+          </div> : null}
+          {!focusedCreation && provider === "liveportrait" ? <>
           <div className={styles.actionSourcePicker} aria-label="动作来源">
             <div className={styles.actionSelect} ref={actionSelect} data-open={actionMenuOpen}>
               <button
@@ -1050,21 +1187,6 @@ export function AvatarActionStudio({
                 })}
               </div>
             </div>
-            <div className={styles.uploadMotion} data-active={motionSourceMode === "upload"}>
-              <button
-                type="button"
-                aria-label={drivingFile ? `上传动作，已选择 ${drivingFile.name}` : "上传动作"}
-                aria-describedby={uploadMotionHintId}
-                disabled={busy}
-                onClick={() => drivingInput.current?.click()}
-              >
-                <Upload aria-hidden="true" />
-                <span><strong>上传动作</strong></span>
-              </button>
-              {drivingFile ? <button type="button" aria-label="移除动作参考" disabled={busy} onClick={() => { setDrivingFile(null); setMotionSourceMode("template"); setActionName(selectedAction.name); setLivePortraitActionName(selectedAction.name); setPreviewMode("avatar"); setResultUrl(""); setSavedActionId(""); }}><X /></button> : null}
-              <input ref={drivingInput} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" onChange={(event) => selectDrivingFile(event.target.files?.[0])} />
-              <span className={styles.uploadMotionHint} id={uploadMotionHintId} role="tooltip">MP4、WebM 或 MOV，最大 50MB</span>
-            </div>
           </div>
 
           <fieldset className={styles.strengthField}>
@@ -1099,7 +1221,7 @@ export function AvatarActionStudio({
             </div>
           </fieldset>
           </> : <div className={styles.ltxFields}>
-            <div className={styles.videoProviderModelGrid}>
+            <div className={styles.videoProviderModelGrid} aria-label={focusedCreation ? "供应商与模型" : undefined}>
               <div className={styles.selectField}>
                 <span>供应商</span>
                 <div className={styles.actionSelect} ref={videoVendorSelect} data-open={videoVendorMenuOpen}>
@@ -1191,7 +1313,24 @@ export function AvatarActionStudio({
               </div>
             </div>
             <div className={styles.promptChoiceField}>
-              <span>提示词选择</span>
+              <span>{focusedCreation ? "动作描述" : "提示词选择"}</span>
+              {focusedCreation ? <textarea
+                className={styles.focusedPromptInput}
+                aria-label="动作提示词内容"
+                value={ltxPrompt}
+                disabled={busy}
+                rows={3}
+                onChange={(event) => {
+                  const nextPrompt = event.target.value;
+                  setLtxPrompt(nextPrompt);
+                  setCustomLtxPrompt(nextPrompt);
+                  setVideoPromptChoiceId("custom");
+                  setFocusedVideoPromptChoiceId("custom");
+                  setResultUrl("");
+                  setSavedActionId("");
+                  setTaskState("idle");
+                }}
+              /> : null}
               <div className={styles.promptChoiceRow}>
                 <div className={styles.actionSelect} ref={ltxPromptSelect} data-open={ltxPromptMenuOpen}>
                   <button
@@ -1213,13 +1352,14 @@ export function AvatarActionStudio({
                     }}
                     onKeyDown={handleLtxPromptPickerKeyDown}
                   >
-                    <span className={styles.actionSelectValue}><strong>{selectedLtxPrompt.name}</strong><small>{selectedLtxPrompt.description}</small></span>
+                    <span className={styles.actionSelectValue}><strong>{selectedLtxPrompt.name}</strong><small>{selectedPromptAlreadyGenerated ? "已生成 · 请直接使用" : selectedLtxPrompt.description}</small></span>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   <div className={styles.actionSelectMenu} id={ltxPromptListboxId} role="listbox" aria-label="视频生成提示词选项" hidden={!ltxPromptMenuOpen}>
                     {VIDEO_PROMPT_CHOICES.map((choice) => {
                       const selected = choice.id === videoPromptChoiceId;
                       const focused = choice.id === focusedVideoPromptChoiceId;
+                      const generated = choice.id !== "custom" && hasGeneratedAvatarAction(avatar?.actions ?? [], choice.name);
                       return (
                         <button
                           id={`${ltxPromptListboxId}-${choice.id}`}
@@ -1232,17 +1372,22 @@ export function AvatarActionStudio({
                           onClick={() => selectVideoPromptChoice(choice.id)}
                         >
                           <span className={styles.actionOptionCopy}><strong>{choice.name}</strong><small>{choice.description}</small></span>
+                          {generated ? <span className={styles.generatedBadge}>已生成</span> : null}
                           <Check aria-hidden="true" />
                         </button>
                       );
                     })}
                   </div>
                 </div>
-                <button className={styles.promptViewButton} ref={promptViewButton} type="button" aria-label="查看当前视频生成提示词" onClick={() => setPromptModalOpen(true)}>
+                {!focusedCreation ? <button className={styles.promptViewButton} ref={promptViewButton} type="button" aria-label="查看当前视频生成提示词" onClick={() => setPromptModalOpen(true)}>
                   <Eye aria-hidden="true" />查看
-                </button>
+                </button> : null}
               </div>
             </div>
+            {selectedPromptAlreadyGenerated ? <p className={styles.generatedPromptNotice}><Check aria-hidden="true" /><span>这个预设已经生成过动作，请直接使用已有动作，避免重复消耗额度。</span></p> : null}
+            <details className={styles.advancedOptions}>
+              <summary><span><strong>高级选项</strong><small>画幅、清晰度与参考素材</small></span><ChevronDown aria-hidden="true" /></summary>
+              <div className={styles.advancedOptionsContent}>
             {videoVendor === "minimax" ? <>
               <div className={styles.miniMaxParameterGrid}>
                 <GenerationParameterSelect
@@ -1309,24 +1454,44 @@ export function AvatarActionStudio({
               </div>
               <p className={styles.costNote}>{ltxModel === "MiniMax-H3-Context-IR" ? "Context IR 会先增强提示词，再调用 H3 生成视频。" : ""} 首尾帧与多模态参考互斥；点击生成才会上传素材并消耗 MiniMax 额度。</p>
             </> : <p className={styles.costNote}>LTX 输出 720×1280 / 25 FPS；点击生成会消耗 LTX API 额度。</p>}
+              </div>
+            </details>
           </div>}
           {activeRuntime === "error" ? <div className={styles.notice}><CircleAlert /><span>{activeRuntimeMessage}</span><button type="button" onClick={() => void (provider === "ltx" ? checkLtxRuntime() : checkLivePortraitRuntime())}><RefreshCw />重试</button></div> : null}
-          {error ? <div className={styles.notice} data-error><CircleAlert /><span>{error}</span></div> : null}
+          {error ? <div className={styles.notice} data-error><CircleAlert /><span>{error}</span>
+            {provider === "ltx" && videoVendor === "minimax" && error.includes("API Key") && <button type="button" onClick={() => void ensureProviderKey("minimax", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 API Key"))}>更换 Key</button>}
+          </div> : null}
           <div className={styles.actionFooter} role="group" aria-label="动作名称与生成">
-            <label className={styles.nameField}><span>动作名称</span><input value={actionName} maxLength={50} onChange={(event) => {
+            {!focusedCreation ? <label className={styles.nameField}><span>动作名称</span><input value={actionName} maxLength={50} onChange={(event) => {
               setActionName(event.target.value);
               if (provider === "ltx") setLtxActionName(event.target.value);
               else setLivePortraitActionName(event.target.value);
-            }} /></label>
+            }} /></label> : null}
             <button
               className={styles.generate}
               type="button"
               data-generate-action="true"
+              data-already-generated={selectedPromptAlreadyGenerated || undefined}
               aria-busy={busy}
-              disabled={!avatar || !actionName.trim() || activeRuntime !== "ready" || busy || (provider === "ltx" ? !ltxPrompt.trim() : motionSourceMode === "upload" && !drivingFile)}
+              title={selectedPromptAlreadyGenerated ? "该预设已生成，请选择其他预设或修改提示词" : undefined}
+              disabled={!avatar || !actionName.trim() || activeRuntime !== "ready" || busy || selectedPromptAlreadyGenerated || (provider === "ltx" ? !ltxPrompt.trim() : motionSourceMode === "upload" && !drivingFile)}
               onClick={() => void generatePreview()}
-            >{busy ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{busy ? "生成中…" : "生成动作"}</button>
+            >{busy ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{busy ? "生成中…" : selectedPromptAlreadyGenerated ? focusedCreation ? "已生成" : "该预设已生成" : focusedCreation ? "生成" : "生成动作"}</button>
           </div>
+          {focusedCreation ? <div className={styles.focusedResultActions} role="group" aria-label="生成结果操作" hidden={!busy && !resultUrl}>
+            {busy ? <div className={styles.focusedGenerationProgress} aria-label="视频生成进度">
+              <LoaderCircle className={styles.spin} aria-hidden="true" />
+              <span><strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong><small>{pollWarning ? `${pollWarning} · 正在自动重试` : `已用时 ${formatElapsedTime(elapsedMs)} · 结果会显示在主屏`}</small></span>
+              <i aria-hidden="true"><b style={{ "--progress": generationProgress } as CSSProperties} /></i>
+            </div> : resultUrl ? <>
+              <video className={styles.focusedResultPreview} aria-label="生成动作预览" src={resultUrl} controls muted loop playsInline />
+              <label className={styles.focusedResultName}><span>动作名称</span><input value={actionName} maxLength={50} onChange={(event) => { setActionName(event.target.value); setLtxActionName(event.target.value); }} /></label>
+              <button className={styles.accept} type="button" data-saved={Boolean(savedActionId)} disabled={saving || Boolean(savedActionId)} onClick={() => void createActionAsset()}>
+                {saving ? <LoaderCircle className={styles.spin} /> : null}
+                {saving ? "正在保存" : savedActionId ? "动作已保存" : "保存动作"}
+              </button>
+            </> : null}
+          </div> : null}
         </div>
           );
           return embedded && onMobileConfigOpenChange ? (
@@ -1341,7 +1506,7 @@ export function AvatarActionStudio({
           ) : controlsPanel;
         })()}
 
-        <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
+        {!focusedCreation ? <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
           <div className={styles.previewFrame} data-preview-frame="true">
             {showingResult
               ? <video data-fit={previewFit} aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay={active} muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
@@ -1353,20 +1518,31 @@ export function AvatarActionStudio({
             <div className={styles.previewChrome}>
               <div className={styles.previewTitle}>
                 <span>{showingResult ? "生成效果" : showingReference ? "参考动作" : "当前形象"}</span>
-                <strong>{showingResult ? actionName : showingReference ? provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : drivingFile?.name || "自定义动作" : avatar?.display_name || "当前 Avatar"}</strong>
+                <strong>{showingResult ? actionName : showingReference ? provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : drivingFile?.name || "自定义动作" : "形象预览"}</strong>
                 {showingReference && provider === "liveportrait" && motionSourceMode === "template" && selectedAction.caution ? <em>{selectedAction.caution}</em> : null}
               </div>
-              <div className={styles.previewModeSwitch} role="group" aria-label="预览内容">
-                <button type="button" data-active={!showingReference && !showingResult} aria-pressed={!showingReference && !showingResult} disabled={!avatar} onClick={() => setPreviewMode("avatar")}>当前形象</button>
-                <button type="button" data-active={showingReference} aria-pressed={showingReference} disabled={!referencePreviewUrl} onClick={() => setPreviewMode("reference")}>参考动作</button>
-                <button type="button" data-active={showingResult} aria-pressed={showingResult} disabled={!resultUrl} onClick={() => setPreviewMode("result")}>生成效果</button>
+              <div className={styles.previewToolbar}>
+                <div className={styles.previewModeSwitch} role="group" aria-label="预览内容">
+                  <button type="button" data-active={!showingReference && !showingResult} aria-pressed={!showingReference && !showingResult} disabled={!avatar} onClick={() => { setPreviewMode("avatar"); setResultMaximized(false); }}>当前形象</button>
+                  <button type="button" data-active={showingReference} aria-pressed={showingReference} disabled={!referencePreviewUrl} onClick={() => { setPreviewMode("reference"); setResultMaximized(false); }}>参考动作</button>
+                  <button type="button" data-active={showingResult} aria-pressed={showingResult} disabled={!resultUrl} onClick={() => { setPreviewMode("result"); setResultMaximized(true); }}>生成效果</button>
+                </div>
+                {showingResult ? <button
+                  className={styles.previewSizeToggle}
+                  type="button"
+                  aria-label={resultMaximized ? "返回动作配置" : "整窗预览生成视频"}
+                  onClick={() => setResultMaximized((maximized) => !maximized)}
+                >
+                  {resultMaximized ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+                  <span>{resultMaximized ? "返回配置" : "整窗预览"}</span>
+                </button> : null}
               </div>
               {busy ? (
                 <div className={styles.generationProgress} aria-label="视频生成进度">
                   <LoaderCircle className={styles.spin} aria-hidden="true" />
                   <div className={styles.generationProgressCopy}>
                     <strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong>
-                    <span aria-live="off">已用时 {formatElapsedTime(elapsedMs)} · 刷新后会自动恢复</span>
+                    <span aria-live="off">{pollWarning ? `${pollWarning} · 正在自动重试` : `已用时 ${formatElapsedTime(elapsedMs)} · 刷新后会自动恢复`}</span>
                   </div>
                   <div className={styles.generationProgressTrack} aria-hidden="true">
                     <span className={styles.generationProgressFill} style={{ "--progress": generationProgress } as CSSProperties} />
@@ -1383,7 +1559,7 @@ export function AvatarActionStudio({
               )}
             </div>
           </div>
-        </aside>
+        </aside> : null}
       </div>
       {promptModalOpen ? <dialog
         ref={promptDialog}

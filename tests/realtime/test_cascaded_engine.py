@@ -188,6 +188,21 @@ class EchoDuplexTts:
             )
 
 
+class TimeoutOnIdleTts:
+    async def synthesize_duplex(
+        self, text_stream: AsyncIterator[str]
+    ) -> AsyncIterator[SynthesizedAudioChunk]:
+        iterator = text_stream.__aiter__()
+        while True:
+            try:
+                text = await asyncio.wait_for(anext(iterator), timeout=0.05)
+            except StopAsyncIteration:
+                return
+            yield SynthesizedAudioChunk(
+                pcm16=text.encode(), sample_rate_hz=24_000, is_final=False
+            )
+
+
 class FailingDuplexTts:
     async def synthesize_duplex(
         self, text_stream: AsyncIterator[str]
@@ -1169,7 +1184,8 @@ async def test_projected_tool_result_resumes_the_same_cascaded_response() -> Non
         turn_manager=LegacyTurnManagerCapabilityAdapter(TurnPolicy),
         brain=LegacyBrainCapabilityAdapter(PausingToolBrain()),
         speech_renderer=DeterministicSpeechRenderer(),
-        tts=LegacyTtsCapabilityAdapter(EchoDuplexTts()),
+        tts=LegacyTtsCapabilityAdapter(TimeoutOnIdleTts()),
+        response_first_text_timeout_s=0.05,
     ).open(context=context(), profile=None)
     conversation = JournaledRealtimeConversation(
         context=context(),
@@ -1213,6 +1229,9 @@ async def test_projected_tool_result_resumes_the_same_cascaded_response() -> Non
     assert isinstance(requested, ToolRequested)
     assert requested.call_id == "call-1"
     assert requested.latency is LatencyClass.FAST
+
+    # Confirmation may outlast the first-text deadline without opening an idle TTS stream.
+    await asyncio.sleep(0.08)
 
     tool_context = replace(
         context(),
@@ -2519,7 +2538,7 @@ async def test_deliver_item_defaults_to_model_response_after_projection() -> Non
         DeliverItem(
             command_id="deliver-result",
             idempotency_key="deliver-result",
-            context=context(),
+            context=replace(context(), response_id="previous-response"),
             item_id="result-1",
             delivery_id="delivery-result",
         )
@@ -2762,6 +2781,18 @@ async def test_direct_speech_tts_failure_marks_response_and_delivery_failed() ->
     assert capability_failure.capability == "tts"
     assert not any(isinstance(event, ItemDeliveryCompleted) for event in emitted)
     assert emitted[-1].error == "TTS websocket disconnected"
+    # Browser playback notifications may already be queued when TTS fails.
+    await conversation.send(
+        ReportPlaybackProgress(
+            command_id="late-playback-start",
+            idempotency_key="late-playback-start",
+            context=context(),
+            speech_id="response:delivery:speak-result",
+            delivered_text_end=0,
+            played_audio_end_us=0,
+            completed=False,
+        )
+    )
     await conversation.close()
 
 

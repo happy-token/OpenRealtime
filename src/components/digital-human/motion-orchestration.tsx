@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type SyntheticEvent 
 import Link from "next/link";
 import { LoaderCircle, RotateCcw } from "lucide-react";
 import { getPlaybackActive, getServerPlaybackActive, subscribePlaybackActivity } from "@/voice/audio/playback-activity";
-import { fetchOwnedAvatar, fetchOwnedAvatars } from "@/lib/avatar-catalog-client";
+import { fetchOwnedAvatar, fetchOwnedAvatars, fetchPersonalAvatars } from "@/lib/avatar-catalog-client";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { SegmentedAvatarAssetPicker } from "@/components/drawer/segmented-avatar-asset-picker";
 import type { AvatarAsset } from "@/lib/avatar-catalog";
@@ -23,7 +23,7 @@ export function shouldShowTalkingMotion(
 export function resolveMotionPair(avatar: OwnedAvatarRecord | null, config: AvatarDisplayConfig) {
   if (!avatar || avatar.deleted_at || avatar.avatar_id !== config.segmentedAvatarId) return null;
   const idle = avatar.actions.find(a => a.avatar_action_id === config.segmentedAvatarActionId && !a.deleted_at && a.video_url);
-  const talking = idle?.talking_variants?.find(v => v.id === config.motionTalkingVariantId && v.source_video_url === idle.video_url);
+  const talking = idle?.talking_variants?.find(v => v.id === config.motionTalkingVariantId && !v.deleted_at && v.source_video_url === idle.video_url);
   return idle?.video_url && talking ? { idle: idle.video_url, talking: talking.video_url } : null;
 }
 
@@ -33,7 +33,7 @@ export function filterPairedMotionCatalog(catalog: AvatarAsset[], owned: OwnedAv
     if (!avatar || asset.deletedAt) return [];
     const actions = asset.actions.filter(action => {
       const source = avatar.actions.find(item => item.avatar_action_id === action.avatarActionId && !item.deleted_at);
-      return action.state === "available" && !action.pendingModelCount && Boolean(source?.video_url && source.video_url === action.videoUrl && source.talking_variants?.some(variant => variant.source_video_url === source.video_url && variant.video_url));
+      return action.state === "available" && !action.pendingModelCount && Boolean(source?.video_url && source.video_url === action.videoUrl && source.talking_variants?.some(variant => !variant.deleted_at && variant.source_video_url === source.video_url && variant.video_url));
     });
     return actions.length ? [{ ...asset, actions }] : [];
   });
@@ -46,7 +46,7 @@ export function buildTalkingMaterialCatalog(catalog: AvatarAsset[], owned: Owned
     if (!avatar || asset.deletedAt) return [];
     const actions = avatar.actions.flatMap(base => {
       if (base.deleted_at || !base.video_url) return [];
-      return (base.talking_variants ?? []).filter(v => v.source_video_url === base.video_url && v.video_url).map(v => ({
+      return (base.talking_variants ?? []).filter(v => !v.deleted_at && v.source_video_url === base.video_url && v.video_url).map(v => ({
         avatarActionId: v.id, displayName: `${base.display_name} · ${v.method === "lipforcing" ? "Lip Forcing" : v.method === "musetalk" ? "MuseTalk" : v.method === "minimax" ? "MiniMax" : "Wav2Lip"}`,
         videoUrl: v.video_url, state: "available" as const, pendingModelCount: 0,
       }));
@@ -61,23 +61,25 @@ export function MotionOrchestrationConfig({ config, onChange, catalog, active = 
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
-    void fetchOwnedAvatars(controller.signal).then(items => { setAvatars(items); setError(""); }).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "资产读取失败"); });
+    void Promise.all([fetchOwnedAvatars(controller.signal).catch(() => []), fetchPersonalAvatars(controller.signal)])
+      .then(([shared, personal]) => { setAvatars([...shared, ...personal]); setError(""); })
+      .catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "资产读取失败"); });
     return () => controller.abort();
   }, [active, catalog]);
   const materials = buildTalkingMaterialCatalog(catalog, avatars);
   return <section aria-label="动作编排配置" className={styles.motionOrchestrationConfig}>
     <div className={styles.segmentedAvatarAssets}>
       <div className={styles.segmentedAvatarAssetsHeader}>
-        <span><strong>讲话素材</strong></span>
-        <Link href={`/avatars/create?task=lightweight${config.segmentedAvatarId ? `&avatar_id=${encodeURIComponent(config.segmentedAvatarId)}` : ""}`}>生成讲话素材</Link>
+        <span><strong>口型对齐</strong></span>
+        {!config.segmentedAvatarId.startsWith("avatar-personal-") ? <Link href={`/avatars/create?task=lightweight${config.segmentedAvatarId ? `&avatar_id=${encodeURIComponent(config.segmentedAvatarId)}` : ""}`}>生成口型对齐</Link> : null}
       </div>
-      <SegmentedAvatarAssetPicker actionsOnly avatars={materials} selectedAvatarId={config.segmentedAvatarId} selectedActionId={config.motionTalkingVariantId ?? ""} disabled={false} active={active} showCollapsedSummary={false} ariaLabel="动作编排讲话素材" onSelect={(next, material) => {
+      <SegmentedAvatarAssetPicker actionsOnly avatars={materials} selectedAvatarId={config.segmentedAvatarId} selectedActionId={config.motionTalkingVariantId ?? ""} disabled={false} active={active} showCollapsedSummary={false} ariaLabel="动作编排口型对齐" onSelect={(next, material) => {
         const avatar = avatars.find(a => a.avatar_id === next.avatarId && !a.deleted_at);
-        const base = avatar?.actions.find(a => !a.deleted_at && a.video_url && a.talking_variants?.some(v => v.id === material?.avatarActionId && v.source_video_url === a.video_url));
+        const base = avatar?.actions.find(a => !a.deleted_at && a.video_url && a.talking_variants?.some(v => v.id === material?.avatarActionId && !v.deleted_at && v.source_video_url === a.video_url));
         if (!base || !material) return;
         onChange({ ...config, segmentedAvatarId: next.avatarId, segmentedDisplayName: next.displayName, segmentedAvatarActionId: base.avatar_action_id, motionTalkingVariantId: material.avatarActionId });
       }} />
-      <p>选择讲话素材即可，待机时自动播放对应的原动作。</p>
+      <p>选择口型对齐即可，待机时自动播放对应的原动作。</p>
     </div>
     {error && <p role="alert">{error}</p>}
   </section>;
@@ -112,6 +114,21 @@ export function MotionOrchestrationStage({ config, speaking, onReady, caption, s
     }).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "素材读取失败"); });
     return () => controller.abort();
   }, [config, connectionAttempt, degraded]);
+  useEffect(() => {
+    if (!pair || degraded) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void fetchOwnedAvatar(config.segmentedAvatarId).then(avatar => {
+        if (!active) return;
+        if (resolveMotionPair(avatar, config)) return;
+        setPair(null);
+        setError("口型对齐已从资产管理移除，请重新选择素材。");
+      }).catch(() => {
+        // A transient catalog failure must not interrupt an already playing session.
+      });
+    }, 10_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [config, degraded, pair]);
   useEffect(() => {
     if (readyReported.current || (!degraded && (loaded !== 3 || error))) return;
     readyReported.current = true;

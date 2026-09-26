@@ -6,6 +6,7 @@ integration remain contract-only per CONTEXT.md's Transport Adapter entry.
 from __future__ import annotations
 
 import hmac
+import inspect
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from http.cookies import CookieError, SimpleCookie
@@ -30,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 class WebSocketAuthenticator(Protocol):
     def authenticate(
-        self, headers: Mapping[str, str]
-    ) -> AuthenticatedTransportIdentity | None: ...
+        self, headers: Mapping[str, str], path: str = "/"
+    ) -> AuthenticatedTransportIdentity | None | Awaitable[AuthenticatedTransportIdentity | None]: ...
 
 
 class StaticBearerWebSocketAuthenticator:
@@ -57,8 +58,9 @@ class StaticBearerWebSocketAuthenticator:
         self._cookie_name = cookie_name
 
     def authenticate(
-        self, headers: Mapping[str, str]
+        self, headers: Mapping[str, str], path: str = "/"
     ) -> AuthenticatedTransportIdentity | None:
+        del path
         authorization = _header(headers, "authorization")
         candidate: str | None = None
         if authorization is not None and authorization.startswith("Bearer "):
@@ -91,31 +93,34 @@ class WebSocketTransportAdapter:
         self._voice_session_phase = "starting"
 
     async def receive(self) -> AsyncIterator[InboundFrame]:
-        async for raw_message in self._connection:
-            frame = parse_inbound_frame(raw_message)
-            if frame is None:
-                if self._protocol_version == 2:
-                    await self.send(
-                        VoiceSessionFailureFrame(
-                            code="invalid_command",
-                            phase=self._voice_session_phase,
-                            retryable=False,
-                            session_disposition="close",
-                            safe_message="客户端命令无效，请重新连接后重试。",
+        try:
+            async for raw_message in self._connection:
+                frame = parse_inbound_frame(raw_message)
+                if frame is None:
+                    if self._protocol_version == 2:
+                        await self.send(
+                            VoiceSessionFailureFrame(
+                                code="invalid_command",
+                                phase=self._voice_session_phase,
+                                retryable=False,
+                                session_disposition="close",
+                                safe_message="客户端命令无效，请重新连接后重试。",
+                            )
                         )
+                        await self.close()
+                        return
+                    continue
+                if isinstance(frame, SessionHelloFrame) and (
+                    frame.protocol_version == 2
+                    or (
+                        frame.supported_protocol_versions is not None
+                        and 2 in frame.supported_protocol_versions
                     )
-                    await self.close()
-                    return
-                continue
-            if isinstance(frame, SessionHelloFrame) and (
-                frame.protocol_version == 2
-                or (
-                    frame.supported_protocol_versions is not None
-                    and 2 in frame.supported_protocol_versions
-                )
-            ):
-                self._protocol_version = 2
-            yield frame
+                ):
+                    self._protocol_version = 2
+                yield frame
+        except ConnectionClosed as error:
+            logger.info("WebSocket receive ended after connection closed: %s", error)
 
     async def send(self, frame: OutboundFrame) -> None:
         if isinstance(frame, VoiceSessionPhaseChangedFrame):
@@ -127,6 +132,10 @@ class WebSocketTransportAdapter:
 
     async def close(self) -> None:
         await self._connection.close()
+
+    @property
+    def closed_normally(self) -> bool:
+        return self._connection.close_code == 1000
 
 
 ConnectionHandler = Callable[[WebSocketTransportAdapter], Awaitable[None]]
@@ -144,7 +153,8 @@ async def serve(
     async def _on_connection(connection: ServerConnection) -> None:
         identity = None
         if authenticator is not None and connection.request is not None:
-            identity = authenticator.authenticate(connection.request.headers)
+            result = authenticator.authenticate(connection.request.headers, connection.request.path)
+            identity = await result if inspect.isawaitable(result) else result
         await handler(
             WebSocketTransportAdapter(
                 connection,

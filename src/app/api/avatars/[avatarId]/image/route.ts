@@ -1,5 +1,6 @@
 import { authorizeAvatarAssetRequest, jsonError } from "@/lib/avatar-assets-server";
 import { readOwnedAvatarImage } from "@/lib/avatar-catalog-repository";
+import { privateMediaResponse } from "@/lib/private-media-response";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -9,14 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ avatarI
   try {
     const image = await readOwnedAvatarImage((await context.params).avatarId);
     if (!image) return jsonError("Avatar 源图不存在", 404);
-    return new Response(image.bytes, {
-      headers: {
-        "Cache-Control": "private, no-store",
-        "Content-Type": image.mediaType,
-        "Cross-Origin-Resource-Policy": "same-origin",
-        "X-Content-Type-Options": "nosniff",
-      },
-    });
+    return privateMediaResponse(request, image);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Avatar 源图读取失败";
     return jsonError(message, message.includes("无效") ? 400 : 503);

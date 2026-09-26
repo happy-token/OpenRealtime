@@ -6,6 +6,7 @@ import asyncio
 import json
 import struct
 
+import pytest
 from websockets.exceptions import ConnectionClosed
 
 from server.speech.plugins import doubao_asr
@@ -544,6 +545,9 @@ async def test_vendor_error_frame_ends_session_instead_of_leaving_it_reusable():
     await asyncio.wait_for(session._reader_task, timeout=0.1)
 
     assert session.is_alive is False
+
+    with pytest.raises(RuntimeError, match="Doubao ASR code=20000000"):
+        await session.wait_for_update(after_revision=0, after_sentence_end_revision=0)
 
     await session.close()
 

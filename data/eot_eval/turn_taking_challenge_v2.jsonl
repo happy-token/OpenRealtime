@@ -1,0 +1,52 @@
+{"id":"hc01","task":"completeness","label":"complete","category":"missing_execution_slot","pair":"rail_booking","transcript":"我想订从北京到上海的高铁","history":[],"rationale":"出行意图与目的地明确；日期可后续追问"}
+{"id":"hc02","task":"completeness","label":"incomplete","category":"missing_execution_slot","pair":"rail_booking","transcript":"我想订从北京到","history":[],"rationale":"到字后的目的地尚未说出"}
+{"id":"hc03","task":"completeness","label":"complete","category":"context_ellipsis","pair":"weekday_answer","transcript":"周四吧","history":[{"role":"assistant","content":"周三还是周四方便？"}],"rationale":"答复了上文的二选一问题"}
+{"id":"hc04","task":"completeness","label":"incomplete","category":"context_ellipsis","pair":"weekday_answer","transcript":"周四的","history":[{"role":"assistant","content":"周三还是周四方便？"}],"rationale":"的字悬空，用户可能继续限定时段"}
+{"id":"hc05","task":"completeness","label":"complete","category":"conditional_clause","pair":"rain_plan","transcript":"如果明天下雨，就改线上开","history":[],"rationale":"条件和动作都已经给出"}
+{"id":"hc06","task":"completeness","label":"incomplete","category":"conditional_clause","pair":"rain_plan","transcript":"如果明天下雨，就改成","history":[],"rationale":"改成后的目标尚未给出"}
+{"id":"hc07","task":"completeness","label":"complete","category":"quoted_connective","pair":"connective_quote","transcript":"请解释‘但是’这个词怎么用","history":[],"rationale":"但是是被引用的词，不是尚待续接的连词"}
+{"id":"hc08","task":"completeness","label":"incomplete","category":"quoted_connective","pair":"connective_quote","transcript":"请解释‘但是’这个词和","history":[],"rationale":"句尾的和连接着未说出的另一个对象"}
+{"id":"hc09","task":"completeness","label":"complete","category":"self_correction","pair":"time_repair","transcript":"不是五点，是六点","history":[{"role":"assistant","content":"会议还是定在五点吗？"}],"rationale":"在上文问题下完成时间纠正"}
+{"id":"hc10","task":"completeness","label":"incomplete","category":"self_correction","pair":"time_repair","transcript":"不是五点，是","history":[{"role":"assistant","content":"会议还是定在五点吗？"}],"rationale":"纠正词是后面缺少替代时间"}
+{"id":"hc11","task":"completeness","label":"complete","category":"spoken_disfluency","pair":"late_message","transcript":"呃，给妈妈发消息说我会晚到","history":[],"rationale":"口语犹豫不妨碍消息内容完整"}
+{"id":"hc12","task":"completeness","label":"incomplete","category":"spoken_disfluency","pair":"late_message","transcript":"呃，给妈妈发消息说我会","history":[],"rationale":"会后面缺少消息内容"}
+{"id":"hc13","task":"completeness","label":"complete","category":"enumeration","pair":"cancel_rest","transcript":"先取消周一的，其它会议别动","history":[],"rationale":"两个动作均已说明"}
+{"id":"hc14","task":"completeness","label":"incomplete","category":"enumeration","pair":"cancel_rest","transcript":"先取消周一的，其它会议","history":[],"rationale":"第二个对象缺少动作"}
+{"id":"hc15","task":"completeness","label":"complete","category":"context_reference","pair":"shipment_when","transcript":"我想知道它什么时候到","history":[{"role":"assistant","content":"您那笔订单已经发货。"}],"rationale":"它指向上文订单，问题已经问完"}
+{"id":"hc16","task":"completeness","label":"incomplete","category":"context_reference","pair":"shipment_when","transcript":"我想知道它什么时候","history":[{"role":"assistant","content":"您那笔订单已经发货。"}],"rationale":"时间疑问词后面缺少谓语"}
+{"id":"hc17","task":"completeness","label":"complete","category":"alternative","pair":"plan_compare","transcript":"你说的是 A 套餐还是 B 套餐","history":[],"rationale":"两个备选对象已经列完"}
+{"id":"hc18","task":"completeness","label":"incomplete","category":"alternative","pair":"plan_compare","transcript":"你说的是 A 套餐还是","history":[],"rationale":"还是后的另一备选尚未说出"}
+{"id":"hc19","task":"completeness","label":"complete","category":"negation","pair":"tomorrow_plan","transcript":"明天的行程先不用安排","history":[],"rationale":"否定动作是完整指令"}
+{"id":"hc20","task":"completeness","label":"incomplete","category":"negation","pair":"tomorrow_plan","transcript":"明天的行程先不要改成","history":[],"rationale":"改成后缺少目标内容"}
+{"id":"hc21","task":"completeness","label":"complete","category":"incremental_request","pair":"extra_drink","transcript":"再加一杯去冰的","history":[{"role":"assistant","content":"您的订单现在有一杯奶茶。"}],"rationale":"语境提供了饮品类别，新要求已明确"}
+{"id":"hc22","task":"completeness","label":"incomplete","category":"incremental_request","pair":"extra_drink","transcript":"再加一杯去","history":[{"role":"assistant","content":"您的订单现在有一杯奶茶。"}],"rationale":"去后面缺少冰或其他修饰对象"}
+{"id":"hc23","task":"completeness","label":"complete","category":"reconsideration","pair":"original_plan","transcript":"不行，还是按原计划执行","history":[{"role":"assistant","content":"改到今晚出发可以吗？"}],"rationale":"拒绝改动并明确恢复原计划"}
+{"id":"hc24","task":"completeness","label":"incomplete","category":"reconsideration","pair":"original_plan","transcript":"不行，还是按","history":[{"role":"assistant","content":"改到今晚出发可以吗？"}],"rationale":"按后缺少行动依据"}
+{"id":"hc25","task":"completeness","label":"review","category":"asr_unclear","transcript":"明天……上海……","history":[],"rationale":"ASR 丢字，无法确定是否已经给出意图"}
+{"id":"hc26","task":"completeness","label":"review","category":"ambiguous_short","transcript":"先处理那个","history":[{"role":"assistant","content":"退款和换货都可以处理。"}],"rationale":"指代对象可能有两个，尚需复核"}
+{"id":"hc27","task":"completeness","label":"review","category":"ambiguous_boundary","transcript":"大概周四吧，嗯","history":[{"role":"assistant","content":"您希望改到哪天？"}],"rationale":"表达可能已结束也可能仍在考虑"}
+{"id":"hc28","task":"completeness","label":"review","category":"asr_repair","transcript":"先不要……还是把那个","history":[],"rationale":"省略和自我修正导致意图边界不清"}
+{"id":"hi01","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"我接着说今天的日程安排。","transcript":"嗯，后面你继续说","boundary":"partial","rationale":"继续播报的附和"}
+{"id":"hi02","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"下面还有两条事项。","transcript":"别停，我在听","boundary":"sentence_end","pair":"do_not_stop","rationale":"否定停播意图，不应被停字误导"}
+{"id":"hi03","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"我正在读第二页的摘要。","transcript":"这个我知道，你先讲完","boundary":"partial","rationale":"用户让助手继续讲完"}
+{"id":"hi04","task":"interruption","label":"backchannel","category":"backchannel","assistant_playback":"还有一项费用需要说明。","transcript":"好，先让你讲完","boundary":"sentence_end","rationale":"暂不接管话轮"}
+{"id":"hi05","task":"interruption","label":"stop","category":"stop","assistant_playback":"我接着说今天的日程安排。","transcript":"停一下","boundary":"partial","observation":"近距离说话，声音来自用户所在位置","pair":"stop_source","rationale":"用户向助手发出停播要求，没有新任务"}
+{"id":"hi06","task":"interruption","label":"stop","category":"stop","assistant_playback":"下面继续解释这些费用。","transcript":"这一段先别往下说了","boundary":"sentence_end","rationale":"只停止播报"}
+{"id":"hi07","task":"interruption","label":"stop","category":"stop","assistant_playback":"我马上介绍第三个方案。","transcript":"等会儿再讲，我先消化一下","boundary":"partial","rationale":"暂停讲解，没有新的任务"}
+{"id":"hi08","task":"interruption","label":"stop","category":"stop","assistant_playback":"接下来继续播放余下内容。","transcript":"到这里就可以了，不用做别的","boundary":"sentence_end","rationale":"停止播报并明确无新任务"}
+{"id":"hi09","task":"interruption","label":"correction","category":"correction","assistant_playback":"南京今天最高温度二十二度。","transcript":"我问的是南宁，不是南京","boundary":"partial","rationale":"纠正地点，要求当前答案重算"}
+{"id":"hi10","task":"interruption","label":"correction","category":"correction","assistant_playback":"这笔账单是十三元。","transcript":"账单是三十元，不是十三元","boundary":"sentence_end","pair":"bill_source","rationale":"纠正已播报数字"}
+{"id":"hi11","task":"interruption","label":"correction","category":"correction","assistant_playback":"收件人是您本人。","transcript":"不是收件人本人，是我姐姐","boundary":"partial","rationale":"纠正当前答案依赖的收件人"}
+{"id":"hi12","task":"interruption","label":"correction","category":"correction","assistant_playback":"会议安排在五号。","transcript":"日期是十五号，五号已经过了","boundary":"sentence_end","rationale":"纠正当前播报的日期"}
+{"id":"hi13","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"我继续介绍去程车次。","transcript":"先帮我查返程票","boundary":"partial","pair":"ticket_source","rationale":"用户提出新任务，当前播报应停止"}
+{"id":"hi14","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"这份报告后面是风险章节。","transcript":"等下，把刚才那个数字记下来","boundary":"sentence_end","rationale":"要求执行记录任务"}
+{"id":"hi15","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"接下来继续用中文播报。","transcript":"嗯，对了，先换成英文读","boundary":"partial","rationale":"不是附和，提出新的播报方式要求"}
+{"id":"hi16","task":"interruption","label":"interrupt","category":"new_request","assistant_playback":"下面还有两条事项。","transcript":"别说了，帮我关客厅灯","boundary":"sentence_end","rationale":"包含停播词，但后面明确提出新任务"}
+{"id":"hi17","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"我接着说今天的日程安排。","transcript":"停一下","boundary":"partial","observation":"客厅电视外放，距离麦克风较远；近讲音轨此刻无活动","pair":"stop_source","rationale":"与 hi05 文本相同但声源不是当前用户"}
+{"id":"hi18","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"我继续介绍去程车次。","transcript":"先帮我查返程票","boundary":"partial","observation":"房间另一端有人对自己的手机说话；近讲用户仍在听","pair":"ticket_source","rationale":"与 hi13 文本相同但指向另一个设备"}
+{"id":"hi19","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"下面还有两条事项。","transcript":"别停，我在听","boundary":"sentence_end","observation":"电视台词由扬声器串入麦克风，与远场音轨重合","pair":"do_not_stop","rationale":"与 hi02 相同文本但不是当前用户"}
+{"id":"hi20","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"这笔账单是十三元。","transcript":"账单是三十元，不是十三元","boundary":"sentence_end","observation":"隔壁桌的同事正在和另一人核对账单，距离麦克风较远","pair":"bill_source","rationale":"与 hi10 相同文本但说话者不同"}
+{"id":"hi21","task":"interruption","label":"ignore","category":"background_noise","assistant_playback":"我接着讲会议安排。","transcript":"啪，停","boundary":"partial","observation":"餐具碰撞后 ASR 出现两个碎片，未检测到连续有声段","rationale":"噪声误识别为命令"}
+{"id":"hi22","task":"interruption","label":"ignore","category":"background_noise","assistant_playback":"天气预报还有一段。","transcript":"开门","boundary":"partial","observation":"关门声之后 ASR 出现两个字，波形未见稳定语音","rationale":"非语音声学事件"}
+{"id":"hi23","task":"interruption","label":"ignore","category":"echo","assistant_playback":"接下来是设置向导，请继续。","transcript":"继续","boundary":"partial","observation":"文本与扬声器刚播出的末尾词对齐，麦克风仅有回放通道活动","rationale":"助手回声不应当作当前用户附和"}
+{"id":"hi24","task":"interruption","label":"ignore","category":"background_speech","assistant_playback":"我读完这一页就停。","transcript":"好了","boundary":"sentence_end","observation":"电视对白位于远场，用户近讲音轨保持安静","rationale":"背景台词不是用户停播请求"}

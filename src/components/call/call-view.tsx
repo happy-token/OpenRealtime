@@ -1,11 +1,12 @@
 import type { ConversationState } from "@/hooks/use-voice-session";
-import type { ReactNode } from "react";
 import type { VoiceVisualTheme } from "./voice-theme";
 import { DigitalHumanStage } from "@/components/digital-human/digital-human-stage";
 import type { AvatarDisplayConfig, ExperienceMode } from "@/components/digital-human/types";
 import type { AvatarAudioSink } from "@/voice/audio/avatar-output";
-import type { TtsProvider, TtsVoice } from "@/components/drawer/voice-options";
-import { HomePreviewWorkspace, type AdvancedConfigTab } from "./home-preview-workspace";
+import type { TtsProvider } from "@/components/drawer/voice-options";
+import type { VoiceAdmission } from "@/lib/voice-admission";
+import type { RolePresentationMode, RoleRecord } from "@/lib/role-records";
+import { HomePreviewWorkspace } from "./home-preview-workspace";
 import { Orb } from "./orb";
 
 interface CallViewProps {
@@ -20,6 +21,13 @@ interface CallViewProps {
   error: string | null;
   connected: boolean;
   onStartSession: (mode?: ExperienceMode) => void;
+  role?: RoleRecord | null;
+  officialRealtime?: boolean;
+  roleMode?: RolePresentationMode;
+  onRoleSelect?: (role: RoleRecord) => void;
+  onRoleModeSelect?: (mode: RolePresentationMode, actionId?: string, talkingVariantId?: string) => Promise<void>;
+  homeConfigLoading?: boolean;
+  homeConfigReady?: boolean;
   visualTheme: VoiceVisualTheme;
   onVisualThemeChange: (theme: VoiceVisualTheme) => void;
   experienceMode: ExperienceMode;
@@ -27,18 +35,14 @@ interface CallViewProps {
   avatarDisplayConfig: AvatarDisplayConfig;
   onAvatarDisplayConfigChange: (config: AvatarDisplayConfig) => void;
   ttsProvider: TtsProvider;
-  ttsVoice: TtsVoice;
-  settingsRequest: number;
-  renderAdvancedSettings: (
-    tab: AdvancedConfigTab,
-    onVoiceLabelChange: (label: string) => void,
-    onModelLabelChange: (label: string) => void,
-  ) => ReactNode;
   setAvatarAudioSink: (sink: AvatarAudioSink | null) => void;
   reducedMotion: boolean;
   captionsEnabled?: boolean;
   onAvatarRendererReady?: () => void;
   onAvatarAmbientColorChange?: (color: string | null) => void;
+  publicVoiceEnabled?: boolean;
+  onVoiceAdmission?: (admission: VoiceAdmission | null) => void;
+  suspendRenderer?: boolean;
 }
 
 export function CallView({
@@ -53,6 +57,13 @@ export function CallView({
   error,
   connected,
   onStartSession,
+  role,
+  officialRealtime = false,
+  roleMode,
+  onRoleSelect,
+  onRoleModeSelect,
+  homeConfigLoading,
+  homeConfigReady,
   visualTheme,
   onVisualThemeChange,
   experienceMode,
@@ -60,14 +71,14 @@ export function CallView({
   avatarDisplayConfig,
   onAvatarDisplayConfigChange,
   ttsProvider,
-  ttsVoice,
-  settingsRequest,
-  renderAdvancedSettings,
   setAvatarAudioSink,
   reducedMotion,
   captionsEnabled = true,
   onAvatarRendererReady,
   onAvatarAmbientColorChange,
+  publicVoiceEnabled = false,
+  onVoiceAdmission,
+  suspendRenderer = false,
 }: CallViewProps) {
   const statusPlacement = ["cloud", "liquid-glass", "aurora-particles", "radial", "circle"].includes(visualTheme)
     ? "center"
@@ -79,7 +90,9 @@ export function CallView({
       data-session={sessionStarted ? "active" : "idle"}
       aria-hidden={hidden}
     >
-      {sessionStarted && experienceMode === "avatar" ? (
+      {sessionStarted && experienceMode === "avatar" && suspendRenderer ? (
+        <div className="avatar-session-ended" role="status">数字人会话已结束</div>
+      ) : sessionStarted && experienceMode === "avatar" ? (
         <DigitalHumanStage
           state={state}
           statusLabel={statusLabel}
@@ -89,6 +102,9 @@ export function CallView({
           captionsEnabled={captionsEnabled}
           onRendererReady={onAvatarRendererReady}
           onAmbientColorChange={onAvatarAmbientColorChange}
+          publicVoiceEnabled={publicVoiceEnabled}
+          ttsProvider={ttsProvider}
+          onVoiceAdmission={onVoiceAdmission}
         />
       ) : sessionStarted ? (
         <div className="call-orb-wrap" data-state={state}>
@@ -118,19 +134,22 @@ export function CallView({
       ) : (
         <HomePreviewWorkspace
           sessionActive={homeSessionActive}
+          role={role}
+          officialRealtime={officialRealtime}
+          roleMode={roleMode}
+          onRoleSelect={onRoleSelect}
+          onRoleModeSelect={onRoleModeSelect}
+          configLoading={homeConfigLoading}
+          configReady={homeConfigReady}
           connected={connected}
           error={error}
           visualTheme={visualTheme}
           experienceMode={experienceMode}
           avatarDisplayConfig={avatarDisplayConfig}
-          ttsProvider={ttsProvider}
-          ttsVoice={ttsVoice}
           reducedMotion={reducedMotion}
           onVisualThemeChange={onVisualThemeChange}
           onExperienceModeChange={onExperienceModeChange}
           onAvatarDisplayConfigChange={onAvatarDisplayConfigChange}
-          settingsRequest={settingsRequest}
-          renderAdvancedSettings={renderAdvancedSettings}
           onStartSession={onStartSession}
         />
       )}

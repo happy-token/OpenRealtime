@@ -357,8 +357,8 @@ Provider-supplied display metadata used only to recognize a Hosted Avatar in the
 _Avoid_: Identity Source Image, reusable provider asset, source master, cross-provider input
 
 **Avatar Provider Connection**:
-A connection to one commercial Avatar Renderer provider whose credentials, service readiness, and shared built-in catalog are administered by authenticated administrators or the administrator-equivalent Local Avatar Test Mode. Ordinary authenticated users may request Realtime Avatar Binding Creation for their own Avatar only through this server-managed connection; provider credentials are never user-facing configuration.
-_Avoid_: API Key field, Hosted Avatar, user integration, renderer selection
+A shared connection to one commercial Avatar Renderer provider whose operator-owned credentials, service readiness, and built-in catalog are administered by authenticated administrators or the administrator-equivalent Local Avatar Test Mode. It is distinct from a user's Personal Provider Credential and does not authorize spending the shared allowance on that user's Avatar creation.
+_Avoid_: Personal Provider Credential, Hosted Avatar, renderer selection
 
 **Provider Generation Entitlement**:
 The server-authoritative permission to create a cost-bearing asset through a shared commercial provider account. In the first release, Vidu generation, credit balance, and task lookup require an authenticated administrator or the administrator-equivalent Local Avatar Test Mode; a client checkbox or published request header can acknowledge cost but can never grant this permission.
@@ -391,6 +391,26 @@ _Avoid_: personal avatar library, per-user provider connection, public catalog, 
 **Anonymous Avatar Consumer**:
 A first-release test-phase visitor without an application account who may browse, select, and use only assets explicitly published for consumption. Anonymous access never grants provider credentials, generation entitlement, upload, acceptance, synchronization, catalog management, or access to private source and candidate media.
 _Avoid_: workspace member, administrator, public asset owner, authenticated user
+
+**Public Trial**:
+A time-limited, full realtime conversation with a published Avatar that an unauthenticated website visitor may use through Platform Provider Credentials for rendering, speech recognition, dialogue, and speech synthesis. It grants no Avatar creation or paid generation entitlement.
+_Avoid_: administrator session, unlimited provider access, generation entitlement
+
+**Platform Speech Admission**:
+The decision to start a realtime conversation that will consume the operator's ASR or TTS capacity. ASR and TTS have separate capacities, so using platform ASR does not occupy a TTS slot and vice versa; a full capacity rejects the affected attempt immediately with a visible busy state and manual retry. Use of the operator's LLM key alone takes neither speech slot.
+_Avoid_: browser-only busy flag, LLM usage as speech capacity, unbounded wait queue, automatic retry
+
+**Platform Provider Credential**:
+A provider API key supplied by the website operator through server-side configuration for eligible realtime conversations. It is never a Personal Provider Credential and cannot fund ordinary users' paid Avatar creation or video generation.
+_Avoid_: another user's key, browser-exposed key, public generation entitlement
+
+**API Credential Choice**:
+The visible source, for each paid capability in an eligible realtime conversation: the authenticated user's Personal Provider Credential when saved, otherwise the Platform Provider Credential, including after the user deliberately removes their key. An invalid or exhausted personal key produces a visible failure without switching sources; there is no separate source toggle.
+_Avoid_: automatic platform-key fallback on failure, silent account switching, provider connection
+
+**Personal Provider Credential**:
+A provider API key supplied by an authenticated user for that user's own requested operations and saved to their account until they remove it. An unauthenticated visitor cannot submit one; the platform never spends it on another person's request or a Public Trial.
+_Avoid_: Platform Provider Credential, Avatar Provider Connection, transferable account credit
 
 **Hosted Avatar Unavailability**:
 The explicit blocked state of a previously selected Hosted Avatar that the provider has deleted, disabled, or made inaccessible. The local record and reason remain visible for diagnosis, but Hosted Realtime cannot start until the user synchronizes or selects another asset; the system never silently changes the person or rendering mode.

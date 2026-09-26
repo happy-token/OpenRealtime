@@ -12,4 +12,10 @@ describe("AvatarTrashScreen", () => {
     expect(html).not.toContain("Avatar / Recycle Bin");
     expect(html).not.toContain("删除的资产会在这里保留 30 天");
   });
+
+  it("returns an empty role-scoped trash view to its originating role", () => {
+    const html = renderToStaticMarkup(<AvatarTrashScreen returnHref="/roles/role-personal-123" />);
+
+    expect(html).toContain('href="/roles/role-personal-123"');
+  });
 });

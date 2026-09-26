@@ -18,6 +18,7 @@ interface SelectMenuProps<T extends string> {
   placement?: "top" | "bottom";
   searchable?: boolean;
   renderOptionAction?: (option: SelectMenuOption<T>) => ReactNode;
+  cardOptions?: boolean;
 }
 
 export function SelectMenu<T extends string>({
@@ -30,6 +31,7 @@ export function SelectMenu<T extends string>({
   placement = "bottom",
   searchable = false,
   renderOptionAction,
+  cardOptions = false,
 }: SelectMenuProps<T>) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -79,7 +81,7 @@ export function SelectMenu<T extends string>({
 
   return (
     <div
-      className={`select-menu ${compact ? "select-menu-compact" : ""} select-menu-${placement}`}
+      className={`select-menu ${compact ? "select-menu-compact" : ""} ${cardOptions ? "select-menu-cards" : ""} select-menu-${placement}`}
       ref={rootRef}
     >
       <button

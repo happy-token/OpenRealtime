@@ -1,0 +1,95 @@
+name: openrealtime-model-services
+
+services:
+  liveportrait:
+    profiles: [liveportrait]
+    build:
+      context: ../..
+      dockerfile: deploy/inference_services/Dockerfile
+    environment:
+      MODEL_SERVICE_KIND: liveportrait
+      MODEL_RUNTIME_ROOT: /models/liveportrait
+      MODEL_SERVICE_JOB_ROOT: /data/jobs
+      MODEL_SERVICE_API_TOKEN: ${LIVEPORTRAIT_SERVICE_TOKEN:-}
+    volumes:
+      - ${LIVEPORTRAIT_RUNTIME_ROOT:-./runtime/liveportrait}:/models/liveportrait
+      - liveportrait-jobs:/data/jobs
+    ports:
+      - "127.0.0.1:${LIVEPORTRAIT_PORT:-18193}:8000"
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+  wav2lip:
+    profiles: [wav2lip]
+    build:
+      context: ../..
+      dockerfile: deploy/inference_services/Dockerfile
+    environment:
+      MODEL_SERVICE_KIND: wav2lip
+      MODEL_RUNTIME_ROOT: /models/wav2lip
+      MODEL_SERVICE_JOB_ROOT: /data/jobs
+      MODEL_SERVICE_API_TOKEN: ${WAV2LIP_SERVICE_TOKEN:-}
+    volumes:
+      - ${WAV2LIP_RUNTIME_ROOT:-./runtime/wav2lip}:/models/wav2lip
+      - wav2lip-jobs:/data/jobs
+    ports:
+      - "127.0.0.1:${WAV2LIP_PORT:-18192}:8000"
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+  musetalk:
+    profiles: [musetalk]
+    build:
+      context: ../..
+      dockerfile: deploy/inference_services/Dockerfile
+    environment:
+      MODEL_SERVICE_KIND: musetalk
+      MODEL_RUNTIME_ROOT: /models/musetalk
+      MODEL_SERVICE_JOB_ROOT: /data/jobs
+      MODEL_SERVICE_API_TOKEN: ${MUSETALK_SERVICE_TOKEN:-}
+    volumes:
+      - ${MUSETALK_RUNTIME_ROOT:-./runtime/musetalk}:/models/musetalk
+      - musetalk-jobs:/data/jobs
+    ports:
+      - "127.0.0.1:${MUSETALK_PORT:-18191}:8000"
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  lipforcing:
+    profiles: [lipforcing]
+    build:
+      context: ../..
+      dockerfile: deploy/inference_services/Dockerfile.lipforcing
+    environment:
+      LIPFORCING_REMOTE_ROOT: /runtime/lipforcing-eval
+      LIPFORCING_REMOTE_PYTHON: /runtime/venv-lipforcing/bin/python
+      LIPFORCING_RUNNER: /app/generate_lipforcing_talking.sh
+      LIPFORCING_SERVICE_JOB_ROOT: /data/jobs
+      LIPFORCING_API_TOKEN: ${LIPFORCING_SERVICE_TOKEN:-}
+    volumes:
+      - ${LIPFORCING_RUNTIME_ROOT:-./runtime/lipforcing}:/runtime
+      - lipforcing-jobs:/data/jobs
+    ports:
+      - "127.0.0.1:${LIPFORCING_PORT:-18190}:8000"
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  liveportrait-jobs:
+  wav2lip-jobs:
+  musetalk-jobs:
+  lipforcing-jobs:

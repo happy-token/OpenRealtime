@@ -32,6 +32,8 @@ import {
   createImageToVideo,
   isVideoGenerationProviderError,
 } from "@/lib/video-generation-provider";
+import { resolveProviderApiKey, providerKeyFingerprint } from "@/lib/provider-api-key";
+import { paidGenerationEnabled } from "@/lib/paid-generation-policy";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,6 +47,9 @@ export async function GET(request: NextRequest) {
     if (!validRequestId(requestId)) return json({ error: "生成请求 ID 无效" }, 400);
     const record = getLocalLtxSubmissionByRequestId(requestId);
     if (!record) return json({ error: "没有找到可恢复的生成任务" }, 404);
+    if (isMiniMaxModelId(record.model) && record.credentialFingerprint !== await credentialFingerprint(request)) {
+      return json({ error: "请使用创建任务时的 MiniMax API Key 恢复任务" }, 403);
+    }
     return json({
       request_id: requestId,
       submission_state: record.state,
@@ -57,15 +62,16 @@ export async function GET(request: NextRequest) {
         : record.error,
     });
   }
-  if (process.env.NODE_ENV === "production") {
-    return json({ ready: false, configured: hasAnyConfiguredProvider(), error: "生产付费视频生成将在 GPU 与持久化存储验收后启用" }, 503);
+  if (!paidGenerationEnabled()) {
+    return json({ ready: false, configured: hasAnyConfiguredProvider(), error: "生产付费视频生成需要启用开关并配置持久化任务与上传缓存路径" }, 503);
   }
   try {
     const configuredModels = VIDEO_GENERATION_MODELS
-      .filter((model) => model.provider === "minimax" ? process.env.MINIMAX_API_KEY?.trim() : process.env.LTX_API_KEY?.trim())
+      .filter((model) => model.provider === "minimax" || process.env.LTX_API_KEY?.trim())
       .map((model) => model.id);
     if (!configuredModels.length) throw new LtxProviderError("视频生成尚未配置 API Key", 503);
-    return json({ ready: true, configured: true, default_model: VIDEO_GENERATION_DEFAULT_MODEL, configured_models: configuredModels });
+    return json({ ready: true, configured: true, default_model: configuredModels.includes(VIDEO_GENERATION_DEFAULT_MODEL)
+      ? VIDEO_GENERATION_DEFAULT_MODEL : configuredModels[0], configured_models: configuredModels });
   } catch (error) {
     const known = isVideoGenerationProviderError(error);
     return json({ ready: false, configured: false, error: known ? error.message : "视频生成状态检查失败" }, known ? error.status : 500);
@@ -79,8 +85,8 @@ export async function POST(request: NextRequest) {
   ) {
     return json({ error: "不允许从当前来源创建视频生成任务" }, 403);
   }
-  if (process.env.NODE_ENV === "production") {
-    return json({ error: "生产付费视频生成将在 GPU 与持久化存储验收后启用，生产环境禁止创建付费任务" }, 503);
+  if (!paidGenerationEnabled()) {
+    return json({ error: "生产付费视频生成尚未启用持久化任务配置" }, 503);
   }
   try {
     const length = Number(request.headers.get("content-length"));
@@ -96,7 +102,8 @@ export async function POST(request: NextRequest) {
     const model = payload.model;
     if (payload.creditsAccepted !== true) throw new LtxProviderError("请先确认本次生成会消耗所选模型的 API 额度", 400);
     if (payload.rightsConfirmed !== true) throw new LtxProviderError("请先确认数字人形象的使用权", 400);
-    assertVideoGenerationModelConfigured(videoGenerationEnvironment(), model);
+    const environment = await videoGenerationEnvironment(request);
+    assertVideoGenerationModelConfigured(environment, model);
     const source = await readOwnedAvatarImage(payload.avatarId);
     if (!source) throw new LtxProviderError("找不到这个 Avatar", 404);
     const prompt = payload.prompt.trim();
@@ -107,6 +114,7 @@ export async function POST(request: NextRequest) {
     const imageDataUrl = `data:${generationSource.mediaType};base64,${Buffer.from(generationSource.bytes).toString("base64")}`;
     const provenance = {
       visualIdentityId: payload.avatarId,
+      credentialFingerprint: isMiniMaxModelId(model) ? await credentialFingerprint(request) : undefined,
       sourceSha256: createHash("sha256").update(source.bytes).digest("hex"),
       prompt,
       model,
@@ -119,7 +127,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     };
     const { task, reused } = await createOrReuseLocalLtxTask(provenance, () => createImageToVideo(
-      videoGenerationEnvironment(),
+      environment,
       { imageDataUrl, prompt, model, ...miniMaxOptions },
     ), { requestId });
     return json({
@@ -218,14 +226,19 @@ function miniMaxOptionsFromPayload(payload: GenerationPayload) {
   return options;
 }
 
-function videoGenerationEnvironment() {
+async function videoGenerationEnvironment(request: NextRequest) {
   return {
     LTX_API_KEY: process.env.LTX_API_KEY,
     LTX_API_URL: process.env.LTX_API_URL,
-    MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+    MINIMAX_API_KEY: await resolveProviderApiKey(request, "minimax"),
     MINIMAX_API_URL: process.env.MINIMAX_API_URL,
     MINIMAX_UPLOAD_CACHE_PATH: process.env.MINIMAX_UPLOAD_CACHE_PATH,
   };
+}
+
+async function credentialFingerprint(request: NextRequest) {
+  const key = await resolveProviderApiKey(request, "minimax");
+  return key ? providerKeyFingerprint(key) : undefined;
 }
 
 function validRequestId(value: string) {
