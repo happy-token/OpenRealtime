@@ -107,6 +107,8 @@ export interface SessionHelloV2 {
   playback?: { generation: number; played_position_samples: number };
   previous_voice_session_id?: string;
   requested_thread_id?: string;
+  asr_provider?: "doubao" | "dashscope";
+  llm_provider?: "deepseek" | "openai";
 }
 
 export interface SessionAckV2 {

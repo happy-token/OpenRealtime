@@ -64,7 +64,7 @@ export function HomeBackdrop({ overlay = false }: { overlay?: boolean }) {
   }, []);
 
   return <div className={styles.backdrop} data-home-backdrop="true" data-overlay={overlay} data-mode={scene.mode} aria-hidden="true">
-    {scene.mode === "avatar" && scene.image ? <>
+    {pathname !== "/conversation" && scene.mode === "avatar" && scene.image ? <>
       <div className={styles.imageBlur} style={{ backgroundImage: `url(${JSON.stringify(scene.image)})` }} />
       <div className={styles.image} style={{ backgroundImage: `url(${JSON.stringify(scene.image)})` }} />
     </> : <div className={styles.voicePreview}>{pathname !== "/conversation" ? <Orb state="listening" level={0.22} theme={scene.theme ?? "cloud"} /> : null}</div>}

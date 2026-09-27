@@ -16,11 +16,13 @@ import type {
 export interface ClientVoiceSessionControllerOptions {
   input: DeviceAudioInputRuntime;
   output: DeviceAudioOutputRuntime;
+  providers?: { asr?: "doubao" | "dashscope" | null; llm?: "deepseek" | "openai" | null };
 }
 
 export class ClientVoiceSessionController {
   private readonly input: DeviceAudioInputRuntime;
   private readonly output: DeviceAudioOutputRuntime;
+  private readonly providers: ClientVoiceSessionControllerOptions["providers"];
   private sessionId: string | null = null;
   private resumeToken: string | null = null;
   private threadId: string | null = null;
@@ -34,6 +36,7 @@ export class ClientVoiceSessionController {
   constructor(options: ClientVoiceSessionControllerOptions) {
     this.input = options.input;
     this.output = options.output;
+    this.providers = options.providers;
   }
 
   get phase(): VoiceSessionPhase {
@@ -48,6 +51,8 @@ export class ClientVoiceSessionController {
       resume_token: this.resumeToken,
       last_session_sequence: this.lastSessionSequence,
       last_journal_sequence: this.lastJournalSequence,
+      ...(this.providers?.asr ? { asr_provider: this.providers.asr } : {}),
+      ...(this.providers?.llm ? { llm_provider: this.providers.llm } : {}),
       ...(this.playback === undefined ? {} : { playback: this.playback }),
       ...(this.previousVoiceSessionId === null
         ? {}

@@ -2,8 +2,7 @@
 
 import { ArrowLeft } from "lucide-react";
 import type { TranscriptEntry } from "@/voice/session/transcript";
-import { VoiceStartButton } from "@/components/ui/voice-start-button";
-import type { PageForm } from "./presentation-model";
+import { ConversationStartAction } from "./conversation-start-action";
 import styles from "./session-end-review.module.css";
 
 export interface SessionReviewSnapshot {
@@ -24,24 +23,24 @@ export function freezeSessionTranscript(entries: TranscriptEntry[]): TranscriptE
 
 interface SessionEndedActionsProps {
   connected: boolean;
-  pageForm: PageForm;
   onContinue: () => void;
   onReturnHome: () => void;
 }
 
-export function SessionEndedActions({ connected, pageForm, onContinue, onReturnHome }: SessionEndedActionsProps) {
+export function SessionEndedActions({ connected, onContinue, onReturnHome }: SessionEndedActionsProps) {
   return (
-    <div className={styles.stageActions} data-page-form={pageForm} aria-label="结束后的会话操作">
+    <div className={styles.stageActions} aria-label="结束后的会话操作">
       <button type="button" className={styles.returnButton} onClick={onReturnHome}>
-        <span><ArrowLeft aria-hidden="true" /></span>
-        <strong>返回主页</strong>
+        <ArrowLeft aria-hidden="true" />返回主页
       </button>
-      <VoiceStartButton
+      <p className={styles.endedTitle}>本次对话已结束</p>
+      <ConversationStartAction
         connected={connected}
         onPress={onContinue}
         ariaLabel="继续对话"
         label="继续对话"
         hint=""
+        className={styles.continueAction}
       />
     </div>
   );

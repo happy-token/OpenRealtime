@@ -4,6 +4,8 @@ import type { WebUser } from "./user-session";
 import type { PersonalKeyProvider } from "./user-provider-credentials";
 import type { ProviderCapability, ProviderScope } from "./provider-instances";
 import { isRoleRecordId } from "./role-records";
+import { findRole } from "./role-catalog-repository";
+import { findPersonalRole } from "./personal-role-library";
 
 type Source = "personal" | "platform";
 type SpeechProvider = "doubao" | "dashscope" | "bella";
@@ -79,6 +81,13 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
   if (avatarProvider !== undefined && avatarProvider !== "anam") {
     throw new VoiceAdmissionError("configuration_invalid", "数字人服务无效", 400);
   }
+  const role = typeof roleId === "string" && roleId
+    ? roleId.startsWith("role-personal-")
+      ? user ? await findPersonalRole(user, roleId) : null
+      : await findRole(roleId)
+    : null;
+  const roleAsrProvider = role?.asr_provider ?? null;
+  const roleLlmProvider = role?.llm_provider ?? null;
   const client = await userDatabase().connect();
   try {
     await client.query("BEGIN");
@@ -121,6 +130,26 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
       if (!choices.has(row.capability) || priority < choices.get(row.capability)!.priority) {
         choices.set(row.capability, { priority, environment: row.provider });
       }
+    }
+    for (const [capability, provider] of [["asr", roleAsrProvider], ["llm", roleLlmProvider]] as const) {
+      if (!provider) continue;
+      const current = choices.get(capability);
+      if (current?.instance?.provider === provider || current?.environment === provider) continue;
+      const compatible = await client.query<SelectedInstance>(
+        `SELECT id, scope, capability, provider, model, base_url, display_name, key_version,
+                enabled, connection_status
+         FROM ${userTable("provider_instances")}
+         WHERE capability = $3 AND provider = $4 AND enabled = true
+           AND connection_status = 'passed'
+           AND (($5::boolean AND scope = 'personal' AND issuer = $1 AND subject = $2)
+             OR (scope = 'platform' AND issuer = '' AND subject = ''))
+         ORDER BY CASE WHEN scope = 'personal' THEN 0 ELSE 1 END, updated_at DESC, id
+         LIMIT 1 FOR SHARE`,
+        [user?.issuer ?? "", user?.subject ?? "", capability, provider, Boolean(user)],
+      );
+      if (compatible.rows[0]) choices.set(capability, { priority: -1, instance: compatible.rows[0] });
+      else if (platformKey(provider)) choices.set(capability, { priority: -1, environment: provider });
+      else choices.delete(capability);
     }
     if (user && roleId) {
       const roleSelection = await client.query<{ target: string }>(
@@ -174,6 +203,7 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
     if (selectedAsr || environmentSelected.has("asr")) {
       providers.asr = (selectedAsr?.provider ?? environmentSelected.get("asr")) as SpeechProvider;
     }
+    if (roleAsrProvider) providers.asr = roleAsrProvider;
     if (selected.has("tts") || environmentSelected.has("tts")) {
       const chosenTts = selected.get("tts")?.provider ?? environmentSelected.get("tts")!;
       if (ttsChoice !== undefined && ttsChoice !== chosenTts) {
@@ -214,7 +244,7 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
       versions.has(provider as PersonalKeyProvider) ? "personal" : "platform";
     const asrSource = selected.get("asr")?.scope ?? (environmentSelected.has("asr") ? "platform" : sourceFor(providers.asr));
     const ttsSource = selected.get("tts")?.scope ?? (environmentSelected.has("tts") ? "platform" : sourceFor(providers.tts));
-    const llmProvider = (selectedLlm?.provider as "deepseek" | "openai" | undefined)
+    const llmProvider = roleLlmProvider ?? (selectedLlm?.provider as "deepseek" | "openai" | undefined)
       ?? (environmentSelected.get("llm") as "deepseek" | "openai" | undefined) ?? personalLlmProvider
       ?? (platformKey("custom") ? "custom" : platformKey("deepseek") ? "deepseek"
         : platformKey("openai") ? "openai" : "bella");

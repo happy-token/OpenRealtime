@@ -13,11 +13,10 @@ import type { AvatarDisplayConfig } from "./types";
 import { sampleMediaAmbientColor } from "@/lib/ambient-color";
 
 export function shouldShowTalkingMotion(
-  speaking: boolean,
   audioActive: boolean,
   degraded = false,
 ): boolean {
-  return speaking && audioActive && !degraded;
+  return audioActive && !degraded;
 }
 
 export function resolveMotionPair(avatar: OwnedAvatarRecord | null, config: AvatarDisplayConfig) {
@@ -86,10 +85,10 @@ export function MotionOrchestrationConfig({ config, onChange, catalog, active = 
 
 }
 
-export function MotionOrchestrationStage({ config, speaking, onReady, caption, statusLabel, onAmbientColorChange }: { config: AvatarDisplayConfig; speaking: boolean; onReady?: () => void; caption?: string; statusLabel?: string; onAmbientColorChange?: (color: string | null) => void }) {
+export function MotionOrchestrationStage({ config, onReady, caption, statusLabel, onAmbientColorChange }: { config: AvatarDisplayConfig; onReady?: () => void; caption?: string; statusLabel?: string; onAmbientColorChange?: (color: string | null) => void }) {
   const audioActive = useSyncExternalStore(subscribePlaybackActivity, getPlaybackActive, getServerPlaybackActive);
   const [degraded, setDegraded] = useState(false);
-  const showingTalking = shouldShowTalkingMotion(speaking, audioActive, degraded);
+  const showingTalking = shouldShowTalkingMotion(audioActive, degraded);
   const [pair, setPair] = useState<{ idle: string; talking: string } | null>(null);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(0);
@@ -150,6 +149,10 @@ export function MotionOrchestrationStage({ config, speaking, onReady, caption, s
     onAmbientColorChange?.(color);
   }
 
+  function handleVideoError() {
+    setError("动作视频加载失败，请检查素材后重试。");
+  }
+
   useEffect(() => {
     if (loaded !== 3) return;
     const source = showingTalking ? idleRef.current : talkingRef.current;
@@ -170,7 +173,7 @@ export function MotionOrchestrationStage({ config, speaking, onReady, caption, s
   }
 
   return <div className="digital-human-call-stage" data-render-path="orchestrated" data-renderer-state={degraded ? "degraded" : error ? "error" : loaded === 3 ? "ready" : "connecting"}>
-    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className="digital-human-live-video" src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? "编排讲话画面" : "编排待机画面"} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={() => setError("动作视频加载失败，请检查素材后重试。")} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
+    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className="digital-human-live-video" src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? "编排讲话画面" : "编排待机画面"} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
     {!degraded && !error && loaded !== 3 ? <div className="avatar-startup-dialog" role="status" aria-live="polite">
       <LoaderCircle aria-hidden="true" />
       <div>

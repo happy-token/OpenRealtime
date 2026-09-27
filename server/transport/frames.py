@@ -170,6 +170,8 @@ class SessionHelloFrame(BaseModel):
     user_id: str | None = None
     device_id: str | None = None
     requested_thread_id: str | None = None
+    asr_provider: Literal["doubao", "dashscope"] | None = None
+    llm_provider: Literal["deepseek", "openai"] | None = None
     previous_voice_session_id: str | None = None
     last_session_sequence: int = Field(default=0, ge=0)
     last_journal_sequence: int = Field(default=0, ge=0)

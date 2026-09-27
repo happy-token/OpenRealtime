@@ -6,6 +6,7 @@ import {
   DEFAULT_TTS_VOICE,
   TTS_PROVIDER_OPTIONS,
   TTS_VOICE_OPTIONS,
+  type TtsVoice,
 } from "./voice-options";
 import { MODEL_PROTOCOL_OPTIONS, MODEL_PROVIDER_OPTIONS } from "./model-options";
 import { AvatarAssetDeleteDialog, ConfigDrawer, type ConfigTab } from "./config-drawer";
@@ -27,6 +28,7 @@ function renderDrawer(
   variant: "drawer" | "embedded" | "session" = "drawer",
   initialTab: ConfigTab = "display",
   sessionId: string | null = null,
+  roleTts?: { provider: "bailian" | "doubao"; voice: TtsVoice },
 ) {
   return renderToStaticMarkup(
     <ConfigDrawer
@@ -38,7 +40,9 @@ function renderDrawer(
       sessionId={sessionId}
       voiceVisualTheme="cloud"
       onVoiceVisualThemeChange={() => {}}
-      ttsVoice={DEFAULT_TTS_VOICE}
+      ttsVoice={roleTts?.voice ?? DEFAULT_TTS_VOICE}
+      initialTtsProvider={roleTts?.provider}
+      useRoleTtsConfig={Boolean(roleTts)}
       ttsSpeechRate={0}
       ttsDialect=""
       ttsConfigurable
@@ -62,6 +66,13 @@ function renderDrawer(
 }
 
 describe("ConfigDrawer", () => {
+  it("initializes a role session with its selected speech provider", () => {
+    const html = renderDrawer("avatar", DEFAULT_AVATAR_DISPLAY_CONFIG, true, true, true, "session", "voice", null,
+      { provider: "bailian", voice: "longyingmu_v3" });
+
+    expect(html).toContain("当前选择：阿里云百炼");
+    expect(html).toContain("龙应沐 V3");
+  });
   it("renders the pluggable experience modes and configuration tabs", () => {
     const html = renderDrawer("voice");
 

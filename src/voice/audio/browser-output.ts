@@ -93,8 +93,14 @@ export class BrowserAudioOutput {
     if (!this.runtime.isActive) this.beginEpoch(crypto.randomUUID());
   }
 
+  async unlock(): Promise<void> {
+    const context = this.ensureContext();
+    if (context.state === "suspended") await context.resume();
+  }
+
   play(chunk: BrowserAudioChunk): boolean {
     const context = this.ensureContext();
+    if (context.state === "suspended") void context.resume().catch(() => undefined);
     const accepted = this.runtime.enqueue({
       speechId: chunk.speechId,
       generation: chunk.generation,

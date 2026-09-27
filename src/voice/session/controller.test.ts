@@ -6,6 +6,13 @@ import { ClientVoiceSessionController } from "./controller";
 
 
 describe("ClientVoiceSessionController", () => {
+  it("sends optional role providers in the session hello", () => {
+    const controller = new ClientVoiceSessionController({
+      input: new DeviceAudioInputRuntime(), output: new DeviceAudioOutputRuntime(),
+      providers: { asr: "dashscope", llm: "openai" },
+    });
+    expect(controller.createHello()).toMatchObject({ asr_provider: "dashscope", llm_provider: "openai" });
+  });
   it("starts a new public voice conversation without reusing the previous resume token", () => {
     const controller = new ClientVoiceSessionController({
       input: new DeviceAudioInputRuntime({ maxBufferFrames: 8 }),

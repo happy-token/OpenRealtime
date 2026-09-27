@@ -62,7 +62,7 @@ interface AvatarRendererRuntimeResponse {
 }
 
 export function DigitalHumanStage(props: DigitalHumanStageProps) {
-  if (props.displayConfig.renderPath === "orchestrated") return <MotionOrchestrationStage config={props.displayConfig} speaking={props.state === "speaking"} onReady={props.onRendererReady} onAmbientColorChange={props.onAmbientColorChange} caption={props.captionsEnabled !== false ? props.currentTurnText : ""} statusLabel={props.statusLabel} />;
+  if (props.displayConfig.renderPath === "orchestrated") return <MotionOrchestrationStage config={props.displayConfig} onReady={props.onRendererReady} onAmbientColorChange={props.onAmbientColorChange} caption={props.captionsEnabled !== false ? props.currentTurnText : ""} statusLabel={props.statusLabel} />;
   return <RenderedDigitalHumanStage {...props} />;
 }
 

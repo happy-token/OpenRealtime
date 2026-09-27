@@ -164,6 +164,8 @@ interface ConfigDrawerProps {
   voiceVisualTheme: VoiceVisualTheme;
   onVoiceVisualThemeChange: (theme: VoiceVisualTheme) => void;
   ttsVoice: TtsVoice;
+  initialTtsProvider?: TtsProvider;
+  useRoleTtsConfig?: boolean;
   ttsSpeechRate: number;
   ttsDialect: TtsDialect;
   ttsConfigurable: boolean;
@@ -200,6 +202,8 @@ export function ConfigDrawer({
   voiceVisualTheme,
   onVoiceVisualThemeChange,
   ttsVoice,
+  initialTtsProvider,
+  useRoleTtsConfig = false,
   ttsSpeechRate,
   ttsDialect,
   ttsConfigurable,
@@ -234,10 +238,12 @@ export function ConfigDrawer({
   const [playbackVolume, setPlaybackVolume] = useState(DEFAULT_VOLUME_PERCENT);
   const [allowBargeIn, setAllowBargeIn] = useState(DEFAULT_ALLOW_BARGE_IN);
   const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
-  const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => ttsConfigurable ? "doubao" : "bailian");
-  const [bailianVoice, setBailianVoice] = useState<string>(BAILIAN_CLONED_VOICE_OPTIONS[0].value);
-  const [bailianVoiceLabel, setBailianVoiceLabel] = useState<string>(BAILIAN_CLONED_VOICE_OPTIONS[0].label);
-  const [bailianDialect, setBailianDialect] = useState("");
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => initialTtsProvider ?? (ttsConfigurable ? "doubao" : "bailian"));
+  const [bailianVoice, setBailianVoice] = useState<string>(() => useRoleTtsConfig ? ttsVoice : BAILIAN_CLONED_VOICE_OPTIONS[0].value);
+  const [bailianVoiceLabel, setBailianVoiceLabel] = useState<string>(() => useRoleTtsConfig
+    ? BAILIAN_TTS_VOICE_OPTIONS.find((voice) => voice.value === ttsVoice)?.label ?? ttsVoice
+    : BAILIAN_CLONED_VOICE_OPTIONS[0].label);
+  const [bailianDialect, setBailianDialect] = useState<string>(() => useRoleTtsConfig ? ttsDialect : "");
   const [modelProvider, setModelProvider] = useState<ModelProvider>(defaultModelProvider.value);
   const [modelId, setModelId] = useState(defaultModelProvider.models[0].value);
   const [modelProtocol, setModelProtocol] = useState<ModelProtocol>(defaultModelProvider.protocol);
@@ -327,9 +333,9 @@ export function ConfigDrawer({
           && typeof (tool as CustomToolDraft).endpoint === "string",
         )));
       }
-      if (saved.ttsProvider === "bailian" || saved.ttsProvider === "doubao") setTtsProvider(saved.ttsProvider);
-      if (typeof saved.bailianVoice === "string") setBailianVoice(saved.bailianVoice);
-      if (typeof saved.bailianVoiceLabel === "string") {
+      if (!useRoleTtsConfig && (saved.ttsProvider === "bailian" || saved.ttsProvider === "doubao")) setTtsProvider(saved.ttsProvider);
+      if (!useRoleTtsConfig && typeof saved.bailianVoice === "string") setBailianVoice(saved.bailianVoice);
+      if (!useRoleTtsConfig && typeof saved.bailianVoiceLabel === "string") {
         const savedLabel = saved.bailianVoiceLabel.trim();
         setBailianVoiceLabel(
           savedLabel.toLocaleLowerCase() === "shuchang 克隆音色".toLocaleLowerCase()
@@ -337,7 +343,7 @@ export function ConfigDrawer({
             : savedLabel,
         );
       }
-      if (typeof saved.bailianDialect === "string") setBailianDialect(saved.bailianDialect);
+      if (!useRoleTtsConfig && typeof saved.bailianDialect === "string") setBailianDialect(saved.bailianDialect);
       if (MODEL_PROVIDER_OPTIONS.some((provider) => provider.value === saved.modelProvider)) setModelProvider(saved.modelProvider as ModelProvider);
       if (typeof saved.modelId === "string") setModelId(saved.modelId);
       if (MODEL_PROTOCOL_OPTIONS.some((protocol) => protocol.value === saved.modelProtocol)) setModelProtocol(saved.modelProtocol as ModelProtocol);
@@ -352,7 +358,7 @@ export function ConfigDrawer({
     } catch {
       window.localStorage.removeItem(PERSONA_DRAFT_STORAGE_KEY);
     }
-  }, [onReducedMotionChange]);
+  }, [onReducedMotionChange, useRoleTtsConfig]);
 
   const refreshAvatarActionCatalog = useCallback(async (signal?: AbortSignal) => {
     const visiblePackagedMotionCount = OPENTALKING_MOTION_ASSETS.filter((asset) => (

@@ -15,6 +15,7 @@ import type { KnowledgeDocument } from "@/lib/knowledge-catalog-repository";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { selectedDefaultTtsProvider, type ProviderVoiceCatalog } from "@/lib/default-role-voice";
 import { createRole } from "@/lib/role-catalog-client";
+import { PROVIDER_CATALOG } from "@/lib/provider-catalog";
 import { preferredRoleMode, ROLE_MODE_LABELS, type RolePresentationMode } from "@/lib/role-records";
 import { fetchTools } from "@/lib/tool-catalog-client";
 import type { ToolRecord } from "@/lib/tool-records";
@@ -39,11 +40,13 @@ const MODE_COPY: Record<CreateMode, { title: string; description: string }> = {
 interface DraftState {
   name: string; voiceProvider: TtsProvider; voiceId: string; voiceDialect: TtsDialect;
   voiceConfigurationTarget: string | null; voiceCustomized: boolean; personaId: string | null;
+  asrProvider: "doubao" | "dashscope" | null; llmProvider: "deepseek" | "openai" | null;
   memoryEnabled: boolean; toolIds: string[]; knowledgeIds: string[]; modes: CreateMode[];
   defaultMode: CreateMode; avatarId: string | null; actionId: string | null; talkingVariantId: string | null;
 }
 const DEFAULT_DRAFT: DraftState = {
   name: "", voiceProvider: "doubao", voiceId: DEFAULT_TTS_VOICE, voiceDialect: "", voiceConfigurationTarget: null, voiceCustomized: false, personaId: null,
+  asrProvider: null, llmProvider: null,
   memoryEnabled: true, toolIds: [], knowledgeIds: [], modes: ["offline"], defaultMode: "offline",
   avatarId: null, actionId: null, talkingVariantId: null,
 };
@@ -196,6 +199,7 @@ export function RoleCreateScreen() {
     if (!allReady || busy) return; setBusy(true); setError(""); setNotice("");
     try {
       const role = await createRole({ displayName: draft.name.trim(), voiceProvider: draft.voiceProvider, voiceId: draft.voiceId, voiceDialect: draft.voiceDialect,
+        asrProvider: draft.asrProvider, llmProvider: draft.llmProvider,
         personaId: draft.personaId, avatarId: draft.avatarId, enabledModes: draft.modes, defaultMode: draft.defaultMode,
         defaultSelections: { ...(draft.actionId ? { "lip-sync": { action_id: draft.actionId } } : {}),
           ...(draft.actionId && draft.talkingVariantId ? { offline: { action_id: draft.actionId, talking_variant_id: draft.talkingVariantId } } : {}) },
@@ -260,6 +264,10 @@ export function RoleCreateScreen() {
         <BaseSetting id="tools" icon={<Wrench />} title="工具" detail={draft.toolIds.length ? `已选择 ${draft.toolIds.length} 个` : "暂未选择"} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><div className={styles.checkList}>{tools.length ? tools.map((tool) => <label key={tool.tool_id}><input type="checkbox" checked={draft.toolIds.includes(tool.tool_id)} onChange={(event) => updateDraft({ toolIds: event.target.checked ? [...draft.toolIds, tool.tool_id] : draft.toolIds.filter((id) => id !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人"} · {tool.description}</small></span></label>) : <p className={styles.emptyInline}>暂无可用工具</p>}</div><div className={styles.settingActions}><button type="button" onClick={() => setOpenBaseSetting(null)}>完成选择</button></div></BaseSetting>
         <BaseSetting id="knowledge" icon={<BookOpen />} title="知识库" detail={draft.knowledgeIds.length ? `已选择 ${draft.knowledgeIds.length} 份` : "暂未选择"} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><div className={styles.checkList}>{knowledge.length ? knowledge.map((doc) => <label key={doc.document_id}><input type="checkbox" checked={draft.knowledgeIds.includes(doc.document_id)} onChange={(event) => updateDraft({ knowledgeIds: event.target.checked ? [...draft.knowledgeIds, doc.document_id] : draft.knowledgeIds.filter((id) => id !== doc.document_id) })} /><span><strong>{doc.title}</strong><small>{doc.owner_id === null ? "共享资料" : "个人资料"}</small></span></label>) : <p className={styles.emptyInline}>暂无可用知识库</p>}</div><div className={styles.settingActions}><button type="button" onClick={() => setOpenBaseSetting(null)}>完成选择</button></div></BaseSetting>
         <button className={styles.memoryButton} type="button" aria-pressed={draft.memoryEnabled} data-selected={draft.memoryEnabled} onClick={() => updateDraft({ memoryEnabled: !draft.memoryEnabled })}><MemoryStick /><span><strong>长期记忆</strong><small>按当前用户和角色隔离保存</small></span><em>{draft.memoryEnabled ? "已启用" : "未启用"}</em></button>
+        <details className={styles.advancedProviders}><summary>高级配置</summary><p>未选择时使用“供应商”中的默认配置。</p>
+          <label className={styles.field}><span>ASR 供应商</span><select aria-label="角色 ASR 供应商" value={draft.asrProvider ?? ""} onChange={(event) => updateDraft({ asrProvider: event.target.value as DraftState["asrProvider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.asr.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+          <label className={styles.field}><span>LLM 供应商</span><select aria-label="角色 LLM 供应商" value={draft.llmProvider ?? ""} onChange={(event) => updateDraft({ llmProvider: event.target.value as DraftState["llmProvider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.llm.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+        </details>
         <div className={styles.moduleActions}><button type="button" disabled={!foundationReady} onClick={() => setOpenModule(null)}>完成基础设置</button></div>
       </div></TaskModule>
       <TaskModule id="modes" icon={<MessageCircle />} title="呈现模式" detail={draft.modes.map((mode) => MODE_COPY[mode].title).join("、")} openModule={openModule} status={status("modes")} done={done("modes")} onOpen={setOpenModule}><div className={styles.modeList}>{CREATE_MODES.filter((mode) => mode !== "lip-sync").map((mode) => <button key={mode} type="button" aria-pressed={draft.modes.includes(mode)} data-selected={draft.modes.includes(mode)} onClick={() => toggleMode(mode)}><span>{draft.modes.includes(mode) ? <Check /> : null}</span><div><strong>{MODE_COPY[mode].title}</strong><small>{MODE_COPY[mode].description}</small></div></button>)}{advancedModeReady ? <details><summary>高级模式</summary><button type="button" aria-pressed={draft.modes.includes("lip-sync")} data-selected={draft.modes.includes("lip-sync")} onClick={() => toggleMode("lip-sync")}><span>{draft.modes.includes("lip-sync") ? <Check /> : null}</span><div><strong>{MODE_COPY["lip-sync"].title}</strong><small>{MODE_COPY["lip-sync"].description}</small></div></button></details> : null}</div><label className={`${styles.field} ${styles.defaultModeField}`}><span>默认模式</span><select value={draft.defaultMode} onChange={(event) => updateDraft({ defaultMode: event.target.value as CreateMode })}>{draft.modes.map((mode) => <option value={mode} key={mode}>{MODE_COPY[mode].title}</option>)}</select></label><div className={styles.moduleActions}><button type="button" onClick={() => setOpenModule(null)}>完成选择</button></div></TaskModule>

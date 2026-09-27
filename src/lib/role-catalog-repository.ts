@@ -49,6 +49,8 @@ export async function createRole(
     voiceProvider?: "bailian" | "doubao";
     voiceId?: string;
     voiceDialect?: RoleVoiceDialect;
+    asrProvider?: RoleRecord["asr_provider"];
+    llmProvider?: RoleRecord["llm_provider"];
     personaId?: string | null;
     avatarId?: string | null;
     enabledModes?: RolePresentationMode[];
@@ -75,6 +77,8 @@ export async function createRole(
       voice_provider: input.voiceProvider === "doubao" ? "doubao" : "bailian",
       voice_id: normalizeVoiceId(input.voiceId),
       voice_dialect: input.voiceDialect ?? "",
+      asr_provider: input.asrProvider ?? null,
+      llm_provider: input.llmProvider ?? null,
       enabled_modes: enabledModes,
       default_mode: defaultMode,
       default_selections: input.defaultSelections ?? {},
@@ -98,6 +102,8 @@ export async function updateRole(
     voiceProvider?: "bailian" | "doubao";
     voiceId?: string;
     voiceDialect?: RoleVoiceDialect;
+    asrProvider?: RoleRecord["asr_provider"];
+    llmProvider?: RoleRecord["llm_provider"];
     personaId?: string | null;
     avatarId?: string | null;
     enabledModes?: RolePresentationMode[];
@@ -126,6 +132,8 @@ export async function updateRole(
       ...(update.voiceProvider !== undefined ? { voice_provider: update.voiceProvider } : {}),
       ...(update.voiceId !== undefined ? { voice_id: normalizeVoiceId(update.voiceId) } : {}),
       ...(update.voiceDialect !== undefined ? { voice_dialect: update.voiceDialect } : {}),
+      ...(update.asrProvider !== undefined ? { asr_provider: update.asrProvider } : {}),
+      ...(update.llmProvider !== undefined ? { llm_provider: update.llmProvider } : {}),
       ...(update.personaId !== undefined ? { persona_id: normalizeOptionalId(update.personaId) } : {}),
       ...(update.avatarId !== undefined ? { avatar_id: normalizeOptionalId(update.avatarId) } : {}),
       ...(update.memoryEnabled !== undefined ? { memory_enabled: update.memoryEnabled } : {}),
@@ -241,6 +249,8 @@ function hydrateStoredRole(
     default_mode: enabledModes.includes(role.default_mode) ? role.default_mode : preferredRoleMode(enabledModes),
     default_selections: role.default_selections ?? {},
     voice_dialect: role.voice_dialect ?? "",
+    asr_provider: role.asr_provider ?? null,
+    llm_provider: role.llm_provider ?? null,
     tool_ids: role.tool_ids ?? LEGACY_DEFAULT_TOOL_IDS,
   };
 }
@@ -255,6 +265,8 @@ function storedFromHydrated(role: RoleRecord | null): StoredRole | null {
     voice_provider: role.voice_provider,
     voice_id: role.voice_id,
     voice_dialect: role.voice_dialect ?? "",
+    asr_provider: role.asr_provider ?? null,
+    llm_provider: role.llm_provider ?? null,
     enabled_modes: role.enabled_modes,
     default_mode: role.default_mode,
     default_selections: role.default_selections ?? {},
@@ -347,6 +359,8 @@ function isStoredRole(value: unknown): value is StoredRole {
     && (role.voice_provider === "bailian" || role.voice_provider === "doubao")
     && typeof role.voice_id === "string"
     && (role.voice_dialect === undefined || isRoleVoiceDialect(role.voice_dialect))
+    && (role.asr_provider === undefined || role.asr_provider === null || role.asr_provider === "doubao" || role.asr_provider === "dashscope")
+    && (role.llm_provider === undefined || role.llm_provider === null || role.llm_provider === "deepseek" || role.llm_provider === "openai")
     && Array.isArray(role.enabled_modes)
     && role.enabled_modes.every(isRolePresentationMode)
     && isRolePresentationMode(role.default_mode)

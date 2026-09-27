@@ -10,6 +10,7 @@ import homePreviewStyles from "@/components/call/preview-workspace-lab.module.cs
 import { VOICE_VISUAL_THEME_OPTIONS, type VoiceVisualTheme } from "@/components/call/voice-theme";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
 import { TTS_PROVIDER_OPTIONS } from "@/components/drawer/voice-options";
+import { PROVIDER_CATALOG } from "@/lib/provider-catalog";
 import { describeVoiceSelection, VoiceSelector } from "@/components/voice/voice-selector";
 import { conversationHref } from "@/components/workspace/workspace-shell";
 import type { PersonaSummary } from "@/lib/avatar-persona";
@@ -45,6 +46,8 @@ function roleSaveFingerprint(role: RoleRecord, knowledgeIds: string[]) {
     voiceProvider: role.voice_provider,
     voiceId: role.voice_id,
     voiceDialect: role.voice_dialect ?? "",
+    asrProvider: role.asr_provider ?? null,
+    llmProvider: role.llm_provider ?? null,
     personaId: role.persona_id,
     avatarId: role.avatar_id,
     enabledModes: role.enabled_modes,
@@ -63,6 +66,8 @@ async function persistRoleDraft(role: RoleRecord, knowledgeIds: string[]) {
     voiceProvider: role.voice_provider,
     voiceId: role.voice_id,
     voiceDialect: role.voice_dialect ?? "",
+    asrProvider: role.asr_provider ?? null,
+    llmProvider: role.llm_provider ?? null,
     personaId: role.persona_id,
     avatarId: role.avatar_id,
     enabledModes: role.enabled_modes,
@@ -665,6 +670,12 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
             </section>
 
             <button className={styles.memoryButton} type="button" aria-pressed={role.memory_enabled} data-selected={role.memory_enabled} onClick={() => setRole({ ...role, memory_enabled: !role.memory_enabled })}><span className={styles.memoryCheck}>{role.memory_enabled ? <Check /> : null}</span><span><strong>长期记忆</strong><small>按当前用户与角色隔离保存，随时可以关闭</small></span><em>{role.memory_enabled ? "已启用" : "未启用"}</em></button>
+            <details className={styles.advancedProviders}>
+              <summary>高级配置</summary>
+              <p>留空时使用“供应商”中的默认配置。</p>
+              <label className={styles.field}><span>ASR 供应商</span><select aria-label="角色 ASR 供应商" value={role.asr_provider ?? ""} onChange={(event) => setRole({ ...role, asr_provider: event.target.value as RoleRecord["asr_provider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.asr.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+              <label className={styles.field}><span>LLM 供应商</span><select aria-label="角色 LLM 供应商" value={role.llm_provider ?? ""} onChange={(event) => setRole({ ...role, llm_provider: event.target.value as RoleRecord["llm_provider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.llm.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+            </details>
               </div>
             </ConfigTaskModule>
 

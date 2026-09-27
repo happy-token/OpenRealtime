@@ -382,7 +382,7 @@ def _bound_key(binding: VoiceAdmissionBinding, provider: str, source: str, capab
     return key
 
 
-def _build_asr_engine(binding: VoiceAdmissionBinding | None = None) -> AsrEngine:
+def _build_asr_engine(binding: VoiceAdmissionBinding | None = None, provider_override: str | None = None) -> AsrEngine:
     if binding is not None:
         if binding.asr_provider not in {"doubao", "dashscope"}:
             raise ValueError("unsupported ASR provider")
@@ -393,7 +393,14 @@ def _build_asr_engine(binding: VoiceAdmissionBinding | None = None) -> AsrEngine
                 base_url=binding.instance_base_urls.get("asr"),
                 model=binding.instance_models.get("asr") or "qwen3-asr-flash-realtime")
         return DoubaoAsrEngine(api_key=key)
-    backend = os.environ.get("VOICEAGENT_ASR_BACKEND", "doubao-direct")
+    if provider_override == "dashscope":
+        from server.speech.plugins.bailian_asr import BailianAsrEngine
+        if not os.environ.get("DASHSCOPE_API_KEY"):
+            raise RuntimeError("selected ASR provider is not configured")
+        return BailianAsrEngine()
+    if provider_override == "doubao" and not os.environ.get("DOUBAO_API_KEY"):
+        raise RuntimeError("selected ASR provider is not configured")
+    backend = "doubao-direct" if provider_override == "doubao" else os.environ.get("VOICEAGENT_ASR_BACKEND", "doubao-direct")
     if backend != "doubao-direct":
         raise ValueError("unsupported ASR backend")
     if os.environ.get("DOUBAO_API_KEY"):
@@ -564,6 +571,7 @@ async def _preview_voice(
 def _build_llm_client(
     telemetry: SessionTelemetry | None = None,
     binding: VoiceAdmissionBinding | None = None,
+    provider_override: str | None = None,
 ) -> LlmClient:
     if binding is not None:
         key = _bound_key(binding, binding.llm_provider, binding.llm_source, "llm")
@@ -602,6 +610,21 @@ def _build_llm_client(
             api_key=key, api_style=_llm_api_style(default="chat_completions"),
             telemetry=telemetry,
         )
+    if provider_override == "deepseek":
+        key = _deepseek_api_key()
+        if not key:
+            raise RuntimeError("selected LLM provider is not configured")
+        return OpenAiCompatibleLlmClient(api_key=key, base_url=DEEPSEEK_BASE_URL,
+            model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+            disable_thinking=_deepseek_disable_thinking(), api_style=_llm_api_style(default="responses"),
+            telemetry=telemetry, provider_name="deepseek")
+    if provider_override == "openai":
+        key = os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError("selected LLM provider is not configured")
+        return OpenAiCompatibleLlmClient(api_key=key, base_url=OPENAI_BASE_URL,
+            model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+            api_style="chat_completions", telemetry=telemetry, provider_name="openai")
     if os.environ.get("VOICEAGENT_LLM_API_KEY"):
         return OpenAiCompatibleLlmClient(
             api_style=_llm_api_style(default="chat_completions"),
@@ -651,6 +674,7 @@ def _llm_api_style(*, default: str) -> str:
 def _build_tool_calling_llm_client(
     telemetry: SessionTelemetry | None = None,
     binding: VoiceAdmissionBinding | None = None,
+    provider_override: str | None = None,
 ) -> ToolCallingLlmClient:
     if binding is not None:
         key = _bound_key(binding, binding.llm_provider, binding.llm_source, "llm")
@@ -675,6 +699,20 @@ def _build_tool_calling_llm_client(
                 telemetry=telemetry, provider_name="bella",
             )
         return OpenAiCompatibleToolCallingLlmClient(api_key=key, telemetry=telemetry)
+    if provider_override == "deepseek":
+        key = _deepseek_api_key()
+        if not key:
+            raise RuntimeError("selected LLM provider is not configured")
+        return OpenAiCompatibleToolCallingLlmClient(api_key=key, base_url=DEEPSEEK_BASE_URL,
+            model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+            disable_thinking=_deepseek_disable_thinking(), telemetry=telemetry, provider_name="deepseek")
+    if provider_override == "openai":
+        key = os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError("selected LLM provider is not configured")
+        return OpenAiCompatibleToolCallingLlmClient(api_key=key, base_url=OPENAI_BASE_URL,
+            model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+            telemetry=telemetry, provider_name="openai")
     if os.environ.get("VOICEAGENT_LLM_API_KEY"):
         return OpenAiCompatibleToolCallingLlmClient(telemetry=telemetry)
     deepseek_api_key = _deepseek_api_key()
@@ -1050,6 +1088,9 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
     ledger.subscribe(functools.partial(_log_ledger_event, session.session_id))
     ledger.subscribe(telemetry.observe_ledger)
     binding = session.authenticated_identity.admission if session.authenticated_identity else None
+    hello = getattr(session, "client_hello", None)
+    asr_override = hello.asr_provider if hello is not None and binding is None else None
+    llm_override = hello.llm_provider if hello is not None and binding is None else None
     if os.environ.get("VOICEAGENT_ENDPOINT_AUTH_MODE") == "public_ticket" and binding is None:
         raise RuntimeError("public voice requires a verified admission")
     tts = _build_session_tts_engine(binding)
@@ -1106,9 +1147,9 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             "Native Realtime remains experimental"
         )
     elif realtime_engine == "cascaded":
-        asr = _build_asr_engine(binding)
-        llm_client = _build_llm_client(telemetry, binding)
-        tool_llm_client = _build_tool_calling_llm_client(telemetry, binding) if tool_registry is not None else None
+        asr = _build_asr_engine(binding, asr_override)
+        llm_client = _build_llm_client(telemetry, binding, llm_override)
+        tool_llm_client = _build_tool_calling_llm_client(telemetry, binding, llm_override) if tool_registry is not None else None
         semantic_interruption_classifier = (
             _build_semantic_interruption_classifier(llm_client)
         )

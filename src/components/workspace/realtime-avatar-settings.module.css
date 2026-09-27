@@ -6,7 +6,7 @@
 .stageTitle small { color: rgba(245,246,255,.65); font-size: .57rem; letter-spacing: .16em; }
 .stageTitle h1 { margin: 10px 0 4px; font-size: clamp(2.3rem,5vw,5rem); letter-spacing: -.055em; }
 .stageTitle p { margin: 0; color: rgba(245,246,255,.7); font-size: .8rem; }
-.topbar { position: absolute; z-index: 2; top: 0; right: 0; left: 0; min-height: 72px; padding: 12px clamp(18px,2.6vw,42px); display: flex; align-items: center; gap: 14px; }
+.topbar { position: absolute; z-index: 2; top: 0; right: 0; left: max(var(--workspace-sidebar-width,0px),52px); min-height: 72px; padding: 12px clamp(18px,2.6vw,42px); display: flex; align-items: center; gap: 14px; }
 .topbar > a { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; color: white; background: rgba(12,15,25,.55); }
 .topbar strong { font-size: .82rem; }
 .topbar > div { margin-left: auto; display: flex; gap: 8px; }

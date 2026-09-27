@@ -28,6 +28,8 @@ export async function PATCH(request: Request, context: Context) {
       || (payload.voiceProvider !== "bailian" && payload.voiceProvider !== "doubao")
       || typeof payload.voiceId !== "string"
       || !(payload.voiceDialect === undefined || isRoleVoiceDialect(payload.voiceDialect))
+      || !(payload.asrProvider === undefined || payload.asrProvider === null || payload.asrProvider === "doubao" || payload.asrProvider === "dashscope")
+      || !(payload.llmProvider === undefined || payload.llmProvider === null || payload.llmProvider === "deepseek" || payload.llmProvider === "openai")
       || !Array.isArray(payload.enabledModes)
       || !payload.enabledModes.every(isRolePresentationMode)
       || !isRolePresentationMode(payload.defaultMode)
@@ -45,6 +47,8 @@ export async function PATCH(request: Request, context: Context) {
       voiceProvider: payload.voiceProvider,
       voiceId: payload.voiceId,
       voiceDialect: isRoleVoiceDialect(payload.voiceDialect) ? payload.voiceDialect : "",
+      asrProvider: payload.asrProvider as "doubao" | "dashscope" | null | undefined,
+      llmProvider: payload.llmProvider as "deepseek" | "openai" | null | undefined,
       personaId: payload.personaId,
       avatarId: payload.avatarId,
       enabledModes: payload.enabledModes,

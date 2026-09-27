@@ -313,6 +313,7 @@ export interface VoiceSessionViewModel {
   } | null) => void;
   pendingConfirmation: PendingConfirmationView | null;
   start: (provider?: TtsConfigFrame["provider"]) => Promise<void>;
+  unlockAudioOutput: () => Promise<void>;
   retryConnection: () => void;
   stop: () => void;
   terminate: () => void;
@@ -334,7 +335,7 @@ export interface VoiceSessionViewModel {
   resolveConfirmation: (approved: boolean) => void;
 }
 
-export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEnabled?: boolean } = {}): VoiceSessionViewModel {
+export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: { publicVoiceEnabled?: boolean; roleProviders?: { asr?: "doubao" | "dashscope" | null; llm?: "deepseek" | "openai" | null } } = {}): VoiceSessionViewModel {
   const [state, setStateValue] = useState<ConversationState>("idle");
   const [level, setLevel] = useState(0);
   const [caption, setCaption] = useState("");
@@ -389,6 +390,7 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
     new ClientVoiceSessionController({
       input: inputRuntimeRef.current,
       output: outputRuntimeRef.current,
+      providers: roleProviders,
     }),
   );
   const browserRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -420,6 +422,7 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
   // function closes over that connection's state), invoked via the stable
   // callbacks returned at the bottom of this hook.
   const startRef = useRef<(provider?: TtsConfigFrame["provider"]) => Promise<void>>(async () => {});
+  const unlockAudioOutputRef = useRef<() => Promise<void>>(async () => {});
   const retryConnectionRef = useRef<() => void>(() => {});
   const stopRef = useRef<() => void>(() => {});
   const terminateRef = useRef<() => void>(() => {});
@@ -472,6 +475,7 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
         if (speakingGenerationRef.current === generation) setPlaybackActive(true);
       },
     });
+    unlockAudioOutputRef.current = () => outputGraph.unlock();
     const inputGraph = new BrowserAudioInput({
       runtime: inputRuntimeRef.current,
       controller: voiceControllerRef.current,
@@ -629,6 +633,17 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
           userTranscriptStreamingRef.current = frame.user_transcript_streaming ?? false;
           setTtsConfigurable(frame.tts_configurable ?? false);
           setTtsPreviewAvailable(frame.tts_preview ?? false);
+          // The endpoint may still be opening when the socket first accepts
+          // frames. Apply the selected voice once its capabilities arrive.
+          const selectedTts = pendingTtsConfigRef.current;
+          if (selectedTts && frame.tts_configurable) {
+            transportRef.current?.send(ttsConfigPayload(
+              selectedTts.provider,
+              selectedTts.voice,
+              selectedTts.speechRate,
+              selectedTts.dialect,
+            ));
+          }
           const browserAsr = browserSpeechRecognitionConstructor() !== null;
           setMicAvailable(serverAsrRef.current || (!publicVoiceEnabled && browserAsr));
           if (publicVoiceEnabled && !serverAsrRef.current) {
@@ -1353,6 +1368,7 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
     setTranscript([]);
   }, []);
   const sendText = useCallback((text: string) => sendTextRef.current(text), []);
+  const unlockAudioOutput = useCallback(() => unlockAudioOutputRef.current(), []);
   const stopReply = useCallback(() => stopReplyRef.current(), []);
   const setNoiseSuppression = useCallback(
     (enabled: boolean) => setNoiseSuppressionRef.current(enabled),
@@ -1403,6 +1419,7 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
     prepareAdmission,
     pendingConfirmation,
     start,
+    unlockAudioOutput,
     retryConnection,
     stop,
     terminate,

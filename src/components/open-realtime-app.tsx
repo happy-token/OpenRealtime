@@ -104,7 +104,8 @@ export function OpenRealtimeApp({
   defaultTtsProvider?: TtsProvider;
 }) {
   const router = useRouter();
-  const engine = useVoiceSession({ publicVoiceEnabled });
+  const engine = useVoiceSession({ publicVoiceEnabled, roleProviders: { asr: initialRole?.asr_provider, llm: initialRole?.llm_provider } });
+  const { unlockAudioOutput } = engine;
   const ensureProviderKey = useProviderKeyGate();
   const { theme: appTheme, setTheme: setAppTheme } = useAppTheme();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -441,6 +442,9 @@ export function OpenRealtimeApp({
   }, [engine, preferredPageForm]);
 
   const handleHomeStart = useCallback(async (requestedMode: ExperienceMode = experienceMode) => {
+    void unlockAudioOutput().catch((error: unknown) => {
+      setMicError(error instanceof Error ? `音频输出不可用：${error.message}` : "音频输出不可用");
+    });
     if (requestedMode === "avatar") {
       if (!publicVoiceEnabled && avatarDisplayConfig.renderPath === "hosted" && avatarDisplayConfig.provider === "anam") {
         try {
@@ -470,7 +474,7 @@ export function OpenRealtimeApp({
       return;
     }
     await beginSession("voice");
-  }, [avatarDisplayConfig, beginSession, ensureProviderKey, experienceMode, startDigitalHumanSession, publicVoiceEnabled]);
+  }, [avatarDisplayConfig, beginSession, ensureProviderKey, experienceMode, startDigitalHumanSession, publicVoiceEnabled, unlockAudioOutput]);
 
   useEffect(() => {
     if (officialAvatarId || !initialRole || roleConfigLoading || !roleConfigReady || sessionStarted) return;
@@ -736,7 +740,7 @@ export function OpenRealtimeApp({
 
         {sessionStarted ? (
           <SessionExperienceLayout
-            pageForm={pageForm}
+            pageForm={sessionReview ? "fullscreen" : pageForm}
             ambientColor={experienceMode === "avatar" ? avatarAmbientColor : null}
             onEnterFullscreen={() => handlePageFormChange("fullscreen")}
             surface={<CallView
@@ -769,11 +773,10 @@ export function OpenRealtimeApp({
             />}
             surfaceOverlay={sessionReview ? <SessionEndedActions
               connected={connected || publicVoiceEnabled}
-              pageForm={pageForm}
               onContinue={continueFromReview}
               onReturnHome={returnHomeFromReview}
             /> : null}
-            conversation={<ChatView entries={sessionReview?.entries ?? engine.transcript} active={pageForm !== "fullscreen"} />}
+            conversation={<ChatView entries={sessionReview?.entries ?? engine.transcript} active={!sessionReview && pageForm !== "fullscreen"} />}
             recovery={sessionReview ? null : <SessionRecoveryNotice
               connection={engine.connection}
               micError={micError}
@@ -784,7 +787,7 @@ export function OpenRealtimeApp({
               onUseText={useTextFallback}
               voiceOnly={publicVoiceEnabled}
             />}
-            controls={<SessionControlBar
+            controls={sessionReview ? null : <SessionControlBar
               pageForm={pageForm}
               paused={sessionPaused}
               captionsEnabled={captionsEnabled}
@@ -797,7 +800,6 @@ export function OpenRealtimeApp({
               assistantBusy={engine.state === "thinking" || engine.state === "speaking"}
               onStopReply={engine.stopReply}
               focusComposerRequest={focusComposerRequest}
-              ended={Boolean(sessionReview)}
             />}
           />
         ) : experienceMode === "voice" ? <CallView
@@ -864,6 +866,8 @@ export function OpenRealtimeApp({
         voiceVisualTheme={voiceVisualTheme}
         onVoiceVisualThemeChange={handleVoiceVisualThemeChange}
         ttsVoice={ttsVoice}
+        initialTtsProvider={initialRole?.voice_provider}
+        useRoleTtsConfig={Boolean(initialRole)}
         ttsSpeechRate={ttsSpeechRate}
         ttsDialect={ttsDialect}
         ttsConfigurable={engine.ttsConfigurable}

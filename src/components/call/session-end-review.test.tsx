@@ -12,9 +12,11 @@ describe("session ended experience", () => {
   });
 
   it("uses the start conversation control for continuing and an icon return action", () => {
-    const html = renderToStaticMarkup(<SessionEndedActions connected pageForm="fullscreen" onContinue={() => {}} onReturnHome={() => {}} />);
+    const html = renderToStaticMarkup(<SessionEndedActions connected onContinue={() => {}} onReturnHome={() => {}} />);
     expect(html).toContain("voice-start-halo");
+    expect(html).toContain("voice-start-halo--magic-rings");
     expect(html).toContain('aria-label="继续对话"');
+    expect(html).toContain("本次对话已结束");
     expect(html).toContain("返回主页");
     expect(html).toContain("lucide-arrow-left");
     expect(html).not.toContain("复制");

@@ -197,7 +197,7 @@
 .personaName { margin: 0; color: rgba(238,242,255,.66); font-size: .78rem; letter-spacing: .02em; }
 .startAction { transition: opacity 180ms ease,transform 220ms ease; }
 .page[data-panel-open="config"] .startAction { opacity: 0; pointer-events: none; transform: translate(-50%,10px); }
-.topbar { left: var(--workspace-sidebar-width,52px); z-index: 70; }
+.topbar { left: max(var(--workspace-sidebar-width,0px),52px); z-index: 70; }
 
 .configPanel { z-index: 62; top: 72px; right: 18px; bottom: 54px; width: min(620px,calc(100vw - var(--workspace-sidebar-width,52px) - 36px)); opacity: 0; pointer-events: none; transform: translateX(calc(100% + 24px)); transition: opacity 240ms ease,transform 260ms cubic-bezier(.22,1,.36,1); }
 .configPanel[data-open="true"] { opacity: 1; pointer-events: auto; transform: translateX(0); }
@@ -462,6 +462,10 @@
 .configTaskModule[data-open="true"] .configTaskSummary > svg { transform: rotate(180deg); }
 .configTaskContent { padding: 0 12px 14px; border-top: 1px solid rgba(255,255,255,.075); animation: configIn 200ms ease both; }
 .foundationGrid,.taskInner { padding-top: 12px; display: grid; gap: 9px; }
+.advancedProviders { padding: 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; display: grid; gap: 10px; }
+.advancedProviders summary { cursor: pointer; font-size: .7rem; font-weight: 650; }
+.advancedProviders p { margin: 0 0 8px; color: rgba(241,244,255,.62); font-size: .62rem; }
+.advancedProviders .field { margin-top: 10px; }
 .roleNameRow { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; }
 .roleNameRow input[readonly] { color: rgba(239,242,255,.64); cursor: default; }
 .roleNameRow button { min-width: 70px; padding: 0 11px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid rgba(255,255,255,.13); border-radius: 12px; color: white; background: rgba(255,255,255,.055); font: inherit; font-size: .55rem; cursor: pointer; }

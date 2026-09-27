@@ -22,6 +22,8 @@ export interface RoleRecord {
   voice_provider: "bailian" | "doubao";
   voice_id: string;
   voice_dialect?: RoleVoiceDialect;
+  asr_provider?: "doubao" | "dashscope" | null;
+  llm_provider?: "deepseek" | "openai" | null;
   enabled_modes: RolePresentationMode[];
   default_mode: RolePresentationMode;
   default_selections?: RoleDefaultSelections;

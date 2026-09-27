@@ -4,6 +4,9 @@ const database = vi.hoisted(() => ({
   client: { query: vi.fn(), release: vi.fn() },
   connect: vi.fn(),
 }));
+const roleLookup = vi.hoisted(() => ({ shared: vi.fn(), personal: vi.fn() }));
+vi.mock("./role-catalog-repository", () => ({ findRole: roleLookup.shared }));
+vi.mock("./personal-role-library", () => ({ findPersonalRole: roleLookup.personal }));
 vi.mock("./user-db", () => ({
   userDatabase: () => ({ connect: database.connect }),
   userTable: (name: string) => `voiceagent.${name}`,
@@ -34,10 +37,25 @@ function setup(versions: { provider: string; key_version: string }[], asrCount: 
 
 afterEach(() => {
   vi.clearAllMocks();
+  roleLookup.shared.mockReset();
+  roleLookup.personal.mockReset();
   vi.unstubAllEnvs();
 });
 
 describe("platform speech admission", () => {
+  it("uses a role's ASR and LLM provider overrides instead of global selections", async () => {
+    roleLookup.shared.mockResolvedValue({ asr_provider: "dashscope", llm_provider: "openai" });
+    vi.stubEnv("DASHSCOPE_API_KEY", "platform-asr");
+    vi.stubEnv("DOUBAO_API_KEY", "platform-tts");
+    vi.stubEnv("OPENAI_API_KEY", "platform-llm");
+    setup([], 0, 0, [
+      { id: "c8135c1c-7989-4a04-aac8-a759ed98213b", scope: "platform", capability: "asr", provider: "doubao", model: "", display_name: "豆包", key_version: "48ff0333-901c-493a-9766-54a7284cfbd2", enabled: true },
+      { id: "c8135c1c-7989-4a04-aac8-a759ed98213c", scope: "platform", capability: "llm", provider: "deepseek", model: "", display_name: "DeepSeek", key_version: "48ff0333-901c-493a-9766-54a7284cfbd3", enabled: true },
+    ]);
+    const admission = await admitVoiceSession(null, "doubao", undefined, "role-avatar-test");
+    expect(admission.sources.asr.provider).toBe("dashscope");
+    expect(admission.sources.llm.provider).toBe("openai");
+  });
   it("lets a personal environment choice override the platform instance and legacy personal key", async () => {
     vi.stubEnv("DASHSCOPE_API_KEY", "platform-dashscope");
     vi.stubEnv("DOUBAO_API_KEY", "platform-doubao");

@@ -34,6 +34,7 @@ from server.signals.plugins.silero_vad import SileroVad
 from server.speech.asr import PreloadedAsrEngine
 from server.speech.plugins.bailian_tts import BailianTtsEngine
 from server.speech.plugins.doubao_asr import DoubaoAsrEngine
+from server.speech.plugins.bailian_asr import BailianAsrEngine
 from server.speech.selectable_tts import SelectableTtsEngine
 from server.speech.tts import SilentTtsEngine, SynthesizedAudioChunk
 from server.transport.base import AuthenticatedTransportIdentity
@@ -72,6 +73,14 @@ TEST_ENDPOINT_IDENTITY = AuthenticatedTransportIdentity(
     user_id="test-user",
     device_id="test-browser",
 )
+
+
+def test_explicit_local_role_providers_use_their_configured_engines(monkeypatch):
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-dashscope")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    assert isinstance(voice_web_server._build_asr_engine(provider_override="dashscope"), BailianAsrEngine)
+    client = voice_web_server._build_llm_client(provider_override="openai")
+    assert client._provider_name == "openai"
 
 _ENV_VARS = (
     "API_KEY",

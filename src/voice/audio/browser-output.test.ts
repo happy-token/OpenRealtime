@@ -17,6 +17,10 @@ function fakeContext() {
   };
   const context = {
     currentTime: 1,
+    state: "suspended",
+    resume: vi.fn(async () => {
+      context.state = "running";
+    }),
     destination: {},
     createGain: () => gain,
     createAnalyser: () => analyser,
@@ -44,6 +48,18 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it("resumes browser audio during the start gesture", async () => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({
+      runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext,
+    });
+
+    await output.unlock();
+    expect(fake.context.resume).toHaveBeenCalledOnce();
+    expect(fake.context.state).toBe("running");
+  });
+
   it("restores playback after ending a conversation without a new handshake", () => {
     const fake = fakeContext();
     const runtime = new DeviceAudioOutputRuntime();

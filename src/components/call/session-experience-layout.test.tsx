@@ -56,4 +56,16 @@ describe("SessionExperienceLayout", () => {
     expect(html).toContain('class="session-content-stage-overlay"><div>ENDED ACTIONS</div></div>');
     expect(html.indexOf("ENDED ACTIONS")).toBeGreaterThan(html.indexOf('aria-label="实时展示"'));
   });
+
+  it("removes the control bar from the ended layout", () => {
+    const html = renderToStaticMarkup(<SessionExperienceLayout
+      pageForm="fullscreen"
+      surface={<div>AVATAR</div>}
+      surfaceOverlay={<div>ENDED ACTIONS</div>}
+      conversation={<div>CONVERSATION</div>}
+      onEnterFullscreen={() => {}}
+    />);
+    expect(html).toContain("ENDED ACTIONS");
+    expect(html).not.toContain('aria-label="会话操作"');
+  });
 });

@@ -49,8 +49,7 @@ it("lists each talking variant directly even when the base has pending lip model
 });
 
 it("shows the talking layer only during actual playback and drops it immediately on interruption", () => {
-  expect(shouldShowTalkingMotion(true, true)).toBe(true);
-  expect(shouldShowTalkingMotion(true, false)).toBe(false);
-  expect(shouldShowTalkingMotion(false, true)).toBe(false);
-  expect(shouldShowTalkingMotion(true, true, true)).toBe(false);
+  expect(shouldShowTalkingMotion(true)).toBe(true);
+  expect(shouldShowTalkingMotion(false)).toBe(false);
+  expect(shouldShowTalkingMotion(true, true)).toBe(false);
 });

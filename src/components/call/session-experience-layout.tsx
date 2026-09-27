@@ -9,7 +9,7 @@ interface SessionExperienceLayoutProps {
   surface: ReactNode;
   surfaceOverlay?: ReactNode;
   conversation: ReactNode;
-  controls: ReactNode;
+  controls?: ReactNode;
   recovery?: ReactNode;
   ambientColor?: string | null;
   onEnterFullscreen: () => void;
@@ -170,9 +170,9 @@ export function SessionExperienceLayout({
         onKeyDown={adjustSidecarWidthByKeyboard}
       />}
       {recovery ? <div className="session-recovery-region">{recovery}</div> : null}
-      <div className="session-controls-region" aria-label="会话操作">
+      {controls ? <div className="session-controls-region" aria-label="会话操作">
         {controls}
-      </div>
+      </div> : null}
     </section>
   );
 }

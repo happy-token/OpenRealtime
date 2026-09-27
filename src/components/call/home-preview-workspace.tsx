@@ -19,7 +19,7 @@ import {
 import { AvatarCapabilityNotice } from "@/components/avatar/avatar-capability-notice";
 import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import { WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchCreateCard, WorkbenchMediaOption } from "@/components/workspace/workbench-resource-rails";
-import { VoiceStartButton } from "@/components/ui/voice-start-button";
+import { ConversationStartAction } from "./conversation-start-action";
 import type { AnamHostedAvatar } from "@/lib/anam-avatars";
 import type { AvatarAction, AvatarAsset } from "@/lib/avatar-catalog";
 import { fetchOwnedAvatars, fetchPersonalAvatars } from "@/lib/avatar-catalog-client";
@@ -667,6 +667,11 @@ export function HomePreviewWorkspace({
     config: avatarDisplayConfig,
   };
   const selectedAvatarName = selectedAvatarChoice.avatarName ?? selectedAvatarChoice.name;
+  const cachedAvatarMatchesRole = Boolean(role?.avatar_id
+    && role.avatar_id === (avatarDisplayConfig.renderPath === "hosted"
+      ? avatarDisplayConfig.avatarProfileId
+      : avatarDisplayConfig.segmentedAvatarId));
+  const showAvatarPreview = libraryMode || configReady || cachedAvatarMatchesRole;
   const selectedOrb = ORB_OPTIONS.find((option) => option.id === visualTheme) ?? ORB_OPTIONS[0];
   useEffect(() => {
     publishHomeBackdropScene({
@@ -801,7 +806,7 @@ export function HomePreviewWorkspace({
           <div className={styles.orbHalo} aria-hidden="true" />
           {experienceMode === "voice" ? <Orb state="listening" level={previewEnergy / 100} theme={visualTheme} /> : null}
         </div>
-        <div className={styles.avatarPreview} data-visible={experienceMode === "avatar"}>
+        {showAvatarPreview && <div className={styles.avatarPreview} data-visible={experienceMode === "avatar"}>
           {experienceMode === "avatar" && stagePreview?.url ? (
             <video key={stagePreview.url} className={styles.avatarPreviewForeground} src={stagePreview.url} autoPlay loop muted playsInline preload="auto" aria-label={`${stagePreview.name} ${stagePreview.kind === "talking" ? "口型动作预览" : "生成动作预览"}`} />
           ) : experienceMode === "avatar" && (libraryMode || avatarMode === "offline") && selectedAvatarChoice.motion && selectedVariant?.video_url ? (
@@ -813,7 +818,7 @@ export function HomePreviewWorkspace({
             <Image className={styles.avatarPreviewForeground} src={selectedAvatarChoice.preview} alt={`${selectedAvatarName} 数字人预览`} fill priority sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
           </> : <div className={styles.avatarPreviewPlaceholder}><UserRound aria-hidden="true" /></div>}
           <div className={styles.avatarWash} aria-hidden="true" />
-        </div>
+        </div>}
         <div className={styles.previewCopy}>
           <span data-connection={connected || libraryMode ? "ready" : "connecting"} role="status" aria-live="polite"><i />{libraryMode ? "资产预览" : connected ? "预览已就绪" : "语音连接中"}</span>
           <h1>{stagePreview?.name ?? role?.display_name ?? (experienceMode === "voice" ? selectedOrb.name : selectedAvatarName)}</h1>
@@ -831,12 +836,11 @@ export function HomePreviewWorkspace({
         <PersonaQuickSelect avatarId={workbenchPersonaAvatarId} avatarDisplayName={selectedAvatarName} placement="bottom" />
       </div> : null}
 
-      <div className={styles.homeStartAction}>
-        {!libraryMode ? <>
-          <VoiceStartButton effect="magic-rings" connected={connected} connectionStatusPlacement="external" disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel="主页开始对话" label={experienceMode === "voice" ? "开始语音对话" : `与 ${role?.display_name ?? selectedAvatarName} 对话`} hint={configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : ""} onPress={() => onStartSession(experienceMode)} />
+      {!libraryMode ? <>
+        <ConversationStartAction connected={connected} disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel="主页开始对话" label={experienceMode === "voice" ? "开始语音对话" : `与 ${role?.display_name ?? selectedAvatarName} 对话`} hint={configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : ""} onPress={() => onStartSession(experienceMode)}>
           {experienceMode === "avatar" ? <AvatarCapabilityNotice capability={selectedCapability} error={capabilityError} onRetry={retryCapabilities} variant="stage" /> : null}
-        </> : null}
-      </div>
+        </ConversationStartAction>
+      </> : null}
 
       {officialRealtime ? null : role && onRoleSelect && onRoleModeSelect ? <HomeRoleModeControls
         role={role}

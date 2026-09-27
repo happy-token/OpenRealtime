@@ -4881,6 +4881,9 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   transform: none;
   transition: opacity 320ms ease;
 }
+.call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="orchestrated"] .digital-human-live-video {
+  object-fit: cover;
+}
 .call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="segmented"] .digital-human-wav2lip-video {
   -webkit-mask-image: none;
   mask-image: none;
@@ -4970,54 +4973,8 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
 .call-view.avatar-runtime-only .digital-human-recovery button,
 .call-view.avatar-runtime-only .avatar-startup-dialog button { pointer-events: auto; }
 
-/* Ended sessions keep the original control island. Inactive controls retire
-   outward while the layout control stays available for opening Sidecar. */
-.session-control-shell[data-ended="true"] .session-fixed-actions { gap: 0; }
-.session-control-shell[data-ended="true"] .session-fixed-actions::before {
-  width: 0;
-  height: 0;
-  margin: 0;
-  opacity: 0;
-}
-.session-action-btn[data-retire-on-end="true"] {
-  --retire-size: 48px;
-  overflow: hidden;
-}
-@keyframes session-control-retire-left {
-  0% { width: var(--retire-size); min-width: var(--retire-size); border-width: 1px; opacity: 1; transform: translateX(0) scale(1); }
-  58% { width: var(--retire-size); min-width: var(--retire-size); border-width: 1px; opacity: .42; transform: translateX(-18px) scale(.88); }
-  100% { width: 0; min-width: 0; border-width: 0; opacity: 0; transform: translateX(-28px) scale(.72); }
-}
-@keyframes session-control-retire-right {
-  0% { width: var(--retire-size); min-width: var(--retire-size); border-width: 1px; opacity: 1; transform: translateX(0) scale(1); }
-  58% { width: var(--retire-size); min-width: var(--retire-size); border-width: 1px; opacity: .42; transform: translateX(18px) scale(.88); }
-  100% { width: 0; min-width: 0; border-width: 0; opacity: 0; transform: translateX(28px) scale(.72); }
-}
-.session-control-shell[data-ended="true"] .session-action-btn[data-retire-on-end="true"] {
-  width: 0;
-  min-width: 0;
-  border-width: 0;
-  opacity: 0;
-  pointer-events: none;
-  animation-duration: 520ms;
-  animation-delay: var(--retire-delay, 0ms);
-  animation-timing-function: cubic-bezier(.4, 0, .2, 1);
-  animation-fill-mode: both;
-}
-.session-control-shell[data-ended="true"] .session-action-btn[data-retire-direction="left"] { animation-name: session-control-retire-left; }
-.session-control-shell[data-ended="true"] .session-action-btn[data-retire-direction="right"] { animation-name: session-control-retire-right; }
-.session-experience-layout[data-page-form="sidecar"] .session-control-shell[data-ended="true"] {
-  width: fit-content;
-  margin-inline: auto;
-}
-@media (max-width: 900px) {
-  .session-action-btn[data-retire-on-end="true"] { --retire-size: 44px; }
-}
-@media (max-width: 640px) {
-  .session-action-btn[data-retire-on-end="true"] { --retire-size: 40px; }
-}
+.app-shell[data-session-phase="ended"] .digital-human-call-copy { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .session-control-shell[data-ended="true"] .session-action-btn[data-retire-on-end="true"] { animation: none; }
   .call-view.avatar-runtime-only .digital-human-live-video { transition: none; }
   .avatar-startup-dialog button:hover { transform: none; }
 }

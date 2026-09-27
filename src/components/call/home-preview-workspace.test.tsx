@@ -380,6 +380,37 @@ describe("HomePreviewWorkspace", () => {
     expect(html).not.toContain("与 陪伴 对话");
   });
 
+  it("waits for the requested Avatar config before showing the center preview", () => {
+    const html = renderToStaticMarkup(<ProviderKeyGate><HomePreviewWorkspace
+      connected error={null} visualTheme="cloud" experienceMode="avatar"
+      avatarDisplayConfig={DEFAULT_AVATAR_DISPLAY_CONFIG} configLoading configReady={false}
+      reducedMotion onVisualThemeChange={noop} onExperienceModeChange={noop}
+      onAvatarDisplayConfigChange={noop} onStartSession={noop}
+    /></ProviderKeyGate>);
+
+    expect(html).not.toContain('alt="Shuchang 数字人预览"');
+    expect(html).not.toContain('aria-label="Shuchang 动作预览"');
+    expect(html).toContain("正在加载角色");
+  });
+
+  it("keeps a cached matching Avatar visible while returning to its role", () => {
+    const role: RoleRecord = {
+      role_id: "role-samantha", display_name: "萨曼莎", avatar_id: "avatar-samantha", avatar_image_url: null,
+      persona_id: null, persona_name: null, voice_provider: "bailian", voice_id: DEFAULT_TTS_VOICE,
+      enabled_modes: ["lip-sync"], default_mode: "lip-sync", default_selections: {},
+      memory_enabled: true, tool_ids: [], created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z", deleted_at: null,
+    };
+    const html = renderToStaticMarkup(<ProviderKeyGate><HomePreviewWorkspace
+      role={role} connected error={null} visualTheme="cloud" experienceMode="avatar"
+      avatarDisplayConfig={{ ...DEFAULT_AVATAR_DISPLAY_CONFIG, renderPath: "segmented", segmentedAvatarId: "avatar-samantha", segmentedDisplayName: "萨曼莎" }}
+      configLoading configReady={false} reducedMotion onVisualThemeChange={noop} onExperienceModeChange={noop}
+      onAvatarDisplayConfigChange={noop} onStartSession={noop}
+    /></ProviderKeyGate>);
+
+    expect(html).toContain('alt="萨曼莎 数字人预览"');
+  });
+
   it("loads protected local Avatar previews directly with the browser session", () => {
     expect(shouldLoadAvatarPreviewDirectly(
       "/api/avatars/avatar-8657be31-306e-428d-a013-7521e710ab6a/image",

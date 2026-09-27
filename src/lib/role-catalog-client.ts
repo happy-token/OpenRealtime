@@ -31,6 +31,8 @@ export async function createRole(input: {
   voiceProvider: "bailian" | "doubao";
   voiceId: string;
   voiceDialect?: RoleVoiceDialect;
+  asrProvider?: RoleRecord["asr_provider"];
+  llmProvider?: RoleRecord["llm_provider"];
   personaId: string | null;
   avatarId: string | null;
   enabledModes: RolePresentationMode[];
@@ -55,6 +57,8 @@ export async function saveRole(roleId: string, input: {
   voiceProvider: "bailian" | "doubao";
   voiceId: string;
   voiceDialect?: RoleVoiceDialect;
+  asrProvider?: RoleRecord["asr_provider"];
+  llmProvider?: RoleRecord["llm_provider"];
   personaId: string | null;
   avatarId: string | null;
   enabledModes: RolePresentationMode[];

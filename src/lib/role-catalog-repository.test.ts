@@ -17,6 +17,25 @@ async function temporaryRoot() {
 }
 
 describe("role catalog repository", () => {
+  it("persists role provider overrides and can return to provider defaults", async () => {
+    const root = await temporaryRoot();
+    const role = await createRole({
+      displayName: "供应商测试",
+      asrProvider: "dashscope",
+      llmProvider: "openai",
+    }, root);
+    expect(await findRole(role.role_id, root)).toMatchObject({
+      asr_provider: "dashscope",
+      llm_provider: "openai",
+    });
+
+    await updateRole(role.role_id, { asrProvider: null, llmProvider: null }, root);
+    expect(await findRole(role.role_id, root)).toMatchObject({
+      asr_provider: null,
+      llm_provider: null,
+    });
+  });
+
   it("prefers offline as the default when it is enabled and no mode was chosen", async () => {
     const root = await temporaryRoot();
     await createRole({ displayName: "离线角色", enabledModes: ["conversation", "offline"] }, root);

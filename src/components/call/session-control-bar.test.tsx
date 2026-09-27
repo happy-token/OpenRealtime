@@ -13,25 +13,11 @@ const handlers = {
   onStopReply: () => {},
 };
 
-describe("SessionControlBar ended state", () => {
-  it("keeps the original layout control and retires inactive buttons in place", () => {
-    const html = renderToStaticMarkup(<SessionControlBar
-      pageForm="fullscreen"
-      paused
-      captionsEnabled
-      ended
-      {...handlers}
-    />);
-    expect(html).toContain('data-ended="true"');
-    expect(html).toContain('aria-label="页面形态：全屏"');
-    expect(html.match(/data-retire-on-end="true"/g)).toHaveLength(5);
-    expect(html.match(/aria-hidden="true"/g)?.length).toBeGreaterThanOrEqual(5);
-    expect(html).not.toContain('aria-label="输入对话消息"');
-  });
-});
-
-
 describe("SessionControlBar active semantics", () => {
+  it("shows layout controls during an active call", () => {
+    const html = renderToStaticMarkup(<SessionControlBar pageForm="fullscreen" paused captionsEnabled {...handlers} />);
+    expect(html).toContain('aria-label="页面形态：全屏"');
+  });
   it("uses the keyboard control to focus persistent inputs outside fullscreen", () => {
     const sidecar = renderToStaticMarkup(<SessionControlBar pageForm="sidecar" paused={false} captionsEnabled {...handlers} />);
     const fullscreen = renderToStaticMarkup(<SessionControlBar pageForm="fullscreen" paused={false} captionsEnabled {...handlers} />);

@@ -18,6 +18,8 @@ export type PersonalRoleInput = {
   voiceProvider: "bailian" | "doubao";
   voiceId: string;
   voiceDialect?: RoleVoiceDialect;
+  asrProvider?: RoleRecord["asr_provider"];
+  llmProvider?: RoleRecord["llm_provider"];
   avatarId: string | null;
   personaId?: string | null;
   enabledModes: RolePresentationMode[];
@@ -111,6 +113,8 @@ export async function createPersonalRole(user: WebUser, input: PersonalRoleInput
       voice_provider: input.voiceProvider,
       voice_id: input.voiceId.trim(),
       voice_dialect: input.voiceDialect ?? "",
+      asr_provider: input.asrProvider ?? null,
+      llm_provider: input.llmProvider ?? null,
       memory_enabled: input.memoryEnabled,
       model_id: input.modelId?.trim() || null,
       tool_ids: input.toolIds ?? [],
@@ -144,6 +148,8 @@ export async function updatePersonalRole(user: WebUser, roleId: string, input: P
       voice_provider: input.voiceProvider,
       voice_id: input.voiceId.trim(),
       voice_dialect: input.voiceDialect ?? current.voice_dialect ?? "",
+      asr_provider: input.asrProvider === undefined ? current.asr_provider ?? null : input.asrProvider,
+      llm_provider: input.llmProvider === undefined ? current.llm_provider ?? null : input.llmProvider,
       memory_enabled: input.memoryEnabled,
       model_id: input.modelId === undefined ? current.model_id ?? null : input.modelId?.trim() || null,
       tool_ids: input.toolIds ?? current.tool_ids ?? [],
@@ -194,6 +200,8 @@ function validateInput(input: PersonalRoleInput) {
   if (input.voiceProvider !== "bailian" && input.voiceProvider !== "doubao") throw new Error("声音供应商无效");
   if (typeof input.voiceId !== "string" || !/^[A-Za-z0-9_-]{2,128}$/.test(input.voiceId.trim())) throw new Error("声音 ID 无效");
   if (input.voiceDialect !== undefined && !isRoleVoiceDialect(input.voiceDialect)) throw new Error("声音方言无效");
+  if (input.asrProvider !== undefined && input.asrProvider !== null && input.asrProvider !== "doubao" && input.asrProvider !== "dashscope") throw new Error("ASR 供应商无效");
+  if (input.llmProvider !== undefined && input.llmProvider !== null && input.llmProvider !== "deepseek" && input.llmProvider !== "openai") throw new Error("LLM 供应商无效");
   if (input.avatarId !== null && (typeof input.avatarId !== "string" || !/^avatar-[A-Za-z0-9-]{3,80}$/.test(input.avatarId))) throw new Error("数字人 ID 无效");
   if (input.personaId !== undefined && input.personaId !== null && (typeof input.personaId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$/.test(input.personaId))) throw new Error("人设 ID 无效");
   if (!Array.isArray(input.enabledModes) || input.enabledModes.length === 0 || input.enabledModes.length > 4 || input.enabledModes.some((mode) => !isRolePresentationMode(mode) || mode === "motion")) throw new Error("呈现方式无效");
@@ -215,6 +223,8 @@ function isStoredRole(value: unknown): value is StoredPersonalRole {
     && (role.voice_provider === "bailian" || role.voice_provider === "doubao")
     && typeof role.voice_id === "string" && typeof role.memory_enabled === "boolean"
     && (role.voice_dialect === undefined || isRoleVoiceDialect(role.voice_dialect))
+    && (role.asr_provider === undefined || role.asr_provider === null || role.asr_provider === "doubao" || role.asr_provider === "dashscope")
+    && (role.llm_provider === undefined || role.llm_provider === null || role.llm_provider === "deepseek" || role.llm_provider === "openai")
     && (role.model_id === undefined || role.model_id === null || typeof role.model_id === "string")
     && (role.tool_ids === undefined || (Array.isArray(role.tool_ids) && role.tool_ids.every((id) => typeof id === "string")))
     && (role.enabled_modes === undefined || (Array.isArray(role.enabled_modes) && role.enabled_modes.length > 0 && role.enabled_modes.every(isRolePresentationMode)))
