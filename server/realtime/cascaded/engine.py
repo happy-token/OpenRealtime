@@ -109,6 +109,7 @@ from server.realtime.protocol.events import (
     SpokenContentDelta,
     ToolRequested,
 )
+from server.realtime.provider_latency import ProviderLatencyObserver, TimedTtsSession
 from server.realtime.scope import conversation_scope
 from server.realtime.speech import (
     InMemorySpeechDeliveryStore,
@@ -150,6 +151,7 @@ class CascadedRealtimeEngine:
         pseudonymization_key: str | None = None,
         speech_deliveries: SpeechDeliveryStore | None = None,
         context_projector_factory: Callable[[], ModelContextProjector] | None = None,
+        provider_timing: ProviderLatencyObserver | None = None,
     ) -> None:
         if event_queue_size < 1:
             raise ValueError("event_queue_size must be positive")
@@ -174,6 +176,7 @@ class CascadedRealtimeEngine:
         self._context_projector_factory = (
             context_projector_factory or FullConversationContextProjector
         )
+        self._provider_timing = provider_timing
 
     async def open(
         self,
@@ -220,6 +223,7 @@ class CascadedRealtimeEngine:
                 asr=asr,
                 turn_manager=turn_manager,
                 event_queue_size=self._event_queue_size,
+                provider_timing=self._provider_timing,
             ),
             brain_provider.open(context=context),
             tts_provider.open(context=context),
@@ -241,6 +245,8 @@ class CascadedRealtimeEngine:
             )
             raise failure
         input_pipeline, brain, tts = opened
+        if self._provider_timing is not None:
+            tts = TimedTtsSession(tts, self._provider_timing, context)
         speech_deliveries = self._speech_deliveries or InMemorySpeechDeliveryStore()
         return CascadedRealtimeConversation(
             context=context,

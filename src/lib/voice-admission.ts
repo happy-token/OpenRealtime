@@ -2,19 +2,25 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { userDatabase, userTable } from "./user-db";
 import type { WebUser } from "./user-session";
 import type { PersonalKeyProvider } from "./user-provider-credentials";
+import type { ProviderCapability, ProviderScope } from "./provider-instances";
+import { isRoleRecordId } from "./role-records";
 
 type Source = "personal" | "platform";
 type SpeechProvider = "doubao" | "dashscope" | "bella";
+type SelectedInstance = { id: string; scope: ProviderScope; capability: ProviderCapability;
+  provider: string; model: string; base_url: string; display_name: string; key_version: string; enabled: boolean;
+  connection_status: "untested" | "passed" | "failed"; selection_scope?: ProviderScope };
 
 export interface VoiceAdmission {
   ticket: string;
   sources: {
-    asr: { provider: SpeechProvider; source: Source };
-    tts: { provider: SpeechProvider; source: Source };
-    llm: { provider: "deepseek" | "openai" | "custom" | "bella"; source: Source };
+    asr: { provider: SpeechProvider; source: Source; instanceName?: string };
+    tts: { provider: SpeechProvider; source: Source; instanceName?: string };
+    llm: { provider: "deepseek" | "openai" | "custom" | "bella"; source: Source; instanceName?: string };
     anam?: { provider: "anam"; source: Source };
   };
   deadline: string | null;
+  instances?: Partial<Record<ProviderCapability, string>>;
 }
 
 export class VoiceAdmissionError extends Error {
@@ -35,10 +41,10 @@ function positiveSetting(name: string, defaultValue: number, maximum: number): n
 
 function currentProviders(ttsChoice: unknown): { asr: SpeechProvider; tts: SpeechProvider } {
   const asrBackend = process.env.VOICEAGENT_ASR_BACKEND || "doubao-direct";
-  if (asrBackend !== "doubao-direct" && asrBackend !== "bella") {
+  if (asrBackend !== "doubao-direct") {
     throw new VoiceAdmissionError("configuration_invalid", "当前语音识别服务配置无效", 503);
   }
-  const asr: SpeechProvider = asrBackend === "bella" ? "bella" : "doubao";
+  const asr: SpeechProvider = "doubao";
   const defaultTts = process.env.VOICEAGENT_TTS_BACKEND === "bailian" ? "dashscope" : "doubao";
   const tts = ttsChoice === undefined ? defaultTts : ttsChoice;
   if (tts !== "doubao" && tts !== "dashscope") {
@@ -65,8 +71,11 @@ function ticketHash(ticket: string): string {
 }
 
 /** Reserve both platform speech capabilities in one PostgreSQL transaction. */
-export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknown, avatarProvider?: unknown): Promise<VoiceAdmission> {
+export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknown, avatarProvider?: unknown, roleId?: unknown): Promise<VoiceAdmission> {
   const providers = currentProviders(ttsChoice);
+  if (roleId !== undefined && roleId !== null && !isRoleRecordId(roleId)) {
+    throw new VoiceAdmissionError("configuration_invalid", "角色无效", 400);
+  }
   if (avatarProvider !== undefined && avatarProvider !== "anam") {
     throw new VoiceAdmissionError("configuration_invalid", "数字人服务无效", 400);
   }
@@ -77,6 +86,120 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
 
     const versions = new Map<PersonalKeyProvider, string>();
     let personalLlmProvider: "deepseek" | "openai" | undefined;
+    const selected = new Map<ProviderCapability, SelectedInstance>();
+    const selectedRows = await client.query<SelectedInstance>(
+        `SELECT i.id, i.scope, i.capability, i.provider, i.model, i.base_url, i.display_name, i.key_version,
+                s.scope AS selection_scope,
+                i.enabled, i.connection_status
+         FROM ${userTable("provider_selections")} s
+         JOIN ${userTable("provider_instances")} i ON i.id = s.instance_id
+         WHERE (($3::boolean AND s.scope = 'personal' AND s.issuer = $1 AND s.subject = $2)
+           OR (s.scope = 'platform' AND s.issuer = '' AND s.subject = ''))
+           AND (($3::boolean AND i.scope = 'personal' AND i.issuer = $1 AND i.subject = $2)
+             OR i.scope = 'platform')
+         ORDER BY CASE WHEN s.scope = 'personal' THEN 0 ELSE 1 END
+         FOR SHARE OF i`,
+        [user?.issuer ?? "", user?.subject ?? "", Boolean(user)],
+      );
+    const environmentRows = await client.query<{ capability: ProviderCapability; provider: string; scope: ProviderScope }>(
+      `SELECT e.capability, e.env_provider AS provider, e.scope
+       FROM ${userTable("provider_selections")} e
+       WHERE e.env_provider IS NOT NULL
+         AND (($3::boolean AND e.scope = 'personal' AND e.issuer = $1 AND e.subject = $2)
+           OR (e.scope = 'platform' AND e.issuer = '' AND e.subject = ''))`,
+      [user?.issuer ?? "", user?.subject ?? "", Boolean(user)],
+    );
+    const choices = new Map<ProviderCapability, { priority: number; instance?: SelectedInstance; environment?: string }>();
+    for (const row of selectedRows.rows) {
+      const priority = (row.selection_scope ?? row.scope) === "personal" ? 0 : 1;
+      if (!choices.has(row.capability) || priority < choices.get(row.capability)!.priority) {
+        choices.set(row.capability, { priority, instance: row });
+      }
+    }
+    for (const row of environmentRows.rows) {
+      const priority = row.scope === "personal" ? 0 : 1;
+      if (!choices.has(row.capability) || priority < choices.get(row.capability)!.priority) {
+        choices.set(row.capability, { priority, environment: row.provider });
+      }
+    }
+    if (user && roleId) {
+      const roleSelection = await client.query<{ target: string }>(
+        `SELECT target FROM ${userTable("role_tts_selections")}
+         WHERE issuer = $1 AND subject = $2 AND role_id = $3`,
+        [user.issuer, user.subject, roleId],
+      );
+      const target = roleSelection.rows[0]?.target;
+      if (target?.startsWith("env:")) {
+        const provider = target.slice(4);
+        if (provider !== providers.tts || !platformKey(provider as SpeechProvider)) {
+          throw new VoiceAdmissionError("configuration_invalid", "角色选择的 TTS 配置与音色不一致或已不可用", 409);
+        }
+        choices.set("tts", { priority: -1, environment: provider });
+      } else if (target) {
+        const roleInstance = await client.query<SelectedInstance>(
+          `SELECT id, scope, capability, provider, model, base_url, display_name, key_version,
+                  enabled, connection_status
+           FROM ${userTable("provider_instances")} i
+           WHERE id = $1::uuid AND capability = 'tts'
+             AND ((scope = 'personal' AND issuer = $2 AND subject = $3)
+               OR (scope = 'platform' AND issuer = '' AND subject = ''))
+           FOR SHARE OF i`,
+          [target, user.issuer, user.subject],
+        );
+        const row = roleInstance.rows[0];
+        if (!row || row.provider !== providers.tts || !row.enabled || row.connection_status !== "passed") {
+          throw new VoiceAdmissionError("configuration_invalid", "角色选择的 TTS 配置与音色不一致或已不可用", 409);
+        }
+        choices.set("tts", { priority: -1, instance: row });
+      }
+    }
+    const environmentSelected = new Map<ProviderCapability, string>();
+    for (const [capability, choice] of choices) {
+      if (choice.environment) {
+        if (!platformKey(choice.environment as SpeechProvider)) {
+          throw new VoiceAdmissionError("credential_missing", "已选平台供应商缺少 API Key", 503);
+        }
+        environmentSelected.set(capability, choice.environment);
+        continue;
+      }
+      const row = choice.instance!;
+      if (!row.enabled) throw new VoiceAdmissionError("configuration_invalid", "已选供应商实例已停用，请重新选择", 409);
+      if (row.connection_status !== "passed") {
+        throw new VoiceAdmissionError("configuration_invalid", "已选供应商实例未通过实时能力测试，请重新测试", 409);
+      }
+      selected.set(capability, row);
+    }
+    const selectedAsr = selected.get("asr");
+    const selectedLlm = selected.get("llm");
+    if (selectedAsr || environmentSelected.has("asr")) {
+      providers.asr = (selectedAsr?.provider ?? environmentSelected.get("asr")) as SpeechProvider;
+    }
+    if (selected.has("tts") || environmentSelected.has("tts")) {
+      const chosenTts = selected.get("tts")?.provider ?? environmentSelected.get("tts")!;
+      if (ttsChoice !== undefined && ttsChoice !== chosenTts) {
+        // The global TTS selection is only a default. A role's voice always fixes
+        // its provider; bind a tested instance of that provider when available.
+        selected.delete("tts");
+        environmentSelected.delete("tts");
+        const compatible = await client.query<SelectedInstance>(
+          `SELECT id, scope, capability, provider, model, base_url, display_name, key_version,
+                  enabled, connection_status
+           FROM ${userTable("provider_instances")}
+           WHERE capability = 'tts' AND provider = $3 AND enabled = true
+             AND connection_status = 'passed'
+             AND (($4::boolean AND scope = 'personal' AND issuer = $1 AND subject = $2)
+               OR (scope = 'platform' AND issuer = '' AND subject = ''))
+           ORDER BY CASE WHEN scope = 'personal' THEN 0 ELSE 1 END, updated_at DESC, id
+           LIMIT 1 FOR SHARE`,
+          [user?.issuer ?? "", user?.subject ?? "", ttsChoice, Boolean(user)],
+        );
+        if (compatible.rows[0]) selected.set("tts", compatible.rows[0]);
+        providers.tts = ttsChoice as SpeechProvider;
+      } else {
+        providers.tts = chosenTts as SpeechProvider;
+      }
+    }
+    const selectedTts = selected.get("tts");
     if (user) {
       const result = await client.query<{ provider: PersonalKeyProvider; key_version: string }>(
         `SELECT provider, key_version FROM ${userTable("user_provider_credentials")}
@@ -89,12 +212,14 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
     }
     const sourceFor = (provider: SpeechProvider | "deepseek" | "openai" | "custom" | "anam"): Source =>
       versions.has(provider as PersonalKeyProvider) ? "personal" : "platform";
-    const asrSource = sourceFor(providers.asr);
-    const ttsSource = sourceFor(providers.tts);
-    const llmProvider = personalLlmProvider
+    const asrSource = selected.get("asr")?.scope ?? (environmentSelected.has("asr") ? "platform" : sourceFor(providers.asr));
+    const ttsSource = selected.get("tts")?.scope ?? (environmentSelected.has("tts") ? "platform" : sourceFor(providers.tts));
+    const llmProvider = (selectedLlm?.provider as "deepseek" | "openai" | undefined)
+      ?? (environmentSelected.get("llm") as "deepseek" | "openai" | undefined) ?? personalLlmProvider
       ?? (platformKey("custom") ? "custom" : platformKey("deepseek") ? "deepseek"
         : platformKey("openai") ? "openai" : "bella");
-    const llmSource = llmProvider === "deepseek" || llmProvider === "openai" ? sourceFor(llmProvider) : "platform";
+    const llmSource = selectedLlm?.scope ?? (environmentSelected.has("llm") ? "platform"
+      : llmProvider === "deepseek" || llmProvider === "openai" ? sourceFor(llmProvider) : "platform");
     const anamSource = avatarProvider === "anam" ? sourceFor("anam") : null;
     for (const [capability, provider, source] of [
       ["语音识别", providers.asr, asrSource],
@@ -102,7 +227,9 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
       ["对话模型", llmProvider, llmSource],
       ...(anamSource ? [["实时数字人", "anam", anamSource] as const] : []),
     ] as const) {
-      if (source === "platform" && !platformKey(provider)) {
+      const instanceCapability = capability === "语音识别" ? "asr" : capability === "语音合成" ? "tts"
+        : capability === "对话模型" ? "llm" : null;
+      if (source === "platform" && !(instanceCapability && selected.has(instanceCapability)) && !platformKey(provider)) {
         throw new VoiceAdmissionError("credential_missing", `${capability}尚未配置可用的 API Key`, 503);
       }
     }
@@ -125,21 +252,29 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
     const limited = !user || asrSource === "platform" || ttsSource === "platform";
     const durationSeconds = limited ? positiveSetting("VOICEAGENT_PLATFORM_VOICE_SESSION_SECONDS", 180, 3600) : null;
     const ticket = randomBytes(32).toString("base64url");
-    const personalProviders = [...new Set([providers.asr, providers.tts, llmProvider, ...(anamSource ? ["anam"] : [])]
-      .filter((provider) => versions.has(provider as PersonalKeyProvider)))];
+    const personalProviders = [...new Set([
+      ...(!selected.has("asr") && !environmentSelected.has("asr") ? [providers.asr] : []),
+      ...(!selected.has("tts") && !environmentSelected.has("tts") ? [providers.tts] : []),
+      ...(!selected.has("llm") && !environmentSelected.has("llm") ? [llmProvider] : []),
+      ...(anamSource ? ["anam"] : []),
+    ].filter((provider) => versions.has(provider as PersonalKeyProvider)))];
     const bindingVersions = Object.fromEntries(personalProviders.map((provider) =>
       [provider, versions.get(provider as PersonalKeyProvider)]));
+    const instanceBindings = Object.fromEntries([...selected].map(([capability, row]) =>
+      [capability, { id: row.id, scope: row.scope, version: row.key_version,
+        provider: row.provider, model: row.model }]));
     const deadline = durationSeconds ? new Date(Date.now() + durationSeconds * 1000).toISOString() : null;
     await client.query(
       `INSERT INTO ${userTable("voice_admissions")}
        (ticket_hash, issuer, subject, guest_id, asr_provider, asr_source,
         tts_provider, tts_source, llm_provider, llm_source, anam_source, personal_providers,
-        credential_versions, connect_by, deadline_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-               now() + interval '60 seconds', $14, $15)`,
+        credential_versions, provider_instances, connect_by, deadline_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               now() + interval '60 seconds', $15, $16)`,
       [ticketHash(ticket), user?.issuer ?? null, user?.subject ?? null,
         user ? null : randomUUID(), providers.asr, asrSource, providers.tts, ttsSource,
         llmProvider, llmSource, anamSource, personalProviders, JSON.stringify(bindingVersions),
+        JSON.stringify(instanceBindings),
         deadline,
         deadline ? new Date(Date.parse(deadline) + 30_000).toISOString()
           : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()],
@@ -148,12 +283,16 @@ export async function admitVoiceSession(user: WebUser | null, ttsChoice?: unknow
     return {
       ticket,
       sources: {
-        asr: { provider: providers.asr, source: asrSource },
-        tts: { provider: providers.tts, source: ttsSource },
-        llm: { provider: llmProvider, source: llmSource },
+        asr: { provider: providers.asr, source: asrSource,
+          ...(selectedAsr ? { instanceName: selectedAsr.display_name } : {}) },
+        tts: { provider: providers.tts, source: ttsSource,
+          ...(selectedTts ? { instanceName: selectedTts.display_name } : {}) },
+        llm: { provider: llmProvider, source: llmSource,
+          ...(selectedLlm ? { instanceName: selectedLlm.display_name } : {}) },
         ...(anamSource ? { anam: { provider: "anam" as const, source: anamSource } } : {}),
       },
       deadline,
+      instances: Object.fromEntries([...selected].map(([capability, row]) => [capability, row.id])),
     };
   } catch (error) {
     await client.query("ROLLBACK");

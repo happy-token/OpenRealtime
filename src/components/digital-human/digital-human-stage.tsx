@@ -37,6 +37,7 @@ interface DigitalHumanStageProps {
   onAmbientColorChange?: (color: string | null) => void;
   publicVoiceEnabled?: boolean;
   ttsProvider?: TtsProvider;
+  roleId?: string;
   onVoiceAdmission?: (admission: VoiceAdmission | null) => void;
 }
 
@@ -76,6 +77,7 @@ function RenderedDigitalHumanStage({
   onAmbientColorChange,
   publicVoiceEnabled = false,
   ttsProvider = "bailian",
+  roleId,
   onVoiceAdmission,
 }: DigitalHumanStageProps) {
   const ensureProviderKey = useProviderKeyGate();
@@ -296,6 +298,7 @@ function RenderedDigitalHumanStage({
             body: JSON.stringify({
               ttsProvider: ttsProvider === "bailian" ? "dashscope" : "doubao",
               avatarProvider: "anam",
+              ...(roleId ? { roleId } : {}),
             }),
             cache: "no-store",
             signal: requestController.signal,
@@ -393,6 +396,7 @@ function RenderedDigitalHumanStage({
     segmentedRuntime?.displayName,
     publicVoiceEnabled,
     ttsProvider,
+    roleId,
     onVoiceAdmission,
   ]);
 

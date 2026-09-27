@@ -118,7 +118,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           try { await pollLocalTalking(endpoint, method, controller.signal); }
           finally { setBusy(false); }
         }
-        if (payload.job.state === "ready_for_review" && (previewBeforeSave || method === "lipforcing") && payload.job.variant?.video_url) {
+        if (payload.job.state === "ready_for_review" && (previewBeforeSave || method === "lipforcing" || apiRoot === "/api/user/avatars") && payload.job.variant?.video_url) {
           setPendingReview({ jobId: payload.job.id, sourceId: idle.avatar_action_id, sourceUrl: idle.video_url!, videoUrl: payload.job.variant.video_url, method });
           setPreview("talking");
           setNotice("口型对齐已生成，请预览后确认导入。");
@@ -231,7 +231,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "读取生成进度失败");
       if (payload.job?.state === "failed") throw new Error(payload.job.error || `${method} 生成失败`);
-      if (payload.job?.state === "ready_for_review" && (previewBeforeSave || method === "lipforcing") && payload.job.variant?.video_url) {
+      if (payload.job?.state === "ready_for_review" && (previewBeforeSave || method === "lipforcing" || apiRoot === "/api/user/avatars") && payload.job.variant?.video_url) {
         setPendingReview({ jobId: payload.job.id, sourceId: payload.job.actionId, sourceUrl: payload.job.sourceUrl, videoUrl: payload.job.variant.video_url, method });
         setPreview("talking");
         setNotice("口型对齐已生成，请预览后确认导入。");
@@ -298,9 +298,9 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           if (lipForcingAudio) body.set("audio", lipForcingAudio);
           else if (floating && !roleId) body.set("audioSource", "builtin");
         }
-        if (method === "musetalk" && museTalkAudio) {
+        if (method === "musetalk" && (museTalkAudio || apiRoot === "/api/user/avatars")) {
           body = new FormData();
-          body.set("audio", museTalkAudio);
+          if (museTalkAudio) body.set("audio", museTalkAudio);
         }
         const response = await fetch(`${endpoint}${previewBeforeSave ? "?preview=true" : ""}`, { method: "POST", body, signal: controller.signal });
         const payload = await response.json();
@@ -407,7 +407,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
               }} />
           </div>
           {variant ? <div className={styles.lightweightMaterialStatus}><span>{currentReview || (previewBeforeSave && generatedVariant?.method === "minimax") ? "待确认导入" : "已配对 · 过渡待验证"}</span><button type="button" className={styles.lightweightButton} onClick={() => setPreview("talking")}>预览</button></div> : !floating ? <p className={styles.lightweightHint}>此底片尚无当前方式的口型对齐。</p> : null}
-          {(previewBeforeSave || draft.method === "lipforcing") && (currentReview || (generatedVariant?.method === "minimax" && readRecoverableGenerationTask(avatar.avatar_id, "talking")?.taskId)) && <button type="button" className={styles.lightweightButton} disabled={busy} onClick={() => void acceptPreview()}>确认导入口型对齐</button>}
+          {(previewBeforeSave || draft.method === "lipforcing" || apiRoot === "/api/user/avatars") && (currentReview || (generatedVariant?.method === "minimax" && readRecoverableGenerationTask(avatar.avatar_id, "talking")?.taskId)) && <button type="button" className={styles.lightweightButton} disabled={busy} onClick={() => void acceptPreview()}>确认导入口型对齐</button>}
           {floating ? <div className={styles.floatingAudioOptions}>
             <span>音频 · {draft.method === "wav2lip" && wav2lipAudio ? wav2lipAudio.name : draft.method === "lipforcing" && lipForcingAudio ? lipForcingAudio.name : draft.method === "musetalk" && museTalkAudio ? museTalkAudio.name : "内置参考音频"}</span>
             <details><summary>上传音频（可选）</summary><input aria-label="上传参考音频" type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/mpeg,audio/mp4" disabled={busy} onChange={event => draft.method === "wav2lip" ? setWav2lipAudio(event.target.files?.[0] || null) : draft.method === "lipforcing" ? setLipForcingAudio(event.target.files?.[0] || null) : setMuseTalkAudio(event.target.files?.[0] || null)} /></details>

@@ -15,11 +15,14 @@ const SERVICES: Array<{ kind: Kind; name: string; purpose: string; hint: string 
   { kind: "wav2lip", name: "Wav2Lip", purpose: "口型动作", hint: "非商业用途的口型对齐" },
   { kind: "lipforcing", name: "Lip Forcing", purpose: "口型动作", hint: "GPU 口型生成服务" },
 ];
+const PERSONAL_SERVICES = SERVICES.filter(({ kind }) => kind !== "liveportrait");
 
 const EMPTY: ServiceDraft = { url: "", tokenConfigured: false, token: "", clearToken: false, busy: null, result: "", ready: null };
 const initial = () => Object.fromEntries(SERVICES.map(({ kind }) => [kind, { ...EMPTY }])) as Record<Kind, ServiceDraft>;
 
-export function ModelServicesSettings() {
+export function ModelServicesSettings({ scope = "platform" }: { scope?: "personal" | "platform" }) {
+  const services = scope === "personal" ? PERSONAL_SERVICES : SERVICES;
+  const endpoint = scope === "personal" ? "/api/user/model-services" : "/api/settings/model-services";
   const [drafts, setDrafts] = useState<Record<Kind, ServiceDraft>>(initial);
   const [loading, setLoading] = useState(true);
   const [needsAdmin, setNeedsAdmin] = useState(false);
@@ -27,19 +30,19 @@ export function ModelServicesSettings() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/settings/model-services", { signal: controller.signal, cache: "no-store" })
+    void fetch(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (response.status === 401) { setNeedsAdmin(true); return; }
         const body = await response.json() as { services?: Record<Kind, ServiceView>; error?: string };
         if (!response.ok || !body.services) throw new Error(body.error || "读取服务配置失败");
-        if (!controller.signal.aborted) setDrafts(Object.fromEntries(SERVICES.map(({ kind }) => [kind, {
+        if (!controller.signal.aborted) setDrafts(Object.fromEntries(services.map(({ kind }) => [kind, {
           ...EMPTY, url: body.services?.[kind]?.url || "", tokenConfigured: Boolean(body.services?.[kind]?.tokenConfigured),
         }])) as Record<Kind, ServiceDraft>);
       })
       .catch((error) => { if (!controller.signal.aborted) setPageError(error instanceof Error ? error.message : "读取服务配置失败"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, []);
+  }, [endpoint, services]);
 
   function update(kind: Kind, patch: Partial<ServiceDraft>) {
     setDrafts((current) => ({ ...current, [kind]: { ...current[kind], ...patch } }));
@@ -50,7 +53,7 @@ export function ModelServicesSettings() {
     update(kind, { busy: action, result: "", ready: null });
     try {
       const body = { kind, url: draft.url.trim(), ...(draft.token ? { token: draft.token } : draft.clearToken ? { token: "" } : {}) };
-      const response = await fetch(action === "save" ? "/api/settings/model-services" : "/api/settings/model-services/test", {
+      const response = await fetch(action === "save" ? endpoint : `${endpoint}/test`, {
         method: action === "save" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
@@ -58,7 +61,7 @@ export function ModelServicesSettings() {
       if (!response.ok) throw new Error(result.error || "操作失败");
       update(kind, action === "save" ? {
         url: result.url || "", tokenConfigured: Boolean(result.tokenConfigured), token: "", clearToken: false,
-        result: "已保存。生成时将优先使用此地址。", ready: null, busy: null,
+        result: scope === "personal" ? "已保存，自己的口型生成任务将使用此服务。" : "已保存。生成时将优先使用此地址。", ready: null, busy: null,
       } : { result: result.message || "连接测试完成", ready: Boolean(result.ready), busy: null });
     } catch (error) {
       update(kind, { result: error instanceof Error ? error.message : "操作失败", ready: false, busy: null });
@@ -66,19 +69,19 @@ export function ModelServicesSettings() {
   }
 
   if (loading) return <div className={styles.notice}><LoaderCircle className={styles.spin} />正在读取服务配置…</div>;
-  if (needsAdmin) return <div className={styles.notice}><CircleHelp />只有管理员可以配置模型服务。<Link href="/admin">前往管理员登录</Link></div>;
+  if (needsAdmin) return scope === "platform" ? null : <div className={styles.notice}><CircleHelp />登录后可配置个人模型服务。<Link href="/api/user/login?next=/settings/services">登录</Link></div>;
   if (pageError) return <div className={styles.notice}>{pageError}</div>;
 
   return <div className={styles.layout}>
     <div className={styles.guide}>
       <PlugZap aria-hidden="true" />
-      <div><strong>在这里连接独立模型服务</strong><span>填写应用服务器能访问到的 URL，保存后生成任务将使用对应服务。连接测试不会提交生成任务。</span></div>
+      <div><strong>{scope === "personal" ? "连接个人口型模型服务" : "连接平台模型服务"}</strong><span>{scope === "personal" ? "服务必须使用运营方允许的 HTTPS 地址；只有你自己的生成任务会使用这些配置。" : "填写应用服务器能访问到的 URL，保存后生成任务将使用对应服务。"}连接测试不会提交生成任务。</span></div>
     </div>
-    <div className={styles.grid}>{SERVICES.map(({ kind, name, purpose, hint }) => {
+    <div className={styles.grid}>{services.map(({ kind, name, purpose, hint }) => {
       const draft = drafts[kind];
       return <section className={styles.card} key={kind} aria-label={`${name} 服务配置`}>
-        <div className={styles.heading}><div><small>{purpose}</small><h2>{name}</h2><p>{hint}</p></div><span className={draft.url ? styles.configured : styles.unconfigured}>{draft.url ? "已配置" : "未配置"}</span></div>
-        <label className={styles.field}><span>服务 URL</span><input type="url" inputMode="url" autoComplete="url" placeholder={`http://127.0.0.1:${kind === "lipforcing" ? "18190" : kind === "musetalk" ? "18191" : kind === "wav2lip" ? "18192" : "18193"}`} value={draft.url} onChange={(event) => update(kind, { url: event.target.value, result: "", ready: null })} /></label>
+        <div className={styles.heading}><div><small>{purpose}</small><h3>{name}</h3><p>{hint}</p></div><span className={draft.url ? styles.configured : styles.unconfigured}>{draft.url ? "已配置" : "未配置"}</span></div>
+        <label className={styles.field}><span>服务 URL</span><input type="url" inputMode="url" autoComplete="url" placeholder={scope === "personal" ? "https://models.example.com" : `http://127.0.0.1:${kind === "lipforcing" ? "18190" : kind === "musetalk" ? "18191" : kind === "wav2lip" ? "18192" : "18193"}`} value={draft.url} onChange={(event) => update(kind, { url: event.target.value, result: "", ready: null })} /></label>
         <details className={styles.advanced}><summary>访问令牌（可选）{draft.tokenConfigured ? " · 已保存" : ""}</summary>
           <label className={styles.field}><span>令牌只保存在服务器，不会在页面回显</span><input type="password" autoComplete="new-password" placeholder={draft.tokenConfigured ? "留空保持现有令牌" : "未启用令牌可留空"} value={draft.token} onChange={(event) => update(kind, { token: event.target.value, clearToken: false })} /></label>
           {draft.tokenConfigured && <label className={styles.clearToken}><input type="checkbox" checked={draft.clearToken} onChange={(event) => update(kind, { clearToken: event.target.checked, token: "" })} />清除已保存的令牌</label>}
@@ -89,6 +92,6 @@ export function ModelServicesSettings() {
         </div>{draft.result && <p className={draft.ready === false ? styles.error : styles.result}>{draft.ready === true && <Check />}{draft.result}</p>}</div>
       </section>;
     })}</div>
-    <p className={styles.note}>提示：这里填写的是模型服务地址，不是 Docker 容器内的地址。若应用也运行在容器中，请使用容器网络中可访问的服务名或代理地址。</p>
+    <p className={styles.note}>{scope === "personal" ? "个人配置不会覆盖平台地址或其他用户的配置；未获允许运营方来源的服务无法保存。" : "提示：这里填写的是模型服务地址，不是 Docker 容器内的地址。若应用也运行在容器中，请使用容器网络中可访问的服务名或代理地址。"}</p>
   </div>;
 }

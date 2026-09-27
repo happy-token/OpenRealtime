@@ -1,10 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { KeyRound, LogIn, MemoryStick, Palette, Server, Settings2, UserRound } from "lucide-react";
+import { KeyRound, LogIn, MemoryStick, Palette, PlugZap, Settings2, UserRound } from "lucide-react";
 import { accountIssuerLabel, accountLoginHref, useCurrentUser } from "@/hooks/use-current-user";
-import { ModelServicesSettings } from "./model-services-settings";
-import { PersonalLipsyncServiceSettings } from "./personal-lipsync-service-settings";
 import styles from "./account-settings-screen.module.css";
 
 function ProfileCard() {
@@ -19,20 +17,19 @@ function ProfileCard() {
   </div>;
 }
 
-export function AccountSettingsScreen({ section }: { section: "profile" | "services" | "settings" }) {
-  const services = section === "services";
+export function AccountSettingsScreen({ section }: { section: "profile" | "settings" }) {
   const settings = section === "settings";
-  const title = settings ? "设置" : services ? "模型服务" : "个人资料";
+  const title = settings ? "设置" : "个人资料";
   return <div className={styles.page}>
     <h1 className={styles.pageTitle}>{title}</h1>
-    <p className={styles.intro}>{settings ? "管理供应商、外观、Memory 与对话偏好。" : services ? "配置独立模型服务地址，并测试连接状态。" : "管理当前用户信息与账户入口。"}</p>
+    <p className={styles.intro}>{settings ? "管理供应商、模型服务、外观、Memory 与对话偏好。" : "管理当前用户信息与账户入口。"}</p>
     {settings ? <div className={styles.rows}>
-      <Link href="/settings/providers"><KeyRound /><span><strong>供应商</strong><small>管理语音、模型和个人 API Key</small></span></Link>
+      <Link href="/settings/providers"><KeyRound /><span><strong>供应商</strong><small>管理 ASR、TTS 与 LLM 配置</small></span></Link>
+      <Link href="/settings/services"><PlugZap /><span><strong>模型服务</strong><small>配置动作生成和口型对齐服务</small></span></Link>
       <Link href="/settings/appearance"><Palette /><span><strong>外观</strong><small>Orb、界面主题、动态和工作台玻璃效果</small></span></Link>
       <Link href="/settings/memory"><MemoryStick /><span><strong>Memory 与隐私</strong><small>查看角色记忆配置与数据边界</small></span></Link>
       <Link href="/settings/advanced"><Settings2 /><span><strong>高级配置</strong><small>对话设备与运行参数</small></span></Link>
       <Link href="/settings/profile"><UserRound /><span><strong>个人资料</strong><small>查看当前账户信息</small></span></Link>
-      <Link href="/settings/services"><Server /><span><strong>模型服务</strong><small>配置动作生成与口型服务 URL</small></span></Link>
-    </div> : services ? <><PersonalLipsyncServiceSettings /><ModelServicesSettings /></> : <ProfileCard />}
+    </div> : <ProfileCard />}
   </div>;
 }

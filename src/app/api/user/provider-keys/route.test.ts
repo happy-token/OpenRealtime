@@ -46,7 +46,8 @@ describe("account API key settings", () => {
     const body = await status.text();
     expect(body).not.toContain("personal-secret-key");
     expect(body).not.toContain("platform-secret-key");
-    expect(JSON.parse(body).credentials[0]).toMatchObject({ provider: "anam", suffix: "-key" });
+    expect(JSON.parse(body).credentials[0]).toMatchObject({ provider: "anam", suffix: "-key",
+      platformConfigured: true, platformSuffix: "-key" });
     const saved = await POST(request("POST"));
     expect(saved.status).toBe(200);
     expect(store.save).toHaveBeenCalledWith(user, "anam", "personal-secret-key");

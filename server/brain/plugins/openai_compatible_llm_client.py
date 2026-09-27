@@ -22,6 +22,7 @@ from http.client import HTTPResponse
 from typing import TYPE_CHECKING, Any, Literal
 
 from server.brain.llm_clients import ChatMessage
+from server.observability.telemetry import TelemetryKind
 
 if TYPE_CHECKING:
     from server.observability.telemetry import ProviderCallSpan, SessionTelemetry
@@ -65,6 +66,8 @@ class OpenAiCompatibleLlmClient:
         timeout_s: float = 15.0,
         telemetry: SessionTelemetry | None = None,
         provider_name: str = "openai-compatible",
+        instance_id: str | None = None,
+        config_version: str | None = None,
     ) -> None:
         if not provider_name:
             raise ValueError("provider_name must be non-empty")
@@ -93,6 +96,8 @@ class OpenAiCompatibleLlmClient:
         self._timeout_s = timeout_s
         self._telemetry = telemetry
         self._provider_name = provider_name
+        self._instance_id = instance_id
+        self._config_version = config_version
 
     def select_model(self, model: str | None) -> None:
         """Select an operator-configured model for future requests in this session."""
@@ -149,6 +154,7 @@ class OpenAiCompatibleLlmClient:
         stopped = threading.Event()
         response_lock = threading.Lock()
         response_holder: list[HTTPResponse] = []
+        request_started_ns: list[int] = []
 
         def register_response(response: HTTPResponse) -> None:
             with response_lock:
@@ -174,6 +180,7 @@ class OpenAiCompatibleLlmClient:
                 messages,
                 max_tokens=max_tokens,
                 on_response=register_response,
+                on_request_start=request_started_ns.append,
             )
             try:
                 for chunk in iterator:
@@ -204,6 +211,7 @@ class OpenAiCompatibleLlmClient:
         )
         async with provider_scope as provider_call:
             producer = asyncio.create_task(asyncio.to_thread(produce))
+            first_text_recorded = False
             try:
                 while True:
                     item = await queue.get()
@@ -215,6 +223,17 @@ class OpenAiCompatibleLlmClient:
                     assert isinstance(item, str)
                     if provider_call is not None:
                         provider_call.mark_first_response()
+                    if item.strip() and not first_text_recorded and request_started_ns:
+                        first_text_recorded = True
+                        if self._telemetry is not None:
+                            self._telemetry.record(
+                                "llm.request_to_first_text",
+                                kind=TelemetryKind.SPAN,
+                                duration_ms=(time.monotonic_ns() - request_started_ns[0]) / 1_000_000,
+                                attributes={"provider": self._provider_name, "model": self._model,
+                                            **({"instance_id": self._instance_id} if self._instance_id else {}),
+                                            **({"config_version": self._config_version} if self._config_version else {})},
+                            )
                     yield item
             finally:
                 stopped.set()
@@ -235,6 +254,7 @@ class OpenAiCompatibleLlmClient:
         *,
         max_tokens: int | None = None,
         on_response: Callable[[HTTPResponse], None] | None = None,
+        on_request_start: Callable[[int], None] | None = None,
     ) -> Iterator[str]:
         body_dict, endpoint = self._request_payload(messages, max_tokens=max_tokens)
         body = json.dumps(body_dict).encode("utf-8")
@@ -249,6 +269,8 @@ class OpenAiCompatibleLlmClient:
         )
         started_at = time.monotonic()
         try:
+            if on_request_start is not None:
+                on_request_start(time.monotonic_ns())
             with urllib.request.urlopen(request, timeout=self._timeout_s) as response:
                 if on_response is not None:
                     on_response(response)

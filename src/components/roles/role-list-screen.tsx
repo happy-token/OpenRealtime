@@ -8,7 +8,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createRole, deleteRole, fetchRoles } from "@/lib/role-catalog-client";
 import { ROLE_MODE_LABELS, type RoleRecord } from "@/lib/role-records";
 import { conversationHref } from "@/components/workspace/workspace-shell";
-import { DEFAULT_TTS_VOICE } from "@/components/drawer/voice-options";
+import { BAILIAN_TTS_VOICE_OPTIONS, DEFAULT_TTS_VOICE } from "@/components/drawer/voice-options";
+import { selectedDefaultTtsProvider, type ProviderVoiceCatalog } from "@/lib/default-role-voice";
 import styles from "./role-list-screen.module.css";
 
 export function RoleListScreen() {
@@ -31,10 +32,15 @@ export function RoleListScreen() {
     setCreating(true);
     setError("");
     try {
+      const response = await fetch("/api/provider-instances", { cache: "no-store" });
+      if (!response.ok) throw new Error("当前声音配置读取失败，请稍后重试");
+      const selectedProvider = selectedDefaultTtsProvider(await response.json() as ProviderVoiceCatalog);
+      if (!selectedProvider) throw new Error("当前声音配置不可用，请先到供应商页面选择并测试 TTS 配置");
+      const voiceProvider = selectedProvider === "dashscope" ? "bailian" : "doubao";
       const created = await createRole({
         displayName: "未命名角色",
-        voiceProvider: "doubao",
-        voiceId: DEFAULT_TTS_VOICE,
+        voiceProvider,
+        voiceId: voiceProvider === "bailian" ? BAILIAN_TTS_VOICE_OPTIONS[0].value : DEFAULT_TTS_VOICE,
         voiceDialect: "",
         personaId: null,
         avatarId: null,

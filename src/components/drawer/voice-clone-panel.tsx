@@ -79,6 +79,7 @@ export function VoiceClonePanel({
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [catalogAvailable, setCatalogAvailable] = useState(false);
   const [configured, setConfigured] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [catalogNotice, setCatalogNotice] = useState("");
   const [localComposerOpen, setLocalComposerOpen] = useState(false);
   const [sourceKind, setSourceKind] = useState<SourceKind>("recording");
@@ -117,17 +118,20 @@ export function VoiceClonePanel({
       const response = await fetch("/api/voice-clones", { cache: "no-store" });
       const payload = await readJsonResponse<{
         configured?: boolean;
+        canCreate?: boolean;
         activeVoiceId?: string | null;
         voices?: ClonedVoice[];
         error?: string;
       }>(response, "克隆音色目录请求失败");
       setCatalogAvailable(!payload.error);
       setConfigured(Boolean(payload.configured));
+      setCanCreate(Boolean(payload.canCreate));
       setActiveVoiceId(typeof payload.activeVoiceId === "string" ? payload.activeVoiceId : null);
       setVoices(Array.isArray(payload.voices) ? payload.voices : []);
       setCatalogNotice(payload.error || "");
     } catch {
       setConfigured(false);
+      setCanCreate(false);
       setCatalogAvailable(false);
       setActiveVoiceId(null);
       setVoices([]);
@@ -392,7 +396,7 @@ export function VoiceClonePanel({
           ref={composerTriggerRef}
           type="button"
           className="voice-clone-add"
-          disabled={provider !== "bailian"}
+          disabled={provider !== "bailian" || !canCreate}
           onClick={() => {
             if (composerOpen && recording) stopRecording();
             updateComposerOpen(!composerOpen);
@@ -410,8 +414,8 @@ export function VoiceClonePanel({
             const previewing = previewVoice === voice.id;
             const isLoading = previewing && previewState === "loading";
             const isPlaying = previewing && previewState === "playing";
-            const manageable = allowManagement && voice.id !== BAILIAN_CLONED_VOICE_OPTIONS[0].value;
-            const deletable = canDeleteClonedVoice(voice.id, allowManagement);
+            const manageable = allowManagement && canCreate && voice.id !== BAILIAN_CLONED_VOICE_OPTIONS[0].value;
+            const deletable = canCreate && canDeleteClonedVoice(voice.id, allowManagement);
             return <div className="provider-voice-row cloned-voice-row" data-selected={selected} key={voice.id}>
               {managementOnly ? <div className="provider-voice-select">
                 <span className="provider-voice-avatar"><UserRound /></span>
@@ -440,8 +444,9 @@ export function VoiceClonePanel({
       )}
 
       {catalogNotice ? <p className="voice-clone-notice" role="status">{catalogNotice}</p> : null}
+      {provider === "bailian" && catalogLoaded && !canCreate ? <p className="voice-clone-notice">新建克隆音色需要个人百炼 TTS 配置；平台 Key 不可用于克隆。</p> : null}
 
-      {composerOpen && provider === "bailian" ? (
+      {composerOpen && provider === "bailian" && canCreate ? (
         <ModalPortal enabled={embedded}>
         <div className={embedded ? "voice-clone-modal-backdrop" : undefined} onMouseDown={(event) => { if (embedded && event.target === event.currentTarget && !submitting) { if (recording) stopRecording(); updateComposerOpen(false); } }}>
         <div ref={composerDialogRef} className="voice-clone-composer" role={embedded ? "dialog" : undefined} aria-modal={embedded || undefined} aria-label={embedded ? "新建克隆音色" : undefined} tabIndex={embedded ? -1 : undefined}>
@@ -479,7 +484,7 @@ export function VoiceClonePanel({
 
           {submitNotice ? <p className="voice-clone-submit-notice" role="status"><CircleAlert />{submitNotice}</p> : null}
           {!configured ? <p className="voice-clone-submit-notice"><CircleAlert />服务端克隆凭据或公网样本存储尚未配置完整。</p> : null}
-          <button type="button" className="voice-clone-submit" disabled={!configured || !audioFile || !displayName.trim() || !rightsConfirmed || submitting || (sourceKind === "recording" && recordingSeconds < 5)} onClick={() => void submitClone()}>
+          <button type="button" className="voice-clone-submit" disabled={!configured || !canCreate || !audioFile || !displayName.trim() || !rightsConfirmed || submitting || (sourceKind === "recording" && recordingSeconds < 5)} onClick={() => void submitClone()}>
             {submitting ? <span className="preview-spinner" /> : <Plus />}{submitting ? "正在创建…" : "创建克隆音色"}
           </button>
         </div>

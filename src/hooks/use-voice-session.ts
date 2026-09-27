@@ -1025,9 +1025,9 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
           error?: string;
           deadline?: string | null;
           sources?: {
-            asr: { source: "platform" | "personal" };
-            tts: { source: "platform" | "personal" };
-            llm: { source: "platform" | "personal" };
+            asr: { provider?: string; source: "platform" | "personal"; instanceName?: string };
+            tts: { provider?: string; source: "platform" | "personal"; instanceName?: string };
+            llm: { provider?: string; source: "platform" | "personal"; instanceName?: string };
             anam?: { source: "platform" | "personal" };
           };
         };
@@ -1037,7 +1037,8 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
           const response = await fetch("/api/voice/admission", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ttsProvider: provider === "bailian" ? "dashscope" : "doubao" }),
+            body: JSON.stringify({ ttsProvider: provider === "bailian" ? "dashscope" : "doubao",
+              ...(pendingToolNamesRef.current?.roleId ? { roleId: pendingToolNamesRef.current.roleId } : {}) }),
           });
           result = await response.json() as PublicAdmissionResult;
           if (!response.ok || !result?.ticket) throw new Error(result?.error || "语音服务暂时不可用");
@@ -1048,8 +1049,10 @@ export function useVoiceSession({ publicVoiceEnabled = false }: { publicVoiceEna
           ? null : Math.max(0, Math.ceil((trialDeadlineRef.current - Date.now()) / 1000)));
         if (result.sources) {
           const label = (source: "platform" | "personal") => source === "personal" ? "我的额度" : "平台额度";
+          const configured = (entry: { provider?: string; source: "platform" | "personal"; instanceName?: string }) =>
+            `${entry.instanceName || entry.provider || "默认配置"}（${label(entry.source)}）`;
           const avatar = result.sources.anam ? ` · 数字人：${label(result.sources.anam.source)}` : "";
-          setCredentialSummary(`语音识别：${label(result.sources.asr.source)} · 语音合成：${label(result.sources.tts.source)} · 对话模型：${label(result.sources.llm.source)}${avatar}`);
+          setCredentialSummary(`语音识别：${configured(result.sources.asr)} · 语音合成：${configured(result.sources.tts)} · 对话模型：${configured(result.sources.llm)}${avatar}`);
         }
         const configured = process.env.NEXT_PUBLIC_VOICE_WS_URL;
         const base = configured || `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/voice`;

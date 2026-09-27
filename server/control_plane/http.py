@@ -12,11 +12,17 @@ with `run_coroutine_threadsafe`.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import hashlib
+import hmac
 import ipaddress
 import json
 import logging
+import os
 import re
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -28,6 +34,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.telemetry import DiagnosticsQuery, DiagnosticsWindow
+from server.speech import provider_contract_probe
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,7 @@ _OBSERVABILITY_SESSION_PATH = re.compile(
 _RPC_TIMEOUT_S = 5.0
 _VOICE_PREVIEW_TIMEOUT_S = 60.0
 _MAX_DELETE_BODY_BYTES = 16_384
+_MAX_PROVIDER_PROBE_BODY_BYTES = 2_048
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 VoicePreviewer = Callable[[str, str, int, str], Awaitable[tuple[bytes, str]]]
 SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
@@ -416,6 +424,51 @@ def _build_handler(
                 self._write_json(500, {"error": "control-plane request failed"})
 
         def _do_post(self) -> None:
+            if urlsplit(self.path).path == "/provider-contract-test":
+                if not _is_loopback_host(self.headers.get("Host", "")):
+                    self._write_json(403, {"error": "forbidden"})
+                    return
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    size = 0
+                if not 1 <= size <= _MAX_PROVIDER_PROBE_BODY_BYTES:
+                    self._write_json(400, {"error": "invalid request size"})
+                    return
+                body = self.rfile.read(size)
+                encoded_key = os.environ.get("VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY", "")
+                try:
+                    key = base64.urlsafe_b64decode(encoded_key + "=" * (-len(encoded_key) % 4))
+                    timestamp = self.headers.get("X-Provider-Probe-Timestamp", "")
+                    signature = self.headers.get("X-Provider-Probe-Signature", "")
+                    if len(key) != 32 or len(timestamp) > 12 or abs(time.time() - int(timestamp)) > 60:
+                        raise ValueError("invalid signature context")
+                    message = b"provider-contract-probe-v1\x00" + timestamp.encode() + b"\x00" + body
+                    expected = hmac.new(key, message, hashlib.sha256).hexdigest()
+                    if not hmac.compare_digest(signature, expected):
+                        raise ValueError("invalid signature")
+                except (ValueError, TypeError, binascii.Error):
+                    self._write_json(403, {"error": "forbidden"})
+                    return
+                try:
+                    payload = json.loads(body)
+                    if isinstance(payload, dict) and payload.get("capability") == "asr":
+                        payload["fixtureTtsKey"] = os.environ.get("DOUBAO_API_KEY", "")
+                    future = asyncio.run_coroutine_threadsafe(
+                        provider_contract_probe.execute_probe(payload), loop
+                    )
+                    try:
+                        result = future.result(timeout=42)
+                    except FutureTimeoutError:
+                        future.cancel()
+                        self._write_json(504, {"error": "provider contract test timed out"})
+                        return
+                except Exception as error:  # noqa: BLE001 - never expose provider/key details
+                    logger.warning("provider contract probe failed: type=%s", type(error).__name__)
+                    self._write_json(502, {"error": "provider contract test failed"})
+                    return
+                self._write_json(200, result)
+                return
             if urlsplit(self.path).path.startswith("/avatar-assets/"):
                 self._avatar_asset_request("POST")
                 return

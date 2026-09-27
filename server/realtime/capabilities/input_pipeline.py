@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from server.conversation_journal import (
     ConversationItem,
@@ -44,6 +44,9 @@ from server.realtime.capabilities.vad import (
 )
 from server.realtime.protocol.audio import AudioFrame
 
+if TYPE_CHECKING:
+    from server.realtime.provider_latency import ProviderLatencyObserver
+
 _CLOSED = object()
 
 
@@ -72,10 +75,16 @@ class CascadedInputPipeline:
         turn_manager: TurnManagerCapabilitySession,
         context: InteractionContext,
         event_queue_size: int,
+        provider_timing: ProviderLatencyObserver | None = None,
     ) -> None:
         self._context = context
         self._vad = vad
-        self._asr = asr
+        if provider_timing:
+            from server.realtime.provider_latency import TimedAsrSession
+
+            self._asr = TimedAsrSession(asr, provider_timing)
+        else:
+            self._asr = asr
         self._turn_manager = turn_manager
         self._events: asyncio.Queue[CascadedInputEvent | object] = asyncio.Queue(
             maxsize=event_queue_size
@@ -107,6 +116,7 @@ class CascadedInputPipeline:
         asr: AsrCapabilityProvider,
         turn_manager: TurnManagerCapabilityProvider,
         event_queue_size: int = 64,
+        provider_timing: ProviderLatencyObserver | None = None,
     ) -> CascadedInputPipeline:
         if event_queue_size < 1:
             raise ValueError("event_queue_size must be positive")
@@ -137,6 +147,7 @@ class CascadedInputPipeline:
             asr=asr_session,
             turn_manager=turn_session,
             event_queue_size=event_queue_size,
+            provider_timing=provider_timing,
         )
 
     async def append_audio(

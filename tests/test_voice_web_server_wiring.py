@@ -33,7 +33,6 @@ from server.realtime.profile import ResolvedRealtimeProfile
 from server.signals.plugins.silero_vad import SileroVad
 from server.speech.asr import PreloadedAsrEngine
 from server.speech.plugins.bailian_tts import BailianTtsEngine
-from server.speech.plugins.bella_asr import BellaAsrEngine
 from server.speech.plugins.doubao_asr import DoubaoAsrEngine
 from server.speech.selectable_tts import SelectableTtsEngine
 from server.speech.tts import SilentTtsEngine, SynthesizedAudioChunk
@@ -209,6 +208,7 @@ def test_public_tool_client_uses_the_admitted_personal_llm_key(monkeypatch):
     binding = SimpleNamespace(
         llm_provider="deepseek", llm_source="personal",
         credentials={"deepseek": "personal-key"},
+        instance_credentials={}, instance_models={}, instance_base_urls={}, instance_ids={}, instance_versions={},
     )
     client = voice_web_server._build_tool_calling_llm_client(binding=binding)
     assert client._api_key == "personal-key"
@@ -220,6 +220,7 @@ def test_public_clients_use_the_admitted_openai_key(monkeypatch):
     binding = SimpleNamespace(
         llm_provider="openai", llm_source="personal",
         credentials={"openai": "personal-openai-key"},
+        instance_credentials={}, instance_models={}, instance_base_urls={}, instance_ids={}, instance_versions={},
     )
     client = voice_web_server._build_llm_client(binding=binding)
     tool_client = voice_web_server._build_tool_calling_llm_client(binding=binding)
@@ -227,6 +228,82 @@ def test_public_clients_use_the_admitted_openai_key(monkeypatch):
         assert selected._api_key == "personal-openai-key"
         assert selected._base_url == "https://api.openai.com/v1"
         assert selected._model == "gpt-4.1-mini"
+
+
+def test_selected_instance_key_and_model_override_legacy_provider_credentials():
+    from types import SimpleNamespace
+
+    binding = SimpleNamespace(
+        llm_provider="openai", llm_source="personal",
+        credentials={"openai": "legacy-key"},
+        instance_credentials={"llm": "instance-key"},
+        instance_models={"llm": "gpt-selected"},
+        instance_base_urls={"llm": "https://api.openai.com/v1"},
+        instance_ids={"llm": "instance-id"},
+        instance_versions={"llm": "config-revision"},
+    )
+    client = voice_web_server._build_llm_client(binding=binding)
+    assert client._api_key == "instance-key"
+    assert client._model == "gpt-selected"
+    assert client._base_url == "https://api.openai.com/v1"
+    assert client._instance_id == "instance-id"
+    assert client._config_version == "config-revision"
+
+
+def test_selected_deepseek_instance_uses_the_protocol_verified_by_its_streaming_test(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("VOICEAGENT_LLM_API_STYLE", "responses")
+    binding = SimpleNamespace(
+        llm_provider="deepseek", llm_source="personal",
+        credentials={}, instance_credentials={"llm": "instance-key"},
+        instance_models={"llm": "deepseek-chat"},
+        instance_base_urls={"llm": "https://api.deepseek.com"},
+        instance_ids={"llm": "instance-id"}, instance_versions={"llm": "revision"},
+    )
+
+    client = voice_web_server._build_llm_client(binding=binding)
+
+    assert client._api_style == "chat_completions"
+    assert client._model == "deepseek-chat"
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected_model"),
+    [("deepseek", "deepseek-chat"), ("openai", "gpt-4.1-mini")],
+)
+def test_selected_llm_without_model_uses_the_same_default_as_its_streaming_test(
+    monkeypatch, provider, expected_model,
+):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("DEEPSEEK_LLM_MODEL", "unrelated-platform-model")
+    monkeypatch.setenv("OPENAI_LLM_MODEL", "unrelated-platform-model")
+    binding = SimpleNamespace(
+        llm_provider=provider, llm_source="personal", credentials={},
+        instance_credentials={"llm": "instance-key"}, instance_models={"llm": ""},
+        instance_base_urls={},
+        instance_ids={"llm": "instance-id"}, instance_versions={"llm": "revision"},
+    )
+
+    assert voice_web_server._build_llm_client(binding=binding)._model == expected_model
+    assert voice_web_server._build_tool_calling_llm_client(binding=binding)._model == expected_model
+
+
+def test_same_vendor_asr_and_tts_instances_use_independent_keys():
+    from types import SimpleNamespace
+
+    binding = SimpleNamespace(
+        asr_provider="doubao", asr_source="personal",
+        tts_provider="doubao", tts_source="personal",
+        credentials={"doubao": "legacy-key"},
+        instance_credentials={"asr": "asr-instance-key", "tts": "tts-instance-key"},
+        instance_models={}, instance_ids={}, instance_versions={},
+    )
+    asr = voice_web_server._build_asr_engine(binding)
+    tts = voice_web_server._build_session_tts_engine(binding)
+    assert asr._api_key == "asr-instance-key"
+    assert tts._factories["doubao"](tts._config)._api_key == "tts-instance-key"
 
 
 def test_openai_platform_key_is_used_when_no_other_llm_is_configured(monkeypatch):
@@ -471,14 +548,29 @@ def test_build_asr_engine_defaults_to_doubao_direct_when_key_set(monkeypatch):
     assert isinstance(asr, DoubaoAsrEngine)
 
 
-def test_build_asr_engine_uses_bella_when_backend_set_to_bella(monkeypatch):
+def test_dashscope_asr_instance_uses_its_own_workspace_and_key():
+    from types import SimpleNamespace
+    from server.speech.plugins.bailian_asr import BailianAsrEngine
+
+    binding = SimpleNamespace(
+        asr_provider="dashscope", asr_source="personal", credentials={},
+        instance_credentials={"asr": "instance-key"},
+        instance_base_urls={"asr": "https://llm-test.cn-beijing.maas.aliyuncs.com"},
+        instance_models={"asr": ""},
+    )
+    asr = voice_web_server._build_asr_engine(binding)
+    assert isinstance(asr, BailianAsrEngine)
+    assert asr._api_key == "instance-key"
+    assert asr._url.startswith("wss://llm-test.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?")
+
+
+def test_build_asr_engine_rejects_removed_bella_backend(monkeypatch):
     monkeypatch.setenv("VOICEAGENT_ASR_BACKEND", "bella")
     monkeypatch.setenv("API_KEY", "bella-key")
     monkeypatch.setenv("DOUBAO_API_KEY", "doubao-key")
 
-    asr = voice_web_server._build_asr_engine()
-
-    assert isinstance(asr, BellaAsrEngine)
+    with pytest.raises(ValueError, match="unsupported ASR backend"):
+        voice_web_server._build_asr_engine()
 
 
 def test_build_asr_engine_falls_back_to_preloaded_with_no_credentials():

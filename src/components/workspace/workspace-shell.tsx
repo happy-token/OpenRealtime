@@ -17,8 +17,8 @@ import {
   Mic2,
   PanelLeft,
   Palette,
+  PlugZap,
   Search,
-  Server,
   Sparkles,
   Settings,
   Settings2,
@@ -285,12 +285,11 @@ export function WorkspaceShell({
       <div className={styles.settingsGroupLabel}>账户</div>
       <NavLink href="/settings/profile" active={pathname === "/settings/profile"} icon={<UserRound />} label="个人资料" />
       <NavLink href="/settings/providers" active={pathname === "/settings/providers"} icon={<SlidersHorizontal />} label="供应商" />
+      <NavLink href="/settings/services" active={pathname === "/settings/services"} icon={<PlugZap />} label="模型服务" />
       <div className={styles.settingsGroupLabel}>偏好</div>
       <NavLink href="/settings/appearance" active={pathname === "/settings/appearance"} icon={<Palette />} label="外观" />
       <NavLink href="/settings/memory" active={pathname === "/settings/memory"} icon={<MemoryStick />} label="Memory 与隐私" />
       <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label="高级配置" />
-      <div className={styles.settingsGroupLabel}>系统</div>
-      <NavLink href="/settings/services" active={pathname === "/settings/services"} icon={<Server />} label="模型服务" />
     </nav> : <nav className={styles.settingsNav} aria-label="资源分类">
       <div className={styles.settingsGroupLabel}>角色素材</div>
       <NavLink href={resourceHref("voices")} active={currentResourceTab === "voices"} icon={<Mic2 />} label="声音" onClick={() => setMobileOpen(false)} />
@@ -386,7 +385,7 @@ export function WorkspaceShell({
       {accountOpen ? <div className={styles.accountMenu}>
         <Link href="/settings/profile"><UserRound />个人资料</Link>
         <Link href="/settings"><Settings />设置</Link>
-        <Link href="/settings/services"><SlidersHorizontal />模型服务</Link>
+        <Link href="/settings/providers"><SlidersHorizontal />供应商</Link>
         <button type="button" disabled={loggingOut} onClick={() => void logout()}><LogOut />{loggingOut ? "正在退出…" : "退出登录"}</button>
         {accountError ? <p className={styles.accountError} role="alert">{accountError}</p> : null}
       </div> : null}</> : <Link className={styles.accountButton} href={accountLoginHref(pathname || "/")}>

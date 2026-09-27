@@ -17,6 +17,8 @@ import {
 } from "@/components/drawer/voice-options";
 import { mergeBailianClonedVoiceCatalog, type BailianClonedVoice } from "@/lib/bailian-voice-clones";
 import { readJsonResponse } from "@/lib/http-json-response";
+import type { ProviderInstance } from "@/lib/provider-instances";
+import type { PlatformProviderCredential } from "@/lib/platform-provider-credentials";
 import styles from "./voice-selector.module.css";
 
 type VoiceModule = "provider" | "cloned" | "official" | "dialect";
@@ -46,7 +48,13 @@ interface VoiceSelectorProps {
   allowManagement?: boolean;
   showCurrent?: boolean;
   currentLabel?: string;
+  roleId?: string;
+  configurationTarget?: string | null;
+  onConfigurationChange?: (target: string | null) => void;
 }
+
+type TtsConfiguration = { target: string; name: string; provider: "doubao" | "dashscope";
+  scope: "personal" | "platform"; selectable: boolean; updatedAt?: string };
 
 export function VoiceSelector({
   value,
@@ -56,11 +64,21 @@ export function VoiceSelector({
   allowManagement = false,
   showCurrent = true,
   currentLabel = "当前声音",
+  roleId,
+  configurationTarget,
+  onConfigurationChange,
 }: VoiceSelectorProps) {
   const [openModule, setOpenModule] = useState<VoiceModule | null>(null);
   const [cloneComposerOpen, setCloneComposerOpen] = useState(false);
   const [clonedVoices, setClonedVoices] = useState<BailianClonedVoice[]>([]);
   const [activeCloneId, setActiveCloneId] = useState<string | null>(null);
+  const [canCreateClone, setCanCreateClone] = useState(false);
+  const [configurations, setConfigurations] = useState<TtsConfiguration[]>([]);
+  const [defaultTtsTarget, setDefaultTtsTarget] = useState<string | null>(null);
+  const [selectedConfiguration, setSelectedConfiguration] = useState<string | null>(configurationTarget ?? null);
+  const [configurationLoading, setConfigurationLoading] = useState(true);
+  const [configurationBusy, setConfigurationBusy] = useState(false);
+  const [configurationError, setConfigurationError] = useState("");
   const [previewVoice, setPreviewVoice] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "playing">("idle");
   const [previewNotice, setPreviewNotice] = useState("");
@@ -72,13 +90,15 @@ export function VoiceSelector({
   const loadClones = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await fetch("/api/voice-clones", { cache: "no-store", signal });
-      const payload = await readJsonResponse<{ activeVoiceId?: string | null; voices?: BailianClonedVoice[] }>(response, "克隆音色目录请求失败");
+      const payload = await readJsonResponse<{ activeVoiceId?: string | null; voices?: BailianClonedVoice[]; canCreate?: boolean }>(response, "克隆音色目录请求失败");
       if (signal?.aborted) return;
       setActiveCloneId(typeof payload.activeVoiceId === "string" ? payload.activeVoiceId : null);
+      setCanCreateClone(Boolean(payload.canCreate));
       setClonedVoices(Array.isArray(payload.voices) ? payload.voices : []);
     } catch {
       if (!signal?.aborted) {
         setActiveCloneId(null);
+        setCanCreateClone(false);
         setClonedVoices([]);
       }
     }
@@ -89,6 +109,39 @@ export function VoiceSelector({
     void loadClones(controller.signal);
     return () => controller.abort();
   }, [loadClones]);
+
+  useEffect(() => { if (!roleId) setSelectedConfiguration(configurationTarget ?? null); }, [configurationTarget, roleId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    setConfigurationLoading(true);
+    void Promise.all([
+      fetch("/api/provider-instances", { cache: "no-store", signal: controller.signal })
+        .then(async (response) => response.ok ? await response.json() as {
+          instances?: ProviderInstance[]; platformCredentials?: PlatformProviderCredential[];
+          selections?: { tts?: string }; platformSelections?: { tts?: string };
+        } : null),
+      roleId ? fetch(`/api/user/role-tts-selections/${encodeURIComponent(roleId)}`, { cache: "no-store", signal: controller.signal })
+        .then(async (response) => response.ok ? await response.json() as { target?: string | null } : null) : Promise.resolve(null),
+    ]).then(([catalog, saved]) => {
+      if (controller.signal.aborted) return;
+      const instances = catalog?.instances?.filter((instance) => instance.capability === "tts"
+        && (instance.provider === "doubao" || instance.provider === "dashscope")) ?? [];
+      const configured: TtsConfiguration[] = instances.map((instance) => ({ target: instance.id,
+        name: instance.displayName, provider: instance.provider as "doubao" | "dashscope", scope: instance.scope,
+        selectable: instance.enabled && instance.connectionStatus === "passed", updatedAt: instance.updatedAt }));
+      for (const credential of catalog?.platformCredentials ?? []) {
+        if (credential.capability !== "tts" || (credential.provider !== "doubao" && credential.provider !== "dashscope")) continue;
+        configured.push({ target: `env:${credential.provider}`, name: credential.name,
+          provider: credential.provider, scope: "platform", selectable: true });
+      }
+      setConfigurations(configured);
+      setDefaultTtsTarget(catalog?.selections?.tts ?? catalog?.platformSelections?.tts ?? null);
+      if (roleId) setSelectedConfiguration(saved?.target ?? null);
+      setConfigurationError(catalog ? "" : "配置列表暂不可用，请稍后重试");
+    }).catch(() => { if (!controller.signal.aborted) setConfigurationError("配置列表暂不可用，请稍后重试"); })
+      .finally(() => { if (!controller.signal.aborted) setConfigurationLoading(false); });
+    return () => controller.abort();
+  }, [roleId]);
 
   useEffect(() => () => {
     previewRequestRef.current?.abort();
@@ -112,6 +165,15 @@ export function VoiceSelector({
   const currentDialectLabel = value.dialect
     ? BAILIAN_DIALECT_OPTIONS.find((item) => item.value === value.dialect)?.label
     : null;
+  const currentProviderId = value.provider === "bailian" ? "dashscope" : "doubao";
+  const defaultConfiguration = configurations.find((item) => item.target === defaultTtsTarget && item.selectable);
+  const matchingConfigurations = configurations.filter((item) => item.provider === currentProviderId && item.selectable);
+  const compatibleConfiguration = matchingConfigurations.filter((item) => !item.target.startsWith("env:"))
+    .sort((left, right) => (left.scope === right.scope ? (right.updatedAt ?? "").localeCompare(left.updatedAt ?? "")
+      : left.scope === "personal" ? -1 : 1))[0]
+    ?? matchingConfigurations.find((item) => item.target.startsWith("env:"));
+  const displayedTarget = selectedConfiguration ?? defaultConfiguration?.target ?? compatibleConfiguration?.target ?? null;
+  const displayedConfiguration = configurations.find((item) => item.target === displayedTarget);
 
   function stopVoicePreview(message = "") {
     previewRequestRef.current?.abort();
@@ -140,6 +202,27 @@ export function VoiceSelector({
       dialect: "",
     });
     setOpenModule(null);
+  }
+
+  async function selectConfiguration(configuration: TtsConfiguration) {
+    if (!configuration.selectable || configurationBusy) return;
+    setConfigurationBusy(true);
+    setConfigurationError("");
+    try {
+      if (roleId) {
+        const response = await fetch(`/api/user/role-tts-selections/${encodeURIComponent(roleId)}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target: configuration.target }),
+        });
+        const result = await readJsonResponse<{ error?: string }>(response, "保存角色语音配置失败");
+        if (!response.ok) throw new Error(result.error || "保存角色语音配置失败");
+      }
+      setSelectedConfiguration(configuration.target);
+      onConfigurationChange?.(configuration.target);
+      selectProvider(configuration.provider === "dashscope" ? "bailian" : "doubao");
+    } catch (error) {
+      setConfigurationError(error instanceof Error ? error.message : "保存角色语音配置失败");
+    } finally { setConfigurationBusy(false); }
   }
 
   function selectDialect(dialect: TtsDialect) {
@@ -200,11 +283,21 @@ export function VoiceSelector({
       <em>{TTS_PROVIDER_OPTIONS.find((item) => item.value === value.provider)?.label}</em>
     </div> : null}
     <div className={styles.moduleList}>
-      <VoiceModuleRow icon={<AudioLines />} title="供应商选择" detail={`${TTS_PROVIDER_OPTIONS.find((item) => item.value === value.provider)?.label} · 后续供应商继续加入此列表`} open={openModule === "provider"} onToggle={() => toggleModule("provider")}>
-        <div className={styles.providerList} aria-label="声音供应商">{TTS_PROVIDER_OPTIONS.map((item) => <button key={item.value} type="button" aria-pressed={value.provider === item.value} onClick={() => selectProvider(item.value)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{value.provider === item.value ? <Check /> : null}</button>)}</div>
+      <VoiceModuleRow icon={<AudioLines />} title="供应商选择" detail={displayedConfiguration
+        ? `${displayedConfiguration.name} · ${displayedConfiguration.scope === "personal" ? "个人配置" : "平台配置"}${selectedConfiguration ? "" : " · 自动匹配"}`
+        : selectedConfiguration ? "已选配置不可用" : `${TTS_PROVIDER_OPTIONS.find((item) => item.value === value.provider)?.label} · 暂无可用配置`} open={openModule === "provider"} onToggle={() => toggleModule("provider")}>
+        <div className={styles.providerList} aria-label="声音供应商">
+          {configurationLoading ? <p className={styles.notice}>正在读取配置…</p> : [...configurations]
+            .sort((left, right) => left.scope === right.scope ? 0 : left.scope === "platform" ? -1 : 1)
+            .map((item) => <button key={item.target} type="button" aria-pressed={displayedTarget === item.target}
+                disabled={!item.selectable || configurationBusy} onClick={() => void selectConfiguration(item)}>
+                <span><strong>{item.name}</strong><small>{item.provider === "dashscope" ? "阿里云百炼" : "火山引擎"} · {item.scope === "personal" ? "个人配置" : "平台配置"}{item.selectable ? "" : " · 请先测试"}</small></span>
+                {displayedTarget === item.target ? <Check /> : null}</button>)}
+          {!configurationLoading && configurations.length === 0 ? <p className={styles.notice}>暂无可用 TTS 配置，请先到供应商页面添加。</p> : null}
+        </div>
+        {configurationError ? <p className={styles.notice} role="alert">{configurationError}</p> : null}
       </VoiceModuleRow>
-
-      {allowClone ? <VoiceModuleRow icon={<Fingerprint />} title="音色克隆" detail={value.provider === "bailian" ? "支持试听、克隆和已有音色选择" : "当前供应商暂不支持音色克隆"} open={openModule === "cloned"} onToggle={() => toggleModule("cloned")} action={<button ref={cloneComposerTriggerRef} className={styles.moduleAction} type="button" disabled={value.provider !== "bailian"} onClick={() => { stopVoicePreview(); setOpenModule("cloned"); setCloneComposerOpen(true); }}><Plus />新建克隆音色</button>}>
+      {allowClone ? <VoiceModuleRow icon={<Fingerprint />} title="音色克隆" detail={value.provider !== "bailian" ? "当前音色来源暂不支持克隆" : canCreateClone ? "可使用个人配置创建克隆音色" : "仅个人百炼配置可创建，平台配置不可克隆"} open={openModule === "cloned"} onToggle={() => toggleModule("cloned")} action={<button ref={cloneComposerTriggerRef} className={styles.moduleAction} type="button" disabled={value.provider !== "bailian" || !canCreateClone} onClick={() => { stopVoicePreview(); setOpenModule("cloned"); setCloneComposerOpen(true); }}><Plus />新建克隆音色</button>}>
         <div className={styles.cloneLibrary}><VoiceClonePanel embedded hideToolbar allowManagement={allowManagement} provider={value.provider} selectedVoice={value.provider === "bailian" && !value.dialect ? value.voice : ""} previewVoice={previewVoice} previewState={previewState} composerOpen={cloneComposerOpen} onComposerOpenChange={setCloneComposerOpen} externalComposerTriggerRef={cloneComposerTriggerRef} onSelect={(voiceId, label) => { onChange({ provider: "bailian", voice: voiceId, dialect: "" }); setClonedVoices((items) => [{ id: voiceId, displayName: label, status: "OK", createdAt: null }, ...items.filter((item) => item.id !== voiceId)]); setOpenModule(null); onSelectionCommit?.(); }} onPreview={(voiceId, label) => void toggleVoicePreview("bailian", voiceId, label)} onCatalogChange={() => void loadClones()} /></div>
       </VoiceModuleRow> : null}
 
@@ -224,6 +317,7 @@ export function VoiceSelector({
           return <div className={styles.voiceOption} data-selected={selected} key={item.value}><button className={styles.voiceSelect} type="button" aria-pressed={selected} onClick={() => selectDialect(item.value)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{selected ? <Check /> : null}</button><button className={styles.previewButton} type="button" aria-label={`${previewing && previewState === "playing" ? "停止试听" : "试听"} ${item.label}`} disabled={previewState === "loading" && !previewing} onClick={() => void toggleVoicePreview(value.provider, voice, item.label, item.value)}>{previewing && previewState === "loading" ? <LoaderCircle className={styles.spin} /> : previewing && previewState === "playing" ? <X /> : <Play />}</button></div>;
         })}</div>
       </VoiceModuleRow>
+
     </div>
     {previewNotice ? <p className={styles.notice} role="status">{previewNotice}</p> : null}
   </div>;

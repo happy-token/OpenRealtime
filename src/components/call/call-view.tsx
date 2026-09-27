@@ -35,6 +35,7 @@ interface CallViewProps {
   avatarDisplayConfig: AvatarDisplayConfig;
   onAvatarDisplayConfigChange: (config: AvatarDisplayConfig) => void;
   ttsProvider: TtsProvider;
+  roleId?: string;
   setAvatarAudioSink: (sink: AvatarAudioSink | null) => void;
   reducedMotion: boolean;
   captionsEnabled?: boolean;
@@ -71,6 +72,7 @@ export function CallView({
   avatarDisplayConfig,
   onAvatarDisplayConfigChange,
   ttsProvider,
+  roleId,
   setAvatarAudioSink,
   reducedMotion,
   captionsEnabled = true,
@@ -104,6 +106,7 @@ export function CallView({
           onAmbientColorChange={onAvatarAmbientColorChange}
           publicVoiceEnabled={publicVoiceEnabled}
           ttsProvider={ttsProvider}
+          roleId={roleId}
           onVoiceAdmission={onVoiceAdmission}
         />
       ) : sessionStarted ? (

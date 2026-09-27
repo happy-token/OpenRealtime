@@ -21,16 +21,17 @@ export async function GET(request: NextRequest) {
     const user = await userFromRequest(request);
     if (!user) return json({ error: "请先登录" }, 401);
     const platform = {
-      anam: Boolean(process.env.ANAM_API_KEY?.trim()),
-      minimax: Boolean(process.env.MINIMAX_API_KEY?.trim()),
-      doubao: Boolean(process.env.DOUBAO_API_KEY?.trim()),
-      bella: Boolean(process.env.API_KEY?.trim()),
-      dashscope: Boolean(process.env.DASHSCOPE_API_KEY?.trim()),
-      deepseek: Boolean(process.env.DEEPSEEK_API_KEY?.trim()),
-      openai: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      anam: process.env.ANAM_API_KEY?.trim(),
+      minimax: process.env.MINIMAX_API_KEY?.trim(),
+      doubao: process.env.DOUBAO_API_KEY?.trim(),
+      bella: process.env.API_KEY?.trim(),
+      dashscope: process.env.DASHSCOPE_API_KEY?.trim(),
+      deepseek: process.env.DEEPSEEK_API_KEY?.trim(),
+      openai: process.env.OPENAI_API_KEY?.trim(),
     };
     const credentials = (await listPersonalKeyStatuses(user)).map((entry) => ({
-      ...entry, platformConfigured: platform[entry.provider],
+      ...entry, platformConfigured: Boolean(platform[entry.provider]),
+      ...(platform[entry.provider] ? { platformSuffix: platform[entry.provider]!.slice(-4) } : {}),
     }));
     return json({ credentials });
   } catch {

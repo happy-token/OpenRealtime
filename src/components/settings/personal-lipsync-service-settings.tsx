@@ -46,7 +46,7 @@ export function PersonalLipsyncServiceSettings() {
 
   if (currentUser.status !== "signed-in") return <div className={styles.notice}>登录后可配置个人口型对齐服务。<Link href={accountLoginHref("/settings/services")}>登录</Link></div>;
   return <section className={styles.card} aria-label="个人口型对齐服务">
-    <div className={styles.heading}><div><small>高级模式</small><h2>个人口型对齐服务</h2><p>仅用于你自己的口型生成任务；地址须由站点运营方列入允许来源。</p></div><span>{service.configured ? "已配置" : "未配置"}</span></div>
+    <div className={styles.heading}><div><small>高级模式</small><h3>个人口型对齐服务</h3><p>仅用于你自己的口型生成任务；地址须由站点运营方列入允许来源。</p></div><span>{service.configured ? "已配置" : "未配置"}</span></div>
     <label className={styles.field}><span>HTTPS 服务地址</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://lipsync.example.com" /></label>
     <label className={styles.field}><span>访问令牌{service.tokenConfigured ? "（已保存；留空保持）" : "（可选）"}</span><input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} /></label>
     <div className={styles.footer}><div className={styles.actions}>

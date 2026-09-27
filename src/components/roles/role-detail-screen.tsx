@@ -632,7 +632,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
             <section className={styles.settingModule} data-open={openModule === "voice"}>
               <button className={styles.settingSummary} type="button" aria-label="声音设置" aria-expanded={openModule === "voice"} onClick={() => toggleConfigModule("voice")}><Volume2 /><span><small>声音</small><strong>{selectedVoiceName}</strong><em>{TTS_PROVIDER_OPTIONS.find((item) => item.value === role.voice_provider)?.label}</em></span><ChevronDown /></button>
               {openModule === "voice" ? <div className={styles.settingDetails}>
-                <VoiceSelector showCurrent={false} value={{ provider: role.voice_provider, voice: role.voice_id, dialect: role.voice_dialect ?? "" }} onChange={(voice) => setRole({ ...role, voice_provider: voice.provider, voice_id: voice.voice, voice_dialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} />
+                <VoiceSelector showCurrent={false} roleId={role.role_id} value={{ provider: role.voice_provider, voice: role.voice_id, dialect: role.voice_dialect ?? "" }} onChange={(voice) => setRole({ ...role, voice_provider: voice.provider, voice_id: voice.voice, voice_dialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} />
               </div> : null}
             </section>
 

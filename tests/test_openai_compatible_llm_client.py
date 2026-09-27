@@ -149,7 +149,8 @@ async def test_stream_records_provider_total_and_first_token_latency(monkeypatch
         )
     )
     telemetry.record("turn.started", generation=3)
-    client = _client(telemetry=telemetry, provider_name="deepseek")
+    client = _client(telemetry=telemetry, provider_name="deepseek",
+                     instance_id="instance-id", config_version="config-revision")
 
     assert await client.complete(system_prompt="s", user_text="hello") == "hi"
     await runtime.flush()
@@ -162,6 +163,12 @@ async def test_stream_records_provider_total_and_first_token_latency(monkeypatch
     assert provider_call.kind is TelemetryKind.PROVIDER_CALL
     assert provider_call.attributes["ttfb_ms"] is not None
     assert provider_call.attributes["model"] == "test-model"
+    first_text = [event for event in detail.events if event.name == "llm.request_to_first_text"]
+    assert len(first_text) == 1
+    assert first_text[0].duration_ms is not None and first_text[0].duration_ms >= 0
+    assert first_text[0].kind is TelemetryKind.SPAN
+    assert first_text[0].attributes == {"provider": "deepseek", "model": "test-model",
+                                        "instance_id": "instance-id", "config_version": "config-revision"}
 
     await runtime.close()
 

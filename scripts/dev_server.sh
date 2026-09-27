@@ -4,11 +4,13 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [ -f .env ]; then
-  set -a
-  source .env
-  set +a
-fi
+for env_file in .env .env.local; do
+  if [ -f "$env_file" ]; then
+    set -a
+    source "$env_file"
+    set +a
+  fi
+done
 
 # Keep existing local VoiceLoop environments working without leaking the
 # deprecated variable into the Python process (which would warn per session).

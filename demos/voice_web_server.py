@@ -67,8 +67,6 @@ from server.avatar_assets.composition import (
 )
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
 from server.brain.avatar_persona import AvatarPersonaPromptCatalog, SessionAvatarPersona
-from server.brain.session_memory import SessionMemory
-from server.brain.role_model import role_model_id, role_tool_ids
 from server.brain.base import Brain
 from server.brain.chat_brain import ChatBrain
 from server.brain.llm_clients import (
@@ -86,6 +84,8 @@ from server.brain.realtime_grounding import (
     RealtimeGroundingCoordinator,
     TurnGrounder,
 )
+from server.brain.role_model import role_model_id, role_tool_ids
+from server.brain.session_memory import SessionMemory
 from server.brain.tool_calling_brain import ToolCallingBrain
 from server.cli.harness import run_app
 from server.conversation_journal import (
@@ -96,6 +96,7 @@ from server.conversation_journal import (
 from server.core.interaction_context import InteractionContext
 from server.endpoint_session.in_memory_session import InMemoryEndpointSession
 from server.endpoint_session.registry import EndpointSessionRegistry
+from server.knowledge_base.local_catalog import LocalCatalogKnowledgeBase
 from server.ledger.event_ledger import EventLedger, LedgerEvent
 from server.observability.telemetry import (
     SessionTelemetry,
@@ -124,6 +125,7 @@ from server.realtime.profile.builtin import (
     BuiltinCascadedBindings,
     resolve_builtin_profile,
 )
+from server.realtime.provider_latency import ProviderLatencyObserver
 from server.signals.energy_vad import EnergyVadConfig
 from server.signals.plugins.silero_vad import SileroVad
 from server.speech.asr import AsrEngine, PreloadedAsrEngine
@@ -133,7 +135,6 @@ from server.speech.plugins.bailian_tts import (
 from server.speech.plugins.bailian_tts import (
     BailianTtsEngine,
 )
-from server.speech.plugins.bella_asr import BellaAsrEngine
 from server.speech.plugins.doubao_asr import DoubaoAsrEngine
 from server.speech.plugins.doubao_tts import DoubaoTtsEngine
 from server.speech.plugins.doubao_tts_direct import (
@@ -148,6 +149,8 @@ from server.tools.clock_source import ClockToolSource, resolve_timezone
 from server.tools.confirmation import BoundToolConfirmationHandler
 from server.tools.control import DefaultToolControlHandler
 from server.tools.fast_loop import FastToolLoop
+from server.tools.knowledge_base_source import KnowledgeBaseToolSource
+from server.tools.local_catalog_source import LocalCatalogToolSource
 from server.tools.policy_gateway import (
     ConfirmationChannel,
     ConfirmationRejected,
@@ -157,9 +160,6 @@ from server.tools.policy_gateway import (
 )
 from server.tools.registry import ToolRegistry
 from server.tools.web_search_source import WebSearchToolSource
-from server.tools.knowledge_base_source import KnowledgeBaseToolSource
-from server.tools.local_catalog_source import LocalCatalogToolSource
-from server.knowledge_base.local_catalog import LocalCatalogKnowledgeBase
 from server.transport.base import AuthenticatedTransportIdentity
 from server.transport.frames import (
     AvatarPersonaConfigFrame,
@@ -168,9 +168,9 @@ from server.transport.frames import (
     ConfirmationResolutionFrame,
     PlaybackQualityFrame,
     SessionCapabilitiesFrame,
+    ToolConfigFrame,
     TtsConfigAckFrame,
     TtsConfigFrame,
-    ToolConfigFrame,
 )
 from server.transport.plugins.websocket import (
     StaticBearerWebSocketAuthenticator,
@@ -366,7 +366,10 @@ def _deepseek_disable_thinking() -> bool:
     return configured.strip().lower() in ("1", "true", "yes")
 
 
-def _bound_key(binding: VoiceAdmissionBinding, provider: str, source: str) -> str:
+def _bound_key(binding: VoiceAdmissionBinding, provider: str, source: str, capability: str) -> str:
+    instance_key = binding.instance_credentials.get(capability)
+    if instance_key:
+        return instance_key
     env_name = {
         "doubao": "DOUBAO_API_KEY", "dashscope": "DASHSCOPE_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY",
@@ -381,15 +384,18 @@ def _bound_key(binding: VoiceAdmissionBinding, provider: str, source: str) -> st
 
 def _build_asr_engine(binding: VoiceAdmissionBinding | None = None) -> AsrEngine:
     if binding is not None:
-        key = _bound_key(binding, binding.asr_provider, binding.asr_source)
-        return (BellaAsrEngine(api_key=key) if binding.asr_provider == "bella"
-                else DoubaoAsrEngine(api_key=key))
+        if binding.asr_provider not in {"doubao", "dashscope"}:
+            raise ValueError("unsupported ASR provider")
+        key = _bound_key(binding, binding.asr_provider, binding.asr_source, "asr")
+        if binding.asr_provider == "dashscope":
+            from server.speech.plugins.bailian_asr import BailianAsrEngine
+            return BailianAsrEngine(api_key=key,
+                base_url=binding.instance_base_urls.get("asr"),
+                model=binding.instance_models.get("asr") or "qwen3-asr-flash-realtime")
+        return DoubaoAsrEngine(api_key=key)
     backend = os.environ.get("VOICEAGENT_ASR_BACKEND", "doubao-direct")
-    if backend == "bella":
-        if _bella_api_key():
-            return BellaAsrEngine()
-        logger.warning("API_KEY not set — using PreloadedAsrEngine (no real ASR)")
-        return PreloadedAsrEngine("")
+    if backend != "doubao-direct":
+        raise ValueError("unsupported ASR backend")
     if os.environ.get("DOUBAO_API_KEY"):
         return DoubaoAsrEngine()
     logger.warning("DOUBAO_API_KEY not set — using PreloadedAsrEngine (no real ASR)")
@@ -441,7 +447,7 @@ def _build_session_tts_engine(
     binding: VoiceAdmissionBinding | None = None,
 ) -> StreamingTtsEngine:
     if binding is not None:
-        key = _bound_key(binding, binding.tts_provider, binding.tts_source)
+        key = _bound_key(binding, binding.tts_provider, binding.tts_source, "tts")
         if binding.tts_provider == "dashscope":
             factories: dict[str, TtsProviderFactory] = {
                 "bailian": lambda config: BailianTtsEngine(
@@ -560,22 +566,32 @@ def _build_llm_client(
     binding: VoiceAdmissionBinding | None = None,
 ) -> LlmClient:
     if binding is not None:
-        key = _bound_key(binding, binding.llm_provider, binding.llm_source)
+        key = _bound_key(binding, binding.llm_provider, binding.llm_source, "llm")
         if binding.llm_provider == "deepseek":
             return OpenAiCompatibleLlmClient(
                 api_key=key,
-                base_url=DEEPSEEK_BASE_URL,
-                model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+                base_url=binding.instance_base_urls.get("llm") or DEEPSEEK_BASE_URL,
+                model=binding.instance_models.get("llm") or ("deepseek-chat" if binding.instance_ids.get("llm")
+                    else os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL)),
                 disable_thinking=_deepseek_disable_thinking(),
-                api_style=_llm_api_style(default="responses"),
+                # Instance tests exercise Chat Completions streaming; keep the
+                # admitted runtime on that same protocol. Legacy env-backed
+                # sessions retain their existing configurable API style.
+                api_style=("chat_completions" if binding.instance_ids.get("llm")
+                           else _llm_api_style(default="responses")),
                 telemetry=telemetry, provider_name="deepseek",
+                instance_id=binding.instance_ids.get("llm"),
+                config_version=binding.instance_versions.get("llm"),
             )
         if binding.llm_provider == "openai":
             return OpenAiCompatibleLlmClient(
-                api_key=key, base_url=OPENAI_BASE_URL,
-                model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+                api_key=key, base_url=binding.instance_base_urls.get("llm") or OPENAI_BASE_URL,
+                model=binding.instance_models.get("llm") or (OPENAI_LLM_MODEL if binding.instance_ids.get("llm")
+                    else os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL)),
                 api_style="chat_completions", telemetry=telemetry,
                 provider_name="openai",
+                instance_id=binding.instance_ids.get("llm"),
+                config_version=binding.instance_versions.get("llm"),
             )
         if binding.llm_provider == "bella":
             return OpenAiCompatibleLlmClient(
@@ -637,18 +653,20 @@ def _build_tool_calling_llm_client(
     binding: VoiceAdmissionBinding | None = None,
 ) -> ToolCallingLlmClient:
     if binding is not None:
-        key = _bound_key(binding, binding.llm_provider, binding.llm_source)
+        key = _bound_key(binding, binding.llm_provider, binding.llm_source, "llm")
         if binding.llm_provider == "deepseek":
             return OpenAiCompatibleToolCallingLlmClient(
-                api_key=key, base_url=DEEPSEEK_BASE_URL,
-                model=os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL),
+                api_key=key, base_url=binding.instance_base_urls.get("llm") or DEEPSEEK_BASE_URL,
+                model=binding.instance_models.get("llm") or ("deepseek-chat" if binding.instance_ids.get("llm")
+                    else os.environ.get("DEEPSEEK_LLM_MODEL", DEEPSEEK_LLM_MODEL)),
                 disable_thinking=_deepseek_disable_thinking(), telemetry=telemetry,
                 provider_name="deepseek",
             )
         if binding.llm_provider == "openai":
             return OpenAiCompatibleToolCallingLlmClient(
-                api_key=key, base_url=OPENAI_BASE_URL,
-                model=os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL),
+                api_key=key, base_url=binding.instance_base_urls.get("llm") or OPENAI_BASE_URL,
+                model=binding.instance_models.get("llm") or (OPENAI_LLM_MODEL if binding.instance_ids.get("llm")
+                    else os.environ.get("OPENAI_LLM_MODEL", OPENAI_LLM_MODEL)),
                 telemetry=telemetry, provider_name="openai",
             )
         if binding.llm_provider == "bella":
@@ -1227,6 +1245,11 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             ),
             context_projector_factory=lambda: _build_model_context_projector(
                 llm_client
+            ),
+            provider_timing=ProviderLatencyObserver(
+                telemetry,
+                instances=binding.instance_ids if binding else None,
+                versions=binding.instance_versions if binding else None,
             ),
         )
         server_asr = not isinstance(asr, PreloadedAsrEngine)

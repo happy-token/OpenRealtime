@@ -757,6 +757,7 @@ export function OpenRealtimeApp({
               avatarDisplayConfig={avatarDisplayConfig}
               onAvatarDisplayConfigChange={handleAvatarDisplayConfigChange}
               ttsProvider={ttsProvider}
+              roleId={initialRole?.role_id}
               setAvatarAudioSink={engine.setAvatarAudioSink}
               reducedMotion={reducedMotion}
               captionsEnabled={captionsEnabled && pageForm !== "sidecar"}

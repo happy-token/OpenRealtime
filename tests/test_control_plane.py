@@ -1,5 +1,9 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator
@@ -104,6 +108,19 @@ def _post_bytes(url: str, body: bytes, content_type: str) -> tuple[int, bytes, s
             return response.status, response.read(), response.headers["Content-Type"]
     except urllib.error.HTTPError as error:
         return error.code, error.read(), error.headers["Content-Type"]
+
+
+def _post_provider_probe(url: str, body: bytes, timestamp: str, signature: str) -> tuple[int, dict]:
+    request = urllib.request.Request(url, method="POST", data=body, headers={
+        "Content-Type": "application/json",
+        "X-Provider-Probe-Timestamp": timestamp,
+        "X-Provider-Probe-Signature": signature,
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read())
 
 
 def _delete(url: str, payload: object) -> tuple[int, dict]:
@@ -326,6 +343,42 @@ async def test_voice_preview_endpoint_returns_generated_audio() -> None:
         assert body == b"RIFF-test"
         assert content_type == "audio/wav"
         assert calls == [("bailian", "voice-1", 20, "sichuan")]
+    finally:
+        server.shutdown()
+
+
+async def test_provider_contract_probe_requires_signed_local_request(monkeypatch) -> None:
+    from server.speech import provider_contract_probe
+
+    secret = b"x" * 32
+    monkeypatch.setenv("VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY", base64.urlsafe_b64encode(secret).decode().rstrip("="))
+    monkeypatch.setenv("DOUBAO_API_KEY", "platform-fixture-key")
+
+    async def fake_probe(payload):
+        if payload["capability"] == "asr":
+            assert payload["fixtureTtsKey"] == "platform-fixture-key"
+        else:
+            assert payload == {"capability": "tts", "provider": "doubao", "apiKey": "private-key"}
+        return {"ok": True, "message": "双流式文本与音频已验证"}
+
+    monkeypatch.setattr(provider_contract_probe, "execute_probe", fake_probe)
+    server = control_plane_http.start(EndpointSessionRegistry(), port=0)
+    url = f"http://127.0.0.1:{server.server_address[1]}/provider-contract-test"
+    body = b'{"capability":"tts","provider":"doubao","apiKey":"private-key"}'
+    try:
+        status, _ = await asyncio.to_thread(_post_provider_probe, url, body, "0", "bad")
+        assert status == 403
+        timestamp = str(int(time.time()))
+        message = b"provider-contract-probe-v1\x00" + timestamp.encode() + b"\x00" + body
+        signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+        status, result = await asyncio.to_thread(_post_provider_probe, url, body, timestamp, signature)
+        assert status == 200
+        assert result == {"ok": True, "message": "双流式文本与音频已验证"}
+        asr_body = b'{"capability":"asr","provider":"doubao","apiKey":"private-key","fixtureTtsKey":"untrusted"}'
+        signature = hmac.new(secret, b"provider-contract-probe-v1\x00" + timestamp.encode() + b"\x00" + asr_body,
+                             hashlib.sha256).hexdigest()
+        status, _ = await asyncio.to_thread(_post_provider_probe, url, asr_body, timestamp, signature)
+        assert status == 200
     finally:
         server.shutdown()
 

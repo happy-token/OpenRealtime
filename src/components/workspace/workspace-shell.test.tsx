@@ -100,6 +100,15 @@ describe("WorkspaceShell", () => {
     expect(html).toContain(">资源</span>");
   });
 
+  it("keeps model services under the supplier settings entry", () => {
+    navigation.pathname = "/settings/providers";
+    const html = renderToStaticMarkup(<WorkspaceShell><div>供应商设置</div></WorkspaceShell>);
+
+    expect(html).toContain('href="/settings/providers"');
+    expect(html).toContain(">供应商</span>");
+    expect(html).toContain('href="/settings/services"');
+  });
+
   it("reuses the settings-style secondary sidebar for resource categories", () => {
     navigation.pathname = "/resources";
     const html = renderToStaticMarkup(<WorkspaceShell resourceTab="avatars" resourceReturnTo="role-personal-123"><div>数字人</div></WorkspaceShell>);

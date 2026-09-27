@@ -62,6 +62,11 @@ class VoiceAdmissionBinding:
     llm_provider: str
     llm_source: str
     credentials: dict[str, str]
+    instance_credentials: dict[str, str]
+    instance_models: dict[str, str]
+    instance_base_urls: dict[str, str]
+    instance_ids: dict[str, str]
+    instance_versions: dict[str, str]
     deadline: datetime | None
 
 
@@ -113,6 +118,52 @@ class PublicVoiceTicketAuthenticator:
                     credentials[provider] = AESGCM(_encryption_key()).decrypt(
                         sealed[:12], sealed[12:], associated,
                     ).decode()
+            instance_credentials: dict[str, str] = {}
+            instance_models: dict[str, str] = {}
+            instance_base_urls: dict[str, str] = {}
+            instance_ids: dict[str, str] = {}
+            instance_versions: dict[str, str] = {}
+            instance_bindings = row["provider_instances"]
+            if isinstance(instance_bindings, str):
+                instance_bindings = json.loads(instance_bindings)
+            if not isinstance(instance_bindings, dict):
+                return None
+            for capability, entry in instance_bindings.items():
+                if capability not in {"asr", "tts", "llm"} or not isinstance(entry, dict):
+                    return None
+                instance_id = entry.get("id")
+                version = entry.get("version")
+                if not isinstance(instance_id, str) or not isinstance(version, str):
+                    return None
+                instance_row = await connection.fetchrow(
+                    f"SELECT scope, issuer, subject, capability, provider, model, base_url, sealed_key "
+                    f"FROM {_table('provider_instances')} "
+                    "WHERE id = $1::uuid AND key_version = $2::uuid AND enabled",
+                    instance_id, version,
+                )
+                if instance_row is None or instance_row["capability"] != capability \
+                        or instance_row["provider"] != row[f"{capability}_provider"] \
+                        or instance_row["scope"] != row[f"{capability}_source"]:
+                    return None
+                scope = instance_row["scope"]
+                issuer = instance_row["issuer"]
+                subject = instance_row["subject"]
+                if scope == "personal" and (issuer != row["issuer"] or subject != row["subject"]):
+                    return None
+                if scope == "platform" and (issuer or subject):
+                    return None
+                associated = json.dumps(
+                    ["provider_instance", scope, issuer, subject, instance_id],
+                    separators=(",", ":"), ensure_ascii=False,
+                ).encode()
+                sealed = bytes(instance_row["sealed_key"])
+                instance_credentials[capability] = AESGCM(_encryption_key()).decrypt(
+                    sealed[:12], sealed[12:], associated,
+                ).decode()
+                instance_models[capability] = instance_row["model"]
+                instance_base_urls[capability] = instance_row["base_url"]
+                instance_ids[capability] = instance_id
+                instance_versions[capability] = version
             user_id = (f"{row['issuer']}#{row['subject']}" if row["subject"] is not None
                        else f"guest:{row['guest_id']}")
             binding = VoiceAdmissionBinding(
@@ -125,6 +176,11 @@ class PublicVoiceTicketAuthenticator:
                 llm_provider=row["llm_provider"],
                 llm_source=row["llm_source"],
                 credentials=credentials,
+                instance_credentials=instance_credentials,
+                instance_models=instance_models,
+                instance_base_urls=instance_base_urls,
+                instance_ids=instance_ids,
+                instance_versions=instance_versions,
                 deadline=row["deadline_at"],
             )
             return AuthenticatedTransportIdentity(

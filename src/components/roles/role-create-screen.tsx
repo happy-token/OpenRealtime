@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, Film, LoaderCircle, MemoryStick, MessageCircle, Plus, Radio, Save, Sparkles, Upload, UserRound, Volume2, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { DEFAULT_TTS_VOICE, TTS_PROVIDER_OPTIONS, type TtsDialect, type TtsProvider } from "@/components/drawer/voice-options";
+import { BAILIAN_TTS_VOICE_OPTIONS, DEFAULT_TTS_VOICE, TTS_PROVIDER_OPTIONS, type TtsDialect, type TtsProvider } from "@/components/drawer/voice-options";
 import { describeVoiceSelection, VoiceSelector } from "@/components/voice/voice-selector";
 import type { PersonaSummary } from "@/lib/avatar-persona";
 import { avatarActionPreviewSources } from "@/lib/avatar-action-preview";
@@ -13,6 +13,7 @@ import { fetchOwnedAvatars, fetchPersonalAvatars } from "@/lib/avatar-catalog-cl
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import type { KnowledgeDocument } from "@/lib/knowledge-catalog-repository";
 import { readJsonResponse } from "@/lib/http-json-response";
+import { selectedDefaultTtsProvider, type ProviderVoiceCatalog } from "@/lib/default-role-voice";
 import { createRole } from "@/lib/role-catalog-client";
 import { preferredRoleMode, ROLE_MODE_LABELS, type RolePresentationMode } from "@/lib/role-records";
 import { fetchTools } from "@/lib/tool-catalog-client";
@@ -36,12 +37,13 @@ const MODE_COPY: Record<CreateMode, { title: string; description: string }> = {
 };
 
 interface DraftState {
-  name: string; voiceProvider: TtsProvider; voiceId: string; voiceDialect: TtsDialect; personaId: string | null;
+  name: string; voiceProvider: TtsProvider; voiceId: string; voiceDialect: TtsDialect;
+  voiceConfigurationTarget: string | null; voiceCustomized: boolean; personaId: string | null;
   memoryEnabled: boolean; toolIds: string[]; knowledgeIds: string[]; modes: CreateMode[];
   defaultMode: CreateMode; avatarId: string | null; actionId: string | null; talkingVariantId: string | null;
 }
 const DEFAULT_DRAFT: DraftState = {
-  name: "", voiceProvider: "doubao", voiceId: DEFAULT_TTS_VOICE, voiceDialect: "", personaId: null,
+  name: "", voiceProvider: "doubao", voiceId: DEFAULT_TTS_VOICE, voiceDialect: "", voiceConfigurationTarget: null, voiceCustomized: false, personaId: null,
   memoryEnabled: true, toolIds: [], knowledgeIds: [], modes: ["offline"], defaultMode: "offline",
   avatarId: null, actionId: null, talkingVariantId: null,
 };
@@ -68,16 +70,30 @@ export function RoleCreateScreen() {
   const resizeRef = useRef<{ pointerId: number; startX: number; width: number } | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     try {
       const stored = JSON.parse(window.sessionStorage.getItem(ROLE_CREATE_DRAFT_KEY) ?? "null") as Partial<DraftState> | null;
       if (stored) {
         const modes = Array.isArray(stored.modes) ? CREATE_MODES.filter((mode) => stored.modes?.includes(mode)) : DEFAULT_DRAFT.modes;
         const enabledModes = modes.length ? modes : DEFAULT_DRAFT.modes;
         setDraft({ ...DEFAULT_DRAFT, ...stored, modes: enabledModes,
+          voiceCustomized: stored.voiceCustomized ?? Boolean(stored.voiceConfigurationTarget || stored.voiceDialect
+            || (stored.voiceId && stored.voiceId !== DEFAULT_TTS_VOICE && stored.voiceId !== BAILIAN_TTS_VOICE_OPTIONS[0].value)),
           defaultMode: enabledModes.includes(stored.defaultMode as CreateMode) ? stored.defaultMode as CreateMode : preferredRoleMode(enabledModes) as CreateMode });
       }
-    } catch { window.sessionStorage.removeItem(ROLE_CREATE_DRAFT_KEY); }
-    setDraftReady(true);
+      void fetch("/api/provider-instances", { cache: "no-store", signal: controller.signal })
+          .then(async (response) => response.ok ? await response.json() as ProviderVoiceCatalog : null)
+          .then((result) => {
+            if (!result || controller.signal.aborted) return;
+            const provider = selectedDefaultTtsProvider(result);
+            if (!provider) return;
+            const voiceProvider = provider === "dashscope" ? "bailian" : "doubao";
+            setDraft((current) => !current.voiceCustomized && !current.voiceConfigurationTarget
+              ? { ...current, voiceProvider, voiceId: voiceProvider === "bailian" ? BAILIAN_TTS_VOICE_OPTIONS[0].value : DEFAULT_TTS_VOICE }
+              : current);
+          }).catch(() => undefined).finally(() => { if (!controller.signal.aborted) setDraftReady(true); });
+    } catch { window.sessionStorage.removeItem(ROLE_CREATE_DRAFT_KEY); setDraftReady(true); }
+    return () => controller.abort();
   }, []);
   useEffect(() => { if (draftReady) window.sessionStorage.setItem(ROLE_CREATE_DRAFT_KEY, JSON.stringify(draft)); }, [draft, draftReady]);
 
@@ -184,6 +200,18 @@ export function RoleCreateScreen() {
         defaultSelections: { ...(draft.actionId ? { "lip-sync": { action_id: draft.actionId } } : {}),
           ...(draft.actionId && draft.talkingVariantId ? { offline: { action_id: draft.actionId, talking_variant_id: draft.talkingVariantId } } : {}) },
         memoryEnabled: draft.memoryEnabled, toolIds: draft.toolIds });
+      if (draft.voiceConfigurationTarget) {
+        const response = await fetch(`/api/user/role-tts-selections/${encodeURIComponent(role.role_id)}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target: draft.voiceConfigurationTarget }),
+        });
+        if (!response.ok) {
+          window.sessionStorage.setItem("openrealtime:role-create-notice", "角色已创建，但语音配置未能绑定；请在角色设置里重新选择。");
+          window.sessionStorage.removeItem(ROLE_CREATE_DRAFT_KEY); window.sessionStorage.removeItem(RESOURCE_RETURN_KEY);
+          router.replace(`/roles/${encodeURIComponent(role.role_id)}`);
+          return;
+        }
+      }
       if (draft.knowledgeIds.length) {
         const response = await fetch(`/api/knowledge/bindings/${encodeURIComponent(role.role_id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documentIds: draft.knowledgeIds }) });
         const payload = await readJsonResponse<{ documentIds?: string[]; error?: string }>(response, "知识库绑定失败");
@@ -227,7 +255,7 @@ export function RoleCreateScreen() {
     <aside className={styles.panel} aria-label="角色创建任务"><div className={styles.resizeHandle} role="separator" aria-label="调整创建窗口宽度" aria-orientation="vertical" onPointerDown={startResize} onPointerMove={resize} onPointerUp={stopResize} onPointerCancel={stopResize}><span /></div><header className={styles.panelHeader}><div><small>DYNAMIC SETUP</small><h2>创建任务</h2><p>选择模式后，只显示实际需要完成的步骤。</p></div><span><strong>{completedSteps}</strong> / {visibleSteps.length}</span></header><div className={styles.panelBody}>
       <TaskModule id="foundation" icon={<Sparkles />} title="角色基础" detail={draft.name.trim() || "名称、声音与能力"} openModule={openModule} status={status("foundation")} done={done("foundation")} onOpen={setOpenModule}><div className={styles.foundationGrid}>
         <label className={styles.field}><span>角色名称</span><input autoFocus maxLength={80} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} placeholder="例如：产品顾问" /></label>
-        <BaseSetting id="voice" icon={<Volume2 />} title="声音" detail={`${voiceProviderLabel} · ${voiceLabel}`} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><VoiceSelector showCurrent={false} value={{ provider: draft.voiceProvider, voice: draft.voiceId, dialect: draft.voiceDialect }} onChange={(voice) => updateDraft({ voiceProvider: voice.provider, voiceId: voice.voice, voiceDialect: voice.dialect })} onSelectionCommit={() => setOpenBaseSetting(null)} allowClone allowManagement /></BaseSetting>
+        <BaseSetting id="voice" icon={<Volume2 />} title="声音" detail={`${voiceProviderLabel} · ${voiceLabel}`} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><VoiceSelector showCurrent={false} value={{ provider: draft.voiceProvider, voice: draft.voiceId, dialect: draft.voiceDialect }} configurationTarget={draft.voiceConfigurationTarget} onConfigurationChange={(target) => updateDraft({ voiceConfigurationTarget: target, voiceCustomized: true })} onChange={(voice) => updateDraft({ voiceProvider: voice.provider, voiceId: voice.voice, voiceDialect: voice.dialect, voiceCustomized: true })} onSelectionCommit={() => setOpenBaseSetting(null)} allowClone allowManagement /></BaseSetting>
         <BaseSetting id="persona" icon={<UserRound />} title="Persona" detail={persona ? `${persona.personaName} · ${persona.intro || "暂无简介"}` : "默认助手"} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><div className={styles.optionList}><button type="button" data-selected={!draft.personaId} onClick={() => { updateDraft({ personaId: null }); setOpenBaseSetting(null); }}><span><strong>默认助手</strong><small>使用角色默认对话风格</small></span>{!draft.personaId ? <Check /> : null}</button>{personas.map((item) => <button type="button" data-selected={draft.personaId === item.personaId} key={item.personaId} onClick={() => { updateDraft({ personaId: item.personaId }); setOpenBaseSetting(null); }}><span><strong>{item.personaName}</strong><small>{item.intro || "暂无简介"}</small></span>{draft.personaId === item.personaId ? <Check /> : null}</button>)}</div></BaseSetting>
         <BaseSetting id="tools" icon={<Wrench />} title="工具" detail={draft.toolIds.length ? `已选择 ${draft.toolIds.length} 个` : "暂未选择"} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><div className={styles.checkList}>{tools.length ? tools.map((tool) => <label key={tool.tool_id}><input type="checkbox" checked={draft.toolIds.includes(tool.tool_id)} onChange={(event) => updateDraft({ toolIds: event.target.checked ? [...draft.toolIds, tool.tool_id] : draft.toolIds.filter((id) => id !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人"} · {tool.description}</small></span></label>) : <p className={styles.emptyInline}>暂无可用工具</p>}</div><div className={styles.settingActions}><button type="button" onClick={() => setOpenBaseSetting(null)}>完成选择</button></div></BaseSetting>
         <BaseSetting id="knowledge" icon={<BookOpen />} title="知识库" detail={draft.knowledgeIds.length ? `已选择 ${draft.knowledgeIds.length} 份` : "暂未选择"} openSetting={openBaseSetting} onOpen={setOpenBaseSetting}><div className={styles.checkList}>{knowledge.length ? knowledge.map((doc) => <label key={doc.document_id}><input type="checkbox" checked={draft.knowledgeIds.includes(doc.document_id)} onChange={(event) => updateDraft({ knowledgeIds: event.target.checked ? [...draft.knowledgeIds, doc.document_id] : draft.knowledgeIds.filter((id) => id !== doc.document_id) })} /><span><strong>{doc.title}</strong><small>{doc.owner_id === null ? "共享资料" : "个人资料"}</small></span></label>) : <p className={styles.emptyInline}>暂无可用知识库</p>}</div><div className={styles.settingActions}><button type="button" onClick={() => setOpenBaseSetting(null)}>完成选择</button></div></BaseSetting>

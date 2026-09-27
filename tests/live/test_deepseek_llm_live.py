@@ -50,6 +50,27 @@ async def test_deepseek_v4_flash_streams_a_non_thinking_voice_reply() -> None:
     assert "DeepSeek" in "".join(chunks)
 
 
+async def test_selected_deepseek_chat_instance_streams_incremental_text() -> None:
+    """Use the same protocol and default model as provider-instance testing."""
+
+    client = OpenAiCompatibleLlmClient(
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        api_style="chat_completions",
+        timeout_s=30.0,
+    )
+    chunks = [
+        chunk
+        async for chunk in client.stream(
+            system_prompt="你是简洁的语音助手。",
+            user_text="请用两句中文介绍今天适合散步的理由，每句都要完整。",
+        )
+        if chunk.strip()
+    ]
+    assert len(chunks) >= 2
+
+
 async def test_deepseek_v4_flash_responses_returns_structured_semantic_eot() -> None:
     client = OpenAiCompatibleLlmClient(
         api_key=os.environ["DEEPSEEK_API_KEY"],

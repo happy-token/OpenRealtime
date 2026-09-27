@@ -36,6 +36,7 @@
 .providerList > button { min-height: 52px; padding: 8px 11px; display: grid; grid-template-columns: minmax(0,1fr) 17px; align-items: center; gap: 9px; border: 0; border-bottom: 1px solid var(--voice-border); color: var(--voice-text); background: transparent; font: inherit; text-align: left; cursor: pointer; }
 .providerList > button:last-child { border-bottom: 0; }
 .providerList > button:hover,.providerList > button[aria-pressed="true"] { background: color-mix(in srgb,var(--accent) 9%,transparent); }
+.providerList > button:disabled { opacity: .55; cursor: not-allowed; }
 .providerList span,.voiceSelect span { min-width: 0; display: grid; gap: 3px; }
 .providerList strong,.voiceSelect strong { font-size: .62rem; }
 .providerList small,.voiceSelect small { overflow: hidden; color: var(--voice-faint); font-size: .51rem; text-overflow: ellipsis; white-space: nowrap; }

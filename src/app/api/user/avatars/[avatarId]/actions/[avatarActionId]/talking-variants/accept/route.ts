@@ -1,5 +1,6 @@
 import { isSameOriginAvatarMutation } from "@/lib/avatar-test-access";
 import { acceptLipForcingJob } from "@/lib/lipforcing-talking-worker";
+import { acceptPersonalTalkingJob } from "@/lib/personal-talking-worker";
 import { findPersonalAvatar } from "@/lib/personal-avatar-library";
 import { readLimitedJson } from "@/lib/request-body";
 import { userFromRequest } from "@/lib/user-session";
@@ -17,7 +18,9 @@ export async function POST(request: Request, context: Context) {
   if (!avatar || avatar.deletedAt || !avatar.actions.some((item) => item.avatar_action_id === avatarActionId && !item.deleted_at)) return json({ error: "找不到动作底片" }, 404);
   try {
     const body = await readLimitedJson(request, 256) as { jobId?: unknown };
-    if (typeof body?.jobId !== "string" || !/^lipforcing-[0-9a-f-]{36}$/.test(body.jobId)) return json({ error: "任务 ID 无效" }, 400);
-    return json(await acceptLipForcingJob(avatarId, avatarActionId, body.jobId, user));
+    if (typeof body?.jobId !== "string" || !/^(lipforcing|musetalk|wav2lip)-[0-9a-f-]{36}$/.test(body.jobId)) return json({ error: "任务 ID 无效" }, 400);
+    const kind = body.jobId.startsWith("musetalk-") ? "musetalk" : body.jobId.startsWith("wav2lip-") ? "wav2lip" : null;
+    return json(kind ? await acceptPersonalTalkingJob(user, kind, avatarId, avatarActionId, body.jobId)
+      : await acceptLipForcingJob(avatarId, avatarActionId, body.jobId, user));
   } catch (error) { return json({ error: error instanceof Error ? error.message : "保存口型对齐失败" }, 400); }
 }

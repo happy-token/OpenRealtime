@@ -27,6 +27,19 @@ describe("voice clone route", () => {
     expect(response.status).toBe(411);
   });
 
+  it("does not allow a platform Dashscope key to create a user's cloned voice", async () => {
+    vi.stubEnv("DASHSCOPE_API_KEY", "platform-only-key");
+    const response = await POST(new NextRequest("http://localhost:3010/api/voice-clones", {
+      method: "POST",
+      headers: { origin: "http://localhost:3010", "content-length": "64" },
+      body: "x",
+    }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "克隆音色需要您自己的百炼 TTS 配置，不能使用平台 Key",
+    });
+  });
+
   it("rejects cross-origin rename and delete management", async () => {
     const headers = { origin: "https://attacker.example", "content-length": "64" };
     const rename = await PATCH(new NextRequest("http://localhost:3010/api/voice-clones", {

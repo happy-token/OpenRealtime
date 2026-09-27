@@ -90,6 +90,8 @@ describe("role detail configuration workspace", () => {
     expect(voiceSelector).toContain('<VoiceClonePanel embedded');
     expect(component).toContain('voiceDialect: role.voice_dialect ?? ""');
     expect(component).toContain('voice_dialect: voice.dialect');
+    expect(voiceSelector).not.toContain('className={styles.providerGroup}');
+    expect(voiceSelector).toContain('item.scope === "personal" ? "个人配置" : "平台配置"');
   });
 
   it("keeps selection and production inside the role editor", () => {

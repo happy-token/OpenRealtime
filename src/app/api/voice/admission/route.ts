@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return json({ code: "not_enabled", error: "公开语音体验尚未开放" }, 503);
   }
   try {
-    let parsed: { ttsProvider?: unknown; avatarProvider?: unknown } = {};
+    let parsed: { ttsProvider?: unknown; avatarProvider?: unknown; roleId?: unknown } = {};
     try { parsed = await readLimitedJson(request, 512) as typeof parsed ?? {}; }
     catch (error) {
       return error instanceof RequestBodyTooLarge
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (!user && request.cookies.has(USER_SESSION_COOKIE)) {
       return json({ code: "login_expired", error: "登录已过期，请重新登录后使用自己的 API Key" }, 401);
     }
-    const admission = await admitVoiceSession(user, parsed.ttsProvider, parsed.avatarProvider);
+    const admission = await admitVoiceSession(user, parsed.ttsProvider, parsed.avatarProvider, parsed.roleId);
     return json(admission, 200);
   } catch (error) {
     if (error instanceof VoiceAdmissionError) {

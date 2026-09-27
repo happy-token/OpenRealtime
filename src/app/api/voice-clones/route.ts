@@ -19,6 +19,10 @@ import {
   voiceCloneConfiguration,
 } from "@/lib/bailian-voice-clones";
 import { hasMatchingAudioSignature } from "@/lib/media-signatures";
+import { listProviderInstances, loadProviderInstanceKey } from "@/lib/provider-instances";
+import { normalizeProviderBaseUrl } from "@/lib/provider-catalog";
+import { loadPersonalKey } from "@/lib/user-provider-credentials";
+import { userFromRequest } from "@/lib/user-session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,14 +59,17 @@ export async function GET(request: NextRequest) {
   if (!authorizeVoiceCloneMutation(request)) {
     return json({ error: "不允许从当前来源读取克隆音色" }, 403);
   }
-  const configuration = voiceCloneConfiguration();
+  const personalEnvironment = await personalCloneEnvironment(request);
+  const environment = personalEnvironment ?? process.env;
+  const configuration = voiceCloneConfiguration(environment);
   const labels = await readLabels();
   try {
-    const voices = await listBailianClonedVoices(labels);
+    const voices = await listBailianClonedVoices(labels, environment);
     const configuredActiveVoiceId = process.env.BAILIAN_TTS_VOICE?.trim() || null;
     return json({
       provider: "bailian",
       ...configuration,
+      canCreate: Boolean(personalEnvironment && configuration.configured),
       activeVoiceId: configuredActiveVoiceId && voices.some((voice) => voice.id === configuredActiveVoiceId)
         ? configuredActiveVoiceId
         : null,
@@ -72,6 +79,7 @@ export async function GET(request: NextRequest) {
     return json({
       provider: "bailian",
       ...configuration,
+      canCreate: Boolean(personalEnvironment && configuration.configured),
       voices: [],
       error: error instanceof Error ? localizeProviderError(error.message) : "克隆音色目录暂不可用",
     });
@@ -92,7 +100,9 @@ export async function POST(request: NextRequest) {
   if (contentLength > MAX_AUDIO_BYTES + 128 * 1024) {
     return json({ error: "克隆音频不能超过 10MB" }, 413);
   }
-  const configuration = voiceCloneConfiguration();
+  const personalEnvironment = await personalCloneEnvironment(request);
+  if (!personalEnvironment) return json({ error: "克隆音色需要您自己的百炼 TTS 配置，不能使用平台 Key" }, 403);
+  const configuration = voiceCloneConfiguration(personalEnvironment);
   if (!configuration.configured) {
     return json({ error: `克隆服务尚未完成服务端配置：${configuration.missing.join(", ")}` }, 503);
   }
@@ -145,7 +155,7 @@ export async function POST(request: NextRequest) {
       "--prefix",
       "openrt",
       "--rights-confirmed",
-    ], { timeout: 120_000, maxBuffer: 1024 * 1024 });
+    ], { timeout: 120_000, maxBuffer: 1024 * 1024, env: personalEnvironment });
     const result = JSON.parse(enrollment.stdout.trim()) as {
       voice_id?: unknown;
       target_model?: unknown;
@@ -182,6 +192,7 @@ export async function PATCH(request: NextRequest) {
   if (typeof body.displayName !== "string" || !LABEL_PATTERN.test(body.displayName.trim())) {
     return json({ error: "请填写 1–32 个字符的音色名称" }, 400);
   }
+  if (!await personalCloneEnvironment(request)) return json({ error: "管理克隆音色需要您自己的百炼 TTS 配置" }, 403);
   try {
     await saveLabel(body.voiceId, body.displayName.trim());
     return json({ voice: { id: body.voiceId, displayName: body.displayName.trim() } });
@@ -197,8 +208,10 @@ export async function DELETE(request: NextRequest) {
   }
   const body = await readManagementBody(request);
   if (!body || !isValidBailianVoiceId(body.voiceId)) return json({ error: "音色 ID 无效" }, 400);
+  const personalEnvironment = await personalCloneEnvironment(request);
+  if (!personalEnvironment) return json({ error: "管理克隆音色需要您自己的百炼 TTS 配置" }, 403);
   try {
-    await deleteBailianClonedVoice(body.voiceId);
+    await deleteBailianClonedVoice(body.voiceId, personalEnvironment);
     await removeLabel(body.voiceId);
     return json({ deleted: true, voiceId: body.voiceId });
   } catch (error) {
@@ -206,6 +219,22 @@ export async function DELETE(request: NextRequest) {
     console.error("Failed to delete Bailian cloned voice", detail);
     return json({ error: localizeProviderError(detail, "delete") }, 502);
   }
+}
+
+async function personalCloneEnvironment(request: NextRequest): Promise<NodeJS.ProcessEnv | null> {
+  const user = await userFromRequest(request);
+  if (!user) return null;
+  const { instances, selections } = await listProviderInstances(user, false);
+  const candidates = instances.filter((instance) => instance.scope === "personal" && instance.capability === "tts"
+    && instance.provider === "dashscope" && instance.enabled && instance.connectionStatus === "passed");
+  const preferred = candidates.find((instance) => instance.id === selections.tts)
+    ?? candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+  const key = preferred ? (await loadProviderInstanceKey(user, preferred.id, false))?.key
+    : await loadPersonalKey(user, "dashscope");
+  if (!key) return null;
+  const baseUrl = preferred && normalizeProviderBaseUrl("tts", "dashscope", preferred.baseUrl);
+  return { ...process.env, DASHSCOPE_API_KEY: key,
+    ...(baseUrl ? { BAILIAN_API_HOST: new URL(baseUrl).host } : {}) };
 }
 
 function resolvePythonBinary() {

@@ -22,7 +22,9 @@ suite("public voice admission with PostgreSQL", () => {
     process.env.DASHSCOPE_API_KEY = "test-platform-dashscope";
     process.env.DEEPSEEK_API_KEY = "test-platform-deepseek";
     await pool.query(`CREATE SCHEMA "${schema}"`);
-    for (const migration of ["0020_web_identity_and_provider_credentials.sql", "0021_voice_admissions.sql"]) {
+    for (const migration of ["0020_web_identity_and_provider_credentials.sql", "0021_voice_admissions.sql",
+      "0024_provider_instances.sql", "0025_provider_instance_test_cooldown.sql",
+      "0026_provider_instance_builtin_contract.sql", "0027_provider_instance_realtime_contract_reset.sql"]) {
       const sql = readFileSync(path.join(process.cwd(), "server/persistence/postgres/migrations", migration), "utf8")
         .replaceAll("__VOICEAGENT_SCHEMA__", schema);
       await pool.query(sql);
@@ -81,5 +83,59 @@ suite("public voice admission with PostgreSQL", () => {
       [createHash("sha256").update(avatar.ticket).digest("hex")],
     );
     expect(revokedAvatar.rows[0]?.revoked_at).not.toBeNull();
+  });
+
+  it("isolates two users' selected ASR instances and revokes only the edited binding", async () => {
+    process.env.VOICEAGENT_PLATFORM_TTS_CONCURRENCY = "10";
+    const { admitVoiceSession } = await import("./voice-admission");
+    const { createProviderInstance, recordProviderConnectionTest, selectProviderInstance,
+      updateProviderInstance } = await import("./provider-instances");
+    const alice = { issuer: "https://identity.example.test", subject: "alice" };
+    const bob = { issuer: "https://identity.example.test", subject: "bob" };
+    const created = await Promise.all([alice, bob].map((user, index) => createProviderInstance(user, "personal", {
+      capability: "asr", provider: "doubao", displayName: `ASR ${index}`, model: "",
+      apiKey: `test-private-asr-${index}`,
+    })));
+    for (const [index, user] of [alice, bob].entries()) {
+      expect(await recordProviderConnectionTest(user, "personal", created[index].id,
+        created[index].revision, true, "fixture contract passed")).toBe(true);
+      expect(await selectProviderInstance(user, created[index].id)).not.toBeNull();
+    }
+    const first = await admitVoiceSession(alice);
+    const second = await admitVoiceSession(bob);
+    expect(first.instances?.asr).toBe(created[0].id);
+    expect(second.instances?.asr).toBe(created[1].id);
+
+    const python = [
+      "import asyncio, json",
+      "from server.voice_session.public_admission import PublicVoiceTicketAuthenticator",
+      `tickets = ${JSON.stringify([first.ticket, second.ticket])}`,
+      "async def main():",
+      "    verifier = PublicVoiceTicketAuthenticator()",
+      "    results = []",
+      "    for ticket in tickets:",
+      "        identity = await verifier.authenticate({'origin': 'https://voice.example.test'}, '/voice?admission=' + ticket)",
+      "        results.append(identity.admission.instance_credentials['asr'])",
+      "    print(json.dumps(results))",
+      "asyncio.run(main())",
+    ].join("\n");
+    const boundKeys = JSON.parse(execFileSync("uv", ["run", "--extra", "postgres", "python", "-c", python], {
+      cwd: process.cwd(), env: process.env, encoding: "utf8",
+    })) as string[];
+    expect(boundKeys).toEqual(["test-private-asr-0", "test-private-asr-1"]);
+
+    await updateProviderInstance(alice, "personal", created[0].id, {
+      capability: "asr", provider: "doubao", displayName: "ASR rotated", model: "",
+      apiKey: "test-rotated-alice-asr", expectedRevision: created[0].revision,
+    });
+    const rows = await pool.query<{ ticket_hash: string; revoked_at: Date | null }>(
+      `SELECT ticket_hash, revoked_at FROM "${schema}".voice_admissions
+       WHERE ticket_hash = ANY($1::text[])`,
+      [[first.ticket, second.ticket].map((ticket) => createHash("sha256").update(ticket).digest("hex"))],
+    );
+    const revoked = new Map(rows.rows.map((row) => [row.ticket_hash, row.revoked_at]));
+    expect(revoked.get(createHash("sha256").update(first.ticket).digest("hex"))).not.toBeNull();
+    expect(revoked.get(createHash("sha256").update(second.ticket).digest("hex"))).toBeNull();
+    await expect(admitVoiceSession(alice)).rejects.toMatchObject({ code: "configuration_invalid", status: 409 });
   });
 });

@@ -49,10 +49,10 @@ docker compose --env-file deploy/compose/.env ps
 如果以后把适配后的 Web 本身部署到 Cloudflare Workers，再用 Wrangler 的 `vars` 配非敏感变量、用 Workers Secrets 配 API Key；本文件当前没有把 Next.js、Python 或 PostgreSQL 部署到 Workers。
 
 1. 本地从 `.env.example` 复制 `.env` 并填写实际值；`.env` 不提交。Web 的公开浏览器变量只有 `NEXT_PUBLIC_*`。生产密钥在服务器环境或 Secret 管理器注入，不能放在 Cloudflare 公开变量、客户端代码或前端管理表单中。
-2. 为 Web 与语音服务配置同一 `VOICEAGENT_POSTGRES_DSN` 和 schema，运行仓库的 PostgreSQL 迁移，包含 `0020`、`0021` 和 `0022`。密钥加密值 `VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY` 必须稳定备份；轮换前需规划用户凭据重新加密。
+2. 为 Web 与语音服务配置同一 `VOICEAGENT_POSTGRES_DSN` 和 schema，先运行仓库的 PostgreSQL 迁移，包含 `0020` 至 `0027`，再同时更新 Web 与语音服务。`0024` 引入供应商实例及会话绑定，`0027` 会把旧 ASR/TTS 的“连接通过”状态清为未测试，要求重新通过实时契约测试；若只更新 Web 而未更新语音服务，不能启用新实例选择或测试。Web 的 `VOICEAGENT_CONTROL_PLANE_URL` 必须指向语音服务的回环地址（Compose 默认为 `http://127.0.0.1:8766`）；内置契约测试通过共享加密密钥签名，不能把此控制端口对外公开。密钥加密值 `VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY` 必须在 Web 与语音服务一致并稳定备份；轮换前需规划用户凭据重新加密。
 3. 配置 Casdoor 回调 `https://realtime.happy-token.cn/api/user/callback` 和 `VOICEAGENT_PUBLIC_ORIGIN`。配置 `NEXT_PUBLIC_VOICE_WS_URL=wss://realtime.happy-token.cn/voice`；只在语音服务使用 `public_ticket` 且反向代理 WebSocket 升级请求后启用 `VOICEAGENT_PUBLIC_VOICE_ENABLED=true`。
 4. 默认保留三分钟会话上限及平台 ASR、TTS 各一席并发。服务商账号自身应设置硬额度。生产付费创作开关保持关闭，直到每项操作的用户归属、配额和持久化任务链路经过验证。
-5. `VOICEAGENT_PERSONAL_LIPSYNC_ALLOWED_ORIGINS` 填写经运营方审查的 HTTPS 根来源，逗号分隔；为空时用户不能配置口型服务。用户令牌加密存于 PostgreSQL，页面只展示是否已配置。若用户服务不在允许来源内，先由运营方审查后再添加。
+5. `VOICEAGENT_PERSONAL_LIPSYNC_ALLOWED_ORIGINS` 填写经运营方审查的 HTTPS 根来源，逗号分隔；为空时用户不能配置 Lip Forcing、MuseTalk 或 Wav2Lip 个人口型服务。用户令牌加密存于 PostgreSQL，页面只展示是否已配置。若用户服务不在允许来源内，先由运营方审查后再添加。
 
 ## 服务与路由
 
