@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -57,9 +58,9 @@ export function ConversationHistoryScreen() {
     <header><span>CONVERSATIONS</span><h1>对话记录</h1><p>按角色、方式和时间查找对话；删除后无法恢复。</p></header>
     <div className={styles.filters}>
       <label><Search /><input aria-label="搜索对话记录" placeholder="搜索对话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-      <select aria-label="按角色筛选" value={role} onChange={(event) => setRole(event.target.value)}><option value="">全部角色</option>{roles.map(([id, name]) => <option key={id} value={id ?? ""}>{name}</option>)}</select>
-      <select aria-label="按呈现方式筛选" value={mode} onChange={(event) => setMode(event.target.value)}><option value="">全部方式</option>{[...new Set(items.map((item) => item.mode))].map((item) => <option key={item} value={item}>{isRolePresentationMode(item) ? ROLE_MODE_LABELS[item] : item}</option>)}</select>
-      <select aria-label="按时间筛选" value={period} onChange={(event) => setPeriod(event.target.value)}><option value="all">全部时间</option><option value="7d">最近 7 天</option><option value="30d">最近 30 天</option></select>
+      <SelectMenu fullWidth value={String(role)} ariaLabel="按角色筛选" options={[{ value: "", label: "全部角色" }, ...(roles.map(([id, name]) => ({ value: String(id ?? ""), label: String(name) })))]} onChange={value => setRole(value)} />
+      <SelectMenu fullWidth value={String(mode)} ariaLabel="按呈现方式筛选" options={[{ value: "", label: "全部方式" }, ...([...new Set(items.map((item) => item.mode))].map((item) => ({ value: String(item), label: String(isRolePresentationMode(item) ? ROLE_MODE_LABELS[item] : item) })))]} onChange={value => setMode(value)} />
+      <SelectMenu fullWidth value={String(period)} ariaLabel="按时间筛选" options={[{ value: "all", label: "全部时间" }, { value: "7d", label: "最近 7 天" }, { value: "30d", label: "最近 30 天" }]} onChange={value => setPeriod(value)} />
     </div>
     {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     {loading ? <p className={styles.empty}>正在读取对话记录…</p> : filtered.length ? <div className={styles.list}>{filtered.map((item) => <article key={item.id}>

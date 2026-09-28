@@ -70,6 +70,7 @@ import {
   reconcileAvatarDisplayConfigWithOwnedAvatar,
 } from "@/lib/avatar-session-config";
 import { loadRequestedAvatarConfig } from "@/lib/requested-avatar-config";
+import { readRoleActionPreferences } from "@/lib/role-action-preferences";
 import { useAppTheme } from "@/components/theme/app-theme-provider";
 import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import type { RolePresentationMode, RoleRecord } from "@/lib/role-records";
@@ -207,6 +208,11 @@ export function OpenRealtimeApp({
     const query = new URLSearchParams(window.location.search);
     const requestedAvatarId = officialAvatarId || initialRoleMode === "conversation" ? "" : query.get("avatar_id") ?? initialRole?.avatar_id ?? "";
     const defaultSelection = initialRoleMode ? initialRole?.default_selections?.[initialRoleMode as "motion" | "offline" | "lip-sync"] : undefined;
+    const actionPreferences = readRoleActionPreferences(initialRole?.role_id ?? "", requestedAvatarId);
+    const requestedActionId = query.get("avatar_action_id") ?? actionPreferences.actionId ?? defaultSelection?.action_id;
+    const requestedVariantId = query.get("talking_variant_id")
+      ?? (requestedActionId ? actionPreferences.variants[requestedActionId] : undefined)
+      ?? (defaultSelection?.action_id === requestedActionId ? defaultSelection?.talking_variant_id : undefined);
     const requestedConfigTab = query.get("open_config") ?? "";
     if (officialAvatarId) {
       setRoleConfigLoading(true);
@@ -233,9 +239,9 @@ export function OpenRealtimeApp({
       setRoleConfigReady(false);
       void loadRequestedAvatarConfig(
         requestedAvatarId, storedConfig, controller.signal,
-        query.get("avatar_action_id") ?? defaultSelection?.action_id,
+        requestedActionId,
         initialRoleMode,
-        query.get("talking_variant_id") ?? defaultSelection?.talking_variant_id,
+        requestedVariantId,
       ).then((nextConfig) => {
         if (controller.signal.aborted) return;
         setAvatarDisplayConfig(nextConfig);
@@ -566,7 +572,11 @@ export function OpenRealtimeApp({
   function handleHomeRoleSelect(role: RoleRecord) {
     if (sessionStarted || role.role_id === initialRole?.role_id) return;
     const selection = role.default_selections?.[role.default_mode as "motion" | "offline" | "lip-sync"];
-    router.push(conversationHref(role, role.default_mode, selection?.action_id, selection?.talking_variant_id));
+    const preferences = readRoleActionPreferences(role.role_id, role.avatar_id ?? "");
+    const actionId = preferences.actionId ?? selection?.action_id;
+    const variantId = actionId ? preferences.variants[actionId]
+      ?? (selection?.action_id === actionId ? selection?.talking_variant_id : undefined) : undefined;
+    router.push(conversationHref(role, role.default_mode, actionId, variantId));
   }
 
   async function handleHomeRoleModeSelect(mode: RolePresentationMode, actionId?: string, talkingVariantId?: string) {

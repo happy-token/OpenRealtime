@@ -41,6 +41,7 @@ import {
   type ExperienceMode,
 } from "@/components/digital-human/types";
 import { useAvatarCapabilities } from "@/hooks/use-avatar-capabilities";
+import { useAvatarActionOrder } from "@/hooks/use-avatar-action-order";
 import { HomeRoleModeControls } from "./home-role-mode-controls";
 import { Orb } from "./orb";
 import { PersonaQuickSelect } from "./persona-quick-select";
@@ -340,6 +341,8 @@ export function ActionMaterialFolder({
   runtimeSelected,
   onSelectVariant,
   onCreateTalking,
+  previewActive,
+  ...pointerHandlers
 }: {
   action: AvatarAction;
   index: number;
@@ -349,14 +352,19 @@ export function ActionMaterialFolder({
   selectedVariantId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectAction?: () => void;
+  onSelectAction?: () => boolean | void;
   onSelectRuntime?: () => void;
   runtimeSelected?: boolean;
   onSelectVariant: (variantId: string) => void;
   onCreateTalking?: () => void;
+  previewActive?: boolean;
+  onActionPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onActionPointerMove?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onActionPointerUp?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onActionPointerCancel?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
   return <WorkbenchActionFolder action={action} index={index} image={image} variants={variants}
-    selected={selected} selectedVariantId={selectedVariantId} open={open}
+    selected={selected} selectedVariantId={selectedVariantId} open={open} previewActive={previewActive} {...pointerHandlers}
     onOpenChange={onOpenChange} onSelectAction={onSelectAction} onSelectRuntime={onSelectRuntime} runtimeSelected={runtimeSelected}
     onSelectVariant={onSelectVariant} onCreateTalking={onCreateTalking}
     talkingLabel="口型素材" createLabel="新建口型动作" createNote="新增口型对齐" actionLabel="底片" />;
@@ -685,6 +693,7 @@ export function HomePreviewWorkspace({
     : avatarMode === "offline"
     ? (selectedCatalogAvatar && selectedOwnedAvatar ? pairedActions(selectedCatalogAvatar, selectedOwnedAvatar) : [])
     : selectableActions(selectedCatalogAvatar);
+  const actionSort = useAvatarActionOrder(avatarDisplayConfig.segmentedAvatarId ?? "", currentActions, (action) => action.avatarActionId);
 
   const selectedCapability = avatarMode === "realtime" ? capabilities?.anam : avatarMode === "lip-sync" ? capabilities?.localRenderer : capabilities?.assets;
   const capabilityBlocked = experienceMode === "avatar" && selectedCapability?.state !== "available";
@@ -875,11 +884,11 @@ export function HomePreviewWorkspace({
           <div className={styles.actionEdgeList}>
             {!libraryMode ? <WorkbenchConversationOption selected={experienceMode === "voice"} onSelect={() => onExperienceModeChange("voice")} /> : null}
             {libraryMode ? <LibraryCreateCard kind="motion" title="创建动作" note="生成动作" axis="horizontal" onCreate={() => onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId })} /> : null}
-            {currentActions.map((action, index) => {
+            {actionSort.orderedActions.map((action, index) => {
               const allVariants = activeTalkingVariants(selectedOwnedAvatar?.actions.find((candidate) => candidate.avatar_action_id === action.avatarActionId));
               const variants = libraryMode ? allVariants : allVariants.filter((variant) => variant.method === "lipforcing");
-              return <ActionMaterialFolder
-                key={action.avatarActionId}
+              return <div className={styles.sortableAction} key={action.avatarActionId} data-action-sort-id={action.avatarActionId} data-open={expandedActionId === action.avatarActionId} data-selected={avatarDisplayConfig.segmentedAvatarActionId === action.avatarActionId} data-dragging={actionSort.draggingActionId === action.avatarActionId} data-drop-target={actionSort.dropActionId === action.avatarActionId}>
+              <ActionMaterialFolder
                 action={action}
                 index={index}
                 image={selectedCatalogAvatar?.source.imageUrl}
@@ -888,12 +897,14 @@ export function HomePreviewWorkspace({
                 selectedVariantId={avatarDisplayConfig.motionTalkingVariantId}
                 open={expandedActionId === action.avatarActionId}
                 onOpenChange={(open) => setExpandedActionId(open ? action.avatarActionId : null)}
-                onSelectAction={libraryMode ? () => selectAction(action) : undefined}
+                previewActive={actionPanelOpen}
+                {...actionSort.pointerHandlers(action.avatarActionId)}
+                onSelectAction={() => { if (actionSort.consumeDragClick()) return false; if (libraryMode) selectAction(action); }}
                 onSelectRuntime={!libraryMode && capabilities?.localRenderer.state === "available" ? () => selectRuntimeAction(action) : undefined}
                 runtimeSelected={!libraryMode && avatarMode === "lip-sync" && avatarDisplayConfig.segmentedAvatarActionId === action.avatarActionId}
                 onSelectVariant={(variantId) => selectAction(action, variantId)}
                 onCreateTalking={() => libraryMode ? onOpenProduction?.({ task: "talking", avatarId: avatarDisplayConfig.segmentedAvatarId, actionId: action.avatarActionId }) : window.location.assign(`/resources?tab=avatars&task=talking&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}&action_id=${encodeURIComponent(action.avatarActionId)}`)}
-              />;
+              /></div>;
             })}
           </div>
         </aside>

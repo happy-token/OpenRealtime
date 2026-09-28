@@ -40,7 +40,11 @@ interface FolderProps {
   className?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onFrontClick?: () => void;
+  onFrontClick?: () => boolean | void;
+  onFrontPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onFrontPointerMove?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onFrontPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onFrontPointerCancel?: (event: PointerEvent<HTMLButtonElement>) => void;
   onFrontPointerEnter?: (event: PointerEvent<HTMLButtonElement>) => void;
   onFrontPointerLeave?: (event: PointerEvent<HTMLButtonElement>) => void;
   onFrontFocus?: (event: FocusEvent<HTMLButtonElement>) => void;
@@ -71,6 +75,10 @@ export default function Folder({
   open: controlledOpen,
   onOpenChange,
   onFrontClick,
+  onFrontPointerDown,
+  onFrontPointerMove,
+  onFrontPointerUp,
+  onFrontPointerCancel,
   onFrontPointerEnter,
   onFrontPointerLeave,
   onFrontFocus,
@@ -88,10 +96,10 @@ export default function Folder({
   } as FolderStyle;
 
   const toggle = () => {
+    if (onFrontClick?.() === false) return;
     const nextOpen = !open;
     if (controlledOpen === undefined) setInternalOpen(nextOpen);
     if (!nextOpen) setPaperOffsets({});
-    onFrontClick?.();
     onOpenChange?.(nextOpen);
   };
 
@@ -155,6 +163,10 @@ export default function Folder({
           aria-expanded={open}
           onPointerEnter={onFrontPointerEnter}
           onPointerLeave={onFrontPointerLeave}
+          onPointerDown={onFrontPointerDown}
+          onPointerMove={onFrontPointerMove}
+          onPointerUp={onFrontPointerUp}
+          onPointerCancel={onFrontPointerCancel}
           onFocus={onFrontFocus}
           onBlur={onFrontBlur}
           onClick={toggle}

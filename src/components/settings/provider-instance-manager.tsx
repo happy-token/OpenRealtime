@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Check, LoaderCircle, Plus, PlugZap, Settings2, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -318,13 +319,10 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
       <div className={styles.instanceDialog} role="dialog" aria-modal="true" aria-labelledby="provider-instance-title">
         <h2 id="provider-instance-title">{draft.id ? "编辑供应商" : `新建 ${draft.capability.toUpperCase()} 供应商`}</h2>
         <form onSubmit={(event) => void save(event)} className={styles.instanceForm}>
-          {!draft.id && <label>供应商<select value={draft.provider} onChange={(event) => changeDraftProvider(event.target.value as BuiltinProvider)}>
-            {PROVIDER_CATALOG[draft.capability].map((preset) => <option value={preset.id} key={preset.id}>{preset.name}</option>)}
-          </select></label>}
+          {!draft.id && <label>供应商<SelectMenu fullWidth value={String(draft.provider)} ariaLabel="供应商" options={[...(PROVIDER_CATALOG[draft.capability].map((preset) => ({ value: String(preset.id), label: String(preset.name) })))]} onChange={value => changeDraftProvider(value as BuiltinProvider)} /></label>}
           <p className={styles.providerIntro}>{PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.intro} <a href={PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.keyUrl} target="_blank" rel="noopener noreferrer">前往官网申请 API Key ↗</a>
             {draft.id ? " 修改配置会结束正在使用该实例的会话。" : ""}</p>
-          {admin && !draft.id && <label>配置范围<select value={draft.scope} onChange={(event) => setDraft({ ...draft, scope: event.target.value as ProviderScope })}>
-            {signedIn && <option value="personal">我的配置</option>}<option value="platform">平台配置</option></select></label>}
+          {admin && !draft.id && <label>配置范围<SelectMenu fullWidth value={String(draft.scope)} ariaLabel="配置范围" options={[...(signedIn ? [{ value: "personal", label: "我的配置" }] : []), { value: "platform", label: "平台配置" }]} onChange={value => setDraft({ ...draft, scope: value as ProviderScope })} /></label>}
           <label>名称<input value={draft.displayName} maxLength={80} required onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} /></label>
           <label>Base URL<input value={draft.baseUrl} type="url" required onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
           <p className={styles.urlHint}>内置 bridge 仅允许对应供应商的官方 HTTPS 地址。</p>

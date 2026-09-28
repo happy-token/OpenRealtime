@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Braces, Check, ChevronRight, Cloud, LoaderCircle, Pencil, Plus, Server, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -187,9 +188,9 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
         <label><span>函数名称</span><input value={functionName} onChange={(event) => setFunctionName(event.target.value)} placeholder="get_order_status" /></label>
         <label className={styles.wide}><span>说明</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="告诉模型何时使用这个工具" /></label>
         <label className={styles.wide}><span>{kind === "mcp" ? "Streamable HTTP 服务地址" : kind === "function" ? "函数执行服务地址" : "API 地址"}</span><input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={kind === "mcp" ? "http://127.0.0.1:3001/mcp" : "https://api.example.com/action"} /></label>
-        {kind === "api" ? <label><span>请求方法</span><select value={method} onChange={(event) => setMethod(event.target.value === "GET" ? "GET" : "POST")}><option>GET</option><option>POST</option></select></label> : null}
-        <label><span>风险等级</span><select value={riskLevel} onChange={(event) => setRiskLevel(event.target.value as NonNullable<ToolRecord["risk_level"]>)}><option value="low">低</option><option value="medium">中</option><option value="high">高 · 强确认</option><option value="critical">极高 · 禁止语音调用</option></select></label>
-        <label><span>工具作用</span><select value={effect} onChange={(event) => setEffect(event.target.value as NonNullable<ToolRecord["effect"]>)}><option value="read_public">读取公开信息</option><option value="read_sensitive">读取敏感信息</option><option value="write_reversible">可撤销写入</option><option value="write_irreversible">不可撤销写入</option><option value="execute_code">执行代码</option><option value="communicate_external">对外通信</option><option value="spend_or_transfer">支付或转账</option><option value="control_device">控制设备</option></select></label>
+        {kind === "api" ? <label><span>请求方法</span><SelectMenu fullWidth value={String(method)} ariaLabel="请求方法" options={[{ value: "GET", label: "GET" }, { value: "POST", label: "POST" }]} onChange={value => setMethod(value === "GET" ? "GET" : "POST")} /></label> : null}
+        <label><span>风险等级</span><SelectMenu fullWidth value={String(riskLevel)} ariaLabel="风险等级" options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高 · 强确认" }, { value: "critical", label: "极高 · 禁止语音调用" }]} onChange={value => setRiskLevel(value as NonNullable<ToolRecord["risk_level"]>)} /></label>
+        <label><span>工具作用</span><SelectMenu fullWidth value={String(effect)} ariaLabel="工具作用" options={[{ value: "read_public", label: "读取公开信息" }, { value: "read_sensitive", label: "读取敏感信息" }, { value: "write_reversible", label: "可撤销写入" }, { value: "write_irreversible", label: "不可撤销写入" }, { value: "execute_code", label: "执行代码" }, { value: "communicate_external", label: "对外通信" }, { value: "spend_or_transfer", label: "支付或转账" }, { value: "control_device", label: "控制设备" }]} onChange={value => setEffect(value as NonNullable<ToolRecord["effect"]>)} /></label>
         {kind === "mcp" ? <p>当前支持 Streamable HTTP；函数名称填写服务端已有的工具名称。</p> : null}
         <p className={styles.wide}>工具服务来源须由管理员允许；保存后重新进入对话才会加载。</p>
         <label className={styles.wide}><span>输入 Schema</span><textarea value={schema} onChange={(event) => setSchema(event.target.value)} spellCheck={false} /></label>

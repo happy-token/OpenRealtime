@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -6,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Check, ChevronDown, ChevronRight, Film, GripHorizontal, LoaderCircle, MessageCircle, Pencil, Plus, Radio, Settings2, Sparkles, Star, UserRound, Volume2, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { HomeRoleModeControls } from "@/components/call/home-role-mode-controls";
+import { PreviewVideo } from "@/components/workspace/workbench-resource-rails";
 import homePreviewStyles from "@/components/call/preview-workspace-lab.module.css";
 import { VOICE_VISUAL_THEME_OPTIONS, type VoiceVisualTheme } from "@/components/call/voice-theme";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG } from "@/components/digital-human/types";
@@ -20,12 +22,15 @@ import type { AnamHostedAvatar } from "@/lib/anam-avatars";
 import { readJsonResponse } from "@/lib/http-json-response";
 import { saveHostedAvatarProfile } from "@/lib/hosted-avatar-profile";
 import { fetchRole, saveRole } from "@/lib/role-catalog-client";
+import { readRoleActionPreferences, rememberRoleActionSelection } from "@/lib/role-action-preferences";
 import { enabledRoleModesForAvatar, preferredRoleMode, roleDetailDisplayMode, ROLE_MODE_LABELS, ROLE_PRESENTATION_MODES, type RolePresentationMode, type RoleRecord } from "@/lib/role-records";
 import { fetchTools } from "@/lib/tool-catalog-client";
 import type { ToolRecord } from "@/lib/tool-records";
 import type { KnowledgeDocument } from "@/lib/knowledge-catalog-repository";
 import { VoiceStartButton } from "@/components/ui/voice-start-button";
 import styles from "./role-detail-screen.module.css";
+import { AssetCard, DeletedAssets, applyAssetChange, useRoleAssetManagement, type AssetChange } from "./role-asset-management";
+import { cleanRoleAssetDefaults, validRoleAssetSelection } from "@/lib/role-asset-selections";
 import { AvatarChoiceGrid } from "./avatar-choice-grid";
 import { PersonaChoiceGrid } from "./persona-choice-grid";
 import { announceNavigationStart } from "@/components/navigation/navigation-events";
@@ -105,6 +110,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   const [activeMode, setActiveMode] = useState<RolePresentationMode>("conversation");
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [activeTalkingVariantId, setActiveTalkingVariantId] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<"motion" | "talking">("motion");
   const [selectedRealtimeAvatarId, setSelectedRealtimeAvatarId] = useState<string | null>(null);
   const [visualTheme, setVisualTheme] = useState<VoiceVisualTheme>("cloud");
   const [defaultRoleId, setDefaultRoleId] = useState("");
@@ -221,9 +227,10 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       setKnowledgeDocuments(loadedKnowledge);
       setKnowledgeIds(selectedKnowledgeIds);
       const nextAvatar = availableAvatars.find((item) => item.avatar_id === selectedRole.avatar_id) ?? null;
+      const actionPreferences = readRoleActionPreferences(selectedRole.role_id, nextAvatar?.avatar_id ?? "");
       const nextActions = nextAvatar?.actions.filter((action) => !action.deleted_at && action.video_url) ?? [];
       const nextOfflineActions = nextActions.filter((action) => action.talking_variants?.some((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url));
-      const requestedActionId = returnedActionId ?? (
+      const requestedActionId = returnedActionId ?? actionPreferences.actionId ?? (
         selectedRole.default_mode === "offline"
           ? selectedRole.default_selections?.offline?.action_id
           : selectedRole.default_mode === "motion" || selectedRole.default_mode === "lip-sync"
@@ -232,11 +239,14 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       ) ?? null;
       const previewActions = selectedRole.default_mode === "offline" ? nextOfflineActions : nextActions;
       const nextActionId = previewActions.some((action) => action.avatar_action_id === requestedActionId) ? requestedActionId : previewActions[0]?.avatar_action_id ?? null;
-      const requestedVariantId = selectedRole.default_selections?.offline?.action_id === nextActionId
-        ? selectedRole.default_selections?.offline?.talking_variant_id ?? null : null;
-      const nextTalkingVariants = nextActions.find((action) => action.avatar_action_id === nextActionId)?.talking_variants
-        ?.filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url) ?? [];
-      setAvatars(availableAvatars);
+      const nextSelectedAction = nextActions.find((action) => action.avatar_action_id === nextActionId);
+      const requestedVariantId = (nextActionId ? actionPreferences.variants[nextActionId] : undefined)
+        ?? (selectedRole.default_selections?.offline?.action_id === nextActionId
+          ? selectedRole.default_selections?.offline?.talking_variant_id ?? null : null);
+      const nextTalkingVariants = nextSelectedAction?.talking_variants
+        ?.filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url
+          && variant.source_video_url === nextSelectedAction.video_url) ?? [];
+      setAvatars(avatarRecords);
       setAvatar(nextAvatar);
       setActiveActionId(nextActionId);
       setActiveTalkingVariantId(nextTalkingVariants.some((variant) => variant.id === requestedVariantId) ? requestedVariantId : nextTalkingVariants[0]?.id ?? null);
@@ -262,7 +272,9 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   const lipSyncReady = personalLipsyncReady && capabilities?.localRenderer.state === "available";
   const displayMode = roleDetailDisplayMode(activeMode, lipSyncReady, Boolean(role?.enabled_modes.includes("offline") && activeTalkingVariants.length));
   const previewVideoUrl = displayMode === "offline"
-    ? activeTalkingVariants.find((variant) => variant.id === activeTalkingVariantId)?.video_url ?? activeTalkingVariants[0]?.video_url
+    ? previewKind === "talking"
+      ? activeTalkingVariants.find((variant) => variant.id === activeTalkingVariantId)?.video_url
+      : activeAction?.video_url
     : displayMode === "lip-sync" || displayMode === "motion" ? activeAction?.video_url : undefined;
   const previewImageUrl = role?.avatar_image_url;
   const autoSaveReady = Boolean(role?.display_name.trim()) && Boolean(role?.enabled_modes.every((mode) => (
@@ -306,6 +318,25 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       enabledModes: role?.enabled_modes,
       defaultMode: role?.default_mode,
     }));
+  }
+
+  const assetManagement = useRoleAssetManagement(handleAssetChange);
+
+  function handleAssetChange(change: AssetChange) {
+    setAvatars(current => applyAssetChange(current, change));
+    if (avatar?.avatar_id === change.avatarId && role) {
+      const updated = applyAssetChange([avatar], change)[0];
+      const available = updated.deleted_at ? null : updated;
+      const valid = validRoleAssetSelection(available, activeActionId, activeTalkingVariantId);
+      setAvatar(available);
+      setActiveActionId(valid.actionId);
+      setActiveTalkingVariantId(valid.variantId);
+      setRole(current => current ? { ...current, avatar_id: available?.avatar_id ?? null,
+        avatar_image_url: available?.source_image_url ?? null,
+        default_selections: cleanRoleAssetDefaults(available, current.default_selections) } : current);
+      if (activeActionId && !valid.actionId) setPreviewKind("motion");
+    }
+    setNotice("素材已更新");
   }
 
   function openProductionTask(task: AvatarWorkbenchTask) {
@@ -401,8 +432,11 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   function selectAvatar(avatarId: string) {
     if (!role) return;
     const nextAvatar = avatars.find((item) => item.avatar_id === avatarId) ?? null;
-    const previewModes = enabledRoleModesForAvatar(role.enabled_modes, nextAvatar);
-    const previewMode = previewModes.includes(activeMode) ? activeMode : previewModes[0] ?? "conversation";
+    const identityChanged = role.avatar_id !== nextAvatar?.avatar_id;
+    const requestedModes = identityChanged ? role.enabled_modes.filter((mode) => mode !== "realtime") : role.enabled_modes;
+    const enabledModes: RolePresentationMode[] = requestedModes.length ? requestedModes : ["conversation"];
+    const previewModes = enabledRoleModesForAvatar(requestedModes, nextAvatar);
+    const previewMode = previewModes.includes(activeMode) ? activeMode : preferredRoleMode(previewModes);
     const nextActions = nextAvatar?.actions.filter((action) => !action.deleted_at && action.video_url) ?? [];
     const previewActions = previewMode === "offline" ? nextActions.filter((action) => action.talking_variants?.some((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url)) : nextActions;
     const nextAction = previewActions[0] ?? null;
@@ -410,17 +444,29 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
     setAvatar(nextAvatar);
     setActiveActionId(nextAction?.avatar_action_id ?? null);
     setActiveTalkingVariantId(nextVariant?.id ?? null);
+    setPreviewKind("motion");
     setActiveMode(previewMode);
+    if (identityChanged) setSelectedRealtimeAvatarId(null);
     setRole({
       ...role,
       avatar_id: nextAvatar?.avatar_id ?? null,
       avatar_image_url: nextAvatar?.source_image_url ?? null,
-      enabled_modes: role.enabled_modes,
+      enabled_modes: enabledModes,
+      default_mode: enabledModes.includes(role.default_mode) ? role.default_mode : preferredRoleMode(previewModes),
+      default_selections: {
+        ...(!identityChanged && role.default_selections?.realtime ? { realtime: role.default_selections.realtime } : {}),
+        ...(nextAction ? {
+          motion: { action_id: nextAction.avatar_action_id },
+          "lip-sync": { action_id: nextAction.avatar_action_id },
+          ...(nextVariant ? { offline: { action_id: nextAction.avatar_action_id, talking_variant_id: nextVariant.id } } : {}),
+        } : {}),
+      },
     });
   }
 
-  async function selectPresentationPreview(mode: RolePresentationMode, actionId?: string, talkingVariantId?: string) {
+  async function selectPresentationPreview(mode: RolePresentationMode, actionId?: string, talkingVariantId?: string, nextPreviewKind?: "motion" | "talking") {
     setActiveMode(mode);
+    if (nextPreviewKind) setPreviewKind(nextPreviewKind);
     if (mode === "conversation" || mode === "realtime") return;
     const nextActionId = actionId ?? (mode === "offline" ? offlineActions[0]?.avatar_action_id : actions[0]?.avatar_action_id) ?? null;
     setActiveActionId(nextActionId);
@@ -428,8 +474,10 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       setActiveTalkingVariantId(null);
       return;
     }
-    const nextVariants = actions.find((action) => action.avatar_action_id === nextActionId)?.talking_variants
-      ?.filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url) ?? [];
+    const nextSelectedAction = actions.find((action) => action.avatar_action_id === nextActionId);
+    const nextVariants = nextSelectedAction?.talking_variants
+      ?.filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url
+        && variant.source_video_url === nextSelectedAction.video_url) ?? [];
     setActiveTalkingVariantId(talkingVariantId ?? nextVariants[0]?.id ?? null);
   }
 
@@ -557,12 +605,12 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   const configuredPresentationModes = role.enabled_modes.filter((mode) => mode !== "lip-sync" || lipSyncReady);
   const selectablePresentationModes: RolePresentationMode[] = configuredPresentationModes.length ? configuredPresentationModes : ["conversation"];
   const defaultPresentationMode = selectablePresentationModes.includes(role.default_mode) ? role.default_mode : preferredRoleMode(selectablePresentationModes);
-  const selectedTalkingVariant = activeTalkingVariants.find((variant) => variant.id === activeTalkingVariantId) ?? activeTalkingVariants[0] ?? null;
+  const selectedTalkingVariant = activeTalkingVariants.find((variant) => variant.id === activeTalkingVariantId) ?? null;
   const configurationIssues = [
     ...(!role.display_name.trim() ? ["角色名称"] : []),
     ...(needsAvatar && !avatar ? ["数字人形象"] : []),
     ...(needsRealtime && !realtimeReady ? ["实时驱动"] : []),
-    ...(needsAction && !actions.length ? ["动作底片"] : []),
+    ...(needsAction && !activeAction ? ["动作底片"] : []),
     ...(needsTalking && !selectedTalkingVariant ? ["口型对齐"] : []),
   ];
   const configurationReady = configurationIssues.length === 0;
@@ -673,8 +721,8 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
             <details className={styles.advancedProviders}>
               <summary>高级配置</summary>
               <p>留空时使用“供应商”中的默认配置。</p>
-              <label className={styles.field}><span>ASR 供应商</span><select aria-label="角色 ASR 供应商" value={role.asr_provider ?? ""} onChange={(event) => setRole({ ...role, asr_provider: event.target.value as RoleRecord["asr_provider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.asr.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
-              <label className={styles.field}><span>LLM 供应商</span><select aria-label="角色 LLM 供应商" value={role.llm_provider ?? ""} onChange={(event) => setRole({ ...role, llm_provider: event.target.value as RoleRecord["llm_provider"] || null })}><option value="">使用供应商默认配置</option>{PROVIDER_CATALOG.llm.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+              <label className={styles.field}><span>ASR 供应商</span><SelectMenu fullWidth value={String(role.asr_provider ?? "")} ariaLabel="角色 ASR 供应商" options={[{ value: "", label: "使用供应商默认配置" }, ...(PROVIDER_CATALOG.asr.map((provider) => ({ value: String(provider.id), label: String(provider.name) })))]} onChange={value => setRole({ ...role, asr_provider: value as RoleRecord["asr_provider"] || null })} /></label>
+              <label className={styles.field}><span>LLM 供应商</span><SelectMenu fullWidth value={String(role.llm_provider ?? "")} ariaLabel="角色 LLM 供应商" options={[{ value: "", label: "使用供应商默认配置" }, ...(PROVIDER_CATALOG.llm.map((provider) => ({ value: String(provider.id), label: String(provider.name) })))]} onChange={value => setRole({ ...role, llm_provider: value as RoleRecord["llm_provider"] || null })} /></label>
             </details>
               </div>
             </ConfigTaskModule>
@@ -686,16 +734,16 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
                   const checked = role.enabled_modes.includes(mode);
                   return <button key={mode} type="button" disabled={checked && role.enabled_modes.length === 1} aria-pressed={checked} data-selected={checked} data-ready={available} onClick={() => togglePresentationMode(mode)}><span className={styles.modeState}>{checked ? <Check /> : null}</span><span><strong>{ROLE_MODE_LABELS[mode]}</strong><small>{mode === "conversation" ? "文字与语音对话" : available ? "当前形象素材可用" : "选择后继续完成所需配置"}</small></span></button>;
                 })}</div>
-                <label className={styles.field}><span>默认呈现方式</span><select value={defaultPresentationMode} onChange={(event) => setRole({ ...role, default_mode: event.target.value as RolePresentationMode })}>{selectablePresentationModes.map((mode) => <option key={mode} value={mode}>{ROLE_MODE_LABELS[mode]}</option>)}</select></label>
+                <label className={styles.field}><span>默认呈现方式</span><SelectMenu fullWidth value={String(defaultPresentationMode)} ariaLabel="默认呈现方式" options={[...(selectablePresentationModes.map((mode) => ({ value: String(mode), label: String(ROLE_MODE_LABELS[mode]) })))]} onChange={value => setRole({ ...role, default_mode: value as RolePresentationMode })} /></label>
               </div>
             </ConfigTaskModule>
 
             {needsAvatar ? <ConfigTaskModule id="avatar" icon={<UserRound />} title="数字人形象" detail={avatar?.display_name ?? "未选择形象"} status={avatar ? "已选择" : "待配置"} done={Boolean(avatar)} openSection={openSection} onOpen={toggleConfigSection}>
               <div className={styles.taskInner}>
-                <AvatarChoiceGrid avatars={avatars} value={role.avatar_id} onChange={selectAvatar} />
+                <AvatarChoiceGrid avatars={avatars} value={role.avatar_id} onChange={selectAvatar} onManage={assetManagement.manage} busy={assetManagement.busy} />
+                <DeletedAssets avatars={avatars} onManage={assetManagement.manage} busy={assetManagement.busy} />
                 <div className={styles.resourceRows}>
                   <button type="button" onClick={() => openProductionTask("avatar")}><Plus /><span><strong>新建形象</strong><small>在当前页面完成并自动带回</small></span><ChevronRight /></button>
-                  {avatar ? <button type="button" onClick={() => openProductionTask("motion")}><Pencil /><span><strong>管理当前形象与动作</strong><small>修改形象、动作和口型对齐名称</small></span><ChevronRight /></button> : null}
                 </div>
               </div>
             </ConfigTaskModule> : null}
@@ -711,15 +759,15 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
               {avatar ? <><div className={styles.actionCardGrid}>{actions.map((action) => {
                 const selected = activeActionId === action.avatar_action_id;
                 const talkingCount = action.talking_variants?.filter((item) => !item.deleted_at && item.video_url).length ?? 0;
-                return <button className={styles.actionCard} key={action.avatar_action_id} type="button" aria-label={`选择动作 ${action.display_name}`} aria-pressed={selected} data-selected={selected} onClick={() => { setActiveActionId(action.avatar_action_id); setActiveTalkingVariantId(action.talking_variants?.find((item) => item.method === "lipforcing" && !item.deleted_at && item.video_url && item.source_video_url === action.video_url)?.id ?? null); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, motion: { action_id: action.avatar_action_id }, "lip-sync": { action_id: action.avatar_action_id } } } : current); }}><span className={styles.actionCardMedia}><video src={action.video_url ?? undefined} poster={avatar.source_image_url} autoPlay muted loop playsInline preload="metadata" />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{action.display_name}</strong><small>{talkingCount ? `${talkingCount} 个口型对齐` : "动作底片"}</small></span></button>;
-              })}<button className={styles.newActionCard} type="button" aria-label="新建动作" onClick={() => openProductionTask("motion")}><span><Plus /></span><strong>新建动作</strong><small>上传或生成新的动作底片</small></button></div>{actions.length ? null : <p className={styles.actionEmptyHint}>当前形象还没有动作底片，从这里创建第一个动作。</p>}</> : <p className={styles.emptyHint}>请先选择数字人形象。</p>}
+                return <AssetCard key={action.avatar_action_id} target={{ avatar, action }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={`选择动作 ${action.display_name}`} aria-pressed={selected} data-selected={selected} onClick={() => { const variants = action.talking_variants?.filter((item) => item.method === "lipforcing" && !item.deleted_at && item.video_url && item.source_video_url === action.video_url) ?? []; const rememberedId = readRoleActionPreferences(role.role_id, avatar.avatar_id).variants[action.avatar_action_id]; const variantId = variants.find((item) => item.id === rememberedId)?.id ?? variants[0]?.id; setActiveActionId(action.avatar_action_id); if (variants.length === 1 && role.enabled_modes.includes("offline")) setActiveMode("offline"); setPreviewKind("motion"); setActiveTalkingVariantId(variantId ?? null); rememberRoleActionSelection(role.role_id, avatar.avatar_id, action.avatar_action_id, variantId); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, motion: { action_id: action.avatar_action_id }, "lip-sync": { action_id: action.avatar_action_id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={action.video_url ?? ""} poster={avatar.source_image_url} label={`${action.display_name} 动作预览`} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{action.display_name}</strong><small>{talkingCount ? `${talkingCount} 个口型对齐` : "动作底片"}</small></span></button></AssetCard>;
+              })}<button className={styles.newActionCard} type="button" aria-label="新建动作" onClick={() => openProductionTask("motion")}><span><Plus /></span><strong>新建动作</strong><small>上传或生成新的动作底片</small></button></div>{actions.length ? null : <p className={styles.actionEmptyHint}>当前形象还没有动作底片，从这里创建第一个动作。</p>}<DeletedAssets actionAvatar={avatar} onManage={assetManagement.manage} busy={assetManagement.busy} /></> : <p className={styles.emptyHint}>请先选择数字人形象。</p>}
             </ConfigTaskModule> : null}
 
             {needsTalking ? <ConfigTaskModule id="talking" icon={<Volume2 />} title="口型对齐" detail={selectedTalkingVariant?.display_name ?? "离线模式需要与动作配对"} status={selectedTalkingVariant ? "已选择" : "待配置"} done={Boolean(selectedTalkingVariant)} openSection={openSection} onOpen={toggleConfigSection}>
               {avatar && activeAction ? <><div className={styles.actionCardGrid}>{activeTalkingVariants.map((variant) => {
                 const selected = selectedTalkingVariant?.id === variant.id;
-                return <button className={styles.actionCard} key={variant.id} type="button" aria-label={`选择口型对齐 ${variant.display_name}`} aria-pressed={selected} data-selected={selected} onClick={() => { setActiveTalkingVariantId(variant.id); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, offline: { action_id: activeAction.avatar_action_id, talking_variant_id: variant.id } } } : current); }}><span className={styles.actionCardMedia}><video src={variant.video_url ?? undefined} poster={avatar.source_image_url} autoPlay muted loop playsInline preload="metadata" />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{variant.display_name}</strong><small>配对动作 · {activeAction.display_name}</small></span></button>;
-              })}<button className={styles.newActionCard} type="button" aria-label="新建口型对齐" onClick={() => openProductionTask("talking")}><span><Plus /></span><strong>新建口型对齐</strong><small>为当前动作生成配对讲话视频</small></button></div>{activeTalkingVariants.length ? null : <p className={styles.actionEmptyHint}>当前动作还没有口型对齐，从这里创建第一个素材。</p>}</> : <p className={styles.emptyHint}>请先选择动作底片。</p>}
+                return <AssetCard key={variant.id} target={{ avatar, action: activeAction, variant }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={`选择口型对齐 ${variant.display_name}`} aria-pressed={selected} data-selected={selected} onClick={() => { setActiveTalkingVariantId(variant.id); setPreviewKind("talking"); rememberRoleActionSelection(role.role_id, avatar.avatar_id, activeAction.avatar_action_id, variant.id); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, offline: { action_id: activeAction.avatar_action_id, talking_variant_id: variant.id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={variant.video_url} poster={avatar.source_image_url} label={`${variant.display_name} 口型预览`} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{variant.display_name}</strong><small>配对动作 · {activeAction.display_name}</small></span></button></AssetCard>;
+              })}<button className={styles.newActionCard} type="button" aria-label="新建口型对齐" onClick={() => openProductionTask("talking")}><span><Plus /></span><strong>新建口型对齐</strong><small>为当前动作生成配对讲话视频</small></button></div>{activeTalkingVariants.length ? null : <p className={styles.actionEmptyHint}>当前动作还没有口型对齐，从这里创建第一个素材。</p>}<DeletedAssets talkingAction={{ avatar, action: activeAction }} onManage={assetManagement.manage} busy={assetManagement.busy} /></> : <p className={styles.emptyHint}>请先选择动作底片。</p>}
             </ConfigTaskModule> : null}
             {defaultError ? <p className={styles.error} role="alert">{defaultError}</p> : null}
           </div>
@@ -749,6 +797,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       onStart={() => void startConversation()}
     />
 
+    {assetManagement.dialog}
     {productionTask ? <AvatarProductionOverlay
       task={productionTask}
       avatarId={avatar?.avatar_id}

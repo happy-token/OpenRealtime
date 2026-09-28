@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { useBottomVoiceStyle } from "@/hooks/use-bottom-voice-style";
 import { BOTTOM_VOICE_STYLES, parseBottomVoiceStyle } from "@/lib/bottom-voice-style";
@@ -10,9 +11,7 @@ export function BottomVoiceStylePicker() {
     <div className={styles.picker}>
       <label>
         <span>底部声音效果</span>
-        <select aria-label="底部声音效果" value={style} onChange={(event) => changeStyle(parseBottomVoiceStyle(event.target.value))}>
-          {BOTTOM_VOICE_STYLES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        <SelectMenu fullWidth value={String(style)} ariaLabel="底部声音效果" options={[...(BOTTOM_VOICE_STYLES.map((option) => ({ value: String(option.value), label: String(option.label) })))]} onChange={value => changeStyle(parseBottomVoiceStyle(value))} />
       </label>
       <small>贴窗口底边，随音量变化；无声时收成细线。</small>
       {saveError && <small role="status">{saveError}</small>}

@@ -32,11 +32,13 @@ export async function loadRequestedAvatarConfig(
   if (!avatar || avatar.deleted_at) throw new Error("所选 Avatar 不存在或已删除");
   if (roleMode === "realtime") return avatarSessionConfig(avatar, base);
 
-  const requestedAction = avatar.actions.find((action) => action.avatar_action_id === actionId && !action.deleted_at);
   const availableActions = avatar.actions.filter((action) => !action.deleted_at && action.video_url);
-  const action = requestedAction ?? (roleMode === "offline"
-    ? availableActions.find((candidate) => candidate.talking_variants?.some((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === candidate.video_url))
-    : availableActions[0]);
+  const requestedAction = avatar.actions.find((action) => action.avatar_action_id === actionId && !action.deleted_at);
+  const offlineActions = availableActions.filter((candidate) => candidate.talking_variants?.some((variant) =>
+    variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === candidate.video_url));
+  const action = roleMode === "offline"
+    ? offlineActions.find((candidate) => candidate.avatar_action_id === actionId) ?? offlineActions[0]
+    : requestedAction ?? availableActions[0];
   const config = avatarSessionConfig(avatar, base, action?.avatar_action_id);
   if (roleMode !== "offline") return config;
 

@@ -98,6 +98,13 @@
 .materialList { min-width: 0; padding: 12px 28px 9px; display: flex; align-items: flex-end; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; mask-image: linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent); }
 .materialList::-webkit-scrollbar { display: none; }
 .materialList > * { flex-shrink: 0; }
+.sortableAction { position: relative; width: 98px; height: 124px; flex: 0 0 98px; overflow: visible; }
+.sortableAction[data-open="true"] { z-index: 40; }
+.sortableAction[data-selected="true"]:not([data-open="true"]) { z-index: 15; }
+.sortableAction[data-dragging="true"] { opacity: .6; }
+.sortableAction[data-drop-target="true"]::after { content: ""; position: absolute; z-index: 45; inset: -4px; border: 2px dashed color-mix(in srgb,var(--accent) 78%,white); border-radius: 16px; pointer-events: none; }
+.sortableAction button[aria-expanded] { cursor: grab; touch-action: none; }
+.sortableAction[data-dragging="true"] button[aria-expanded] { cursor: grabbing; }
 .materialList > div { margin-left: -18px; transform: translateY(10px) scale(.9) rotate(1.8deg); }
 .actionGroup,.actionGroup > div { display: contents; }
 .actionGroup h3 { display: none; }

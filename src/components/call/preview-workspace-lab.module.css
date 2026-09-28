@@ -2492,14 +2492,14 @@
 .libraryCreateCard > small { bottom: 28px; color: rgba(240,248,245,.5); font-size: .38rem; }
 .libraryCreateCard > strong { bottom: 11px; font-size: .49rem; }
 .libraryCreateCard:hover,.libraryCreateCard:focus-visible { border-color: color-mix(in srgb,var(--accent) 64%,white); background: color-mix(in srgb,var(--accent) 13%,rgb(255 255 255 / var(--panel-soft-alpha,.06))); transform: translateY(-6px) scale(1.02); }
-.actionEdgeList > :is(button,.actionMaterialFolder) { margin-left: -18px; }
-.actionEdgeList > .actionMaterialFolder { transform: translateY(10px) scale(.9) rotate(1.8deg); }
-.actionEdgeList > :is(button,.actionMaterialFolder):first-child { margin-left: 0; transform: translateY(10px) scale(.9) rotate(-2deg); }
-.actionEdgeList > :is(button,.actionMaterialFolder):nth-child(even) { transform: translateY(8px) scale(.92) rotate(-1.2deg); }
+.actionEdgeList > :is(button,.actionMaterialFolder,.sortableAction) { margin-left: -18px; }
+.actionEdgeList > :is(.actionMaterialFolder,.sortableAction) { transform: translateY(10px) scale(.9) rotate(1.8deg); }
+.actionEdgeList > :is(button,.actionMaterialFolder,.sortableAction):first-child { margin-left: 0; transform: translateY(10px) scale(.9) rotate(-2deg); }
+.actionEdgeList > :is(button,.actionMaterialFolder,.sortableAction):nth-child(even) { transform: translateY(8px) scale(.92) rotate(-1.2deg); }
 .actionEdgeList > button:hover,.actionEdgeList > button:focus-visible { transform: translateY(2px) scale(.98); }
 .actionEdgeList > button[data-selected="true"] { transform: translateY(-8px) scale(1.08); }
-.actionEdgeList > .actionMaterialFolder[data-open="false"]:hover,.actionEdgeList > .actionMaterialFolder[data-open="false"]:focus-within { transform: translateY(2px) scale(.98); }
-.actionEdgeList > .actionMaterialFolder[data-selected="true"] { z-index: 15; transform: translateY(-8px) scale(1.08); }
+.actionEdgeList > :is(.actionMaterialFolder,.sortableAction)[data-open="false"]:hover,.actionEdgeList > :is(.actionMaterialFolder,.sortableAction)[data-open="false"]:focus-within { transform: translateY(2px) scale(.98); }
+.actionEdgeList > :is(.actionMaterialFolder,.sortableAction)[data-selected="true"] { z-index: 15; transform: translateY(-8px) scale(1.08); }
 .visualEdgePanel[data-kind="media"] .edgeMediaOption { margin-top: -22px; transform: translateX(4px) scale(.9) rotate(1.8deg); }
 .visualEdgePanel[data-kind="media"] .edgeMediaOption:first-child { margin-top: 0; transform: translateX(2px) scale(.92) rotate(-2deg); }
 .visualEdgePanel[data-kind="media"] .edgeMediaOption:nth-child(even) { transform: translateX(-4px) scale(.92) rotate(-1.2deg); }
@@ -2520,6 +2520,8 @@
 .actionFolderPaperContent > strong { position: absolute; z-index: 1; right: 8px; left: 8px; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .actionFolderPaperContent > strong { top: 9px; font-size: .49rem; }
 .actionFolderPaperContent > small { position: absolute; right: 8px; bottom: 9px; left: 8px; z-index: 1; color: rgba(230,248,240,.72); font-size: .42rem; }
+.actionFolderPaperContent > .actionFolderSelected { display: flex; align-items: center; gap: 3px; color: #c6ffdf; font-weight: 800; }
+.actionFolderSelected > svg { position: static; width: 11px; height: 11px; transform: none; }
 .actionFolderCreateContent { background: radial-gradient(circle at 50% 42%,color-mix(in srgb,var(--accent) 25%,transparent),rgba(16,21,28,.8) 76%); }
 .actionFolderCreateContent > svg { top: 39px; width: 25px; height: 25px; color: color-mix(in srgb,var(--accent) 68%,white); }
 .actionFolderCreateContent > strong { top: 10px; color: #f3fff9; }
@@ -2656,3 +2658,10 @@
 .workspace[data-session-active="true"] .edgeControls,
 .workspace[data-session-active="true"] .advancedPanel,
 .workspace[data-session-active="true"] .catalogRecovery { display: none; }
+
+.sortableAction { position: relative; width: 98px; height: 124px; flex: 0 0 98px; overflow: visible; }
+.sortableAction[data-open="true"] { z-index: 40; }
+.sortableAction[data-dragging="true"] { opacity: .6; }
+.sortableAction[data-drop-target="true"]::after { content: ""; position: absolute; z-index: 45; inset: -4px; border: 2px dashed color-mix(in srgb,var(--accent) 78%,white); border-radius: 16px; pointer-events: none; }
+.sortableAction button[aria-expanded] { cursor: grab; touch-action: none; }
+.sortableAction[data-dragging="true"] button[aria-expanded] { cursor: grabbing; }

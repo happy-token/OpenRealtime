@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { AudioLines, Film, ImagePlus, MessageCircle, Plus, Sparkles, UserRound } from "lucide-react";
-import type { ReactNode } from "react";
+import { AudioLines, Check, Film, ImagePlus, MessageCircle, Plus, Sparkles, UserRound } from "lucide-react";
+import { useEffect, useRef, type PointerEvent, type ReactNode } from "react";
 import type { AvatarAction } from "@/lib/avatar-catalog";
 import type { AvatarTalkingVariant } from "@/lib/avatar-records";
 import Folder from "@/components/ui/folder";
@@ -12,8 +12,17 @@ export function shouldLoadAvatarPreviewDirectly(previewUrl: string) {
   return /^\/api\/avatars\/[^/]+\/image(?:\?|$)/.test(previewUrl);
 }
 
-function PreviewVideo({ src, poster, label }: { src: string; poster?: string; label: string }) {
-  return <video src={src} poster={poster} aria-label={label} autoPlay muted loop playsInline preload="metadata" />;
+export function PreviewVideo({ src, poster, label, active = true }: { src: string; poster?: string; label: string; active?: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!active) { video.pause(); return; }
+    void video.play().catch(() => undefined);
+  }, [active, src]);
+  return <video ref={videoRef} src={src} poster={poster} aria-label={label} autoPlay={active} muted loop playsInline preload="auto" onCanPlay={(event) => {
+    if (active && event.currentTarget.paused) void event.currentTarget.play().catch(() => undefined);
+  }} />;
 }
 
 export function WorkbenchMediaOption({
@@ -110,8 +119,13 @@ export function WorkbenchActionFolder({
   selected,
   selectedVariantId,
   open,
+  previewActive = true,
   onOpenChange,
   onSelectAction,
+  onActionPointerDown,
+  onActionPointerMove,
+  onActionPointerUp,
+  onActionPointerCancel,
   onSelectRuntime,
   runtimeSelected = false,
   onSelectVariant,
@@ -128,8 +142,13 @@ export function WorkbenchActionFolder({
   selected: boolean;
   selectedVariantId?: string;
   open: boolean;
+  previewActive?: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectAction?: () => void;
+  onSelectAction?: () => boolean | void;
+  onActionPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onActionPointerMove?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onActionPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void;
+  onActionPointerCancel?: (event: PointerEvent<HTMLButtonElement>) => void;
   onSelectRuntime?: () => void;
   runtimeSelected?: boolean;
   onSelectVariant: (variantId: string) => void;
@@ -147,6 +166,10 @@ export function WorkbenchActionFolder({
     open={open}
     onOpenChange={onOpenChange}
     onFrontClick={onSelectAction}
+    onFrontPointerDown={onActionPointerDown}
+    onFrontPointerMove={onActionPointerMove}
+    onFrontPointerUp={onActionPointerUp}
+    onFrontPointerCancel={onActionPointerCancel}
     selectedItemIndex={runtimeSelected && onSelectRuntime ? 0 : selectedVariantId && variants.some((variant) => variant.id === selectedVariantId) ? variants.findIndex((variant) => variant.id === selectedVariantId) + (onSelectRuntime ? 1 : 0) : -1}
     itemAriaLabels={[...(onSelectRuntime ? ["选择实时口型：使用此底片"] : []), ...variants.map((variant) => `选择${onSelectRuntime ? "预制口型" : talkingLabel}：${variant.display_name}`), ...(onCreateTalking ? [createLabel] : [])]}
     onItemSelect={(itemIndex) => {
@@ -158,13 +181,13 @@ export function WorkbenchActionFolder({
     }}
     items={[...(onSelectRuntime ? [<span className={`${styles.actionFolderPaperContent} ${styles.actionFolderCreateContent}`} key="runtime"><AudioLines aria-hidden="true" /><strong>实时口型</strong><small>使用此底片</small></span>] : []), ...variants.map((variant) => <span className={styles.actionFolderPaperContent} key={variant.id}>
       {image ? <Image src={image} alt="" fill sizes="110px" unoptimized={shouldLoadAvatarPreviewDirectly(image)} /> : <Film aria-hidden="true" />}
-      <i aria-hidden="true" /><strong>{shortTalkingVariantName(action.displayName, variant)}</strong>{onSelectRuntime ? <small>预制口型</small> : null}
+      <i aria-hidden="true" /><strong>{shortTalkingVariantName(action.displayName, variant)}</strong>{selectedVariantId === variant.id ? <small className={styles.actionFolderSelected}><Check aria-hidden="true" />已选中</small> : onSelectRuntime ? <small>预制口型</small> : null}
     </span>), ...(onCreateTalking ? [<span className={`${styles.actionFolderPaperContent} ${styles.actionFolderCreateContent}`} key="create-talking">
       <Plus aria-hidden="true" /><strong>{createLabel}</strong><small>{createNote}</small>
     </span>] : [])]}
     front={<>
       <span className={styles.edgeMediaVisual}>
-        {action.videoUrl ? <PreviewVideo src={action.videoUrl} poster={image} label={`${action.displayName} 动作预览`} /> : image ? (
+        {action.videoUrl ? <PreviewVideo src={action.videoUrl} poster={image} label={`${action.displayName} 动作预览`} active={previewActive} /> : image ? (
           <Image src={image} alt="" fill sizes="150px" unoptimized={shouldLoadAvatarPreviewDirectly(image)} />
         ) : <UserRound aria-hidden="true" />}
       </span>

@@ -1,0 +1,27 @@
+.card { position: relative; min-width: 0; }
+.card > button { width: 100%; height: 100%; }
+.menu { position: absolute; z-index: 3; top: 8px; left: 8px; }
+.menu[open] { z-index: 5; }
+.menu summary { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #ffffff30; border-radius: 8px; color: white; background: #10141ee6; cursor: pointer; list-style: none; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu summary svg { width: 18px; }
+.menuItems { position: absolute; top: 32px; left: 0; min-width: 112px; padding: 4px; display: grid; gap: 2px; border: 1px solid #ffffff28; border-radius: 10px; background: #171b29; box-shadow: 0 8px 24px #0008; }
+.menuItems button, .deleted button { padding: 8px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 6px; color: white; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.menuItems button:hover, .deleted button:hover { background: #ffffff15; }
+.menuItems button[data-danger] { color: #ffaaa8; }
+.menuItems svg, .deleted svg { width: 14px; height: 14px; }
+.deleted { margin-top: 12px; color: #d3d8e6; font-size: 12px; }
+.deleted summary { padding: 8px 0; cursor: pointer; }
+.deletedRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.deletedRow span { overflow-wrap: anywhere; }
+.dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid #ffffff30; border-radius: 18px; color: #f3f5ff; background: #171b29; box-shadow: 0 20px 80px #0008; }
+.dialog::backdrop { background: #060810a8; }
+.dialog h2 { margin-top: 0; font-size: 18px; }
+.dialog p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.dialog label { display: grid; gap: 8px; font-size: 13px; }
+.dialog input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ffffff30; border-radius: 8px; background: #ffffff08; color: white; font: inherit; }
+.dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.dialog footer button { padding: 9px 16px; border: 1px solid #ffffff30; border-radius: 8px; background: #ffffff10; color: white; cursor: pointer; }
+.dialog .error { color: #ffaaa8; }
+.menu summary:focus-visible, .menuItems button:focus-visible, .deleted button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.menuItems button:disabled, .dialog button:disabled, .deleted button:disabled { opacity: .5; cursor: default; }

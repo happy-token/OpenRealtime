@@ -3697,6 +3697,12 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   transition: border-color var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
 }
 
+.select-menu-field {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .select-menu-trigger:hover,
 .select-menu-trigger[aria-expanded="true"] {
   border-color: color-mix(in srgb, var(--accent) 54%, var(--border));
@@ -3739,6 +3745,9 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
   backdrop-filter: blur(var(--panel-blur,24px));
   animation: select-pop 180ms var(--ease-out-expo) both;
 }
+
+.select-menu-popover[data-side="top"] { translate: 0 -100%; }
+.select-menu-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .select-menu-search-wrap {
   position: sticky;

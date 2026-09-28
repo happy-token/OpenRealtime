@@ -42,6 +42,7 @@ export function AvatarResourceHome({
   }, []);
 
   function updateConfig(next: AvatarDisplayConfig) {
+    setStagePreview(null);
     setConfig(next);
     window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(next));
   }

@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { useEffect, useState } from "react";
 import { fetchRoles, saveRole } from "@/lib/role-catalog-client";
@@ -85,8 +86,8 @@ export function MemorySettingsScreen() {
     <p className={styles.intro}>记忆按用户和角色隔离。可查看、修改或清空；包含敏感信息的内容不会自动保存。</p>
     <section className={styles.section}><h2>角色记忆</h2>{error ? <p role="alert">{error}</p> : null}{roles.map((role) => <label className={styles.toggle} key={role.role_id}><span>{role.display_name}</span><input type="checkbox" checked={role.memory_enabled} disabled={saving === role.role_id} onChange={(event) => void updateRoleMemory(role, event.target.checked)} /></label>)}{!roles.length && !error ? <p>暂无可配置角色。</p> : null}</section>
     <section className={styles.section}><h2>已保存的记忆</h2><div className={styles.fields}>
-      <label>角色<select value={selectedRoleId} onChange={(event) => { setSelectedRoleId(event.target.value); setMemories([]); }}>{roles.map((role) => <option key={role.role_id} value={role.role_id}>{role.display_name}</option>)}</select></label>
-      <label>类型<select value={kind} onChange={(event) => setKind(event.target.value as MemoryKind)}>{Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>角色<SelectMenu fullWidth value={String(selectedRoleId)} ariaLabel="角色" options={[...(roles.map((role) => ({ value: String(role.role_id), label: String(role.display_name) })))]} onChange={value => { setSelectedRoleId(value); setMemories([]); }} /></label>
+      <label>类型<SelectMenu fullWidth value={String(kind)} ariaLabel="类型" options={[...(Object.entries(KIND_LABELS).map(([value, label]) => ({ value: String(value), label: String(label) })))]} onChange={value => setKind(value as MemoryKind)} /></label>
     </div>
     <div className={styles.memoryEditor}><input aria-label="记忆内容" value={content} maxLength={300} placeholder="添加一条记忆" onChange={(event) => setContent(event.target.value)} /><button type="button" disabled={busy || !content.trim() || !roles.find((role) => role.role_id === selectedRoleId)?.memory_enabled} onClick={() => void mutate(editing ? "PATCH" : "POST", editing ? { id: editing, content } : { kind, content })}>{editing ? "保存修改" : "添加记忆"}</button>{editing ? <button type="button" onClick={() => { setEditing(null); setContent(""); }}>取消</button> : null}</div>
     <div className={styles.memoryList}>{memories.map((memory) => <article key={memory.id}><div><small>{KIND_LABELS[memory.kind]}</small><p>{memory.content}</p></div><button type="button" disabled={busy} onClick={() => { setEditing(memory.id); setContent(memory.content); }}>编辑</button><button type="button" disabled={busy} onClick={() => void mutate("DELETE", undefined, memory.id)}>删除</button></article>)}{!memories.length ? <p>这个角色还没有保存的记忆。</p> : null}</div>

@@ -68,6 +68,20 @@ it("uses a talking variant for an offline role session", async () => {
   });
 });
 
+it("falls back to a playable offline action when the remembered action has no talking material", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ avatar: {
+    avatar_id: "avatar-local", display_name: "Local", deleted_at: null, realtime_binding: null,
+    actions: [
+      { avatar_action_id: "silent", video_url: "/silent.mp4", deleted_at: null },
+      { avatar_action_id: "ready", video_url: "/idle.mp4", deleted_at: null, talking_variants: [
+        { id: "talk", method: "lipforcing", video_url: "/talk.mp4", source_video_url: "/idle.mp4", deleted_at: null },
+      ] },
+    ],
+  } })));
+  await expect(loadRequestedAvatarConfig("avatar-local", DEFAULT_AVATAR_DISPLAY_CONFIG, new AbortController().signal, "silent", "offline"))
+    .resolves.toMatchObject({ segmentedAvatarActionId: "ready", motionTalkingVariantId: "talk" });
+});
+
 it("rejects offline role sessions without talking material", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ avatar: {
     avatar_id: "avatar-local", display_name: "Local", deleted_at: null, realtime_binding: null,

@@ -70,7 +70,7 @@ describe("role detail configuration workspace", () => {
   });
 
   it("reuses the creation-flow avatar cards in role settings", () => {
-    expect(component).toContain('<AvatarChoiceGrid avatars={avatars} value={role.avatar_id} onChange={selectAvatar} />');
+    expect(component).toContain('<AvatarChoiceGrid avatars={avatars} value={role.avatar_id} onChange={selectAvatar} onManage={assetManagement.manage} busy={assetManagement.busy} />');
     expect(component).not.toContain("styles.avatarPicker");
   });
 
@@ -97,8 +97,9 @@ describe("role detail configuration workspace", () => {
   it("keeps selection and production inside the role editor", () => {
     const component = readFileSync(new URL("./role-detail-screen.tsx", import.meta.url), "utf8");
 
-    expect(component).toContain("管理当前形象与动作");
-    expect(component).toContain("修改形象、动作和口型对齐名称");
+    expect(component).toContain("onManage={assetManagement.manage}");
+    expect(component).toContain("<DeletedAssets");
+    expect(component).not.toContain("管理当前形象与动作");
     expect(component).toContain('openProductionTask("avatar")');
     expect(component).toContain("allowClone allowManagement={false}");
   });
@@ -134,9 +135,11 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain("snapshot.enabledModes");
   });
 
-  it("keeps pending modes selected when the user changes the avatar", () => {
-    expect(component).toContain("const previewModes = enabledRoleModesForAvatar(role.enabled_modes, nextAvatar)");
-    expect(component).toContain("enabled_modes: role.enabled_modes");
+  it("preserves pending local modes but invalidates the previous realtime identity when changing avatars", () => {
+    expect(component).toContain('role.enabled_modes.filter((mode) => mode !== "realtime")');
+    expect(component).toContain("enabled_modes: enabledModes");
+    expect(component).toContain("if (identityChanged) setSelectedRealtimeAvatarId(null)");
+    expect(component).toContain("!identityChanged && role.default_selections?.realtime");
   });
 
   it("reuses the homepage mode and material controls without the homepage role rail", () => {

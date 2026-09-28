@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -234,7 +235,7 @@ export function PersonalVideoGeneration({
           {embedded ? <div className={styles.lockedResource}><span>当前形象</span><strong>{selectedAvatar?.display_name ?? "正在读取…"}</strong><small>使用该形象的源图生成动作，不会修改原图。</small></div>
             : <label>参考图片（JPG、PNG、WebP，≤ 4.5MB）<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setImage(event.target.files?.[0] || null)} /></label>}
           <label>动作提示词<textarea value={prompt} maxLength={2000} disabled={busy} onChange={event => setPrompt(event.target.value)} placeholder="描述人物要做的动作、镜头和情绪" /></label>
-          <label>视频时长<select value={duration} disabled={busy} onChange={event => setDuration(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => index + 4).map(seconds => <option key={seconds} value={seconds}>{seconds} 秒</option>)}</select></label>
+          <label>视频时长<SelectMenu fullWidth value={String(duration)} ariaLabel="视频时长" options={[...(Array.from({ length: 12 }, (_, index) => index + 4).map(seconds => ({ value: String(seconds), label: String(seconds + "秒") })))]} onChange={value => setDuration(Number(value))} disabled={busy} /></label>
           <label className={styles.confirm}><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我确认拥有图片使用权，并同意本次生成消耗个人 MiniMax API 额度</label>
           <button type="button" disabled={!image || !prompt.trim() || !confirmed || busy} onClick={() => void submit()}>{busy ? "生成中…" : `生成 ${duration} 秒视频`}</button>
         </div>}
@@ -247,7 +248,7 @@ export function PersonalVideoGeneration({
       <label>名称<input type="text" value={avatarName} maxLength={50} disabled={busy} onChange={event => setAvatarName(event.target.value)} placeholder="给数字人起个名字" /></label>
       <label>形象图片（可使用上方已选图片）<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setAvatarImage(event.target.files?.[0] || null)} /></label>
       <button type="button" disabled={busy || !avatarName.trim() || !(avatarImage || image)} onClick={() => void createAvatar()}>创建个人数字人</button>
-      {personalAvatars.length ? <label>关联动作的数字人<select value={selectedAvatarId} onChange={event => setSelectedAvatarId(event.target.value)}>{personalAvatars.map(avatar => <option key={avatar.avatar_id} value={avatar.avatar_id}>{avatar.display_name}</option>)}</select></label> : null}
+      {personalAvatars.length ? <label>关联动作的数字人<SelectMenu fullWidth value={String(selectedAvatarId)} ariaLabel="关联动作的数字人" options={[...(personalAvatars.map(avatar => ({ value: String(avatar.avatar_id), label: String(avatar.display_name) })))]} onChange={value => setSelectedAvatarId(value)} /></label> : null}
     </div> : null}
     {!embedded && assets.length ? <div className={styles.personalForm}><h3>我的动作素材</h3>{assets.map(asset => <div key={asset.id}><span>{asset.prompt.slice(0, 80)} · {asset.duration} 秒</span> <a href={`/api/user/motion-assets/${asset.id}`}>下载</a> {selectedAvatarId && !personalAvatars.find(avatar => avatar.avatar_id === selectedAvatarId)?.actions.some(action => action.video_url?.includes(asset.id)) ? <button type="button" disabled={busy} onClick={() => void attachToAvatar(asset.id)}>关联到数字人</button> : null}</div>)}</div> : null}
   </section>;

@@ -15,6 +15,8 @@ import { avatarResourceHref } from "@/lib/avatar-workbench-navigation";
 import { WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchMediaOption } from "@/components/workspace/workbench-resource-rails";
 import { usePersonalLipsyncReady } from "@/hooks/use-personal-lipsync-ready";
 import { useOfficialRealtimeAvatars } from "@/hooks/use-official-realtime-avatars";
+import { readRoleActionPreferences, rememberRoleActionSelection } from "@/lib/role-action-preferences";
+import { useAvatarActionOrder } from "@/hooks/use-avatar-action-order";
 import styles from "./home-role-mode-controls.module.css";
 
 type Panel = "roles" | "modes" | null;
@@ -29,7 +31,7 @@ interface Props {
   themes: readonly { id: VoiceVisualTheme; name: string; colors: readonly string[] }[];
   onVisualThemeChange: (theme: VoiceVisualTheme) => void;
   onRoleSelect?: (role: RoleRecord) => void;
-  onModeSelect: (mode: RolePresentationMode, actionId?: string, talkingVariantId?: string) => Promise<void>;
+  onModeSelect: (mode: RolePresentationMode, actionId?: string, talkingVariantId?: string, previewKind?: "motion" | "talking") => Promise<void>;
   onStart: (mode?: ExperienceMode) => void;
   showRoleSelector?: boolean;
   showRealtimeOption?: boolean;
@@ -69,13 +71,21 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
   function togglePanel(nextPanel: Exclude<Panel, null>) {
     cancelPanelTimers();
     setPanel((current) => current === nextPanel ? null : nextPanel);
+    setExpandedActionId(null);
+  }
+
+  function closePanel() {
+    cancelPanelTimers();
+    setPanel(null);
+    setExpandedActionId(null);
   }
 
   function schedulePanelClose() {
     if (openTimer.current !== null) window.clearTimeout(openTimer.current);
     openTimer.current = null;
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setPanel(null), 350);
+    if (panel === "modes") return;
+    closeTimer.current = window.setTimeout(closePanel, 350);
   }
 
   useEffect(() => () => cancelPanelTimers(), []);
@@ -97,15 +107,17 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
 
   useEffect(() => {
     if (!panel) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setPanel(null); };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") { setPanel(null); setExpandedActionId(null); } };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [panel]);
 
   const actions = useMemo(() => avatar?.actions.filter((action) => !action.deleted_at && action.video_url) ?? [], [avatar]);
+  const { orderedActions, draggingActionId, dropActionId, consumeDragClick, pointerHandlers } = useAvatarActionOrder(currentRole.avatar_id ?? "", actions, (action) => action.avatar_action_id);
   const realtimeAvatars = [...personalRealtimeAvatars, ...officialRealtimeAvatars];
-  const selectedRealtimeAvatar = realtimeAvatars.find((item) => item.id === currentRole.default_selections?.realtime?.avatar_id)
-    ?? (showRoleSelector ? realtimeAvatars[0] : null) ?? null;
+  const selectedRealtimeAvatar = currentRole.enabled_modes.includes("realtime")
+    ? realtimeAvatars.find((item) => item.id === currentRole.default_selections?.realtime?.avatar_id) ?? null
+    : null;
   const lipSyncAvailable = personalLipsyncReady && runtimeLipSyncAvailable && currentRole.enabled_modes.includes("lip-sync") && actions.length > 0;
   const talkingMaterials = useMemo(() => actions.flatMap((action) => (action.talking_variants ?? [])
     .filter((variant) => !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url)
@@ -127,7 +139,7 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     && selectedActionId === fallback.action_id
     && (mode !== "offline" || selectedVariantId === fallback.talking_variant_id)));
 
-  async function selectMode(nextMode: RolePresentationMode, actionId?: string, talkingVariantId?: string) {
+  async function selectMode(nextMode: RolePresentationMode, actionId?: string, talkingVariantId?: string, previewKind?: "motion" | "talking") {
     if (pending) return;
     if (nextMode === "lip-sync" && !personalLipsyncReady) { setError("请先在设置中配置并测试个人口型对齐服务"); return; }
     const preferred = currentRole.default_selections?.[nextMode as "motion" | "offline" | "lip-sync"];
@@ -135,8 +147,11 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     setPending(true);
     setError("");
     try {
-      await onModeSelect(nextMode, actionId ?? fallbackSelection?.action_id, talkingVariantId ?? (actionId ? undefined : fallbackSelection?.talking_variant_id));
-      if (nextMode === "conversation" || nextMode === "realtime") setPanel(null);
+      await onModeSelect(nextMode, actionId ?? fallbackSelection?.action_id, talkingVariantId ?? (actionId ? undefined : fallbackSelection?.talking_variant_id), previewKind);
+      if (actionId && nextMode !== "conversation" && nextMode !== "realtime") {
+        rememberRoleActionSelection(currentRole.role_id, currentRole.avatar_id ?? "", actionId, talkingVariantId);
+      }
+      if (nextMode === "conversation" || nextMode === "realtime") closePanel();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "模式切换失败");
     } finally {
@@ -181,7 +196,7 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
   function onTouchEnd(event: TouchEvent<HTMLElement>) {
     const distance = touchStartY.current === null ? 0 : (event.changedTouches[0]?.clientY ?? 0) - touchStartY.current;
     touchStartY.current = null;
-    if (distance > 85) setPanel(null);
+    if (distance > 85) closePanel();
   }
 
   return <div className={styles.controls} data-open={panel ?? "none"}>
@@ -192,7 +207,7 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     <button className={styles.bottomHandle} type="button" aria-label={`选择呈现方式，当前${ROLE_MODE_LABELS[mode]}，${selectionLabel}`} aria-expanded={panel === "modes"} onPointerEnter={() => openPanel("modes", true)} onPointerLeave={schedulePanelClose} onFocus={() => openPanel("modes")} onClick={() => togglePanel("modes")}>
       <span className={styles.handleLine} /><span className={styles.handleSummary}>{ROLE_MODE_LABELS[mode]} · {selectionLabel}</span><ChevronUp />
     </button>
-    {panel ? <button className={styles.backdrop} type="button" aria-label="关闭选择面板" onPointerEnter={schedulePanelClose} onClick={() => setPanel(null)} /> : null}
+    {panel ? <button className={styles.backdrop} type="button" aria-label="关闭选择面板" onPointerEnter={schedulePanelClose} onClick={closePanel} /> : null}
 
     {showRoleSelector ? <aside className={styles.rolePanel} data-open={panel === "roles"} aria-label="角色列表" aria-hidden={panel !== "roles"} inert={panel !== "roles"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
       <div className={styles.roleList}>
@@ -218,24 +233,43 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     </aside> : null}
 
     <aside className={styles.modePanel} data-open={panel === "modes"} aria-label="模式与素材" aria-hidden={panel !== "modes"} inert={panel !== "modes"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
-      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><small>MODE</small><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label="关闭模式选择" onClick={() => setPanel(null)}><X /></button></header>
+      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><small>MODE</small><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label="关闭模式选择" onClick={closePanel}><X /></button></header>
       <div className={styles.materialList} data-kind="action">
         {currentRole.enabled_modes.includes("conversation") ? <WorkbenchConversationOption selected={mode === "conversation"} onSelect={() => void selectMode("conversation")} /> : null}
         {showRealtimeOption && realtimeConfigured && selectedRealtimeAvatar ? <WorkbenchMediaOption name={selectedRealtimeAvatar.displayName} eyebrow="实时数字人 · 点击开始" image={selectedRealtimeAvatar.imageUrl} selected={mode === "realtime" && config.avatarProfileId === selectedRealtimeAvatar.id} axis="horizontal" onSelect={() => window.location.assign(`/conversation?realtime_avatar_id=${encodeURIComponent(selectedRealtimeAvatar.id)}&start=1`)} /> : null}
         {lipSyncAvailable ? <WorkbenchMediaOption name="离线加口型" eyebrow="实时口型驱动 · 点击开始" image={avatar?.source_image_url} selected={mode === "lip-sync"} axis="horizontal" onSelect={() => { const actionId = selectedActionId ?? actions[0]?.avatar_action_id; if (!actionId) return; saveRoleStartIntent(currentRole.role_id); window.location.assign(conversationHref(currentRole, "lip-sync", actionId)); }} /> : null}
-        {actions.map((action, index) => {
+        {orderedActions.map((action, index) => {
           const variants = currentRole.enabled_modes.includes("offline") ? (action.talking_variants ?? []).filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url) : [];
-          return <WorkbenchActionFolder key={action.avatar_action_id}
+          return <div className={styles.sortableAction} key={action.avatar_action_id} data-action-sort-id={action.avatar_action_id} data-open={expandedActionId === action.avatar_action_id} data-selected={selectedActionId === action.avatar_action_id} data-dragging={draggingActionId === action.avatar_action_id} data-drop-target={dropActionId === action.avatar_action_id && dropActionId !== draggingActionId}>
+            <WorkbenchActionFolder
             action={{ avatarActionId: action.avatar_action_id, displayName: action.display_name, videoUrl: action.video_url, state: "available", pendingModelCount: 0 }}
             index={index} image={avatar?.source_image_url ?? undefined} variants={variants}
             selected={mode !== "conversation" && mode !== "realtime" && selectedActionId === action.avatar_action_id}
-            selectedVariantId={selectedVariantId} open={expandedActionId === action.avatar_action_id}
+            selectedVariantId={selectedVariantId} open={expandedActionId === action.avatar_action_id} previewActive={panel === "modes"}
             onOpenChange={(open) => setExpandedActionId(open ? action.avatar_action_id : null)}
-            onSelectRuntime={personalLipsyncReady && runtimeLipSyncAvailable && currentRole.enabled_modes.includes("lip-sync") ? () => void selectMode("lip-sync", action.avatar_action_id) : undefined}
+            onSelectAction={() => {
+              if (consumeDragClick()) return false;
+              if (variants.length === 1) {
+                void selectMode("offline", action.avatar_action_id, variants[0].id, "motion");
+                return;
+              }
+              const nextMode = mode === "motion" || (mode === "lip-sync" && personalLipsyncReady && runtimeLipSyncAvailable) ? mode
+                : variants.length && currentRole.enabled_modes.includes("offline") ? "offline"
+                  : currentRole.enabled_modes.includes("motion") ? "motion"
+                    : currentRole.enabled_modes.includes("lip-sync") && personalLipsyncReady && runtimeLipSyncAvailable ? "lip-sync" : null;
+              if (!nextMode) return;
+              const rememberedVariantId = readRoleActionPreferences(currentRole.role_id, currentRole.avatar_id ?? "").variants[action.avatar_action_id];
+              const variantId = selectedActionId === action.avatar_action_id ? selectedVariantId : rememberedVariantId;
+              void selectMode(nextMode, action.avatar_action_id,
+                variants.find((variant) => variant.id === variantId)?.id ?? (nextMode === "offline" ? variants[0]?.id : undefined), "motion");
+            }}
+            {...pointerHandlers(action.avatar_action_id)}
+            onSelectRuntime={personalLipsyncReady && runtimeLipSyncAvailable && currentRole.enabled_modes.includes("lip-sync") ? () => void selectMode("lip-sync", action.avatar_action_id, undefined, "motion") : undefined}
             runtimeSelected={mode === "lip-sync" && selectedActionId === action.avatar_action_id}
-            onSelectVariant={(variantId) => void selectMode("offline", action.avatar_action_id, variantId)}
+            onSelectVariant={(variantId) => void selectMode("offline", action.avatar_action_id, variantId, "talking")}
             onCreateTalking={() => window.location.assign(avatarResourceHref({ task: "talking", avatarId: avatar?.avatar_id, actionId: action.avatar_action_id, returnTo: currentRole.role_id }))}
-          />;
+          />
+          </div>;
         })}
         {mode === "conversation" ? themes.map((theme) => <button className={styles.themeCard} type="button" key={theme.id} data-selected={visualTheme === theme.id} aria-pressed={visualTheme === theme.id} onClick={() => onVisualThemeChange(theme.id)}><span style={{ background: `linear-gradient(135deg, ${theme.colors.join(",")})` }} /><strong>{theme.name}</strong></button>) : null}
         {actions.length === 0 ? <p className={styles.empty}>当前角色还没有可用动作</p> : null}

@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Check, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -137,11 +138,10 @@ export function AdvancedServiceManager() {
         <h2 id="advanced-service-dialog-title">{statuses.find((status) => status.provider === draft.provider && status.configured)
           ? "编辑供应商" : "新建供应商"}</h2>
         <form className={styles.instanceForm} onSubmit={(event) => void save(event)}>
-          <label>供应商<select value={draft.provider} disabled={busy} onChange={(event) => setDraft({ ...draft,
-            provider: event.target.value as ServiceProvider, key: "" })}>
-            {CATALOG.filter((entry) => entry.capability === draft.capability && (entry.id === draft.provider
+          <label>供应商<SelectMenu fullWidth value={String(draft.provider)} ariaLabel="供应商" options={[...(CATALOG.filter((entry) => entry.capability === draft.capability && (entry.id === draft.provider
               || !statuses.find((status) => status.provider === entry.id && status.configured)))
-              .map((entry) => <option value={entry.id} key={entry.id}>{entry.name}</option>)}</select></label>
+              .map((entry) => ({ value: String(entry.id), label: String(entry.name) })))]} onChange={value => setDraft({ ...draft,
+            provider: value as ServiceProvider, key: "" })} disabled={busy} /></label>
           <p className={styles.providerIntro}>{selectedEntry.description}。服务接口由系统内置。<a href={selectedEntry.keyUrl}
             target="_blank" rel="noopener noreferrer">前往官网申请 API Key ↗</a></p>
           <label>API Key<input type="password" autoComplete="off" value={draft.key} minLength={8} maxLength={512} required

@@ -1,4 +1,5 @@
 "use client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -140,7 +141,7 @@ export function AdminDashboard({ username }: { username: string }) {
           <div><span>OPENREALTIME / ADMIN</span><h1>运行诊断</h1></div>
         </div>
         <div className={styles.headerActions}>
-          <label>观察窗口<select value={minutes} onChange={(event) => setMinutes(Number(event.target.value))}><option value={15}>15 分钟</option><option value={60}>1 小时</option><option value={360}>6 小时</option><option value={1440}>24 小时</option><option value={10080}>7 天</option></select></label>
+          <label>观察窗口<SelectMenu fullWidth value={String(minutes)} ariaLabel="观察窗口" options={[{ value: String(15), label: "15 分钟" }, { value: String(60), label: "1 小时" }, { value: String(360), label: "6 小时" }, { value: String(1440), label: "24 小时" }, { value: String(10080), label: "7 天" }]} onChange={value => setMinutes(Number(value))} /></label>
           <button type="button" onClick={() => void refresh()} aria-label="刷新数据"><RefreshCw className={refreshing ? styles.spinning : ""} /></button>
           <button type="button" onClick={() => void logout()} aria-label={`退出 ${username}`}><LogOut /></button>
         </div>
