@@ -36,6 +36,52 @@ async function setup(page: Page, personal = false) {
   });
   return { avatar, mutations };
 }
+
+test("role settings reuse the resource upload dialog and select the created image", async ({ page }) => {
+  await setup(page);
+  let created = false;
+  let savedAvatarId: string | null = null;
+  const freshAvatar = { ...fixture(), avatar_id: "avatar-new-image", display_name: "新角色形象", actions: [] };
+  await page.route("**/api/roles/role-test", async route => {
+    if (route.request().method() === "PATCH") savedAvatarId = route.request().postDataJSON().avatarId;
+    if (!savedAvatarId) return route.fallback();
+    await route.fulfill({ json: { role: {
+      role_id: "role-test", display_name: "测试角色", avatar_id: savedAvatarId, avatar_image_url: freshAvatar.source_image_url,
+      voice_provider: "doubao", voice_id: "test-voice", enabled_modes: ["offline"], default_mode: "offline",
+      default_selections: {}, persona_id: null, tool_ids: [], memory_enabled: true,
+    } } });
+  });
+  await page.route("**/api/knowledge/bindings/role-test", route => route.fulfill({ json: { documentIds: [] } }));
+  await page.route("**/api/avatars", async route => {
+    if (route.request().method() !== "POST") {
+      if (!created) return route.fallback();
+      return route.fulfill({ json: { avatars: [fixture(), freshAvatar] } });
+    }
+    const input = route.request().postDataJSON();
+    created = true;
+    await route.fulfill({ status: 201, json: { avatar: { ...fixture(), avatar_id: "avatar-new-image", display_name: input.displayName, actions: [] } } });
+  });
+  await page.goto("/roles/role-test?settings=1");
+  await openModule(page, "数字人形象");
+  await page.getByRole("button", { name: /新建形象/ }).click();
+  const dialog = page.getByRole("dialog", { name: "创建形象", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("上传一张清晰的人像图片")).toBeVisible();
+  await dialog.locator('input[type="file"]').setInputFiles(resolve("public/digital-human/avatar1.png"));
+  await dialog.getByRole("textbox", { name: "形象名称", exact: true }).fill("新角色形象");
+  await dialog.getByRole("button", { name: "创建形象", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("形象已创建并选中");
+  await expect(page.getByRole("button", { name: /数字人形象.*新角色形象/ })).toBeVisible();
+  await expect.poll(() => savedAvatarId).toBe(freshAvatar.avatar_id);
+  await page.reload();
+  await expect(page.getByRole("button", { name: /数字人形象.*新角色形象/ })).toBeVisible();
+  await openModule(page, "动作底片");
+  await page.getByRole("button", { name: "新建动作", exact: true }).click();
+  await page.getByRole("button", { name: "关闭制作窗口" }).click();
+  await expect(page.getByRole("button", { name: /数字人形象.*新角色形象/ })).toBeVisible();
+  expect(created).toBe(true);
+});
 async function openModule(page: Page, title: string) {
   const button = page.getByRole("button", { name: new RegExp(`^${title}`) }).filter({ has: page.locator("em") });
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();

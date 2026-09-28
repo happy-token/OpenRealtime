@@ -264,7 +264,7 @@ export function ConfigDrawer({
           imageUrl: avatarDisplayConfig.hostedAvatarImageUrl,
         }
       : avatarDisplayConfig.avatarProfileId === "default-anam"
-        ? { id: "default-anam", displayName: "当前环境形象", imageUrl: "/digital-human/shuchang-preview.jpg" }
+        ? { id: "default-anam", displayName: "当前环境形象", imageUrl: "" }
         : null
   ));
   const [motionBaseCatalog, setAvatarActionCatalog] = useState<AvatarActionAsset[]>([]);
@@ -715,7 +715,7 @@ export function ConfigDrawer({
     ?? "已选托管形象";
   const avatarPreviewImage = selectedHostedAvatar?.imageUrl
     ?? avatarDisplayConfig.hostedAvatarImageUrl
-    ?? "/digital-human/shuchang-preview.jpg";
+    ?? "";
   const avatarPreviewService = avatarDisplayConfig.renderPath === "hosted"
     ? "实时托管 · 已选形象"
     : selectedIdentityOnly
@@ -777,7 +777,7 @@ export function ConfigDrawer({
           <div className="drawer-title-lockup">
             <span className="drawer-brand-mark" aria-hidden="true"><Sparkles /></span>
             <div>
-              <span className="drawer-kicker">{sessionWorkbench ? "LIVE SESSION WORKBENCH" : "OPENREALTIME STUDIO"}</span>
+
               <h2 id="config-studio-title">{sessionWorkbench ? "会话配置工作台" : "体验配置"}</h2>
             </div>
           </div>
@@ -1065,7 +1065,7 @@ export function ConfigDrawer({
               {activeTab === "voice" && (
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
-                    <span>VOICE</span>
+
                     <h3>供应商、音色与试听</h3>
                     <p>先选择供应商，再从对应目录选择内置或克隆音色。</p>
                   </div>
@@ -1137,7 +1137,7 @@ export function ConfigDrawer({
               {activeTab === "tools" && (
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
-                    <span>TOOLS</span>
+
                     <h3>工具调用与自定义能力</h3>
                     <p>内置工具由服务端注册；自定义工具先在本机建立草稿。</p>
                   </div>
@@ -1163,7 +1163,7 @@ export function ConfigDrawer({
               {activeTab === "conversation" && (
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
-                    <span>CONVERSATION</span>
+
                     <h3>实时交互策略</h3>
                     <p>调整打断、收音和当前会话的运行方式。</p>
                   </div>
@@ -1214,7 +1214,7 @@ export function ConfigDrawer({
           {!embedded && !sessionWorkbench && <section className="drawer-preview" aria-label="体验预览">
             <div className="preview-heading">
               <div>
-                <span>LIVE PREVIEW</span>
+
                 <h3>{isAvatarMode ? "数字人模式" : "对话模式"}</h3>
               </div>
               <span className="preview-live-pill"><i />配置预览</span>
@@ -1223,7 +1223,7 @@ export function ConfigDrawer({
             <div className="experience-preview-card" data-mode={experienceMode}>
               {isAvatarMode ? (
                 <>
-                  {avatarDisplayConfig.renderPath === "hosted" ? <Image
+                  {avatarDisplayConfig.renderPath === "hosted" && avatarPreviewImage ? <Image
                       className="experience-preview-image"
                       src={avatarPreviewImage}
                       alt={`${avatarDisplayName} 数字人配置预览`}
@@ -1231,7 +1231,7 @@ export function ConfigDrawer({
                       priority
                       unoptimized={avatarPreviewImage.startsWith("blob:") || avatarPreviewImage.startsWith("data:") || avatarPreviewImage.startsWith("http")}
                       sizes="(max-width: 900px) 100vw, 60vw"
-                    /> : selectedIdentityOnly && selectedOpenTalkingIdentity ? <Image
+                    /> : avatarDisplayConfig.renderPath === "hosted" ? <div className="experience-preview-image" aria-label="当前形象暂无预览图片" /> : selectedIdentityOnly && selectedOpenTalkingIdentity ? <Image
                       className="experience-preview-image"
                       src={selectedOpenTalkingIdentity.previewImageUrl}
                       alt={`${selectedOpenTalkingIdentity.name} 数字人形象配置预览`}
@@ -1243,7 +1243,7 @@ export function ConfigDrawer({
                       posterUrl={selectedOpenTalkingMotion?.previewImageUrl}
                       label={selectedMotionName}
                       autoPlay={!reducedMotion}
-                    /> : <div className="avatar-motion-preview-empty"><Film /><span>ACTION ASSET</span><strong>{selectedMotionName}</strong><small>当前分段式合成动作</small></div>}
+                    /> : <div className="avatar-motion-preview-empty"><Film /><strong>{selectedMotionName}</strong><small>当前分段式合成动作</small></div>}
                   <div className="experience-preview-vignette" />
                   <span className="avatar-preview-label">{avatarDisplayConfig.renderPath === "hosted" || selectedIdentityOnly ? <UserRound /> : <Film />}{avatarDisplayConfig.renderPath === "hosted" ? `${avatarDisplayName.toUpperCase()} · CONFIG PREVIEW` : selectedIdentityOnly ? `${selectedOpenTalkingIdentity?.name.toUpperCase()} · IDENTITY PREVIEW` : `${selectedMotionName.toUpperCase()} · ACTION PREVIEW`}</span>
                 </>
@@ -1305,7 +1305,7 @@ export function AvatarAssetDeleteDialog({ asset, onCancel, onConfirm }: {
     }}>
       <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="avatar-asset-delete-title" aria-describedby="avatar-asset-delete-description">
         <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
-        <div><small>REMOVE FROM LIBRARY</small><h3 id="avatar-asset-delete-title">删除{kindLabel}？</h3></div>
+        <div><h3 id="avatar-asset-delete-title">删除{kindLabel}？</h3></div>
         <p id="avatar-asset-delete-description"><strong>{asset.label}</strong>只会从这台设备的资产库移除，项目源文件和服务端记录不会被销毁。</p>
         <div className="avatar-asset-delete-dialog-actions">
           <button type="button" autoFocus onClick={onCancel}>取消</button>

@@ -7,11 +7,8 @@ import {
   LayoutPanelTop,
   Mic,
   MicOff,
-  MoreHorizontal,
   Phone,
   Send,
-  SlidersHorizontal,
-  Square,
 } from "lucide-react";
 import type { PageForm } from "./presentation-model";
 import {
@@ -38,7 +35,7 @@ interface SessionControlBarProps {
 
 const PAGE_FORM_OPTIONS = [
   { id: "fullscreen", label: "全屏", description: "沉浸展示" },
-  { id: "sidecar", label: "Sidecar", description: "对话与形象并排" },
+  { id: "sidecar", label: "并排", description: "对话与形象并排" },
   { id: "content", label: "内容", description: "内容优先、小窗陪伴" },
 ] as const satisfies ReadonlyArray<{ id: PageForm; label: string; description: string }>;
 
@@ -49,11 +46,8 @@ export function SessionControlBar({
   onPageFormChange,
   onCaptionsChange,
   onPauseToggle,
-  onOpenSettings,
   onTerminate,
   onSendText,
-  assistantBusy,
-  onStopReply,
   focusComposerRequest = 0,
 }: SessionControlBarProps) {
   const [text, setText] = useState("");
@@ -61,11 +55,9 @@ export function SessionControlBar({
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [visualPreferences, setVisualPreferences] = useState(DEFAULT_WORKBENCH_VISUAL_PREFERENCES);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const showComposer = pageForm !== "fullscreen" || composerOpen;
-  const compactActions = pageForm === "sidecar" && (composerFocused || Boolean(text.trim()) || actionsMenuOpen);
   const activePageForm = PAGE_FORM_OPTIONS.find((option) => option.id === pageForm) ?? PAGE_FORM_OPTIONS[0];
 
   useEffect(() => {
@@ -143,12 +135,6 @@ export function SessionControlBar({
     event.currentTarget.querySelector<HTMLButtonElement>(".session-action-btn")?.focus();
   }
 
-  function closeOverflowMenu(event: FocusEvent<HTMLDivElement>) {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      setActionsMenuOpen(false);
-    }
-  }
-
   return (
     <div
       className="session-control-shell"
@@ -189,56 +175,7 @@ export function SessionControlBar({
         </form>
       )}
 
-      <div className="session-fixed-actions" data-collapsed={compactActions}>
-        {compactActions ? (
-          <div className="session-actions-overflow-wrap" data-open={actionsMenuOpen} onBlur={closeOverflowMenu}>
-            <ControlButton
-              label="更多会话操作"
-              expanded={actionsMenuOpen}
-              onClick={() => setActionsMenuOpen((open) => !open)}
-            >
-              <MoreHorizontal />
-            </ControlButton>
-            <div className="session-actions-overflow" role="menu" aria-label="更多会话操作" aria-hidden={!actionsMenuOpen}>
-              {assistantBusy ? <OverflowAction label="停止回复" onClick={() => { onStopReply(); setActionsMenuOpen(false); }}>
-                <Square />
-              </OverflowAction> : null}
-              <OverflowAction label={paused ? "开启麦克风" : "关闭麦克风"} onClick={() => { onPauseToggle(); setActionsMenuOpen(false); }}>
-                {paused ? <MicOff /> : <Mic />}
-              </OverflowAction>
-              <OverflowAction label={captionsEnabled ? "隐藏临时字幕" : "显示临时字幕"} onClick={() => { onCaptionsChange(!captionsEnabled); setActionsMenuOpen(false); }}>
-                <Captions />
-              </OverflowAction>
-              <div className="session-overflow-layouts" aria-label="页面形态">
-                <span>页面形态</span>
-                <div>
-                  {PAGE_FORM_OPTIONS.map((option) => (
-                    <button
-                      type="button"
-                      key={option.id}
-                      role="menuitemradio"
-                      aria-checked={pageForm === option.id}
-                      data-active={pageForm === option.id}
-                      onClick={() => {
-                        onPageFormChange(option.id);
-                        setActionsMenuOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <OverflowAction label="会话设置" onClick={() => { onOpenSettings(); setActionsMenuOpen(false); }}>
-                <SlidersHorizontal />
-              </OverflowAction>
-              <OverflowAction label="结束通话" danger onClick={onTerminate}>
-                <Phone className="session-hangup-icon" />
-              </OverflowAction>
-            </div>
-          </div>
-        ) : (
-          <>
+      <div className="session-fixed-actions">
             <ControlButton
               label={paused ? "开启麦克风" : "关闭麦克风"}
               pressed={!paused}
@@ -252,16 +189,6 @@ export function SessionControlBar({
               onClick={handleTextInputAction}
             >
               <Keyboard />
-            </ControlButton>
-            {assistantBusy ? <ControlButton label="停止回复" onClick={onStopReply}>
-              <Square />
-            </ControlButton> : null}
-            <ControlButton
-              label={captionsEnabled ? "隐藏临时字幕" : "显示临时字幕"}
-              pressed={captionsEnabled}
-              onClick={() => onCaptionsChange(!captionsEnabled)}
-            >
-              <Captions />
             </ControlButton>
             <div
               className="session-layout-menu-wrap"
@@ -308,10 +235,9 @@ export function SessionControlBar({
                 ))}
               </div>
             </div>
-            <ControlButton label="会话设置" onClick={onOpenSettings}><SlidersHorizontal /></ControlButton>
+            <ControlButton label={captionsEnabled ? "隐藏临时字幕" : "显示临时字幕"} pressed={captionsEnabled} onClick={() => onCaptionsChange(!captionsEnabled)}><Captions /></ControlButton>
             <ControlButton label="结束通话" danger onClick={onTerminate}><Phone className="session-hangup-icon" /></ControlButton>
-          </>
-        )}
+
       </div>
     </div>
   );
@@ -344,25 +270,6 @@ function ControlButton({
     >
       {children}
       <span className="sr-only">{label}</span>
-    </button>
-  );
-}
-
-function OverflowAction({
-  label,
-  children,
-  danger = false,
-  onClick,
-}: {
-  label: string;
-  children: React.ReactNode;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className={`session-overflow-action${danger ? " is-danger" : ""}`} role="menuitem" onClick={onClick}>
-      {children}
-      <span>{label}</span>
     </button>
   );
 }

@@ -12,6 +12,7 @@ import {
 import {
   createOrReuseLocalLtxTask,
   getLocalLtxSubmissionByRequestId,
+  getLatestLocalLtxSubmissionForAvatar,
   LtxTaskSubmissionPendingError,
 } from "@/lib/ltx-task-coordinator";
 import { LtxProviderError } from "@/lib/ltx-video";
@@ -41,6 +42,19 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   if (!canUseAvatarTestApis(request, request.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
     return json({ error: "不允许从当前来源读取视频生成状态" }, 403);
+  }
+  const avatarId = request.nextUrl.searchParams.get("avatar_id");
+  if (avatarId) {
+    const record = getLatestLocalLtxSubmissionForAvatar(avatarId);
+    if (!record) return json({ recovery: null });
+    if (isMiniMaxModelId(record.model) && record.credentialFingerprint !== await credentialFingerprint(request)) {
+      return json({ error: "请使用创建任务时的 MiniMax API Key 恢复任务" }, 403);
+    }
+    return json({ recovery: {
+      avatarId, purpose: "action", requestId: record.requestIds[0],
+      provider: isMiniMaxModelId(record.model) ? "minimax" : "ltx",
+      taskId: record.task?.taskId, startedAt: Date.parse(record.createdAt),
+    } });
   }
   const requestId = request.nextUrl.searchParams.get("request_id");
   if (requestId) {

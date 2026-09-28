@@ -549,7 +549,7 @@ export function AvatarStudio({
                 </p> : null}
                 <footer>
                   {returnToRoleCreate && createdAvatar.realtime_binding
-                    ? <button type="button" onClick={returnToRole}><ArrowLeft />返回创建角色</button>
+                    ? <button type="button" onClick={returnToRole} aria-label="返回创建角色" title="返回创建角色"><ArrowLeft aria-hidden="true" />返回</button>
                     : !singleTask ? <button type="button" onClick={() => changeTask("action")}><Film />继续创建动作</button> : null}
                   <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
                 </footer>
@@ -607,7 +607,7 @@ export function AvatarStudio({
           <p>现在可以使用这个 Avatar 开始对话测试。</p>
           <div>
             <button type="button" onClick={() => setCurrentStep(2)}><ArrowLeft aria-hidden="true" />上一步</button>
-            {returnToRoleCreate ? <button type="button" onClick={returnToRole}>返回创建角色</button> : null}
+            {returnToRoleCreate ? <button type="button" onClick={returnToRole} aria-label="返回创建角色" title="返回创建角色"><ArrowLeft aria-hidden="true" />返回</button> : null}
             <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
             <button type="button" onClick={() => changeTask("action")}><Film aria-hidden="true" />继续创建动作</button>
           </div>
@@ -617,7 +617,7 @@ export function AvatarStudio({
       {previewOpen && previewImageUrl ? (
         <div className={styles.previewBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewOpen(false); }}>
           <section className={styles.previewDialog} role="dialog" aria-modal="true" aria-label={`${previewDisplayName} 大图预览`}>
-            <header><div><span>Avatar Preview</span><strong>{previewDisplayName}</strong></div><button type="button" autoFocus aria-label="关闭 Avatar 预览" onClick={() => setPreviewOpen(false)}><X /></button></header>
+            <header><div><strong>{previewDisplayName}</strong></div><button type="button" autoFocus aria-label="关闭 Avatar 预览" onClick={() => setPreviewOpen(false)}><X /></button></header>
             <div>
               <Image className={styles.previewBackdropImage} src={previewImageUrl} alt="" aria-hidden="true" fill sizes="100vw" unoptimized />
               <Image className={styles.previewPortraitImage} src={previewImageUrl} alt={`${previewDisplayName} 完整预览`} fill sizes="100vw" unoptimized />

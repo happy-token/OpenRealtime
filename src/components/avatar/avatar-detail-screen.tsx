@@ -1,5 +1,7 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import Image from "next/image";
 import Link from "next/link";
 import { AlertTriangle, Check, ChevronDown, Film, ImageIcon, ImagePlus, LoaderCircle, MessageCircle, Pencil, Radio, Sparkles, Trash2, X } from "lucide-react";
@@ -243,7 +245,7 @@ export function AvatarActionRenameDialog({
       >
         <header>
           <span><Pencil /></span>
-          <div><small>{isAvatar ? "AVATAR IDENTITY" : "AVATAR ACTION"}</small><h2 id={titleId}>{isAvatar ? "修改数字人名称" : "修改动作名称"}</h2></div>
+          <div><h2 id={titleId}>{isAvatar ? "修改数字人名称" : "修改动作名称"}</h2></div>
           <button type="button" aria-label={isAvatar ? "关闭数字人名称修改" : "关闭动作名称修改"} disabled={busy} onClick={onCancel}><X /></button>
         </header>
         <label className={styles.renameField}>
@@ -719,7 +721,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
   }
 
   if (loaded && !avatar) {
-    return <section className={styles.missing}><h1>找不到这个 Avatar</h1><p>它可能已被删除，或只存在于其他账户。</p><Link href="/resources?tab=avatars">返回资产管理</Link></section>;
+    return <section className={styles.missing}><h1>找不到这个 Avatar</h1><p>它可能已被删除，或只存在于其他账户。</p><BackLink href="/resources?tab=avatars" label="返回资产管理" /></section>;
   }
 
   return (
@@ -1066,7 +1068,7 @@ export function AvatarSourceReplacementDialog({
       <section ref={dialog} className={styles.replacementDialog} role="dialog" aria-modal="true" aria-labelledby="replace-avatar-image-title" aria-describedby="replace-avatar-image-description">
         <header>
           <span><ImagePlus /></span>
-          <div><small>REPLACE SOURCE IMAGE</small><h2 id="replace-avatar-image-title">更换“{avatarName}”的形象图片？</h2></div>
+          <div><h2 id="replace-avatar-image-title">更换“{avatarName}”的形象图片？</h2></div>
           <button ref={closeButton} type="button" aria-label="取消更换形象图片" disabled={busy} onClick={onCancel}><X /></button>
         </header>
         <div className={styles.replacementPreview}>

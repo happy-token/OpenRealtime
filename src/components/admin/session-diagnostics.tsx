@@ -1,11 +1,11 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
   AudioLines,
   AudioWaveform,
   Bot,
@@ -96,7 +96,7 @@ export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
   return (
     <main className={adminStyles.shell}>
       <header className={adminStyles.detailHeader}>
-        <div><Link href="/admin"><ArrowLeft />返回看板</Link><span>SESSION REPLAY</span><h1>{sessionId.slice(0, 24)}</h1><p>{detail ? `${fullTimestamp(detail.summary.first_event_at)} — ${fullTimestamp(detail.summary.last_event_at)}` : "正在读取会话数据"}</p></div>
+        <div><BackLink href="/admin" label="返回看板" /><h1>{sessionId.slice(0, 24)}</h1><p>{detail ? `${fullTimestamp(detail.summary.first_event_at)} — ${fullTimestamp(detail.summary.last_event_at)}` : "正在读取会话数据"}</p></div>
         <div className={adminStyles.headerBadges}><i>{detail?.summary.turn_count ?? 0} turns</i><i data-alert={(detail?.summary.timeout_count ?? 0) > 0}>{detail?.summary.timeout_count ?? 0} timeout</i><i data-alert={(detail?.summary.error_count ?? 0) > 0}>{detail?.summary.error_count ?? 0} error</i></div>
       </header>
       {error ? <div className={adminStyles.errorBanner}><TriangleAlert />{error}</div> : null}
@@ -110,7 +110,7 @@ export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
 
       <section className={styles.performanceSection} aria-label="本会话链路耗时">
         <div className={styles.performanceHeading}>
-          <div><small>SESSION PIPELINE</small><h2>本会话链路耗时</h2></div>
+          <div><h2>本会话链路耗时</h2></div>
           <p>按本会话全部轮次聚合 · P50 / P95 / P99</p>
         </div>
         <div className={styles.pipelineChain}>
@@ -121,7 +121,7 @@ export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
       </section>
 
       <section className={styles.performancePanel} aria-label="本会话性能明细">
-        <header><div><small>PERFORMANCE DETAIL</small><h2>性能明细</h2></div><span>{performanceMetrics.length} 项指标</span></header>
+        <header><div><h2>性能明细</h2></div><span>{performanceMetrics.length} 项指标</span></header>
         <div className={styles.performanceTable}>
           <table>
             <thead><tr><th>指标</th><th>样本</th><th>P50</th><th>P95</th><th>P99</th><th>最大</th><th>超时</th><th>错误</th></tr></thead>
@@ -133,7 +133,7 @@ export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
 
       <section className={styles.recordingBar} aria-label="会话录音">
         <span><Headphones /></span>
-        <div><small>SESSION RECORDING</small><strong>会话录音</strong><p>当前会话未保存原始录音；启用录音保留策略后可在此播放并与消息时间点联动。</p></div>
+        <div><strong>会话录音</strong><p>当前会话未保存原始录音；启用录音保留策略后可在此播放并与消息时间点联动。</p></div>
         <button disabled><AudioLines />暂无录音</button>
       </section>
 
@@ -145,7 +145,7 @@ export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
       ) : null}
 
       <section className={styles.replayPanel}>
-        <header className={styles.replayHeading}><div><span><Radio /></span><div><small>CONVERSATION TIMELINE</small><h2>对话复盘</h2></div></div><p>普通状态已压缩，异常事件保持展开</p></header>
+        <header className={styles.replayHeading}><div><span><Radio /></span><div><h2>对话复盘</h2></div></div><p>普通状态已压缩，异常事件保持展开</p></header>
         <div className={styles.turnTimeline}>
           {turns.map((turn) => (
             <TurnReplay

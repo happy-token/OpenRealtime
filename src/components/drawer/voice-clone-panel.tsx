@@ -450,7 +450,7 @@ export function VoiceClonePanel({
         <ModalPortal enabled={embedded}>
         <div className={embedded ? "voice-clone-modal-backdrop" : undefined} onMouseDown={(event) => { if (embedded && event.target === event.currentTarget && !submitting) { if (recording) stopRecording(); updateComposerOpen(false); } }}>
         <div ref={composerDialogRef} className="voice-clone-composer" role={embedded ? "dialog" : undefined} aria-modal={embedded || undefined} aria-label={embedded ? "新建克隆音色" : undefined} tabIndex={embedded ? -1 : undefined}>
-          {embedded ? <div className="voice-clone-composer-heading"><span><small>VOICE CLONE</small><strong>新建克隆音色</strong></span><button type="button" aria-label="关闭新建克隆音色" disabled={submitting} onClick={() => { if (recording) stopRecording(); updateComposerOpen(false); }}><X /></button></div> : null}
+          {embedded ? <div className="voice-clone-composer-heading"><span><strong>新建克隆音色</strong></span><button type="button" aria-label="关闭新建克隆音色" disabled={submitting} onClick={() => { if (recording) stopRecording(); updateComposerOpen(false); }}><X /></button></div> : null}
           <div className="voice-clone-source-switch" role="tablist" aria-label="音色样本来源">
             <button type="button" role="tab" aria-selected={sourceKind === "recording"} data-active={sourceKind === "recording"} onClick={() => { setSourceKind("recording"); resetSample(); }}><Mic />直接录音</button>
             <button type="button" role="tab" aria-selected={sourceKind === "upload"} data-active={sourceKind === "upload"} onClick={() => { setSourceKind("upload"); resetSample(); }}><Upload />上传文件</button>
@@ -497,7 +497,7 @@ export function VoiceClonePanel({
       }}>
         <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="voice-clone-delete-title" aria-describedby="voice-clone-delete-description">
           <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
-          <div><small>DELETE CLONED VOICE</small><h3 id="voice-clone-delete-title">确认删除这个克隆音色？</h3></div>
+          <div><h3 id="voice-clone-delete-title">确认删除这个克隆音色？</h3></div>
           <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>删除后会同步从阿里云百炼音色目录移除，且无法恢复。{pendingDeleteVoice.id === activeVoiceId ? "该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。" : "当前配置中的引用将失效。"}</p>
           <div className="avatar-asset-delete-dialog-actions">
             <button type="button" autoFocus disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => setPendingDeleteVoiceId(null)}>取消</button>

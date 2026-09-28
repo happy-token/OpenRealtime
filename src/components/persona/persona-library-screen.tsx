@@ -249,7 +249,7 @@ export function PersonaLibraryScreen({
   return (
     <section className={styles.screen} data-embedded={embedded}>
       <header className={styles.intro}>
-        <div><span>PERSONA LIBRARY</span><h2>人设</h2><p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p></div>
+        <div><h2>人设</h2><p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p></div>
         <button type="button" className={styles.createButton} aria-expanded={creating} onClick={() => setCreating((value) => !value)}><Plus />创建人设</button>
       </header>
 

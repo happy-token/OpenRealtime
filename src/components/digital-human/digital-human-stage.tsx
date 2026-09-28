@@ -473,7 +473,7 @@ function RenderedDigitalHumanStage({
         unoptimized={fallbackImage.startsWith("https://") || fallbackImage.startsWith("/api/user/")}
         sizes="(max-width: 900px) 100vw, 900px"
         onLoad={handleFallbackImageLoad}
-      /> : <div className="digital-human-call-placeholder"><span>AVATAR ASSET</span><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? "数字人形象"}</strong><small>预览资产将在 Renderer 接入后显示</small></div>}
+      /> : <div className="digital-human-call-placeholder"><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? "数字人形象"}</strong><small>预览资产将在 Renderer 接入后显示</small></div>}
       {displayConfig.renderPath === "hosted" && displayConfig.provider === "anam" && <video
         id="anam-digital-human-video"
         ref={videoRef}

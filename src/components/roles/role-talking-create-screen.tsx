@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { BackLink } from "@/components/workspace/back-link";
+
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, LoaderCircle, Upload } from "lucide-react";
+import { Check, LoaderCircle, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import styles from "./role-avatar-create-screen.module.css";
 
@@ -66,7 +67,7 @@ export function RoleTalkingCreateScreen({ roleId, avatarId, actionId }: { roleId
   }
 
   return <main className={styles.page}>
-    <Link href={`/roles/${encodeURIComponent(roleId)}`}><ArrowLeft />返回当前角色</Link>
+    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回当前角色" />
     <section className={styles.card}>
       <span>离线数字人</span>
       <h1>创建口型对齐</h1>
@@ -79,7 +80,7 @@ export function RoleTalkingCreateScreen({ roleId, avatarId, actionId }: { roleId
           {job?.state === "queued" || job?.state === "processing" ? <p role="status">正在生成，完成后可预览。</p> : null}
           {job?.state !== "ready_for_review" && job?.state !== "success" ? <button type="submit" disabled={busy || job?.state === "queued" || job?.state === "processing" || Boolean(job?.error)}>{busy ? <LoaderCircle /> : <Upload />}{busy ? "正在提交…" : "生成口型对齐"}</button> : null}
         </form>
-        {job?.variant?.video_url && (job.state === "ready_for_review" || job.state === "success") ? <div className={styles.review}><video src={job.variant.video_url} controls playsInline /><p>请先预览效果，再保存到当前形象。</p>{job.state === "ready_for_review" ? <button type="button" onClick={() => void accept()} disabled={busy}><Check />保存并返回角色</button> : <Link href={`/roles/${encodeURIComponent(roleId)}`}>返回角色</Link>}</div> : null}
+        {job?.variant?.video_url && (job.state === "ready_for_review" || job.state === "success") ? <div className={styles.review}><video src={job.variant.video_url} controls playsInline /><p>请先预览效果，再保存到当前形象。</p>{job.state === "ready_for_review" ? <button type="button" onClick={() => void accept()} disabled={busy}><Check />保存并返回角色</button> : <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回角色" />}</div> : null}
       </>}
     </section>
   </main>;

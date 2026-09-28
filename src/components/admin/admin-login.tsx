@@ -1,7 +1,8 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import { useState, type FormEvent } from "react";
-import Link from "next/link";
 import { LockKeyhole, RadioTower } from "lucide-react";
 import styles from "@/app/admin/admin.module.css";
 import type { AdminLoginDefaults } from "@/lib/admin-auth";
@@ -41,7 +42,7 @@ export function AdminLogin({ configured, defaultCredentials }: AdminLoginProps) 
     <main className={`${styles.shell} ${styles.loginShell}`}>
       <form className={styles.loginCard} onSubmit={submit}>
         <span className={styles.loginIcon}><RadioTower aria-hidden="true" /></span>
-        <p className={styles.eyebrow}>OpenRealtime Operations</p>
+
         <h1>运行诊断中心</h1>
         <p className={styles.loginIntro}>仅管理员可查看会话链路、性能指标和错误日志。</p>
         <label>管理员账户<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} disabled={!configured} /></label>
@@ -50,7 +51,7 @@ export function AdminLogin({ configured, defaultCredentials }: AdminLoginProps) 
         <button type="submit" disabled={!configured || loading}>
           <LockKeyhole aria-hidden="true" />{loading ? "正在验证…" : "安全登录"}
         </button>
-        <Link href="/">返回语音主页</Link>
+        <BackLink href="/" label="返回语音主页" />
       </form>
     </main>
   );

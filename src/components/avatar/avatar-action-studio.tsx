@@ -363,31 +363,43 @@ export function AvatarActionStudio({
   }, [avatarId, checkLivePortraitRuntime, checkLtxRuntime]);
 
   useEffect(() => {
-    const recovered = readRecoverableGenerationTask(avatarId, "action");
-    if (!recovered) return;
-    if (focusedCreation && recovered.provider === "liveportrait") return;
-    generationStartedAtRef.current = recovered.startedAt;
-    setElapsedMs(Math.max(0, Date.now() - recovered.startedAt));
-    setSubmissionRequestId(recovered.requestId);
-    setTaskProvider(recovered.provider);
-    setTaskId(recovered.taskId ?? "");
-    setTaskState("queueing");
-    if (recovered.displayName) {
-      setActionName(recovered.displayName);
-      setLtxActionName(recovered.displayName);
+    let cancelled = false;
+    async function recover() {
+      let recovered = readRecoverableGenerationTask(avatarId, "action");
+      if (!recovered) {
+        try {
+          const response = await fetch(`/api/ltx/image-to-video?avatar_id=${encodeURIComponent(avatarId)}`, { cache: "no-store" });
+          const payload = response.ok ? await response.json() : null;
+          if (payload?.recovery) recovered = payload.recovery;
+        } catch { /* Local recovery still works when the server is unavailable. */ }
+      }
+      if (cancelled || !recovered) return;
+      if (focusedCreation && recovered.provider === "liveportrait") return;
+      generationStartedAtRef.current = recovered.startedAt;
+      setElapsedMs(Math.max(0, Date.now() - recovered.startedAt));
+      setSubmissionRequestId(recovered.requestId);
+      setTaskProvider(recovered.provider);
+      setTaskId(recovered.taskId ?? "");
+      setTaskState("queueing");
+      if (recovered.displayName) {
+        setActionName(recovered.displayName);
+        setLtxActionName(recovered.displayName);
+      }
+      const recoveredPrompt = VIDEO_PROMPT_STYLES.find((style) => style.name === recovered.displayName)
+        ?? VIDEO_PROMPT_STYLES.find((style) => style.id === recovered.sourceId);
+      if (recoveredPrompt) {
+        setVideoPromptChoiceId(recoveredPrompt.id);
+        setFocusedVideoPromptChoiceId(recoveredPrompt.id);
+        setLtxPrompt(composeVideoGenerationPrompt("video-conversation", recoveredPrompt.id));
+      }
+      if (recovered.provider === "liveportrait") setProvider("liveportrait");
+      else {
+        setProvider("ltx");
+        setVideoVendor(recovered.provider);
+      }
     }
-    const recoveredPrompt = VIDEO_PROMPT_STYLES.find((style) => style.name === recovered.displayName)
-      ?? VIDEO_PROMPT_STYLES.find((style) => style.id === recovered.sourceId);
-    if (recoveredPrompt) {
-      setVideoPromptChoiceId(recoveredPrompt.id);
-      setFocusedVideoPromptChoiceId(recoveredPrompt.id);
-      setLtxPrompt(composeVideoGenerationPrompt("video-conversation", recoveredPrompt.id));
-    }
-    if (recovered.provider === "liveportrait") setProvider("liveportrait");
-    else {
-      setProvider("ltx");
-      setVideoVendor(recovered.provider);
-    }
+    void recover();
+    return () => { cancelled = true; };
   }, [avatarId, focusedCreation]);
 
   useEffect(() => {
@@ -1087,7 +1099,7 @@ export function AvatarActionStudio({
         <span>{focusedCreation ? "选择动作风格并生成，结果将在资源库主屏直接预览。" : "从当前 Avatar 源图生成可复用动作，并为所有已启用口型模型准备资产。"}</span>
       </header>
 
-      <div className={styles.layout} data-result-maximized={showingResult && resultMaximized}>
+      <div className={styles.layout} data-result-maximized={!focusedCreation && showingResult && resultMaximized}>
         {!embedded ? <aside className={styles.sourcePanel}>
           <span>当前 Avatar 形象</span>
           <div className={styles.sourceImage}>
@@ -1574,7 +1586,7 @@ export function AvatarActionStudio({
         }}
       >
           <header>
-            <span><small>VIDEO PROMPT</small><strong id="ltx-prompt-modal-title">{selectedLtxPrompt.name}</strong></span>
+            <span><strong id="ltx-prompt-modal-title">{selectedLtxPrompt.name}</strong></span>
             <button type="button" aria-label="关闭提示词弹窗" autoFocus onClick={closePromptModal}><X aria-hidden="true" /></button>
           </header>
           <label>

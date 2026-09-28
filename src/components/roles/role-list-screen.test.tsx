@@ -29,7 +29,7 @@ describe("role list cards", () => {
     expect(component).toContain('displayName: "未命名角色"');
     expect(component).toContain("selectedDefaultTtsProvider");
     expect(component).toContain('voiceProvider === "bailian" ? BAILIAN_TTS_VOICE_OPTIONS[0].value : DEFAULT_TTS_VOICE');
-    expect(component).toContain("router.push(`/roles/${encodeURIComponent(created.role_id)}`)");
+    expect(component).toContain("router.push(`/roles/${encodeURIComponent(created.role_id)}?settings=1`)");
     expect(component).not.toContain('href="/roles/new"');
   });
 

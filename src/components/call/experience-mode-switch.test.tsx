@@ -27,7 +27,7 @@ describe("presentation mode display", () => {
         avatarArtifactPreviewEnabled
       />,
     );
-    expect(avatar).toContain("Shuchang");
+    expect(avatar).toContain("当前数字人");
     expect(avatar).not.toContain("你好，我是");
     expect(avatar).not.toContain("固定 TTS 文本");
     expect(avatar).not.toContain("聊天模式");
@@ -123,8 +123,13 @@ describe("presentation mode display", () => {
     expect(html).not.toContain('aria-label="返回内容形态"');
     expect(html).toContain('aria-label="页面形态：全屏"');
     expect(html).toContain('data-tooltip="页面形态：全屏"');
+    expect(html).toContain("并排");
+    expect(html).toContain("内容");
     expect(html).toContain('data-tooltip="关闭麦克风"');
-    expect(html).toContain('data-tooltip="会话设置"');
+    expect(html).not.toContain('data-tooltip="更多会话操作"');
+    expect(html).not.toContain('data-tooltip="会话设置"');
+    expect(html).not.toContain("会话设置");
+    expect(html).toContain('data-tooltip="隐藏临时字幕"');
     expect(html).toContain('data-transparency="70"');
     expect(html).toContain('data-glass-blur="10"');
     expect(html).toContain("--session-surface-alpha:0.30");

@@ -9,7 +9,7 @@
 .returnButton {
   position: absolute;
   top: calc(20px + env(safe-area-inset-top));
-  left: calc(max(var(--workspace-sidebar-width, 0px), 52px) + 18px);
+  left: calc(max(var(--workspace-navigation-offset, 0px), 52px) + 18px);
   min-height: 40px;
   padding: 0 13px;
   display: inline-flex;

@@ -138,7 +138,7 @@ export function AdminDashboard({ username }: { username: string }) {
       <header className={styles.header}>
         <div className={styles.identity}>
           <span className={styles.logo}><RadioTower /></span>
-          <div><span>OPENREALTIME / ADMIN</span><h1>运行诊断</h1></div>
+          <div><h1>运行诊断</h1></div>
         </div>
         <div className={styles.headerActions}>
           <label>观察窗口<SelectMenu fullWidth value={String(minutes)} ariaLabel="观察窗口" options={[{ value: String(15), label: "15 分钟" }, { value: String(60), label: "1 小时" }, { value: String(360), label: "6 小时" }, { value: String(1440), label: "24 小时" }, { value: String(10080), label: "7 天" }]} onChange={value => setMinutes(Number(value))} /></label>
@@ -161,7 +161,7 @@ export function AdminDashboard({ username }: { username: string }) {
       </section>
 
       <section className={styles.section}>
-        <div className={styles.sectionHeading}><div><span>PIPELINE LATENCY</span><h2>链路耗时</h2></div><p>P50 / P95，覆盖 ASR、模型、TTS、网络和终端播放</p></div>
+        <div className={styles.sectionHeading}><div><h2>链路耗时</h2></div><p>P50 / P95，覆盖 ASR、模型、TTS、网络和终端播放</p></div>
         <div className={styles.latencyGrid}>
           {groups.map((group, index) => <LatencyCard key={group.id} group={group} icon={[Mic2, Bot, Volume2, Clock3, Wifi, AudioLines][index]} />)}
         </div>
@@ -176,7 +176,7 @@ export function AdminDashboard({ username }: { username: string }) {
 
       <section className={styles.twoColumn}>
         <div className={styles.panel}>
-          <div className={styles.panelHeading}><div><span>SESSIONS</span><h2>历史会话</h2></div><div className={styles.historyActions}><button type="button" onClick={toggleAllSessions} disabled={!sessions.length}>{allSessionsSelected ? "取消全选" : "全选"}</button><button type="button" data-danger disabled={!selectedSessions.size} onClick={() => setConfirmDelete(true)}><Trash2 />删除 {selectedSessions.size || ""}</button><b>{sessions.length}</b></div></div>
+          <div className={styles.panelHeading}><div><h2>历史会话</h2></div><div className={styles.historyActions}><button type="button" onClick={toggleAllSessions} disabled={!sessions.length}>{allSessionsSelected ? "取消全选" : "全选"}</button><button type="button" data-danger disabled={!selectedSessions.size} onClick={() => setConfirmDelete(true)}><Trash2 />删除 {selectedSessions.size || ""}</button><b>{sessions.length}</b></div></div>
           <div className={styles.sessionList}>
             {sessions.map((session) => (
               <div className={styles.sessionRow} data-selected={selectedSessions.has(session.voice_session_id)} key={session.voice_session_id}>
@@ -194,12 +194,12 @@ export function AdminDashboard({ username }: { username: string }) {
         </div>
 
         <div className={styles.panel}>
-          <div className={styles.panelHeading}><div><span>ALL METRICS</span><h2>性能明细</h2></div><b>{sortedMetrics.length}</b></div>
+          <div className={styles.panelHeading}><div><h2>性能明细</h2></div><b>{sortedMetrics.length}</b></div>
           <div className={styles.metricTable}><table><thead><tr><th>指标</th><th>样本</th><th>P50</th><th>P95</th><th>超时</th><th>错误</th></tr></thead><tbody>{sortedMetrics.map((metric) => <tr key={metric.name}><td><strong>{metricLabel(metric.name)}</strong><small>{metric.name}</small></td><td>{metric.sample_count}</td><td>{formatDuration(metric.p50_ms)}</td><td>{formatDuration(metric.p95_ms)}</td><td data-alert={metric.timeout_count > 0}>{metric.timeout_count}</td><td data-alert={metric.error_count > 0}>{metric.error_count}</td></tr>)}</tbody></table>{!sortedMetrics.length ? <p className={styles.empty}>等待指标样本</p> : null}</div>
         </div>
       </section>
 
-      {confirmDelete ? <div className={styles.confirmBackdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !deleting && setConfirmDelete(false)}><section className={styles.confirmDialog} role="dialog" aria-modal="true" aria-labelledby="delete-session-title"><button className={styles.confirmClose} type="button" onClick={() => setConfirmDelete(false)} disabled={deleting} aria-label="关闭"><X /></button><span className={styles.confirmIcon}><Trash2 /></span><div><small>DESTRUCTIVE ACTION</small><h2 id="delete-session-title">删除 {selectedSessions.size} 个历史会话？</h2><p>对应的对话正文、链路耗时、性能指标和诊断日志将被永久删除，操作不可恢复。活动中的会话不会被删除。</p></div><div className={styles.confirmActions}><button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}>取消</button><button type="button" data-danger onClick={() => void deleteSelectedSessions()} disabled={deleting}><Trash2 />{deleting ? "正在删除…" : "确认永久删除"}</button></div></section></div> : null}
+      {confirmDelete ? <div className={styles.confirmBackdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !deleting && setConfirmDelete(false)}><section className={styles.confirmDialog} role="dialog" aria-modal="true" aria-labelledby="delete-session-title"><button className={styles.confirmClose} type="button" onClick={() => setConfirmDelete(false)} disabled={deleting} aria-label="关闭"><X /></button><span className={styles.confirmIcon}><Trash2 /></span><div><h2 id="delete-session-title">删除 {selectedSessions.size} 个历史会话？</h2><p>对应的对话正文、链路耗时、性能指标和诊断日志将被永久删除，操作不可恢复。活动中的会话不会被删除。</p></div><div className={styles.confirmActions}><button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}>取消</button><button type="button" data-danger onClick={() => void deleteSelectedSessions()} disabled={deleting}><Trash2 />{deleting ? "正在删除…" : "确认永久删除"}</button></div></section></div> : null}
     </main>
   );
 }

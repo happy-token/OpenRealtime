@@ -130,7 +130,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           setNotice(`已找回生成完成的 ${method === "wav2lip" ? "Wav2Lip" : method === "lipforcing" ? "Lip Forcing" : "MuseTalk"} 口型对齐。`);
         }
       }).catch(error => {
-        if (!(error instanceof Error && error.name === "AbortError")) setNotice("暂时无法恢复讲话任务，请重新进入页面查询。");
+        if (!(error instanceof Error && error.name === "AbortError")) setNotice(error instanceof Error ? error.message : "暂时无法恢复讲话任务，请重新进入页面查询。");
       });
       return () => controller.abort();
     }
@@ -227,7 +227,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
 
   async function pollLocalTalking(endpoint: string, method: "musetalk" | "wav2lip" | "lipforcing", signal: AbortSignal) {
     for (let attempt = 0; attempt < 1200; attempt++) {
-      const response = await fetch(endpoint, { cache: "no-store", signal });
+      const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "读取生成进度失败");
       if (payload.job?.state === "failed") throw new Error(payload.job.error || `${method} 生成失败`);

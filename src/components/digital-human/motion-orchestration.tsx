@@ -173,7 +173,7 @@ export function MotionOrchestrationStage({ config, onReady, caption, statusLabel
   }
 
   return <div className="digital-human-call-stage" data-render-path="orchestrated" data-renderer-state={degraded ? "degraded" : error ? "error" : loaded === 3 ? "ready" : "connecting"}>
-    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className="digital-human-live-video" src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? "编排讲话画面" : "编排待机画面"} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
+    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className={`digital-human-live-video${isTalking ? "" : " digital-human-motion-base-video"}`} src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? "编排讲话画面" : "编排待机画面"} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
     {!degraded && !error && loaded !== 3 ? <div className="avatar-startup-dialog" role="status" aria-live="polite">
       <LoaderCircle aria-hidden="true" />
       <div>

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, MessageCircle, Plus, Search, Settings2, Sparkles, Star, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createRole, deleteRole, fetchRoles } from "@/lib/role-catalog-client";
+import { createRole, deleteRole, fetchRoles, RoleCreationError } from "@/lib/role-catalog-client";
+import { accountLoginHref } from "@/hooks/use-current-user";
 import { ROLE_MODE_LABELS, type RoleRecord } from "@/lib/role-records";
 import { conversationHref } from "@/components/workspace/workspace-shell";
 import { BAILIAN_TTS_VOICE_OPTIONS, DEFAULT_TTS_VOICE } from "@/components/drawer/voice-options";
@@ -26,16 +27,20 @@ export function RoleListScreen() {
   const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [creationError, setCreationError] = useState("");
+  const [creationNeedsLogin, setCreationNeedsLogin] = useState(false);
 
   async function createDraftRole() {
     if (creating) return;
     setCreating(true);
-    setError("");
+    setCreationError("");
+    setCreationNeedsLogin(false);
     try {
-      const response = await fetch("/api/provider-instances", { cache: "no-store" });
-      if (!response.ok) throw new Error("当前声音配置读取失败，请稍后重试");
-      const selectedProvider = selectedDefaultTtsProvider(await response.json() as ProviderVoiceCatalog);
-      if (!selectedProvider) throw new Error("当前声音配置不可用，请先到供应商页面选择并测试 TTS 配置");
+      // A draft can be created before voice services are configured or accessible.
+      const catalog = await fetch("/api/provider-instances", { cache: "no-store" })
+        .then(response => response.ok ? response.json() as Promise<ProviderVoiceCatalog> : null)
+        .catch(() => null);
+      const selectedProvider = catalog ? selectedDefaultTtsProvider(catalog) : null;
       const voiceProvider = selectedProvider === "dashscope" ? "bailian" : "doubao";
       const created = await createRole({
         displayName: "未命名角色",
@@ -51,9 +56,10 @@ export function RoleListScreen() {
         modelId: null,
         toolIds: [],
       });
-      router.push(`/roles/${encodeURIComponent(created.role_id)}`);
+      router.push(`/roles/${encodeURIComponent(created.role_id)}?settings=1`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "角色创建失败");
+      setCreationError(cause instanceof Error ? cause.message : "角色创建失败");
+      setCreationNeedsLogin(cause instanceof RoleCreationError && cause.status === 401);
       setCreating(false);
     }
   }
@@ -147,6 +153,7 @@ export function RoleListScreen() {
       </div>
     </header>
     {error ? <div className={styles.state} role="alert"><strong>角色暂时不可用</strong><p>{error}</p></div> : null}
+    {creationError ? <div className={styles.state} role="alert"><strong>角色创建失败</strong><p>{creationError}</p>{creationNeedsLogin ? <Link href={accountLoginHref("/roles")}>登录后创建</Link> : null}</div> : null}
     {defaultError ? <div className={styles.state} role="alert"><strong>设置默认角色失败</strong><p>{defaultError}</p></div> : null}
     {deleteError ? <div className={styles.state} role="alert"><strong>删除角色失败</strong><p>{deleteError}</p></div> : null}
     {loading ? <div className={styles.loading} role="status" aria-label="正在加载角色">{[0,1,2,3].map((item) => <i key={item} />)}</div> : null}
@@ -165,7 +172,7 @@ export function RoleListScreen() {
     </section> : null}
     {pendingDeleteRole ? <div className={styles.deleteBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingRoleId) setPendingDeleteRole(null); }}>
       <section className={styles.deleteDialog} role="alertdialog" aria-modal="true" aria-labelledby="delete-role-title" aria-describedby="delete-role-description">
-        <header><span><Trash2 /></span><div><small>DELETE ROLE</small><h2 id="delete-role-title">删除这个角色？</h2></div><button type="button" aria-label="关闭删除角色确认" disabled={Boolean(deletingRoleId)} onClick={() => setPendingDeleteRole(null)}><X /></button></header>
+        <header><span><Trash2 /></span><div><h2 id="delete-role-title">删除这个角色？</h2></div><button type="button" aria-label="关闭删除角色确认" disabled={Boolean(deletingRoleId)} onClick={() => setPendingDeleteRole(null)}><X /></button></header>
         <p id="delete-role-description"><strong>{pendingDeleteRole.display_name}</strong>将从角色列表移除。数字人形象、人设和声音资源不会被删除。</p>
         <footer><button type="button" disabled={Boolean(deletingRoleId)} onClick={() => setPendingDeleteRole(null)}>取消</button><button type="button" data-danger="true" disabled={Boolean(deletingRoleId)} onClick={() => void confirmDelete()}><Trash2 />{deletingRoleId ? "正在删除…" : "确认删除"}</button></footer>
       </section>

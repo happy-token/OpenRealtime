@@ -74,10 +74,11 @@ describe("role detail configuration workspace", () => {
     expect(component).not.toContain("styles.avatarPicker");
   });
 
-  it("uses the role name as the panel title with inline editing", () => {
+  it("keeps the panel title read-only and edits the name only in foundation settings", () => {
     expect(component).toContain('<strong>{role.display_name}</strong>');
-    expect(component).toContain('editingRoleName ? "完成角色名称编辑" : "编辑角色名称"');
-    expect(component).toContain('className={styles.roleNameInput}');
+    expect(component).not.toContain("styles.roleNameInput");
+    expect(component).not.toContain("编辑角色名称");
+    expect(component).toContain("className={styles.roleNameRow}");
     expect(component).not.toContain('<h2>角色配置</h2>');
   });
 

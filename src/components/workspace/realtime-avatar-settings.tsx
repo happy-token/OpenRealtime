@@ -1,5 +1,7 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -138,13 +140,13 @@ export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
   function toggleModule(module: Module) { setOpenModule((current) => current === module ? null : module); }
 
   if (loading) return <p className={styles.status}>正在读取实时数字人…</p>;
-  if (!configured || !avatar) return <div className={styles.status}>当前形象不可用或尚未配置 Anam。<Link href="/resources?tab=official-realtime">返回资源库</Link></div>;
+  if (!configured || !avatar) return <div className={styles.status}>当前形象不可用或尚未配置 Anam。<BackLink href="/resources?tab=official-realtime" label="返回资源库" /></div>;
   if (!profile) return null;
   return <main className={styles.page}>
     <div className={styles.stage}>
       {avatar.imageUrl ? <Image src={avatar.imageUrl} alt="" fill sizes="100vw" unoptimized /> : null}
       <div className={styles.stageShade} />
-      <div className={styles.stageTitle}><small>REALTIME AVATAR</small><h1>{profile.displayName}</h1><p>{avatar.origin === "official" ? "官方" : "我的"}实时数字人 · 对话配置</p></div>
+      <div className={styles.stageTitle}><h1>{profile.displayName}</h1><p>{avatar.origin === "official" ? "官方" : "我的"}实时数字人 · 对话配置</p></div>
     </div>
     <header className={styles.topbar}>
       <Link href="/resources?tab=official-realtime" aria-label="返回实时数字人"><ArrowLeft /></Link>
@@ -154,7 +156,7 @@ export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
     <aside ref={panelRef} className={styles.panel} data-open={panelOpen} data-dragging={dragging} data-resizing={resizing} aria-label="角色设置" aria-hidden={!panelOpen} inert={!panelOpen}
       style={{ "--panel-x": `${panelPosition.x}px`, "--panel-y": `${panelPosition.y}px`, "--panel-width": `${panelSize.width}px`, "--panel-height": `${panelSize.height}px` } as CSSProperties}>
       <header className={styles.panelHead} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
-        <GripHorizontal aria-hidden="true" /><div><small>ROLE SETTINGS</small><h2>角色设置</h2></div><button type="button" aria-label="关闭角色设置" onClick={() => setPanelOpen(false)}><X /></button>
+        <GripHorizontal aria-hidden="true" /><div><h2>角色设置</h2></div><button type="button" aria-label="关闭角色设置" onClick={() => setPanelOpen(false)}><X /></button>
       </header>
       <div className={styles.panelBody}>
         <SettingsModule title="声音" detail={profile.voiceId} icon={<Volume2 />} open={openModule === "voice"} onToggle={() => toggleModule("voice")}><VoiceSelector showCurrent={false} value={{ provider: profile.voiceProvider, voice: profile.voiceId, dialect: profile.voiceDialect }} onChange={(voice) => setProfile({ ...profile, voiceProvider: voice.provider, voiceId: voice.voice, voiceDialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} /></SettingsModule>

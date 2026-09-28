@@ -29,6 +29,7 @@
 .stageCopy p { margin: 0; color: rgba(242,245,255,.65); font-size: .82rem; }
 
 .topbar { position: absolute; z-index: 30; top: 0; right: 0; left: 0; min-height: 70px; padding: 14px clamp(18px,2.6vw,42px); display: grid; grid-template-columns: 42px minmax(0,1fr) auto; align-items: center; gap: 12px; pointer-events: none; }
+.topbar { padding-left: calc(max(var(--workspace-navigation-offset,0px),52px) + 18px); }
 .topbar > * { pointer-events: auto; }
 .topbar > a { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.15); border-radius: 14px; color: rgba(255,255,255,.78); background: rgb(15 18 29 / var(--role-glass-alpha)); box-shadow: inset 0 1px rgba(255,255,255,.13); backdrop-filter: blur(var(--role-glass-blur)) saturate(145%); }
 .topbar > a:hover { color: white; background: rgba(255,255,255,.11); }
@@ -278,7 +279,6 @@
 .configTitle { min-width: 0; display: grid; grid-template-columns: minmax(82px,.8fr) minmax(0,1.2fr); align-items: center; gap: 12px; }
 .configTitle small { color: rgba(249,250,255,.9); font-size: .68rem; font-weight: 650; letter-spacing: 0; }
 .configTitle > strong { overflow: hidden; color: rgba(239,242,255,.62); font-size: .61rem; font-weight: 570; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
-.roleNameInput { width: 100%; height: 32px; padding: 0 9px; border: 1px solid color-mix(in srgb,var(--accent) 48%,rgba(255,255,255,.18)); border-radius: 9px; outline: 0; color: white; background: rgba(3,5,11,.24); font: inherit; font-size: .64rem; font-weight: 600; }
 .configHeaderActions { display: flex; align-items: center; gap: 6px; }
 .configHeaderActions > button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 9px; color: rgba(240,245,244,.7); background: rgba(255,255,255,.06); cursor: pointer; }
 .configHeaderActions > button:hover { color: white; background: rgba(255,255,255,.11); }

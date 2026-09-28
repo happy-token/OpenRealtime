@@ -101,14 +101,14 @@ export function RoleActionComposer({
   >
     <header className={styles.titlebar}>
       <button type="button" onClick={close} aria-label="返回创建任务"><ArrowLeft /></button>
-      <div><small>CREATE ROLE · AVATAR ACTION</small><strong id="role-action-composer-title">新建动作底片</strong></div>
+      <div><strong id="role-action-composer-title">新建动作底片</strong></div>
       <span><Film />动作创作</span>
       {presentation === "window" ? <button type="button" onClick={() => setMaximized((value) => !value)} aria-label={maximized ? "还原窗口" : "最大化窗口"}>{maximized ? <Minimize2 /> : <Maximize2 />}</button> : null}
       <button type="button" onClick={close} aria-label="关闭动作工作台"><X /></button>
     </header>
 
     <div className={styles.body} data-personal={personal}>
-      {error ? <div className={styles.state} role="alert"><Film /><strong>动作工作台暂不可用</strong><p>{error}</p><button type="button" onClick={close}>返回创建任务</button></div>
+      {error ? <div className={styles.state} role="alert"><Film /><strong>动作工作台暂不可用</strong><p>{error}</p><button type="button" onClick={close} aria-label="返回创建任务" title="返回创建任务"><ArrowLeft aria-hidden="true" />返回</button></div>
         : !avatar ? <div className={styles.state} role="status"><LoaderCircle /><strong>正在准备动作工作台</strong><p>读取当前形象与已有动作。</p></div>
           : personal ? <>
             <section className={styles.personalStage} aria-label="当前数字人和动作预览">
@@ -117,7 +117,7 @@ export function RoleActionComposer({
                 <Image className={styles.stageImage} src={avatar.source_image_url} alt={`${avatar.display_name}形象预览`} fill sizes="70vw" unoptimized priority />
               </>}
               <div className={styles.stageShade} />
-              <div className={styles.stageCaption}><span>PERSONAL AVATAR</span><h1>{avatar.display_name}</h1><p>{previewUrl ? "预览生成结果，确认后保存并返回角色任务。" : "当前形象已经锁定，动作会保存到这个形象下面。"}</p></div>
+              <div className={styles.stageCaption}><h1>{avatar.display_name}</h1><p>{previewUrl ? "预览生成结果，确认后保存并返回角色任务。" : "当前形象已经锁定，动作会保存到这个形象下面。"}</p></div>
             </section>
             <aside className={styles.personalConfig} aria-label="个人动作生成配置">
               <PersonalVideoGeneration initialAvatarId={avatarId} embedded onPreviewChange={setPreviewUrl} onActionSaved={finish} />

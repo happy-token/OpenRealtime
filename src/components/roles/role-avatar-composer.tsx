@@ -153,7 +153,7 @@ export function RoleAvatarComposer({ presentation }: { presentation: "window" | 
   >
     <header className={styles.titlebar}>
       <button type="button" onClick={close} aria-label="返回创建任务"><ArrowLeft /></button>
-      <div><small>CREATE ROLE · DIGITAL HUMAN</small><strong id="role-avatar-composer-title">新建数字人形象</strong></div>
+      <div><strong id="role-avatar-composer-title">新建数字人形象</strong></div>
       <span>形象任务</span>
       {presentation === "window" ? <button type="button" onClick={() => setMaximized((value) => !value)} aria-label={maximized ? "还原窗口" : "最大化窗口"}>{maximized ? <Minimize2 /> : <Maximize2 />}</button> : null}
       <button type="button" onClick={close} disabled={Boolean(busy)} aria-label="关闭制作窗口"><X /></button>
@@ -172,7 +172,7 @@ export function RoleAvatarComposer({ presentation }: { presentation: "window" | 
       </section>
 
       <aside className={styles.config} aria-label="形象创建配置">
-        <header><small>AVATAR COMPOSER</small><h2>准备角色形象</h2><p>创建后会自动回填到当前角色草稿，不会进入旧资产管理页面。</p></header>
+        <header><h2>准备角色形象</h2><p>创建后会自动回填到当前角色草稿，不会进入旧资产管理页面。</p></header>
 
         <section className={styles.module} data-open="true">
           <div className={styles.moduleHeading}><span>01</span><div><strong>形象来源</strong><small>{file ? "已准备图片" : "选择上传或 AI 生成"}</small></div>{file ? <Check /> : null}</div>

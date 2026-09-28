@@ -1,8 +1,10 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Film, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowRight, Film, RefreshCw, Sparkles } from "lucide-react";
 import type { AvatarAsset } from "@/lib/avatar-catalog";
 import { isSegmentedAvatarAsset, loadCurrentAvatarCatalog, loadInternalPresetAvatars } from "@/lib/avatar-library-catalog-client";
 import styles from "./production-service-screen.module.css";
@@ -136,10 +138,10 @@ export function ProductionServiceScreen({
   useEffect(() => { setOwnedAvatar(selectedOwnedAvatar); }, [selectedOwnedAvatar]);
 
   return <main className={styles.page}>
-    <Link className={styles.back} href={returnHref}><ArrowLeft />{returnLabel}</Link>
+    <BackLink className={styles.back} href={returnHref} label={returnLabel} />
     <header className={styles.header}>
       <span className={styles.icon}><Icon /></span>
-      <div><small>{view.eyebrow}</small><h1>{view.title}</h1><p>{kind === "motion" && assetAccess === false ? "上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。" : view.description}</p></div>
+      <div><h1>{view.title}</h1><p>{kind === "motion" && assetAccess === false ? "上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。" : view.description}</p></div>
     </header>
     <div className={styles.switch} aria-label="制作服务">
       <Link href={serviceHref("/services/motion")} aria-current={kind === "motion" ? "page" : undefined}>动作生成</Link>

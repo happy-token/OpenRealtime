@@ -1,7 +1,8 @@
 "use client";
 
-import { GripHorizontal, Maximize2, Minus, Plus } from "lucide-react";
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { Columns2, Maximize2 } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
 import type { PageForm } from "./presentation-model";
 
 interface SessionExperienceLayoutProps {
@@ -12,7 +13,9 @@ interface SessionExperienceLayoutProps {
   controls?: ReactNode;
   recovery?: ReactNode;
   ambientColor?: string | null;
+  sourceAvatarId?: string;
   onEnterFullscreen: () => void;
+  onEnterSidecar?: () => void;
 }
 
 type CompanionCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -25,22 +28,44 @@ export function SessionExperienceLayout({
   controls,
   recovery,
   ambientColor,
+  sourceAvatarId,
   onEnterFullscreen,
+  onEnterSidecar,
 }: SessionExperienceLayoutProps) {
-  const [companionMinimized, setCompanionMinimized] = useState(false);
+  const [motionAspectRatio, setMotionAspectRatio] = useState(16 / 9);
+  const [portraitAspectRatio, setPortraitAspectRatio] = useState<number | null>(null);
+  useEffect(() => {
+    setPortraitAspectRatio(null);
+    if (!sourceAvatarId) return;
+    const controller = new AbortController();
+    let image: HTMLImageElement | undefined;
+    void fetchOwnedAvatar(sourceAvatarId, controller.signal).then(avatar => {
+      if (controller.signal.aborted || !avatar?.source_image_url) return;
+      image = new Image();
+      image.onload = () => {
+        if (!controller.signal.aborted && image && image.naturalWidth && image.naturalHeight) {
+          setPortraitAspectRatio(image.naturalWidth / image.naturalHeight);
+        }
+      };
+      image.src = avatar.source_image_url;
+    }).catch(() => { /* Keep the video ratio if the source image is unavailable. */ });
+    return () => { controller.abort(); if (image) image.onload = null; };
+  }, [sourceAvatarId]);
+  const companionAspectRatio = portraitAspectRatio && portraitAspectRatio < 1 && motionAspectRatio > 1
+    ? portraitAspectRatio : motionAspectRatio;
   const [companionCorner, setCompanionCorner] = useState<CompanionCorner>("bottom-right");
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [sidecarConversationWidth, setSidecarConversationWidth] = useState(58);
   const layoutRef = useRef<HTMLElement>(null);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-  function beginDrag(event: PointerEvent<HTMLButtonElement>) {
-    if (pageForm !== "content") return;
+  function beginDrag(event: PointerEvent<HTMLElement>) {
+    if (pageForm !== "content" || event.button !== 0 || (event.target as HTMLElement).closest("button, input, textarea, a")) return;
     dragStart.current = { x: event.clientX, y: event.clientY };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function drag(event: PointerEvent<HTMLButtonElement>) {
+  function drag(event: PointerEvent<HTMLElement>) {
     if (!dragStart.current) return;
     setDragOffset({
       x: event.clientX - dragStart.current.x,
@@ -48,8 +73,9 @@ export function SessionExperienceLayout({
     });
   }
 
-  function finishDrag(event: PointerEvent<HTMLButtonElement>) {
+  function finishDrag(event: PointerEvent<HTMLElement>) {
     if (!dragStart.current) return;
+    if (event.type === "pointercancel" || Math.hypot(event.clientX - dragStart.current.x, event.clientY - dragStart.current.y) < 5) { dragStart.current = null; setDragOffset({ x: 0, y: 0 }); return; }
     const horizontal = event.clientX < window.innerWidth / 2 ? "left" : "right";
     const vertical = event.clientY < window.innerHeight / 2 ? "top" : "bottom";
     setCompanionCorner(`${vertical}-${horizontal}` as CompanionCorner);
@@ -95,13 +121,8 @@ export function SessionExperienceLayout({
     ...(ambientColor ? { "--session-avatar-ambient": ambientColor } : {}),
   } as CSSProperties;
 
-  function enterFullscreenFromCompanion(event: MouseEvent<HTMLElement>) {
-    if (pageForm !== "content" || (event.target as HTMLElement).closest("button")) return;
-    onEnterFullscreen();
-  }
-
   function enterFullscreenFromKeyboard(event: KeyboardEvent<HTMLElement>) {
-    if (pageForm !== "content" || (event.key !== "Enter" && event.key !== " ")) return;
+    if ((event.target as HTMLElement).closest("button") || pageForm !== "content" || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
     onEnterFullscreen();
   }
@@ -110,41 +131,26 @@ export function SessionExperienceLayout({
     <section ref={layoutRef} className="session-experience-layout" data-page-form={pageForm} style={layoutStyle}>
       <section
         className="session-surface-region"
-        data-minimized={companionMinimized}
         data-corner={companionCorner}
         data-clickable={pageForm === "content"}
         aria-label="实时展示"
         tabIndex={pageForm === "content" ? 0 : undefined}
-        style={surfaceStyle}
-        onClick={enterFullscreenFromCompanion}
+        style={{ ...surfaceStyle, "--motion-aspect-ratio": companionAspectRatio } as CSSProperties}
+        onLoadedMetadataCapture={(event) => { const video = event.target; if (video instanceof HTMLVideoElement && video.videoWidth && video.videoHeight && (!event.currentTarget.querySelector(".digital-human-motion-base-video") || video.classList.contains("digital-human-motion-base-video"))) setMotionAspectRatio(video.videoWidth / video.videoHeight); }}
+        onPointerDown={beginDrag}
+        onPointerMove={drag}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
         onKeyDown={enterFullscreenFromKeyboard}
       >
         <div className="session-surface-content">{surface}</div>
         {pageForm !== "content" ? surfaceOverlay : null}
         {pageForm === "content" && (
           <div className="session-surface-actions" role="toolbar" aria-label="小窗显示控制">
-            <button
-              type="button"
-              className="session-surface-drag"
-              aria-label="移动小窗"
-              onPointerDown={beginDrag}
-              onPointerMove={drag}
-              onPointerUp={finishDrag}
-              onPointerCancel={finishDrag}
-            >
-              <GripHorizontal />
-            </button>
-            <button
-              type="button"
-              className="session-surface-minimize"
-              aria-label={companionMinimized ? "展开小窗" : "最小化小窗"}
-              onClick={() => setCompanionMinimized((minimized) => !minimized)}
-            >
-              {companionMinimized ? <Plus /> : <Minus />}
-            </button>
             <button type="button" className="session-surface-fullscreen" aria-label="全屏展示" onClick={onEnterFullscreen}>
               <Maximize2 />
             </button>
+            <button type="button" className="session-surface-sidecar" aria-label="并排展示" onClick={onEnterSidecar}><Columns2 /></button>
           </div>
         )}
       </section>

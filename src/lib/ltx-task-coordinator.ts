@@ -138,6 +138,13 @@ export async function createOrReuseLocalLtxTask(
   }
 }
 
+export function getLatestLocalLtxSubmissionForAvatar(avatarId: string, storagePath = defaultStoragePath()) {
+  return readLedgerSync(storagePath)
+    .filter(record => record.visualIdentityId === avatarId && !isExpired(record.updatedAt)
+      && record.task && (record.state === "active" || record.outcome === "success"))
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+}
+
 export function getLocalLtxSubmissionByRequestId(requestId: string, storagePath = defaultStoragePath()) {
   return readLedgerSync(storagePath).find((record) => record.requestIds.includes(requestId));
 }

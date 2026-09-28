@@ -43,6 +43,7 @@ export async function runInferenceServiceJob(input: LipForcingServiceJobInput): 
     method: "POST",
     headers: { ...headers, "X-Job-Id": input.jobId },
     body: form,
+    signal: AbortSignal.timeout(120_000),
     cache: "no-store", redirect: "manual",
   });
   const created = await readJobResponse(submitted, "Lip Forcing GPU 任务提交失败");
@@ -90,7 +91,7 @@ function delay(milliseconds: number) {
 async function fetchWithRetry(fetcher: Fetcher, url: string, init: RequestInit, retryDelayMs: number): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fetcher(url, init);
+      return await fetcher(url, { ...init, signal: AbortSignal.timeout(120_000) });
     } catch (error) {
       if (!(error instanceof TypeError) || attempt >= 5) throw error;
       if (retryDelayMs > 0) await delay(retryDelayMs * 2 ** attempt);

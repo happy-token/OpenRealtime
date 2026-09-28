@@ -27,11 +27,11 @@ describe("SessionControlBar active semantics", () => {
     expect(fullscreen).toContain('aria-label="展开文字输入"');
   });
 
-  it("only exposes stop reply while the assistant is busy", () => {
+  it("keeps stop reply out of the bar even while the assistant is busy", () => {
     const idle = renderToStaticMarkup(<SessionControlBar pageForm="fullscreen" paused={false} captionsEnabled {...handlers} />);
     const busy = renderToStaticMarkup(<SessionControlBar pageForm="fullscreen" paused={false} captionsEnabled {...handlers} assistantBusy />);
 
     expect(idle).not.toContain('aria-label="停止回复"');
-    expect(busy).toContain('aria-label="停止回复"');
+    expect(busy).not.toContain('aria-label="停止回复"');
   });
 });

@@ -35,7 +35,7 @@ describe("SessionExperienceLayout", () => {
     expect(fullscreen).not.toContain('aria-label="小窗显示控制"');
   });
 
-  it("keeps the content companion itself as the fullscreen shortcut", () => {
+  it("uses card dragging with explicit fullscreen and sidecar controls", () => {
     const html = renderToStaticMarkup(
       <SessionExperienceLayout
         pageForm="content"
@@ -50,8 +50,9 @@ describe("SessionExperienceLayout", () => {
     expect(html).toContain('data-clickable="true"');
     expect(html).toContain('tabindex="0"');
     expect(html).toContain('role="toolbar" aria-label="小窗显示控制"');
-    expect(html).toContain('aria-label="移动小窗"');
-    expect(html).toContain('aria-label="最小化小窗"');
+    expect(html).not.toContain('aria-label="移动小窗"');
+    expect(html).toContain('aria-label="并排展示"');
+    expect(html).not.toContain('aria-label="最小化小窗"');
     expect(html).toContain('aria-label="全屏展示"');
     expect(html).toContain('class="session-content-stage-overlay"><div>ENDED ACTIONS</div></div>');
     expect(html.indexOf("ENDED ACTIONS")).toBeGreaterThan(html.indexOf('aria-label="实时展示"'));

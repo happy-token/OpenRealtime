@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { BackLink } from "@/components/workspace/back-link";
+
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LoaderCircle, Upload } from "lucide-react";
+import { LoaderCircle, Upload } from "lucide-react";
 import { useState } from "react";
 import { readJsonResponse } from "@/lib/http-json-response";
 import styles from "./role-avatar-create-screen.module.css";
@@ -33,7 +34,7 @@ export function RoleAvatarCreateScreen({ roleId }: { roleId: string }) {
   }
 
   return <main className={styles.page}>
-    <Link href={`/roles/${encodeURIComponent(roleId)}`}><ArrowLeft />返回当前角色</Link>
+    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回当前角色" />
     <section className={styles.card}>
       <span>数字人形象</span>
       <h1>上传角色形象</h1>

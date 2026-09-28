@@ -224,11 +224,11 @@ export function PersonalVideoGeneration({
     } finally { setBusy(false); }
   }
 
-  if (signedOut) return <section className={styles.work} data-embedded-action={embedded || undefined}><div className={styles.sectionHeading}><span>PERSONAL / MINIMAX</span><h2>登录后创建个人动作</h2></div><p className={styles.empty}>个人动作会保存到你的资源库并绑定当前形象。<Link href={`/api/user/login?next=${encodeURIComponent(`/roles/new/action?avatar_id=${initialAvatarId ?? ""}`)}`}>前往登录</Link></p></section>;
+  if (signedOut) return <section className={styles.work} data-embedded-action={embedded || undefined}><div className={styles.sectionHeading}><h2>登录后创建个人动作</h2></div><p className={styles.empty}>个人动作会保存到你的资源库并绑定当前形象。<Link href={`/api/user/login?next=${encodeURIComponent(`/roles/new/action?avatar_id=${initialAvatarId ?? ""}`)}`}>前往登录</Link></p></section>;
   if (!available) return embedded ? <section className={styles.work} data-embedded-action="true"><p className={styles.empty}>正在准备个人动作工作台…</p></section> : null;
   const selectedAvatar = personalAvatars.find((avatar) => avatar.avatar_id === selectedAvatarId);
   return <section className={styles.work} data-embedded-action={embedded || undefined} aria-label="个人 MiniMax 视频生成">
-    <div className={styles.sectionHeading}><span>PERSONAL / MINIMAX</span><h2>{embedded ? `为 ${selectedAvatar?.display_name ?? "当前形象"} 创建动作` : "使用个人 Key 生成视频"}</h2><p>{embedded ? "当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。" : "上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。"}</p></div>
+    <div className={styles.sectionHeading}><h2>{embedded ? `为 ${selectedAvatar?.display_name ?? "当前形象"} 创建动作` : "使用个人 Key 生成视频"}</h2><p>{embedded ? "当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。" : "上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。"}</p></div>
     {!configured ? <p className={styles.empty}>尚未保存个人 MiniMax Key。<Link href="/settings/providers">前往供应商设置</Link></p>
       : !ready ? <p className={styles.empty}>付费视频生成尚未在当前环境启用。</p>
         : <div className={styles.personalForm}>

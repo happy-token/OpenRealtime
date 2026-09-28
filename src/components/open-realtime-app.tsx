@@ -719,7 +719,7 @@ export function OpenRealtimeApp({
 
       <main className="app-main">
         {experienceMode === "avatar" ? <CallView
-          hidden={false}
+          hidden={sessionStarted && !sessionReview && pageForm === "content"}
           sessionStarted={false}
           homeSessionActive={sessionStarted}
           state={engine.state}
@@ -751,12 +751,14 @@ export function OpenRealtimeApp({
         {sessionStarted ? (
           <SessionExperienceLayout
             pageForm={sessionReview ? "fullscreen" : pageForm}
+            sourceAvatarId={experienceMode === "avatar" && avatarDisplayConfig.renderPath !== "hosted" ? avatarDisplayConfig.segmentedAvatarId : undefined}
             ambientColor={experienceMode === "avatar" ? avatarAmbientColor : null}
             onEnterFullscreen={() => handlePageFormChange("fullscreen")}
+            onEnterSidecar={() => handlePageFormChange("sidecar")}
             surface={<CallView
               hidden={false}
               sessionStarted
-              runtimeOnly={experienceMode === "avatar"}
+              runtimeOnly={experienceMode === "avatar" && (Boolean(sessionReview) || pageForm !== "content")}
               state={engine.state}
               statusLabel={statusLabel}
               level={engine.level}

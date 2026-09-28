@@ -55,7 +55,7 @@ export function ConversationHistoryScreen() {
   }
 
   return <div className={styles.page}>
-    <header><span>CONVERSATIONS</span><h1>对话记录</h1><p>按角色、方式和时间查找对话；删除后无法恢复。</p></header>
+    <header><h1>对话记录</h1><p>按角色、方式和时间查找对话；删除后无法恢复。</p></header>
     <div className={styles.filters}>
       <label><Search /><input aria-label="搜索对话记录" placeholder="搜索对话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       <SelectMenu fullWidth value={String(role)} ariaLabel="按角色筛选" options={[{ value: "", label: "全部角色" }, ...(roles.map(([id, name]) => ({ value: String(id ?? ""), label: String(name) })))]} onChange={value => setRole(value)} />

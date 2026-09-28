@@ -1,5 +1,7 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -46,8 +48,8 @@ export function ResourceLibraryScreen({
   />;
   const returnToRole = returnToRoleId ? () => router.push(`/roles/${encodeURIComponent(returnToRoleId)}`) : undefined;
   return <div className={styles.page}>
-    {returnToRoleId ? <Link className={styles.returnLink} href={`/roles/${encodeURIComponent(returnToRoleId)}`}>← 返回当前角色</Link> : null}
-    {returnToRoleCreate ? <Link className={styles.returnLink} href="/roles/new">← 返回创建角色并选择资源</Link> : null}
+    {returnToRoleId ? <BackLink className={styles.returnLink} href={`/roles/${encodeURIComponent(returnToRoleId)}`} label="返回当前角色" /> : null}
+    {returnToRoleCreate ? <BackLink className={styles.returnLink} href="/roles/new" label="返回创建角色并选择资源" /> : null}
     <section className={styles.content}>
       {tab === "voices" ? <VoiceLibrary /> : null}
       {tab === "personas" ? <PersonaLibraryScreen embedded onCreated={returnToRole} /> : null}

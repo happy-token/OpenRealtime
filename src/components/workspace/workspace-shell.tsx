@@ -1,12 +1,13 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
   Bot,
   ChevronDown,
-  ChevronLeft,
   History,
   LibraryBig,
   LogIn,
@@ -95,7 +96,6 @@ export function WorkspaceShell({
   const currentUser = useCurrentUser();
   const [loggingOut, setLoggingOut] = useState(false);
   const [accountError, setAccountError] = useState("");
-  const [githubStars, setGithubStars] = useState<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number; currentWidth: number } | null>(null);
@@ -133,15 +133,7 @@ export function WorkspaceShell({
     return () => { active = false; window.removeEventListener("openrealtime:conversations-updated", handleUpdated); };
   }, [resourceMode, settingsMode]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch("/api/github-stars", { signal: controller.signal })
-      .then((response) => response.json())
-      .then((data: { stars?: unknown }) => {
-        if (!controller.signal.aborted && typeof data.stars === "number") setGithubStars(data.stars);
-      }).catch(() => undefined);
-    return () => controller.abort();
-  }, []);
+
 
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
@@ -276,7 +268,7 @@ export function WorkspaceShell({
     onPointerLeave={scheduleSidebarPreviewClose}
   >
     <div className={styles.settingsTop}>
-      <Link className={styles.settingsBack} href="/"><ChevronLeft />返回应用</Link>
+      <BackLink className={styles.settingsBack} href="/" label="返回应用" />
       <button className={styles.mobileClose} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X /></button>
     </div>
     <div className={styles.settingsTitle}>{settingsMode ? "设置" : "资源库"}</div>
@@ -396,7 +388,7 @@ export function WorkspaceShell({
     {sidebarResizeHandle}
   </aside>;
 
-  return <div className={styles.shell} style={{ "--sidebar-width": `${sidebarWidth}px`, "--workspace-sidebar-width": sidebarPinned ? `${sidebarWidth + 24}px` : "0px" } as CSSProperties} data-settings={settingsMode} data-resources={resourceMode} data-session={session} data-floating-sidebar="true" data-sidebar-open={sidebarOpen} data-sidebar-pinned={sidebarPinned} data-sidebar-mode={sidebarMode} data-sidebar-ready={sidebarReady}>
+  return <div className={styles.shell} style={{ "--sidebar-width": `${sidebarWidth}px`, "--workspace-navigation-offset": sidebarOpen ? `${sidebarWidth + 24}px` : "0px", "--workspace-sidebar-width": sidebarPinned ? `${sidebarWidth + 24}px` : "0px" } as CSSProperties} data-settings={settingsMode} data-resources={resourceMode} data-session={session} data-floating-sidebar="true" data-sidebar-open={sidebarOpen} data-sidebar-pinned={sidebarPinned} data-sidebar-mode={sidebarMode} data-sidebar-ready={sidebarReady}>
     <button className={styles.mobileMenu} type="button" aria-label="打开导航" onClick={() => setMobileOpen(true)}><Menu /></button>
     <button
       ref={sidebarToggleRef}
@@ -421,7 +413,6 @@ export function WorkspaceShell({
     {sidebar}
     {mobileOpen ? <button className={styles.mobileBackdrop} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)} /> : null}
     <main className={styles.content} data-home-background={!session}>
-      {pathname === "/conversation" ? <a className={styles.homeGithubStars} href="https://github.com/happy-token/OpenRealtime" target="_blank" rel="noopener noreferrer" aria-label={`在 GitHub 查看 OpenRealtime，${githubStars === null ? "Star 数量暂不可用" : `${githubStars.toLocaleString()} 个 Star`}`} title="在 GitHub 为 OpenRealtime 点 Star"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.23.48-2.69-.94-2.69-.94-.36-.92-.89-1.16-.89-1.16-.73-.5.06-.49.06-.49.8.06 1.22.82 1.22.82.71 1.21 1.87.86 2.33.66.07-.52.28-.86.51-1.06-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" /></svg><span>{formatGithubStars(githubStars)}</span></a> : null}
       {session || immersive ? children : <div className={styles.pageGlass} data-page-glass="true">{children}</div>}
     </main>
   </div>;

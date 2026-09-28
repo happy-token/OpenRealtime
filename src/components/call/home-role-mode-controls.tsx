@@ -233,7 +233,7 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     </aside> : null}
 
     <aside className={styles.modePanel} data-open={panel === "modes"} aria-label="模式与素材" aria-hidden={panel !== "modes"} inert={panel !== "modes"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
-      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><small>MODE</small><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label="关闭模式选择" onClick={closePanel}><X /></button></header>
+      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label="关闭模式选择" onClick={closePanel}><X /></button></header>
       <div className={styles.materialList} data-kind="action">
         {currentRole.enabled_modes.includes("conversation") ? <WorkbenchConversationOption selected={mode === "conversation"} onSelect={() => void selectMode("conversation")} /> : null}
         {showRealtimeOption && realtimeConfigured && selectedRealtimeAvatar ? <WorkbenchMediaOption name={selectedRealtimeAvatar.displayName} eyebrow="实时数字人 · 点击开始" image={selectedRealtimeAvatar.imageUrl} selected={mode === "realtime" && config.avatarProfileId === selectedRealtimeAvatar.id} axis="horizontal" onSelect={() => window.location.assign(`/conversation?realtime_avatar_id=${encodeURIComponent(selectedRealtimeAvatar.id)}&start=1`)} /> : null}

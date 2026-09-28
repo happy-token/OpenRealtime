@@ -66,9 +66,9 @@ export function ExperienceModeDemo({
     && !videoFailed
     && Boolean(artifactId);
   const avatarImage: string | undefined = avatarDisplayConfig.renderPath === "hosted"
-    ? "/digital-human/shuchang-preview.jpg"
+    ? avatarDisplayConfig.hostedAvatarImageUrl
     : selectedAvatar.imageUrl;
-  const avatarName = avatarDisplayConfig.renderPath === "hosted" ? "Shuchang" : selectedAvatar.name;
+  const avatarName = avatarDisplayConfig.renderPath === "hosted" ? avatarDisplayConfig.hostedAvatarDisplayName ?? "当前数字人" : selectedAvatar.name;
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");

@@ -188,7 +188,7 @@ export function AvatarUploadDialog({
     }}>
       <section className={styles.panel}>
         <header>
-          <div><small>DIGITAL HUMAN STUDIO</small><h2 id={`${inputId}-title`}>{mode === "realtime" ? "创建实时数字人" : "创建形象"}</h2></div>
+          <div><h2 id={`${inputId}-title`}>{mode === "realtime" ? "创建实时数字人" : "创建形象"}</h2></div>
           <button type="button" aria-label={mode === "realtime" ? "关闭创建实时数字人窗口" : "关闭创建形象窗口"} disabled={busy} onClick={requestClose}><X aria-hidden="true" /></button>
         </header>
 

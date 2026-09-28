@@ -17,7 +17,7 @@ interface HostedAvatarCatalogProps {
 const ENVIRONMENT_AVATAR = {
   id: "default-anam" as const,
   displayName: "当前环境形象",
-  imageUrl: "/digital-human/shuchang-preview.jpg",
+  imageUrl: "",
 };
 
 export function HostedAvatarCatalog({ active, disabled, selectedAvatarId, onSelect }: HostedAvatarCatalogProps) {
@@ -132,7 +132,7 @@ function HostedAvatarCard({ avatar, selected, disabled, onSelect }: {
 }) {
   return (
     <button type="button" data-selected={selected} aria-pressed={selected} disabled={disabled} onClick={onSelect}>
-      <span className="avatar-library-visual hosted-avatar-preview" style={{ backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` }}><span className="sr-only">{avatar.displayName} 预览</span></span>
+      <span className="avatar-library-visual hosted-avatar-preview" style={avatar.imageUrl ? { backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` } : undefined}><span className="sr-only">{avatar.displayName} 预览</span></span>
       <span><strong>{avatar.displayName}</strong><small>{avatar.id === "default-anam" ? "当前使用" : "实时托管"}</small></span>
       <i>{selected ? <Check /> : null}</i>
     </button>

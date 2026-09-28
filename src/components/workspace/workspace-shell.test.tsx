@@ -64,10 +64,7 @@ describe("WorkspaceShell", () => {
     expect(html).toContain('aria-valuenow="236"');
     expect(html).not.toMatch(/aria-label="调整侧边栏宽度"[^>]*><span/);
     expect(html).not.toContain('data-page-glass="true"');
-    expect(html).toContain('href="https://github.com/happy-token/OpenRealtime"');
-    expect(html.match(/href="https:\/\/github\.com\/happy-token\/OpenRealtime"/g)).toHaveLength(1);
-    expect(html).toContain('viewBox="0 0 16 16"');
-    expect(html).toContain('title="在 GitHub 为 OpenRealtime 点 Star"');
+    expect(html).not.toContain('href="https://github.com/happy-token/OpenRealtime"');
   });
 
   it.each([

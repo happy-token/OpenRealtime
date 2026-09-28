@@ -1,7 +1,8 @@
 "use client";
 
+import { BackLink } from "@/components/workspace/back-link";
+
 import Image from "next/image";
-import Link from "next/link";
 import { Film, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -25,7 +26,7 @@ export function AvatarTrashScreen({ returnHref = "/resources?tab=avatars" }: { r
     <section className={styles.trash} aria-labelledby="avatar-trash-title">
       <header><h1 id="avatar-trash-title">回收站</h1><span>删除内容保留 30 天，期间可恢复。</span></header>
       {!deletedAvatars.length && !deletedActions.length ? (
-        <div className={styles.empty}><Trash2 /><strong>回收站是空的</strong><Link href={returnHref}>返回资产管理</Link></div>
+        <div className={styles.empty}><Trash2 /><strong>回收站是空的</strong><BackLink href={returnHref} label="返回资产管理" /></div>
       ) : (
         <div className={styles.sections}>
           {deletedAvatars.length ? <section><h2>数字人</h2><div className={styles.grid}>{deletedAvatars.map((avatar) => (

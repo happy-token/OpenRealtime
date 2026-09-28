@@ -1,4 +1,6 @@
 "use client";
+
+import { BackLink } from "@/components/workspace/back-link";
 import { SelectMenu } from "@/components/ui/select-menu";
 
 import Image from "next/image";
@@ -90,7 +92,7 @@ async function persistRoleDraft(role: RoleRecord, knowledgeIds: string[]) {
   return { updated, knowledgeIds: binding.documentIds };
 }
 
-export function RoleDetailScreen({ roleId }: { roleId: string }) {
+export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { roleId: string; initialSettingsOpen?: boolean }) {
   const router = useRouter();
   const { capabilities } = useAvatarCapabilities();
   const personalLipsyncReady = usePersonalLipsyncReady();
@@ -118,7 +120,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   const [defaultError, setDefaultError] = useState("");
   const [openModule, setOpenModule] = useState<ConfigModule>(null);
   const [openSection, setOpenSection] = useState<ConfigSection>("foundation");
-  const [openPanel, setOpenPanel] = useState<DetailPanel>(null);
+  const [openPanel, setOpenPanel] = useState<DetailPanel>(initialSettingsOpen ? "config" : null);
   const [configPosition, setConfigPosition] = useState({ x: 0, y: 0 });
   const [configWidth, setConfigWidth] = useState(480);
   const [draggingConfig, setDraggingConfig] = useState(false);
@@ -130,6 +132,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   const configPanelRef = useRef<HTMLElement | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
   const lastSavedFingerprintRef = useRef("");
+  const lastSavedAvatarIdRef = useRef<string | null>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; minX: number; maxX: number; minY: number; maxY: number } | null>(null);
   const resizeRef = useRef<{ pointerId: number; startX: number; originWidth: number; maxWidth: number } | null>(null);
 
@@ -177,6 +180,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       let selectedRole = nextRole;
       let selectedKnowledgeIds = bindingPayload.documentIds ?? [];
       lastSavedFingerprintRef.current = roleSaveFingerprint(nextRole, selectedKnowledgeIds);
+      lastSavedAvatarIdRef.current = nextRole.avatar_id;
       let returnedActionId: string | null = null;
       try {
         const snapshot = JSON.parse(window.sessionStorage.getItem(snapshotKey) ?? "null") as {
@@ -206,7 +210,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
           } };
           if (addedVariant) returnedActionId = addedVariant.action.avatar_action_id;
           const pendingModes = snapshot.enabledModes?.filter((mode) => mode !== "motion" && ROLE_PRESENTATION_MODES.includes(mode)) ?? [];
-          const restoredModes = pendingModes.length ? enabledRoleModesForAvatar(pendingModes, selectedAvatar ?? null) : null;
+          const restoredModes = pendingModes.length ? pendingModes : null;
           const restoredPendingMode = Boolean(restoredModes?.some((mode) => !selectedRole.enabled_modes.includes(mode)));
           if (restoredModes) selectedRole = {
             ...selectedRole,
@@ -277,12 +281,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       : activeAction?.video_url
     : displayMode === "lip-sync" || displayMode === "motion" ? activeAction?.video_url : undefined;
   const previewImageUrl = role?.avatar_image_url;
-  const autoSaveReady = Boolean(role?.display_name.trim()) && Boolean(role?.enabled_modes.every((mode) => (
-    mode === "conversation"
-    || (mode === "realtime" ? realtimeReady
-      : mode === "offline" ? offlineActions.length > 0
-        : actions.length > 0)
-  )));
+  const autoSaveReady = Boolean(role?.display_name.trim());
   const autoSaveFingerprint = role ? roleSaveFingerprint(role, knowledgeIds) : "";
 
   useEffect(() => {
@@ -296,11 +295,12 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
       setError("");
       void persistRoleDraft(draft, draftKnowledgeIds).then(({ updated, knowledgeIds: savedKnowledgeIds }) => {
         lastSavedFingerprintRef.current = roleSaveFingerprint(updated, savedKnowledgeIds);
+        lastSavedAvatarIdRef.current = updated.avatar_id;
         setNotice("所有更改已自动保存");
       }).catch((cause) => {
         setError(cause instanceof Error ? cause.message : "角色保存失败");
       }).finally(() => setSaving(false));
-    }, 700);
+    }, role.avatar_id !== lastSavedAvatarIdRef.current ? 0 : 700);
     return () => {
       if (autoSaveTimerRef.current !== null) window.clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
@@ -340,7 +340,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   }
 
   function openProductionTask(task: AvatarWorkbenchTask) {
-    rememberResourceIds();
+    if (task !== "avatar") rememberResourceIds();
     setProductionTask(task);
   }
 
@@ -429,9 +429,9 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
     finally { setSettingDefault(false); }
   }
 
-  function selectAvatar(avatarId: string) {
+  function selectAvatar(avatarId: string, createdAvatar?: OwnedAvatarRecord) {
     if (!role) return;
-    const nextAvatar = avatars.find((item) => item.avatar_id === avatarId) ?? null;
+    const nextAvatar = createdAvatar ?? avatars.find((item) => item.avatar_id === avatarId) ?? null;
     const identityChanged = role.avatar_id !== nextAvatar?.avatar_id;
     const requestedModes = identityChanged ? role.enabled_modes.filter((mode) => mode !== "realtime") : role.enabled_modes;
     const enabledModes: RolePresentationMode[] = requestedModes.length ? requestedModes : ["conversation"];
@@ -594,7 +594,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
   }
 
   if (loading) return <div className={styles.loading}><LoaderCircle /><span>正在读取角色</span></div>;
-  if (!role) return <div className={styles.missing}><h1>找不到这个角色</h1><p>{error}</p><Link href="/roles">返回角色列表</Link></div>;
+  if (!role) return <div className={styles.missing}><h1>找不到这个角色</h1><p>{error}</p><BackLink href="/roles" label="返回角色列表" /></div>;
 
   const selectedVoiceName = describeVoiceSelection({ provider: role.voice_provider, voice: role.voice_id, dialect: role.voice_dialect ?? "" });
   const needsAvatar = role.enabled_modes.some((mode) => mode !== "conversation" && mode !== "realtime")
@@ -646,7 +646,7 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
 
     <header className={styles.topbar}>
       <Link href="/roles" aria-label="返回角色列表"><ArrowLeft /></Link>
-      <div className={styles.topbarTitle}><span>ROLE STUDIO</span><strong>{role.display_name}</strong></div>
+      <div className={styles.topbarTitle}><strong>{role.display_name}</strong></div>
       <div className={styles.topbarActions}>
         <button className={styles.defaultAction} type="button" disabled={settingDefault || defaultRoleId === role.role_id} onClick={() => void setAsDefault()}><Star fill={defaultRoleId === role.role_id ? "currentColor" : "none"} />{defaultRoleId === role.role_id ? "默认角色" : "设为默认"}</button>
         <button className={styles.settingsAction} type="button" aria-label="打开角色配置" aria-expanded={openPanel === "config"} onClick={() => setOpenPanel(openPanel === "config" ? null : "config")}><Settings2 />角色设置</button>
@@ -669,11 +669,10 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
         <header className={styles.configHeader} onPointerDown={startConfigDrag} onPointerMove={moveConfigPanel} onPointerUp={stopConfigDrag} onPointerCancel={stopConfigDrag}>
           <GripHorizontal className={styles.dragHandle} aria-hidden="true" />
           <div className={styles.configTitle}>
-            <small>角色名称</small>
-            {editingRoleName ? <input className={styles.roleNameInput} value={role.display_name} autoFocus aria-label="角色名称" onPointerDown={(event) => event.stopPropagation()} onChange={(event) => setRole({ ...role, display_name: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") setEditingRoleName(false); if (event.key === "Escape") { event.stopPropagation(); setEditingRoleName(false); } }} /> : <strong>{role.display_name}</strong>}
+            <small>角色设置</small>
+            <strong>{role.display_name}</strong>
           </div>
           <div className={styles.configHeaderActions}>
-            <button type="button" aria-label={editingRoleName ? "完成角色名称编辑" : "编辑角色名称"} onPointerDown={(event) => event.stopPropagation()} onClick={() => setEditingRoleName((editing) => !editing)}>{editingRoleName ? <Check /> : <Pencil />}</button>
             <button type="button" aria-label="关闭角色配置" onPointerDown={(event) => event.stopPropagation()} onClick={() => setOpenPanel(null)}><X /></button>
           </div>
         </header>
@@ -798,7 +797,15 @@ export function RoleDetailScreen({ roleId }: { roleId: string }) {
     />
 
     {assetManagement.dialog}
-    {productionTask ? <AvatarProductionOverlay
+    {productionTask === "avatar" ? <AvatarUploadDialog
+      onClose={() => setProductionTask(null)}
+      onCreated={(createdAvatar) => {
+        setAvatars((current) => [...current.filter((item) => item.avatar_id !== createdAvatar.avatar_id), createdAvatar]);
+        selectAvatar(createdAvatar.avatar_id, createdAvatar);
+        setProductionTask(null);
+        setNotice("形象已创建并选中");
+      }}
+    /> : productionTask ? <AvatarProductionOverlay
       task={productionTask}
       avatarId={avatar?.avatar_id}
       actionId={activeActionId ?? undefined}

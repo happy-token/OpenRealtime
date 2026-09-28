@@ -880,7 +880,7 @@ export function HomePreviewWorkspace({
         </aside>
 
         <aside className={styles.actionEdgePanel} data-open={actionPanelOpen} data-folder-open={Boolean(expandedActionId)} data-mobile-active={actionPanelOpen && activeMobileSection === "action"} aria-label="动作" aria-hidden={collapseResourceRails && !actionPanelOpen} inert={collapseResourceRails && !actionPanelOpen}>
-          <header><div><small>MOTION</small><strong>动作</strong></div><span>{currentActions.length}</span></header>
+          <header><div><strong>动作</strong></div><span>{currentActions.length}</span></header>
           <div className={styles.actionEdgeList}>
             {!libraryMode ? <WorkbenchConversationOption selected={experienceMode === "voice"} onSelect={() => onExperienceModeChange("voice")} /> : null}
             {libraryMode ? <LibraryCreateCard kind="motion" title="创建动作" note="生成动作" axis="horizontal" onCreate={() => onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId })} /> : null}
