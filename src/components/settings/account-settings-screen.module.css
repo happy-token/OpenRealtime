@@ -19,3 +19,5 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .rows > *,.profile { background: var(--surface-solid); } }
 @media (max-width: 760px) { .page { width: calc(100% - 30px); padding-top: 76px; } }
 @media (prefers-reduced-motion: reduce) { .rows > * { transition: none; } }
+
+.languageRow { margin: 20px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; }

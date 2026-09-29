@@ -12,7 +12,7 @@ describe("role creation progressive flow", () => {
   it("separates multi-select presentation modes from common role settings", () => {
     expect(component).toContain('id="foundation"');
     expect(component).toContain('id="modes"');
-    expect(component).toContain('title="呈现模式"');
+    expect(component).toContain("title={t(\"呈现模式\")}");
     expect(component).toContain("draft.modes.includes(mode)");
     expect(component).toContain('const needsRealtime = draft.modes.includes("realtime")');
     expect(component).toContain('const needsAction = draft.modes.includes("offline") || draft.modes.includes("lip-sync")');
@@ -39,7 +39,7 @@ describe("role creation progressive flow", () => {
   it("auto-collapses single-choice assets while leaving explicit completion for multi-select settings", () => {
     expect(component).toContain("setOpenModule(null); }");
     expect(component).toContain("setOpenBaseSetting(null)");
-    expect(component).toContain(">完成选择</button>");
+    expect(component).toContain(">{t(\"完成选择\")}</button>");
     expect(component).toContain("onOpen(open ? null : id)");
   });
 

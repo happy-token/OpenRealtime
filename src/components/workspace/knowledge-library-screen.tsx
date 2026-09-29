@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useState } from "react";
 import { readJsonResponse } from "@/lib/http-json-response";
@@ -8,6 +10,7 @@ import styles from "./knowledge-library-screen.module.css";
 type Passage = { document_id: string; title: string; excerpt: string; source_url?: string | null };
 
 export function KnowledgeLibraryScreen({ onCreated }: { onCreated?: () => void } = {}) {
+  const { t } = useLanguage();
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -78,25 +81,25 @@ export function KnowledgeLibraryScreen({ onCreated }: { onCreated?: () => void }
   }
 
   return <div className={styles.page}>
-    <header><h2>知识库</h2><p>私人资料仅对当前用户可见；绑定到角色后，会话才可检索。共享示例用于体验，不会修改你的资料。</p></header>
+    <header><h2>{t("知识库")}</h2><p>{t("私人资料仅对当前用户可见；绑定到角色后，会话才可检索。共享示例用于体验，不会修改你的资料。")}</p></header>
     <div className={styles.columns}>
-      <section><h3>资料列表</h3>{documents.map((doc) => <label key={doc.document_id} className={styles.document}>
+      <section><h3>{t("资料列表")}</h3>{documents.map((doc) => <label key={doc.document_id} className={styles.document}>
         <input type="checkbox" checked={selected.includes(doc.document_id)} onChange={(event) => setSelected((old) => event.target.checked ? [...old, doc.document_id] : old.filter((id) => id !== doc.document_id))} />
-        <span><strong>{doc.title}</strong><small>{doc.owner_id === null ? "共享只读示例" : "私人资料"} · {doc.content.length} 字</small><em>{doc.content.slice(0, 120)}</em></span>
+        <span><strong>{doc.title}</strong><small>{doc.owner_id === null ? t("共享只读示例") : t("私人资料")} · {doc.content.length}{t(" 字")}</small><em>{doc.content.slice(0, 120)}</em></span>
       </label>)}
-      <h3>测试检索</h3><div className={styles.row}><input aria-label="检索问题" placeholder="输入问题，在勾选的资料中检索" value={query} onChange={(event) => setQuery(event.target.value)} /><button type="button" disabled={busy || !query.trim() || !selected.length} onClick={() => void search()}>检索</button></div>
-      {passages.map((item, index) => <details className={styles.passsage} key={`${item.document_id}-${index}`}><summary>{item.title} · 查看引用片段</summary>{item.source_url ? <a href={item.source_url} target="_blank" rel="noopener noreferrer">查看原网页</a> : null}<p>{item.excerpt}</p></details>)}
+      <h3>{t("测试检索")}</h3><div className={styles.row}><input aria-label={t("检索问题")} placeholder={t("输入问题，在勾选的资料中检索")} value={query} onChange={(event) => setQuery(event.target.value)} /><button type="button" disabled={busy || !query.trim() || !selected.length} onClick={() => void search()}>{t("检索")}</button></div>
+      {passages.map((item, index) => <details className={styles.passsage} key={`${item.document_id}-${index}`}><summary>{item.title}{t(" · 查看引用片段")}</summary>{item.source_url ? <a href={item.source_url} target="_blank" rel="noopener noreferrer">{t("查看原网页")}</a> : null}<p>{item.excerpt}</p></details>)}
       </section>
-      <section><h3>导入资料</h3><p>支持 PDF、DOCX、Markdown、TXT、粘贴文本和公开 HTTPS 网页。提取的文本最多 32 KB。</p>
-        <input aria-label="资料名称" placeholder="资料名称" value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} />
-        <input aria-label="选择资料文件" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-        <button type="button" disabled={busy || !file} onClick={() => void importDocument("file")}>导入文件</button>
-        <h3>导入网页</h3><div className={styles.row}><input aria-label="公开网页地址" type="url" placeholder="https://example.com/article" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /><button type="button" disabled={busy || !sourceUrl.trim()} onClick={() => void importDocument("url")}>导入网页</button></div>
-        <h3>粘贴文本</h3>
-        <textarea aria-label="资料内容" placeholder="粘贴资料原文" value={content} onChange={(event) => setContent(event.target.value)} rows={12} />
-        <button type="button" disabled={busy || !title.trim() || !content.trim()} onClick={() => void addDocument()}>创建资料</button>
+      <section><h3>{t("导入资料")}</h3><p>{t("支持 PDF、DOCX、Markdown、TXT、粘贴文本和公开 HTTPS 网页。提取的文本最多 32 KB。")}</p>
+        <input aria-label={t("资料名称")} placeholder={t("资料名称")} value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} />
+        <input aria-label={t("选择资料文件")} type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        <button type="button" disabled={busy || !file} onClick={() => void importDocument("file")}>{t("导入文件")}</button>
+        <h3>{t("导入网页")}</h3><div className={styles.row}><input aria-label={t("公开网页地址")} type="url" placeholder="https://example.com/article" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /><button type="button" disabled={busy || !sourceUrl.trim()} onClick={() => void importDocument("url")}>{t("导入网页")}</button></div>
+        <h3>{t("粘贴文本")}</h3>
+        <textarea aria-label={t("资料内容")} placeholder={t("粘贴资料原文")} value={content} onChange={(event) => setContent(event.target.value)} rows={12} />
+        <button type="button" disabled={busy || !title.trim() || !content.trim()} onClick={() => void addDocument()}>{t("创建资料")}</button>
       </section>
     </div>
-    {error ? <p className={styles.error} role="alert">{error}</p> : null}
+    {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
   </div>;
 }

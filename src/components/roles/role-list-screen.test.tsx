@@ -6,7 +6,7 @@ const css = readFileSync(new URL("./role-list-screen.module.css", import.meta.ur
 
 describe("role list cards", () => {
   it("keeps card actions compact without a mode-label row", () => {
-    expect(component).toContain('aria-label={`删除角色${role.display_name}`}');
+    expect(component).toContain("aria-label={t(\"删除角色\") + (role.display_name) + \"\"}");
     expect(component).toContain('<Trash2 />');
     expect(component).toContain('role.role_id !== "default-assistant" && !isDefault');
     expect(component).not.toContain('className={styles.capabilities}');
@@ -26,7 +26,7 @@ describe("role list cards", () => {
 
   it("creates a draft role and opens role settings without a separate creation page", () => {
     expect(component).toContain("await createRole({");
-    expect(component).toContain('displayName: "未命名角色"');
+    expect(component).toContain("displayName: \"未命名角色\"");
     expect(component).toContain("selectedDefaultTtsProvider");
     expect(component).toContain('voiceProvider === "bailian" ? BAILIAN_TTS_VOICE_OPTIONS[0].value : DEFAULT_TTS_VOICE');
     expect(component).toContain("router.push(`/roles/${encodeURIComponent(created.role_id)}?settings=1`)");

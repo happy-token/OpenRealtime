@@ -1,3 +1,5 @@
+
+import { LocalizedText } from "@/components/language/language-provider";
 import type { ConversationState } from "@/hooks/use-voice-session";
 import type { VoiceVisualTheme } from "./voice-theme";
 import { DigitalHumanStage } from "@/components/digital-human/digital-human-stage";
@@ -93,7 +95,7 @@ export function CallView({
       aria-hidden={hidden}
     >
       {sessionStarted && experienceMode === "avatar" && suspendRenderer ? (
-        <div className="avatar-session-ended" role="status">数字人会话已结束</div>
+        <div className="avatar-session-ended" role="status">{<LocalizedText text={"数字人会话已结束"} />}</div>
       ) : sessionStarted && experienceMode === "avatar" ? (
         <DigitalHumanStage
           state={state}

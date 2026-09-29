@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage, LocalizedText } from "@/components/language/language-provider";
+
 
 import { Ellipsis, ImagePlus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -16,15 +18,16 @@ function targetName(target: AssetTarget) { return target.variant?.display_name ?
 function targetKind(target: AssetTarget) { return target.variant ? "口型对齐" : target.action ? "动作底片" : "形象"; }
 
 export function AssetCard({ children, target, onManage, busy }: { children: ReactNode; target: AssetTarget; onManage: RequestOperation; busy: boolean }) {
+  const { t } = useLanguage();
   const personal = target.avatar.avatar_id.startsWith("avatar-personal-");
   return <div className={styles.card}>
     {children}
     <details className={styles.menu}>
-      <summary aria-label={`管理${targetKind(target)}：${targetName(target)}`}><Ellipsis aria-hidden="true" /></summary>
+      <summary aria-label={t("管理") + (targetKind(target)) + "：" + (targetName(target)) + ""}><Ellipsis aria-hidden="true" /></summary>
       <div className={styles.menuItems}>
-        <button type="button" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "rename"); }}><Pencil />更名</button>
-        {!personal && !target.action ? <button type="button" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "image"); }}><ImagePlus />更换图片</button> : null}
-        {!personal ? <button type="button" disabled={busy} data-danger onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "trash"); }}><Trash2 />删除</button> : null}
+        <button type="button" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "rename"); }}><Pencil />{t("更名")}</button>
+        {!personal && !target.action ? <button type="button" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "image"); }}><ImagePlus />{t("更换图片")}</button> : null}
+        {!personal ? <button type="button" disabled={busy} data-danger onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); onManage(target, "trash"); }}><Trash2 />{t("删除")}</button> : null}
       </div>
     </details>
   </div>;
@@ -33,12 +36,13 @@ export function AssetCard({ children, target, onManage, busy }: { children: Reac
 export function DeletedAssets({ avatars, actionAvatar, talkingAction, onManage, busy }: {
   avatars?: OwnedAvatarRecord[]; actionAvatar?: OwnedAvatarRecord | null; talkingAction?: AssetTarget | null; onManage: RequestOperation; busy: boolean;
 }) {
+  const { t } = useLanguage();
   const targets: AssetTarget[] = avatars ? avatars.filter(avatar => avatar.deleted_at).map(avatar => ({ avatar }))
     : talkingAction?.action ? (talkingAction.action.talking_variants ?? []).filter(variant => variant.deleted_at).map(variant => ({ ...talkingAction, variant }))
     : actionAvatar ? actionAvatar.actions.filter(action => action.deleted_at).map(action => ({ avatar: actionAvatar, action })) : [];
   const supported = targets.filter(target => !target.avatar.avatar_id.startsWith("avatar-personal-"));
   if (!supported.length) return null;
-  return <details className={styles.deleted}><summary>已删除（{supported.length}）</summary>{supported.map(target => <div className={styles.deletedRow} key={target.variant?.id ?? target.action?.avatar_action_id ?? target.avatar.avatar_id}><span>{targetName(target)}</span><button type="button" disabled={busy} onClick={() => onManage(target, "restore")}><RotateCcw />恢复</button></div>)}</details>;
+  return <details className={styles.deleted}><summary>{t("已删除（")}{supported.length}）</summary>{supported.map(target => <div className={styles.deletedRow} key={target.variant?.id ?? target.action?.avatar_action_id ?? target.avatar.avatar_id}><span>{targetName(target)}</span><button type="button" disabled={busy} onClick={() => onManage(target, "restore")}><RotateCcw />{t("恢复")}</button></div>)}</details>;
 }
 
 export function applyAssetChange(records: OwnedAvatarRecord[], change: AssetChange) {
@@ -97,9 +101,9 @@ export function useRoleAssetManagement(onChanged: (change: AssetChange) => void)
     <form onSubmit={event => { event.preventDefault(); void submit(); }}>
       <h2 id="role-asset-dialog-title">{request.operation === "rename" ? "更名" : request.operation === "trash" ? "删除" : request.operation === "image" ? "更换" : "恢复"}{targetKind(request.target)}</h2>
       <p>{targetName(request.target)}</p>
-      {request.operation === "rename" ? <label>新名称<input autoFocus value={name} maxLength={50} disabled={busy} onChange={event => setName(event.target.value)} required /></label> : request.operation === "image" ? <><label>新图片<input autoFocus type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setFile(event.target.files?.[0] ?? null)} required /></label><p>更换后会解除实时绑定，并将原动作移入回收站。使用此形象的其他角色也会受到影响；旧动作恢复后仍对应旧形象。</p></> : request.operation === "trash" ? <p>素材将移入已删除列表，可恢复。使用该素材的其他角色也会受到影响。{!request.target.action ? "形象下的动作和口型将暂时不可用。" : !request.target.variant ? "该底片的口型将暂时不可用。" : ""}</p> : <p>恢复后可重新选择此素材。</p>}
+      {request.operation === "rename" ? <label>{<LocalizedText text={"新名称"} />}<input autoFocus value={name} maxLength={50} disabled={busy} onChange={event => setName(event.target.value)} required /></label> : request.operation === "image" ? <><label>{<LocalizedText text={"新图片"} />}<input autoFocus type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setFile(event.target.files?.[0] ?? null)} required /></label><p>{<LocalizedText text={"更换后会解除实时绑定，并将原动作移入回收站。使用此形象的其他角色也会受到影响；旧动作恢复后仍对应旧形象。"} />}</p></> : request.operation === "trash" ? <p>{<LocalizedText text={"素材将移入已删除列表，可恢复。使用该素材的其他角色也会受到影响。"} />}{!request.target.action ? "形象下的动作和口型将暂时不可用。" : !request.target.variant ? "该底片的口型将暂时不可用。" : ""}</p> : <p>{<LocalizedText text={"恢复后可重新选择此素材。"} />}</p>}
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-      <footer><button type="button" disabled={busy} onClick={() => setRequest(null)}>取消</button><button type="submit" disabled={busy || (request.operation === "rename" && (!name.trim() || name.trim() === targetName(request.target))) || (request.operation === "image" && !file)}>{busy ? "正在保存…" : "确认"}</button></footer>
+      <footer><button type="button" disabled={busy} onClick={() => setRequest(null)}>{<LocalizedText text={"取消"} />}</button><button type="submit" disabled={busy || (request.operation === "rename" && (!name.trim() || name.trim() === targetName(request.target))) || (request.operation === "image" && !file)}>{busy ? "正在保存…" : "确认"}</button></footer>
     </form>
   </dialog>, document.body) : null;
   return { manage, dialog, busy };

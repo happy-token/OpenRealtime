@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { AlertTriangle, Keyboard, RefreshCw } from "lucide-react";
 import type { ConnectionState } from "@/hooks/use-voice-session";
@@ -34,6 +36,7 @@ export function resolveSessionRecoveryIssue({ connection, micError, micAvailable
 }
 
 export function SessionRecoveryNotice(props: SessionRecoveryNoticeProps) {
+  const { t } = useLanguage();
   const issue = resolveSessionRecoveryIssue(props);
   if (!issue) return null;
   const retry = issue.retry === "connection" ? props.onRetryConnection : issue.retry === "microphone" ? props.onRetryMicrophone : null;
@@ -42,7 +45,7 @@ export function SessionRecoveryNotice(props: SessionRecoveryNoticeProps) {
     <div className="session-recovery-copy"><strong>{issue.title}</strong><span>{issue.message}</span></div>
     <div className="session-recovery-actions">
       {retry && <button type="button" onClick={retry}><RefreshCw aria-hidden="true" />{issue.retryLabel}</button>}
-      {!props.voiceOnly && <button type="button" onClick={props.onUseText}><Keyboard aria-hidden="true" />改用文字</button>}
+      {!props.voiceOnly && <button type="button" onClick={props.onUseText}><Keyboard aria-hidden="true" />{t("改用文字")}</button>}
     </div>
   </section>;
 }

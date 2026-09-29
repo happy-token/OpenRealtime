@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
@@ -227,6 +229,7 @@ export function ConfigDrawer({
   appTheme = DEFAULT_APP_THEME,
   onAppThemeChange = () => undefined,
 }: ConfigDrawerProps) {
+  const { t } = useLanguage();
   const embedded = variant === "embedded";
   const sessionWorkbench = variant === "session";
   const defaultModelProvider = findModelProvider("deepseek");
@@ -770,7 +773,7 @@ export function ConfigDrawer({
         aria-hidden={embedded ? undefined : !open}
         inert={embedded ? undefined : !open}
         aria-labelledby={embedded ? undefined : "config-studio-title"}
-        aria-label={embedded ? "高级会话配置" : undefined}
+        aria-label={embedded ? t("高级会话配置") : undefined}
         style={sessionWorkbenchStyle}
       >
         {!embedded && <header className="drawer-header">
@@ -778,14 +781,14 @@ export function ConfigDrawer({
             <span className="drawer-brand-mark" aria-hidden="true"><Sparkles /></span>
             <div>
 
-              <h2 id="config-studio-title">{sessionWorkbench ? "会话配置工作台" : "体验配置"}</h2>
+              <h2 id="config-studio-title">{sessionWorkbench ? t("会话配置工作台") : t("体验配置")}</h2>
             </div>
           </div>
           <div className="drawer-header-meta">
             {sessionWorkbench
-              ? <span className="drawer-session-mode"><i />{isAvatarMode ? "数字人" : "对话"} · 通话中</span>
-              : <span className="drawer-save-state"><i />本机自动保存</span>}
-            <button className="icon-btn" type="button" aria-label="关闭设置" onClick={onClose}>
+              ? <span className="drawer-session-mode"><i />{isAvatarMode ? t("数字人") : t("对话")}{t(" · 通话中")}</span>
+              : <span className="drawer-save-state"><i />{t("本机自动保存")}</span>}
+            <button className="icon-btn" type="button" aria-label={t("关闭设置")} onClick={onClose}>
               <X />
             </button>
           </div>
@@ -793,7 +796,7 @@ export function ConfigDrawer({
 
         <div className="drawer-workspace">
           <div className="drawer-config-pane">
-            {!embedded && <div className="drawer-tabs" role="tablist" aria-label="设置分类">
+            {!embedded && <div className="drawer-tabs" role="tablist" aria-label={t("设置分类")}>
               {CONFIG_TABS.map(({ id, label, icon: Icon }) => (
                 <button
                   type="button"
@@ -804,7 +807,7 @@ export function ConfigDrawer({
                   onClick={() => setActiveTab(id)}
                 >
                   <Icon aria-hidden="true" />
-                  {label}
+                  {t(label)}
                 </button>
               ))}
             </div>}
@@ -816,8 +819,8 @@ export function ConfigDrawer({
                     {sessionWorkbench ? (
                       <div className="session-workbench-mode-lock" data-mode={experienceMode} role="status">
                         <span>{isAvatarMode ? <UserRound /> : <Radio />}</span>
-                        <span><small>当前会话呈现</small><strong>{isAvatarMode ? "数字人" : "对话"}</strong></span>
-                        <em><i />已锁定</em>
+                        <span><small>{t("当前会话呈现")}</small><strong>{isAvatarMode ? t("数字人") : t("对话")}</strong></span>
+                        <em><i />{t("已锁定")}</em>
                       </div>
                     ) : (
                       <ExperienceModeSwitch
@@ -826,51 +829,51 @@ export function ConfigDrawer({
                         disabledModes={disabledExperienceModes}
                         compact
                         descriptionsAsTooltip
-                        ariaLabel="设置展示模式"
+                        ariaLabel={t("设置展示模式")}
                       />
                     )}
-                    {avatarConfigLocked && !sessionWorkbench && <div className="display-config-lock-notice" role="status"><Clock3 />当前展示模式已绑定到本次会话，结束后可重新选择</div>}
+                    {avatarConfigLocked && !sessionWorkbench && <div className="display-config-lock-notice" role="status"><Clock3 />{t("当前展示模式已绑定到本次会话，结束后可重新选择")}</div>}
                   </div>
 
                   {isVoiceMode ? (
                     <section className="config-card mode-specific-card" data-mode="voice">
                       <div className="config-card-heading">
                         <span className="config-step"><Radio /></span>
-                        <div><h4>对话模式视觉</h4></div>
-                        <InfoHint text="配置声场主题与语音反馈动画强度。" />
+                        <div><h4>{t("对话模式视觉")}</h4></div>
+                        <InfoHint text={t("配置声场主题与语音反馈动画强度。")} />
                       </div>
                       <div className="drawer-row">
-                        <div className="drawer-row-label"><span>语音视觉主题 <InfoHint text="选择通话主画面的声场表达。" /></span></div>
-                        <SelectMenu value={voiceVisualTheme} options={VISUAL_THEME_OPTIONS} ariaLabel="语音视觉主题" onChange={onVoiceVisualThemeChange} />
+                        <div className="drawer-row-label"><span>{t("语音视觉主题 ")}<InfoHint text={t("选择通话主画面的声场表达。")} /></span></div>
+                        <SelectMenu value={voiceVisualTheme} localizeLabels options={VISUAL_THEME_OPTIONS} ariaLabel={t("语音视觉主题")} onChange={onVoiceVisualThemeChange} />
                       </div>
                       <div className="drawer-row">
-                        <div className="drawer-row-label"><span>动态强度</span><span className="drawer-row-hint">波形与呼吸动画 {classicMotionIntensity}%</span></div>
-                        <input type="range" min={20} max={100} value={classicMotionIntensity} aria-label="对话模式动态强度" disabled={reducedMotion} onChange={(event) => setClassicMotionIntensity(Number(event.target.value))} />
+                        <div className="drawer-row-label"><span>{t("动态强度")}</span><span className="drawer-row-hint">{t("波形与呼吸动画 ")}{classicMotionIntensity}%</span></div>
+                        <input type="range" min={20} max={100} value={classicMotionIntensity} aria-label={t("对话模式动态强度")} disabled={reducedMotion} onChange={(event) => setClassicMotionIntensity(Number(event.target.value))} />
                       </div>
                     </section>
                   ) : sessionWorkbench && avatarConfigLocked ? (
                     <section className="config-card session-avatar-lock-card">
                       <div className="config-card-heading">
                         <span className="config-step"><Video /></span>
-                        <div><h4>当前数字人呈现</h4></div>
-                        <span className="avatar-config-save-state"><i />运行中</span>
+                        <div><h4>{t("当前数字人呈现")}</h4></div>
+                        <span className="avatar-config-save-state"><i />{t("运行中")}</span>
                       </div>
                       <div className="session-avatar-lock-summary">
-                        <span><small>驱动方式</small><strong>{avatarModeLabel}</strong></span>
-                        <span><small>{avatarDisplayConfig.renderPath === "hosted" ? "数字人形象" : "数字人动作"}</small><strong>{avatarDisplayConfig.renderPath === "hosted" ? avatarDisplayName : selectedMotionName}</strong></span>
+                        <span><small>{t("驱动方式")}</small><strong>{t(avatarModeLabel)}</strong></span>
+                        <span><small>{avatarDisplayConfig.renderPath === "hosted" ? t("数字人形象") : t("数字人动作")}</small><strong>{avatarDisplayConfig.renderPath === "hosted" ? avatarDisplayName : selectedMotionName}</strong></span>
                       </div>
-                      <p>当前人物与驱动服务已经绑定到本次通话；结束通话后可在首页工作台重新选择。</p>
+                      <p>{t("当前人物与驱动服务已经绑定到本次通话；结束通话后可在首页工作台重新选择。")}</p>
                     </section>
                   ) : (
                     <>
                       <section className="config-card mode-specific-card avatar-asset-overview" data-mode="avatar">
                         <div className="config-card-heading">
                           <span className="config-step"><Video /></span>
-                          <div><h4>数字人资产配置</h4></div>
-                          <InfoHint text="选择渲染方式与已经可以使用的资产。" />
-                          <span className="avatar-config-save-state"><i />选择已保存</span>
+                          <div><h4>{t("数字人资产配置")}</h4></div>
+                          <InfoHint text={t("选择渲染方式与已经可以使用的资产。")} />
+                          <span className="avatar-config-save-state"><i />{t("选择已保存")}</span>
                         </div>
-                        <div className="avatar-render-mode-grid" role="group" aria-label="数字人渲染模式">
+                        <div className="avatar-render-mode-grid" role="group" aria-label={t("数字人渲染模式")}>
                           {AVATAR_RENDER_PATH_OPTIONS.map((path) => (
                             <button type="button" key={path.value} data-selected={avatarDisplayConfig.renderPath === path.value} aria-pressed={avatarDisplayConfig.renderPath === path.value} disabled={avatarConfigLocked} onClick={() => onAvatarDisplayConfigChange({ ...avatarDisplayConfig, renderPath: path.value })}>
                               <span className="avatar-render-mode-index">{path.value === "hosted" ? <UserRound /> : <Film />}</span>
@@ -885,10 +888,10 @@ export function ConfigDrawer({
                         <div className="config-card-heading">
                           <span className="config-step">{avatarDisplayConfig.renderPath === "hosted" ? <UserRound /> : <Film />}</span>
                           <div>
-                            <h4>{avatarDisplayConfig.renderPath === "hosted" ? "数字人形象资产库" : "Avatar 资产"}</h4>
-                            <p>{avatarDisplayConfig.renderPath === "hosted" ? "选择实时托管使用的形象" : "每个 Avatar 包含形象和所属动作；左右浏览不会改变配置，点击后才更新"}</p>
+                            <h4>{avatarDisplayConfig.renderPath === "hosted" ? t("数字人形象资产库") : t("Avatar 资产")}</h4>
+                            <p>{avatarDisplayConfig.renderPath === "hosted" ? t("选择实时托管使用的形象") : t("每个 Avatar 包含形象和所属动作；左右浏览不会改变配置，点击后才更新")}</p>
                           </div>
-                          <span className="avatar-library-count">{avatarDisplayConfig.renderPath === "hosted" ? "实时托管" : "分段式合成"}</span>
+                          <span className="avatar-library-count">{avatarDisplayConfig.renderPath === "hosted" ? t("实时托管") : t("分段式合成")}</span>
                         </div>
                         {avatarDisplayConfig.renderPath === "hosted" ? (
                           <HostedAvatarCatalog
@@ -901,10 +904,10 @@ export function ConfigDrawer({
                           <div className="segmented-asset-config">
                             <Link className="avatar-asset-create-card" href="/avatars/create?task=action">
                               <span><Plus /></span>
-                              <span><strong>创建 Avatar 动作</strong><small>进入 Avatar 创建页 · 动作任务</small></span>
+                              <span><strong>{t("创建 Avatar 动作")}</strong><small>{t("进入 Avatar 创建页 · 动作任务")}</small></span>
                               <Sparkles />
                             </Link>
-                            <span className="avatar-asset-library-status" data-state={motionBaseCatalogState} role="status"><i />{motionBaseCatalogNotice || "正在读取 Avatar 资产"}</span>
+                            <span className="avatar-asset-library-status" data-state={motionBaseCatalogState} role="status"><i />{motionBaseCatalogNotice || t("正在读取 Avatar 资产")}</span>
                             <SegmentedAvatarAssetPicker
                               avatars={segmentedAvatarCatalog}
                               selectedAvatarId={avatarDisplayConfig.segmentedAvatarId}
@@ -917,7 +920,7 @@ export function ConfigDrawer({
                         )}
                       </section>
 
-                    <p className="avatar-config-boundary-note">此处可选择待适配动作；形象与动作的创建、草稿和生成任务统一在数字人工作台完成。</p>
+                    <p className="avatar-config-boundary-note">{t("此处可选择待适配动作；形象与动作的创建、草稿和生成任务统一在数字人工作台完成。")}</p>
                     </>
                   )}
                 </div>
@@ -929,8 +932,8 @@ export function ConfigDrawer({
                     <BottomVoiceStylePicker />
                   </section>
                   <section className="config-card">
-                    <div className="config-card-heading"><span className="config-step"><Settings2 /></span><div><h4>界面主题</h4><p>应用于首页、设置与数字人资产页面</p></div><InfoHint text="主题保存在本机，并在所有页面保持一致。" /></div>
-                    <div className="app-theme-grid" role="radiogroup" aria-label="通用界面主题">
+                    <div className="config-card-heading"><span className="config-step"><Settings2 /></span><div><h4>{t("界面主题")}</h4><p>{t("应用于首页、设置与数字人资产页面")}</p></div><InfoHint text={t("主题保存在本机，并在所有页面保持一致。")} /></div>
+                    <div className="app-theme-grid" role="radiogroup" aria-label={t("通用界面主题")}>
                       {APP_THEME_OPTIONS.map((theme) => (
                         <button
                           type="button"
@@ -950,8 +953,8 @@ export function ConfigDrawer({
                     </div>
                   </section>
                   <section className="config-card">
-                    <div className="config-card-heading"><span className="config-step"><Sparkles /></span><div><h4>动态与辅助</h4></div><InfoHint text="管理工作台的配置预览动态。" /></div>
-                    <div className="drawer-row"><div className="drawer-row-label"><span>减少预览动态</span><InfoHint text="停止首页轮播、设置预览和自动口型视频；不改变活动会话中的 Renderer。" /></div><label className="switch"><input type="checkbox" checked={reducedMotion} onChange={(event) => onReducedMotionChange(event.target.checked)} /><span className="switch-track" /></label></div>
+                    <div className="config-card-heading"><span className="config-step"><Sparkles /></span><div><h4>{t("动态与辅助")}</h4></div><InfoHint text={t("管理工作台的配置预览动态。")} /></div>
+                    <div className="drawer-row"><div className="drawer-row-label"><span>{t("减少预览动态")}</span><InfoHint text={t("停止首页轮播、设置预览和自动口型视频；不改变活动会话中的 Renderer。")} /></div><label className="switch"><input type="checkbox" checked={reducedMotion} onChange={(event) => onReducedMotionChange(event.target.checked)} /><span className="switch-track" /></label></div>
                   </section>
                 </div>
               )}
@@ -960,17 +963,17 @@ export function ConfigDrawer({
                 <div className="drawer-tab-content">
                     <div className="drawer-panel-intro">
                       <span>MODEL &amp; PERSONA</span>
-                      <h3>模型指令与角色配置</h3>
-                      <p>选择国内外模型或定义兼容接口，再配置共用的系统提示词与 Persona。</p>
+                      <h3>{t("模型指令与角色配置")}</h3>
+                      <p>{t("选择国内外模型或定义兼容接口，再配置共用的系统提示词与 Persona。")}</p>
                     </div>
                     <section className="config-card">
                       <div className="config-card-heading">
                         <span className="config-step"><BrainCircuit /></span>
-                        <div><h4>模型供应商</h4></div>
-                        <InfoHint text="选择模型服务商后，会同步推荐模型、协议和接口默认值。" />
+                        <div><h4>{t("模型供应商")}</h4></div>
+                        <InfoHint text={t("选择模型服务商后，会同步推荐模型、协议和接口默认值。")} />
                       </div>
                       <div className="model-provider-select-row">
-                        <SelectMenu value={modelProvider} options={MODEL_PROVIDER_MENU_OPTIONS} ariaLabel="模型供应商" onChange={selectModelProvider} />
+                        <SelectMenu value={modelProvider} localizeLabels options={MODEL_PROVIDER_MENU_OPTIONS} ariaLabel={t("模型供应商")} onChange={selectModelProvider} />
                         <span className="provider-chip"><i />{selectedModelProvider.region}</span>
                         <InfoHint text={`${selectedModelProvider.label}：${selectedModelProvider.description}`} />
                       </div>
@@ -979,38 +982,38 @@ export function ConfigDrawer({
                     <details className="config-card config-card-disclosure">
                       <summary className="config-card-heading">
                         <span className="config-step"><Settings2 /></span>
-                        <div><h4>模型与接口定义</h4><p>{modelId || "未选择模型"} · {MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label}</p></div>
+                        <div><h4>{t("模型与接口定义")}</h4><p>{modelId || t("未选择模型")} · {MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label}</p></div>
                         <ChevronDown className="config-disclosure-chevron" />
                       </summary>
                       <div className="config-disclosure-body">
                         <div className="model-interface-form">
                           <label>
-                            <span>推荐模型</span>
-                            <SelectMenu value={selectedModelProvider.models.some((model) => model.value === modelId) ? modelId : selectedModelProvider.models[0].value} options={selectedModelProvider.models} ariaLabel="推荐模型" onChange={setModelId} />
+                            <span>{t("推荐模型")}</span>
+                            <SelectMenu value={selectedModelProvider.models.some((model) => model.value === modelId) ? modelId : selectedModelProvider.models[0].value} options={selectedModelProvider.models} ariaLabel={t("推荐模型")} onChange={setModelId} />
                           </label>
                           <label>
-                            <span>协议</span>
-                            <SelectMenu value={modelProtocol} options={MODEL_PROTOCOL_OPTIONS} ariaLabel="大模型接口协议" onChange={(value) => setModelProtocol(value as ModelProtocol)} />
+                            <span>{t("协议")}</span>
+                            <SelectMenu value={modelProtocol} localizeLabels options={MODEL_PROTOCOL_OPTIONS} ariaLabel={t("大模型接口协议")} onChange={(value) => setModelProtocol(value as ModelProtocol)} />
                           </label>
-                          <label className="model-field-wide"><span>Model ID</span><input value={modelId} aria-label="大模型 Model ID" placeholder="例如 qwen3.7-flash" onChange={(event) => setModelId(event.target.value)} /></label>
-                          {modelProvider === "bailian" && <label className="model-field-wide"><span>Workspace ID</span><input value={modelWorkspaceId} aria-label="百炼 Workspace ID" placeholder="业务空间 ID" onChange={(event) => setModelWorkspaceId(event.target.value)} /></label>}
-                          <label className="model-field-wide"><span>Base URL</span><input value={modelBaseUrl} aria-label="大模型 Base URL" placeholder="https://api.example.com/v1" onChange={(event) => setModelBaseUrl(event.target.value)} /></label>
-                          <label className="model-field-wide"><span className="model-field-label">API Key 环境变量 <InfoHint text="这里只定义服务端变量名，不在浏览器保存真实密钥。" /></span><input value={modelApiKeyEnv} aria-label="API Key 环境变量" placeholder="VOICEAGENT_LLM_API_KEY" onChange={(event) => setModelApiKeyEnv(event.target.value)} /></label>
+                          <label className="model-field-wide"><span>Model ID</span><input value={modelId} aria-label={t("大模型 Model ID")} placeholder={t("例如 qwen3.7-flash")} onChange={(event) => setModelId(event.target.value)} /></label>
+                          {modelProvider === "bailian" && <label className="model-field-wide"><span>Workspace ID</span><input value={modelWorkspaceId} aria-label={t("百炼 Workspace ID")} placeholder={t("业务空间 ID")} onChange={(event) => setModelWorkspaceId(event.target.value)} /></label>}
+                          <label className="model-field-wide"><span>Base URL</span><input value={modelBaseUrl} aria-label={t("大模型 Base URL")} placeholder="https://api.example.com/v1" onChange={(event) => setModelBaseUrl(event.target.value)} /></label>
+                          <label className="model-field-wide"><span className="model-field-label">{t("API Key 环境变量 ")}<InfoHint text={t("这里只定义服务端变量名，不在浏览器保存真实密钥。")} /></span><input value={modelApiKeyEnv} aria-label={t("API Key 环境变量")} placeholder="VOICEAGENT_LLM_API_KEY" onChange={(event) => setModelApiKeyEnv(event.target.value)} /></label>
                         </div>
-                        <p className="model-runtime-note" data-ready={modelProtocol === "openai-chat-completions" ? "true" : "false"}><BrainCircuit />{modelProtocol === "openai-chat-completions" ? "当前 Python 运行时可复用 OpenAI-compatible 客户端；发布 Profile API 后动态生效。" : "接口定义已保存；此原生协议还需要新增服务端 Adapter 后才能运行。"}</p>
+                        <p className="model-runtime-note" data-ready={modelProtocol === "openai-chat-completions" ? "true" : "false"}><BrainCircuit />{modelProtocol === "openai-chat-completions" ? t("当前 Python 运行时可复用 OpenAI-compatible 客户端；发布 Profile API 后动态生效。") : t("接口定义已保存；此原生协议还需要新增服务端 Adapter 后才能运行。")}</p>
                       </div>
                     </details>
                     <details className="config-card config-card-disclosure">
                       <summary className="config-card-heading">
                         <span className="config-step"><BrainCircuit /></span>
-                        <div><h4>系统提示词</h4><p>System Prompt · {systemPrompt.length} 字符</p></div>
+                        <div><h4>{t("系统提示词")}</h4><p>System Prompt · {systemPrompt.length}{t(" 字符")}</p></div>
                         <ChevronDown className="config-disclosure-chevron" />
                       </summary>
                       <div className="config-disclosure-body">
                         <label className="model-prompt-editor">
-                          <span>决定模型的基础身份、边界和回复规则</span>
-                          <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} aria-label="系统提示词" />
-                          <small>{systemPrompt.length} 字符 · 发布 Profile API 后生效</small>
+                          <span>{t("决定模型的基础身份、边界和回复规则")}</span>
+                          <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} aria-label={t("系统提示词")} />
+                          <small>{systemPrompt.length}{t(" 字符 · 发布 Profile API 后生效")}</small>
                         </label>
                       </div>
                     </details>
@@ -1018,11 +1021,11 @@ export function ConfigDrawer({
                       <div className="config-card-heading">
                         <span className="config-step"><FileText /></span>
                         <div><h4>Persona</h4></div>
-                        <InfoHint text="关联的 Persona 会按 OpenClaw 角色文件顺序注入当前会话的系统提示词；在 Persona 库中编辑后下一轮对话生效，USER 与 MEMORY 仍由用户和会话单独管理。" />
+                        <InfoHint text={t("关联的 Persona 会按 OpenClaw 角色文件顺序注入当前会话的系统提示词；在 Persona 库中编辑后下一轮对话生效，USER 与 MEMORY 仍由用户和会话单独管理。")} />
                       </div>
                       <div className="persona-select-row">
                         <SelectMenu
-                          ariaLabel="选择 Persona"
+                          ariaLabel={t("选择 Persona")}
                           value={linkedPersona?.personaId ?? ""}
                           options={personaSelectOptions(personaOptions, linkedPersona?.personaId ?? null)}
                           cardOptions
@@ -1046,14 +1049,13 @@ export function ConfigDrawer({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          管理 Persona
-                        </a>
+                          {t("管理 Persona")}</a>
                       </div>
                       {linkedPersonaState === "loading" && (
-                        <p className="config-note">正在读取当前数字人的默认 Persona…</p>
+                        <p className="config-note">{t("正在读取当前数字人的默认 Persona…")}</p>
                       )}
                       {linkedPersonaState === "error" && (
-                        <p className="config-note" role="alert">Persona 配置暂时无法读取，运行时将保留基础系统提示词。</p>
+                        <p className="config-note" role="alert">{t("Persona 配置暂时无法读取，运行时将保留基础系统提示词。")}</p>
                       )}
                       {switchNotice && (
                         <p className="config-note" role={switchState === "error" ? "alert" : "status"}>{switchNotice}</p>
@@ -1066,20 +1068,20 @@ export function ConfigDrawer({
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
 
-                    <h3>供应商、音色与试听</h3>
-                    <p>先选择供应商，再从对应目录选择内置或克隆音色。</p>
+                    <h3>{t("供应商、音色与试听")}</h3>
+                    <p>{t("先选择供应商，再从对应目录选择内置或克隆音色。")}</p>
                   </div>
                   <section className="config-card">
                     <div className="config-card-heading">
                       <span className="config-step"><AudioLines /></span>
-                      <div><h4>语音供应商</h4><p>当前选择：{TTS_PROVIDER_OPTIONS.find((provider) => provider.value === ttsProvider)?.label}</p></div>
-                      <InfoHint text="支持阿里云百炼与火山引擎；切换后会显示对应音色目录。" />
+                      <div><h4>{t("语音供应商")}</h4><p>{t("当前选择：")}{TTS_PROVIDER_OPTIONS.find((provider) => provider.value === ttsProvider)?.label}</p></div>
+                      <InfoHint text={t("支持阿里云百炼与火山引擎；切换后会显示对应音色目录。")} />
                     </div>
                     <div className="voice-provider-select-row">
                       <SelectMenu
                         value={ttsProvider}
                         options={TTS_PROVIDER_OPTIONS}
-                        ariaLabel="语音供应商选择"
+                        ariaLabel={t("语音供应商选择")}
                         onChange={setTtsProvider}
                       />
                     </div>
@@ -1089,10 +1091,10 @@ export function ConfigDrawer({
                     <details className="config-card voice-library-disclosure">
                       <summary className="config-card-heading">
                         <span className="config-step"><Mic2 /></span>
-                        <div><h4>内置音色</h4><p>{ttsProvider === "bailian" ? `${BAILIAN_TTS_VOICE_OPTIONS.length} 个百炼音色` : `${TTS_VOICE_OPTIONS.length} 个火山音色`}{publicVoiceEnabled ? " · 公开体验请在会话中试听" : !ttsPreviewAvailable ? " · 服务重启后启用真实试听" : ""}</p></div>
+                        <div><h4>{t("内置音色")}</h4><p>{ttsProvider === "bailian" ? "" + (BAILIAN_TTS_VOICE_OPTIONS.length) + t(" 个百炼音色") : "" + (TTS_VOICE_OPTIONS.length) + t(" 个火山音色")}{publicVoiceEnabled ? t(" · 公开体验请在会话中试听") : !ttsPreviewAvailable ? t(" · 服务重启后启用真实试听") : ""}</p></div>
                         <ChevronDown className="voice-library-chevron" />
                       </summary>
-                      <div className="voice-catalog-list" aria-label="内置音色列表">
+                      <div className="voice-catalog-list" aria-label={t("内置音色列表")}>
                         {(ttsProvider === "bailian" ? BAILIAN_TTS_VOICE_OPTIONS : TTS_VOICE_OPTIONS).map((voice) => {
                           const selected = ttsProvider === "bailian" ? bailianVoice === voice.value : ttsVoice === voice.value;
                           const previewing = previewVoice === voice.value;
@@ -1101,9 +1103,9 @@ export function ConfigDrawer({
                           return <div className="provider-voice-row" data-selected={selected} key={voice.value}>
                             <button type="button" className="provider-voice-select" aria-pressed={selected} onClick={() => ttsProvider === "bailian" ? selectBailianVoice(voice.value, voice.label) : onTtsVoiceChange(voice.value)}>
                               <span className="provider-voice-avatar">{selected ? <Check /> : voice.label.slice(0, 1)}</span>
-                              <span><strong>{voice.label}</strong><small>{selected ? `已选中 · ${voice.description}` : voice.description}</small></span>
+                              <span><strong>{voice.label}</strong><small>{selected ? t("已选中 · ") + (voice.description) + "" : voice.description}</small></span>
                             </button>
-                            <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.label}`} disabled={publicVoiceEnabled || (previewState === "loading" && !previewing)} onClick={() => toggleVoicePreview(ttsProvider, voice.value, voice.label)}>
+                            <button type="button" className="provider-voice-preview" aria-label={"" + (isPlaying ? "停止试听" : "试听") + " " + (voice.label) + ""} disabled={publicVoiceEnabled || (previewState === "loading" && !previewing)} onClick={() => toggleVoicePreview(ttsProvider, voice.value, voice.label)}>
                               {isLoading ? <span className="preview-spinner" /> : isPlaying ? <Square /> : <Play />}
                             </button>
                           </div>;
@@ -1122,13 +1124,13 @@ export function ConfigDrawer({
                   </div>
 
                   <section className="config-card">
-                    <div className="config-card-heading"><span className="config-step"><Radio /></span><div><h4>方言与播放</h4></div><InfoHint text="可选方言会随供应商和音色变化。" /></div>
+                    <div className="config-card-heading"><span className="config-step"><Radio /></span><div><h4>{t("方言与播放")}</h4></div><InfoHint text={t("可选方言会随供应商和音色变化。")} /></div>
                     <div className="drawer-row">
-                      <div className="drawer-row-label"><span>方言 <InfoHint text={ttsProvider === "bailian" ? "龙安欢 V3 支持多种方言。" : "Vivi 2.0 支持东北、陕西、四川。"} /></span></div>
-                      {ttsProvider === "bailian" ? <SelectMenu value={bailianDialect} options={BAILIAN_DIALECT_OPTIONS} ariaLabel="百炼 TTS 方言" placement="top" onChange={setBailianDialect} /> : <SelectMenu value={ttsDialect} options={TTS_DIALECT_OPTIONS} ariaLabel="豆包 TTS 方言" placement="top" onChange={onTtsDialectChange} />}
+                      <div className="drawer-row-label"><span>{t("方言 ")}<InfoHint text={ttsProvider === "bailian" ? "龙安欢 V3 支持多种方言。" : "Vivi 2.0 支持东北、陕西、四川。"} /></span></div>
+                      {ttsProvider === "bailian" ? <SelectMenu value={bailianDialect} localizeLabels options={BAILIAN_DIALECT_OPTIONS} ariaLabel={t("百炼 TTS 方言")} placement="top" onChange={setBailianDialect} /> : <SelectMenu value={ttsDialect} localizeLabels options={TTS_DIALECT_OPTIONS} ariaLabel={t("豆包 TTS 方言")} placement="top" onChange={onTtsDialectChange} />}
                     </div>
-                    <div className="drawer-row"><div className="drawer-row-label"><span>语速</span><span className="drawer-row-hint">相对默认 {ttsSpeechRate === 0 ? "不变" : `${ttsSpeechRate > 0 ? "+" : ""}${ttsSpeechRate}%`}</span></div><input type="range" min={-50} max={100} value={ttsSpeechRate} aria-label="TTS 语速" onChange={(event) => onTtsSpeechRateChange(Number(event.target.value))} /></div>
-                    <div className="drawer-row"><div className="drawer-row-label"><span>播放音量</span><span className="drawer-row-hint">本地播放 {playbackVolume}%</span></div><input type="range" min={0} max={100} value={playbackVolume} aria-label="本地播放音量" onChange={(event) => { const volume = Number(event.target.value); setPlaybackVolume(volume); setVolume(volume / 100); writeConversationPreferences({ ...readConversationPreferences(), volume }); }} /></div>
+                    <div className="drawer-row"><div className="drawer-row-label"><span>{t("语速")}</span><span className="drawer-row-hint">{t("相对默认 ")}{ttsSpeechRate === 0 ? t("不变") : `${ttsSpeechRate > 0 ? "+" : ""}${ttsSpeechRate}%`}</span></div><input type="range" min={-50} max={100} value={ttsSpeechRate} aria-label={t("TTS 语速")} onChange={(event) => onTtsSpeechRateChange(Number(event.target.value))} /></div>
+                    <div className="drawer-row"><div className="drawer-row-label"><span>{t("播放音量")}</span><span className="drawer-row-hint">{t("本地播放 ")}{playbackVolume}%</span></div><input type="range" min={0} max={100} value={playbackVolume} aria-label={t("本地播放音量")} onChange={(event) => { const volume = Number(event.target.value); setPlaybackVolume(volume); setVolume(volume / 100); writeConversationPreferences({ ...readConversationPreferences(), volume }); }} /></div>
                     {(previewNotice || ttsConfigStatus) && <p className="voice-config-status" role="status">{previewNotice || localizedTtsStatus(ttsConfigStatus)}</p>}
                   </section>
                 </div>
@@ -1138,23 +1140,23 @@ export function ConfigDrawer({
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
 
-                    <h3>工具调用与自定义能力</h3>
-                    <p>内置工具由服务端注册；自定义工具先在本机建立草稿。</p>
+                    <h3>{t("工具调用与自定义能力")}</h3>
+                    <p>{t("内置工具由服务端注册；自定义工具先在本机建立草稿。")}</p>
                   </div>
                   <section className="config-card">
-                    <div className="config-card-heading"><span className="config-step"><Wrench /></span><div><h4>内置工具</h4></div><InfoHint text="这些能力来自当前服务端 Tool Registry。" /></div>
-                    <div className="builtin-tool-row"><span><Clock3 /></span><span><strong>时间查询</strong><small>ClockTool · 已接入</small></span><i>启用</i></div>
-                    <div className="builtin-tool-row"><span><Globe2 /></span><span><strong>网页搜索 / 天气</strong><small>WebSearchTool · 凭据配置后使用</small></span><i>启用</i></div>
+                    <div className="config-card-heading"><span className="config-step"><Wrench /></span><div><h4>{t("内置工具")}</h4></div><InfoHint text={t("这些能力来自当前服务端 Tool Registry。")} /></div>
+                    <div className="builtin-tool-row"><span><Clock3 /></span><span><strong>{t("时间查询")}</strong><small>{t("ClockTool · 已接入")}</small></span><i>{t("启用")}</i></div>
+                    <div className="builtin-tool-row"><span><Globe2 /></span><span><strong>{t("网页搜索 / 天气")}</strong><small>{t("WebSearchTool · 凭据配置后使用")}</small></span><i>{t("启用")}</i></div>
                   </section>
                   <details className="config-card config-card-disclosure">
-                    <summary className="config-card-heading"><span className="config-step"><Plus /></span><div><h4>自定义工具</h4><p>{customTools.length ? `${customTools.length} 个草稿` : "HTTP / MCP / OpenAPI"}</p></div><ChevronDown className="config-disclosure-chevron" /></summary>
+                    <summary className="config-card-heading"><span className="config-step"><Plus /></span><div><h4>{t("自定义工具")}</h4><p>{customTools.length ? "" + (customTools.length) + t(" 个草稿") : "HTTP / MCP / OpenAPI"}</p></div><ChevronDown className="config-disclosure-chevron" /></summary>
                     <div className="config-disclosure-body">
                       <div className="custom-tool-form">
-                        <label><span>工具名称</span><input value={toolName} placeholder="例如 query_order" onChange={(event) => setToolName(event.target.value)} /></label>
+                        <label><span>{t("工具名称")}</span><input value={toolName} placeholder={t("例如 query_order")} onChange={(event) => setToolName(event.target.value)} /></label>
                         <label><span>Endpoint</span><input value={toolEndpoint} placeholder="https://api.example.com/tools/query" onChange={(event) => setToolEndpoint(event.target.value)} /></label>
-                        <button type="button" disabled={!toolName.trim() || !toolEndpoint.trim()} onClick={() => { setCustomTools((tools) => [...tools, { id: crypto.randomUUID(), name: toolName.trim(), endpoint: toolEndpoint.trim() }]); setToolName(""); setToolEndpoint(""); }}><Plus />添加工具</button>
+                        <button type="button" disabled={!toolName.trim() || !toolEndpoint.trim()} onClick={() => { setCustomTools((tools) => [...tools, { id: crypto.randomUUID(), name: toolName.trim(), endpoint: toolEndpoint.trim() }]); setToolName(""); setToolEndpoint(""); }}><Plus />{t("添加工具")}</button>
                       </div>
-                      {customTools.length ? <div className="custom-tool-list">{customTools.map((tool) => <div key={tool.id}><span><Wrench /><span><strong>{tool.name}</strong><small>{tool.endpoint}</small></span></span><button type="button" aria-label={`移除工具 ${tool.name}`} onClick={() => setCustomTools((tools) => tools.filter((item) => item.id !== tool.id))}><Trash2 /></button></div>)}</div> : <p className="config-note">尚未添加自定义工具。发布前需要 Schema 校验、鉴权和权限确认。</p>}
+                      {customTools.length ? <div className="custom-tool-list">{customTools.map((tool) => <div key={tool.id}><span><Wrench /><span><strong>{tool.name}</strong><small>{tool.endpoint}</small></span></span><button type="button" aria-label={t("移除工具 ") + (tool.name) + ""} onClick={() => setCustomTools((tools) => tools.filter((item) => item.id !== tool.id))}><Trash2 /></button></div>)}</div> : <p className="config-note">{t("尚未添加自定义工具。发布前需要 Schema 校验、鉴权和权限确认。")}</p>}
                     </div>
                   </details>
                 </div>
@@ -1164,18 +1166,18 @@ export function ConfigDrawer({
                 <div className="drawer-tab-content">
                   <div className="drawer-panel-intro">
 
-                    <h3>实时交互策略</h3>
-                    <p>调整打断、收音和当前会话的运行方式。</p>
+                    <h3>{t("实时交互策略")}</h3>
+                    <p>{t("调整打断、收音和当前会话的运行方式。")}</p>
                   </div>
                   <section className="config-card">
                     <div className="config-card-heading">
                       <span className="config-step"><MessageCircle /></span>
-                      <div><h4>对话行为</h4></div>
-                      <InfoHint text="打断与浏览器收音设置会立即应用到当前会话。" />
+                      <div><h4>{t("对话行为")}</h4></div>
+                      <InfoHint text={t("打断与浏览器收音设置会立即应用到当前会话。")} />
                     </div>
                     <div className="drawer-row">
                       <div className="drawer-row-label">
-                        <span>允许随时打断 <InfoHint text="AI 播放期间继续收音，由服务端判断是否打断。" /></span>
+                        <span>{t("允许随时打断 ")}<InfoHint text={t("AI 播放期间继续收音，由服务端判断是否打断。")} /></span>
                       </div>
                       <label className="switch">
                         <input type="checkbox" checked={allowBargeIn} onChange={(event) => { setAllowBargeIn(event.target.checked); setBargeInMuted(!event.target.checked); writeConversationPreferences({ ...readConversationPreferences(), allowBargeIn: event.target.checked }); }} />
@@ -1184,7 +1186,7 @@ export function ConfigDrawer({
                     </div>
                     <div className="drawer-row">
                       <div className="drawer-row-label">
-                        <span>浏览器降噪 / 回声消除 <InfoHint text="通话中切换时会重新建立麦克风采集。" /></span>
+                        <span>{t("浏览器降噪 / 回声消除 ")}<InfoHint text={t("通话中切换时会重新建立麦克风采集。")} /></span>
                       </div>
                       <label className="switch">
                         <input type="checkbox" checked={noiseSuppressionEnabled} onChange={(event) => { setNoiseSuppressionEnabled(event.target.checked); setNoiseSuppression(event.target.checked); writeConversationPreferences({ ...readConversationPreferences(), noiseSuppression: event.target.checked }); }} />
@@ -1195,12 +1197,12 @@ export function ConfigDrawer({
                   <section className="config-card">
                     <div className="config-card-heading">
                       <span className="config-step"><Clock3 /></span>
-                      <div><h4>当前会话</h4></div>
-                      {sessionId ? <span className="provider-chip"><i />已建立实时连接</span> : <InfoHint text="会话 ID 会在开始通话后生成。" />}
+                      <div><h4>{t("当前会话")}</h4></div>
+                      {sessionId ? <span className="provider-chip"><i />{t("已建立实时连接")}</span> : <InfoHint text={t("会话 ID 会在开始通话后生成。")} />}
                     </div>
                     <div className="session-card-row">
-                      <span className="session-id-text">{sessionId ?? "尚未建立会话"}</span>
-                      <button type="button" className="copy-btn" data-copied={copied ? "true" : "false"} aria-label={copied ? "会话 ID 已复制" : "复制会话 ID"} title={copied ? "已复制" : "复制会话 ID"} disabled={!sessionId} onClick={copySessionId}>
+                      <span className="session-id-text">{sessionId ?? t("尚未建立会话")}</span>
+                      <button type="button" className="copy-btn" data-copied={copied ? "true" : "false"} aria-label={copied ? t("会话 ID 已复制") : t("复制会话 ID")} title={copied ? t("已复制") : t("复制会话 ID")} disabled={!sessionId} onClick={copySessionId}>
                         {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                       </button>
                     </div>
@@ -1211,13 +1213,13 @@ export function ConfigDrawer({
             </div>
           </div>
 
-          {!embedded && !sessionWorkbench && <section className="drawer-preview" aria-label="体验预览">
+          {!embedded && !sessionWorkbench && <section className="drawer-preview" aria-label={t("体验预览")}>
             <div className="preview-heading">
               <div>
 
-                <h3>{isAvatarMode ? "数字人模式" : "对话模式"}</h3>
+                <h3>{isAvatarMode ? t("数字人模式") : t("对话模式")}</h3>
               </div>
-              <span className="preview-live-pill"><i />配置预览</span>
+              <span className="preview-live-pill"><i />{t("配置预览")}</span>
             </div>
 
             <div className="experience-preview-card" data-mode={experienceMode}>
@@ -1226,15 +1228,15 @@ export function ConfigDrawer({
                   {avatarDisplayConfig.renderPath === "hosted" && avatarPreviewImage ? <Image
                       className="experience-preview-image"
                       src={avatarPreviewImage}
-                      alt={`${avatarDisplayName} 数字人配置预览`}
+                      alt={"" + (avatarDisplayName) + t(" 数字人配置预览")}
                       fill
                       priority
                       unoptimized={avatarPreviewImage.startsWith("blob:") || avatarPreviewImage.startsWith("data:") || avatarPreviewImage.startsWith("http")}
                       sizes="(max-width: 900px) 100vw, 60vw"
-                    /> : avatarDisplayConfig.renderPath === "hosted" ? <div className="experience-preview-image" aria-label="当前形象暂无预览图片" /> : selectedIdentityOnly && selectedOpenTalkingIdentity ? <Image
+                    /> : avatarDisplayConfig.renderPath === "hosted" ? <div className="experience-preview-image" aria-label={t("当前形象暂无预览图片")} /> : selectedIdentityOnly && selectedOpenTalkingIdentity ? <Image
                       className="experience-preview-image"
                       src={selectedOpenTalkingIdentity.previewImageUrl}
-                      alt={`${selectedOpenTalkingIdentity.name} 数字人形象配置预览`}
+                      alt={"" + (selectedOpenTalkingIdentity.name) + t(" 数字人形象配置预览")}
                       fill
                       priority
                       sizes="(max-width: 900px) 100vw, 60vw"
@@ -1243,7 +1245,7 @@ export function ConfigDrawer({
                       posterUrl={selectedOpenTalkingMotion?.previewImageUrl}
                       label={selectedMotionName}
                       autoPlay={!reducedMotion}
-                    /> : <div className="avatar-motion-preview-empty"><Film /><strong>{selectedMotionName}</strong><small>当前分段式合成动作</small></div>}
+                    /> : <div className="avatar-motion-preview-empty"><Film /><strong>{t(selectedMotionName)}</strong><small>{t("当前分段式合成动作")}</small></div>}
                   <div className="experience-preview-vignette" />
                   <span className="avatar-preview-label">{avatarDisplayConfig.renderPath === "hosted" || selectedIdentityOnly ? <UserRound /> : <Film />}{avatarDisplayConfig.renderPath === "hosted" ? `${avatarDisplayName.toUpperCase()} · CONFIG PREVIEW` : selectedIdentityOnly ? `${selectedOpenTalkingIdentity?.name.toUpperCase()} · IDENTITY PREVIEW` : `${selectedMotionName.toUpperCase()} · ACTION PREVIEW`}</span>
                 </>
@@ -1258,28 +1260,28 @@ export function ConfigDrawer({
               />}
               {isAvatarMode && <div className="preview-call-state">
                 <span><i />{avatarPreviewState}</span>
-                <small>{avatarPreviewService}</small>
+                <small>{t(avatarPreviewService)}</small>
               </div>}
             </div>
 
             <div className="preview-summary">
-              <span><small>模式</small><strong>{isAvatarMode ? avatarModeLabel : "视觉对话"}</strong></span>
+              <span><small>{t("模式")}</small><strong>{isAvatarMode ? avatarModeLabel : t("视觉对话")}</strong></span>
               <span><small>Persona</small><strong>{selectedPersonaLabel}</strong></span>
-              {isAvatarMode && <span><small>{avatarDisplayConfig.renderPath === "hosted" || selectedIdentityOnly ? "数字人形象" : "数字人动作"}</small><strong>{avatarDisplayConfig.renderPath === "hosted" ? avatarDisplayName : selectedIdentityOnly ? selectedOpenTalkingIdentity?.name : selectedMotionName}</strong></span>}
-              <span><small>大模型</small><strong>{selectedModelLabel}</strong></span>
-              <span><small>音色</small><strong>{selectedVoiceLabel}</strong></span>
-              <span><small>语音服务</small><strong>{ttsProvider === "doubao" ? "火山 Seed TTS 2.0" : "百炼 CosyVoice"}</strong></span>
+              {isAvatarMode && <span><small>{avatarDisplayConfig.renderPath === "hosted" || selectedIdentityOnly ? t("数字人形象") : t("数字人动作")}</small><strong>{avatarDisplayConfig.renderPath === "hosted" ? avatarDisplayName : selectedIdentityOnly ? selectedOpenTalkingIdentity?.name : selectedMotionName}</strong></span>}
+              <span><small>{t("大模型")}</small><strong>{selectedModelLabel}</strong></span>
+              <span><small>{t("音色")}</small><strong>{t(selectedVoiceLabel)}</strong></span>
+              <span><small>{t("语音服务")}</small><strong>{ttsProvider === "doubao" ? t("火山 Seed TTS 2.0") : t("百炼 CosyVoice")}</strong></span>
             </div>
 
             <p className="preview-footnote">
               <span><Video aria-hidden="true" /></span>
               {isAvatarMode
                 ? avatarDisplayConfig.renderPath === "hosted" && avatarDisplayConfig.provider === "anam"
-                  ? "实时托管形象已就绪；切换渲染模式时，分段式合成的动作选择会继续保留。"
+                  ? t("实时托管形象已就绪；切换渲染模式时，分段式合成的动作选择会继续保留。")
                   : selectedIdentityOnly
-                    ? "已选择 OpenTalking 本地形象；当前仅进行口型对齐，不包含身体或镜头动作。"
-                    : "分段式动作选择已保存；新动作与人物配置统一在数字人工作台完成。"
-                : "对话模式使用视觉主题呈现语音状态，不加载数字人渲染服务。"}
+                    ? t("已选择 OpenTalking 本地形象；当前仅进行口型对齐，不包含身体或镜头动作。")
+                    : t("分段式动作选择已保存；新动作与人物配置统一在数字人工作台完成。")
+                : t("对话模式使用视觉主题呈现语音状态，不加载数字人渲染服务。")}
             </p>
           </section>}
         </div>
@@ -1298,6 +1300,7 @@ export function AvatarAssetDeleteDialog({ asset, onCancel, onConfirm }: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useLanguage();
   const kindLabel = asset.kind === "identity" ? "数字人形象" : "数字人动作";
   return (
     <div className="avatar-asset-delete-dialog-backdrop" role="presentation" onMouseDown={(event) => {
@@ -1305,11 +1308,11 @@ export function AvatarAssetDeleteDialog({ asset, onCancel, onConfirm }: {
     }}>
       <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="avatar-asset-delete-title" aria-describedby="avatar-asset-delete-description">
         <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
-        <div><h3 id="avatar-asset-delete-title">删除{kindLabel}？</h3></div>
-        <p id="avatar-asset-delete-description"><strong>{asset.label}</strong>只会从这台设备的资产库移除，项目源文件和服务端记录不会被销毁。</p>
+        <div><h3 id="avatar-asset-delete-title">{t("删除")}{t(kindLabel)}？</h3></div>
+        <p id="avatar-asset-delete-description"><strong>{asset.label}</strong>{t("只会从这台设备的资产库移除，项目源文件和服务端记录不会被销毁。")}</p>
         <div className="avatar-asset-delete-dialog-actions">
-          <button type="button" autoFocus onClick={onCancel}>取消</button>
-          <button type="button" data-danger="true" onClick={onConfirm}><Trash2 />确认删除</button>
+          <button type="button" autoFocus onClick={onCancel}>{t("取消")}</button>
+          <button type="button" data-danger="true" onClick={onConfirm}><Trash2 />{t("确认删除")}</button>
         </div>
       </section>
     </div>
@@ -1327,6 +1330,7 @@ function MotionPreviewPlayer({
   label: string;
   autoPlay: boolean;
 }) {
+  const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
 
@@ -1367,7 +1371,7 @@ function MotionPreviewPlayer({
         muted
         playsInline
         preload="metadata"
-        aria-label={`${label} 动作预览`}
+        aria-label={"" + (label) + t(" 动作预览")}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       />
@@ -1375,11 +1379,11 @@ function MotionPreviewPlayer({
         type="button"
         className="experience-preview-playback"
         data-playing={playing}
-        aria-label={`${playing ? "暂停" : "播放"}动作预览：${label}`}
+        aria-label={"" + (playing ? "暂停" : "播放") + t("动作预览：") + (label) + ""}
         onClick={() => void togglePlayback()}
       >
         {playing ? <Pause /> : <Play />}
-        <span>{playing ? "暂停动作" : "播放动作"}</span>
+        <span>{playing ? t("暂停动作") : t("播放动作")}</span>
       </button>
     </>
   );

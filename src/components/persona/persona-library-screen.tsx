@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -43,6 +45,7 @@ export function PersonaLibraryScreen({
   onCreated?: () => void;
   embedded?: boolean;
 }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [personas, setPersonas] = useState<PersonaSummary[] | null>(null);
   const [listState, setListState] = useState<LoadState>("loading");
@@ -249,20 +252,20 @@ export function PersonaLibraryScreen({
   return (
     <section className={styles.screen} data-embedded={embedded}>
       <header className={styles.intro}>
-        <div><h2>人设</h2><p>选择已有的人设，或创建新的性格与对话风格，供多个角色使用。</p></div>
-        <button type="button" className={styles.createButton} aria-expanded={creating} onClick={() => setCreating((value) => !value)}><Plus />创建人设</button>
+        <div><h2>{t("人设")}</h2><p>{t("选择已有的人设，或创建新的性格与对话风格，供多个角色使用。")}</p></div>
+        <button type="button" className={styles.createButton} aria-expanded={creating} onClick={() => setCreating((value) => !value)}><Plus />{t("创建人设")}</button>
       </header>
 
       {linkingAvatarId ? (
         <div className={styles.linkingBanner} role="status">
           <Link2 />
-          <span>正在为 <strong>{linkingAvatarDisplayName || linkingAvatarId}</strong> 选择人设</span>
+          <span>{t("正在为 ")}<strong>{linkingAvatarDisplayName || linkingAvatarId}</strong> {t(" 选择人设")}</span>
           {linkNotice ? <small role="alert">{linkNotice}</small> : null}
         </div>
       ) : null}
 
-      {listState === "loading" ? <p className={styles.notice}>正在加载 Persona 列表…</p> : null}
-      {listState === "error" ? <p className={styles.notice} role="alert">Persona 列表读取失败</p> : null}
+      {listState === "loading" ? <p className={styles.notice}>{t("正在加载 Persona 列表…")}</p> : null}
+      {listState === "error" ? <p className={styles.notice} role="alert">{t("Persona 列表读取失败")}</p> : null}
 
       <div className={styles.grid}>
           {(personas ?? []).map((persona) => {
@@ -279,18 +282,18 @@ export function PersonaLibraryScreen({
                 >
                   <span className={styles.cardTitle}>
                     <strong>{persona.personaName}</strong>
-                    <span className={styles.cardIntro}>{persona.intro || "为这个 Persona 添加一段简介"}</span>
-                    <small>关联 {persona.linkedAvatarIds.length} 个数字人</small>
+                    <span className={styles.cardIntro}>{persona.intro || t("为这个 Persona 添加一段简介")}</span>
+                    <small>{t("关联 ")}{persona.linkedAvatarIds.length}{t(" 个数字人")}</small>
                   </span>
                   <ChevronDown className={styles.cardChevron} />
                 </button>
 
                 <div className={styles.cardActions}>
-                  <button type="button" className={styles.iconAction} aria-label={`编辑人设${persona.personaName}`} title="编辑人设" onClick={() => toggleExpand(persona.personaId)}><Pencil /></button>
-                  <button type="button" className={styles.deleteAction} disabled={isBuiltinPersonaId(persona.personaId) || persona.linkedAvatarIds.length > 0} title={isBuiltinPersonaId(persona.personaId) ? "内置人设不可删除" : persona.linkedAvatarIds.length ? "请先解除数字人关联" : "删除人设"} onClick={() => { if (hasUnsavedDraft(persona.personaId)) { setActionNotice((current) => ({ ...current, [persona.personaId]: "请先保存当前编辑内容，再删除。" })); return; } setDeletingId(persona.personaId); setDeleteState("idle"); }}><Trash2 />删除</button>
+                  <button type="button" className={styles.iconAction} aria-label={t("编辑人设") + (persona.personaName) + ""} title={t("编辑人设")} onClick={() => toggleExpand(persona.personaId)}><Pencil /></button>
+                  <button type="button" className={styles.deleteAction} disabled={isBuiltinPersonaId(persona.personaId) || persona.linkedAvatarIds.length > 0} title={isBuiltinPersonaId(persona.personaId) ? t("内置人设不可删除") : persona.linkedAvatarIds.length ? t("请先解除数字人关联") : t("删除人设")} onClick={() => { if (hasUnsavedDraft(persona.personaId)) { setActionNotice((current) => ({ ...current, [persona.personaId]: "请先保存当前编辑内容，再删除。" })); return; } setDeletingId(persona.personaId); setDeleteState("idle"); }}><Trash2 />{t("删除")}</button>
                 </div>
 
-                {deletingId === persona.personaId ? <div className={styles.inlineAction} role="group" aria-label={`确认删除${persona.personaName}`}><p>确定删除“{persona.personaName}”？删除后将移入可恢复的归档目录。</p><div><button type="button" className={styles.deleteAction} disabled={deleteState === "busy"} onClick={() => void submitDelete(persona.personaId)}>{deleteState === "busy" ? "删除中…" : "确认删除"}</button><button type="button" onClick={() => setDeletingId(null)}>取消</button></div></div> : null}
+                {deletingId === persona.personaId ? <div className={styles.inlineAction} role="group" aria-label={t("确认删除") + (persona.personaName) + ""}><p>{t("确定删除“")}{persona.personaName}{t("”？删除后将移入可恢复的归档目录。")}</p><div><button type="button" className={styles.deleteAction} disabled={deleteState === "busy"} onClick={() => void submitDelete(persona.personaId)}>{deleteState === "busy" ? t("删除中…") : t("确认删除")}</button><button type="button" onClick={() => setDeletingId(null)}>{t("取消")}</button></div></div> : null}
                 {actionNotice[persona.personaId] ? <p className={styles.actionNotice} role="status">{actionNotice[persona.personaId]}</p> : null}
 
                 {linkingAvatarId ? (
@@ -301,27 +304,27 @@ export function PersonaLibraryScreen({
                     disabled={linkState[persona.personaId] === "busy"}
                     onClick={() => void linkPersona(persona.personaId)}
                   >
-                    <Link2 />{linkState[persona.personaId] === "busy" ? "关联中…" : `关联到 ${linkingAvatarDisplayName || linkingAvatarId}`}
+                    <Link2 />{linkState[persona.personaId] === "busy" ? t("关联中…") : t("关联到 ") + (linkingAvatarDisplayName || linkingAvatarId) + ""}
                   </button>
                 ) : null}
 
                 {expanded ? (
                   <div className={styles.cardBody}>
                     {profileState[persona.personaId] === "loading" || !profile ? (
-                      <p className={styles.notice}>正在加载 Persona 内容…</p>
+                      <p className={styles.notice}>{t("正在加载 Persona 内容…")}</p>
                     ) : (
                       <>
                         <label className={styles.editorField}>
-                          <span>人设名称</span>
-                          <input value={nameDrafts[persona.personaId] ?? profile.personaName} maxLength={80} aria-label={`${persona.personaName}的人设名称`} onChange={(event) => setNameDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))} />
+                          <span>{t("人设名称")}</span>
+                          <input value={nameDrafts[persona.personaId] ?? profile.personaName} maxLength={80} aria-label={"" + (persona.personaName) + t("的人设名称")} onChange={(event) => setNameDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))} />
                         </label>
                         <label className={styles.editorField}>
-                          <span>卡片简介</span>
+                          <span>{t("卡片简介")}</span>
                           <textarea
                             value={introDrafts[persona.personaId] ?? profile.intro ?? ""}
                             maxLength={160}
-                            aria-label={`${persona.personaName}的卡片简介`}
-                            placeholder="用一两句话描述这个 Persona 的性格或定位"
+                            aria-label={"" + (persona.personaName) + t("的卡片简介")}
+                            placeholder={t("用一两句话描述这个 Persona 的性格或定位")}
                             onChange={(event) => setIntroDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))}
                           />
                         </label>
@@ -330,7 +333,7 @@ export function PersonaLibraryScreen({
                             <span><FileText />{file.filename}</span>
                             <textarea
                               value={draft[file.filename] ?? file.content}
-                              aria-label={`${file.filename} 内容`}
+                              aria-label={"" + (file.filename) + t(" 内容")}
                               onChange={(event) => setDrafts((current) => ({
                                 ...current,
                                 [persona.personaId]: { ...current[persona.personaId], [file.filename]: event.target.value },
@@ -340,13 +343,13 @@ export function PersonaLibraryScreen({
                         ))}
                         {profile.files.some((file) => file.filename === "AGENTS.md") ? (
                           <details className={styles.advanced}>
-                            <summary>高级规则</summary>
+                            <summary>{t("高级规则")}</summary>
                             {profile.files.filter((file) => file.filename === "AGENTS.md").map((file) => (
                               <label key={file.filename} className={styles.editorField}>
                                 <span><FileText />{file.filename}</span>
                                 <textarea
                                   value={draft[file.filename] ?? file.content}
-                                  aria-label={`${file.filename} 内容`}
+                                  aria-label={"" + (file.filename) + t(" 内容")}
                                   onChange={(event) => setDrafts((current) => ({
                                     ...current,
                                     [persona.personaId]: { ...current[persona.personaId], [file.filename]: event.target.value },
@@ -364,14 +367,14 @@ export function PersonaLibraryScreen({
                             disabled={saveState[persona.personaId] === "busy" || !hasUnsavedDraft(persona.personaId)}
                             onClick={() => void saveDraft(persona.personaId)}
                           >
-                            {saveState[persona.personaId] === "busy" ? "保存中…" : "保存修改"}
+                            {saveState[persona.personaId] === "busy" ? t("保存中…") : t("保存修改")}
                           </button>
                           {saveNotice[persona.personaId] ? <p role="status">{saveNotice[persona.personaId]}</p> : null}
                         </div>
                         {profile.linkedAvatarIds.length > 0 ? (
-                          <p className={styles.linkedAvatars}>已关联：{profile.linkedAvatarIds.join("、")}</p>
+                          <p className={styles.linkedAvatars}>{t("已关联：")}{profile.linkedAvatarIds.join("、")}</p>
                         ) : (
-                          <p className={styles.linkedAvatars}>暂未关联任何数字人</p>
+                          <p className={styles.linkedAvatars}>{t("暂未关联任何数字人")}</p>
                         )}
                       </>
                     )}
@@ -382,41 +385,41 @@ export function PersonaLibraryScreen({
           })}
 
           {creating ? <article className={`${styles.card} liquid-glass-surface`} data-expanded="true" data-create="true">
-            <div className={styles.createPanelHeader}><span><strong>新人设配置</strong><small>从头定义一个新的人格配置文件</small></span><button type="button" aria-label="关闭创建人设" title="关闭" onClick={() => setCreating(false)}><X /></button></div>
+            <div className={styles.createPanelHeader}><span><strong>{t("新人设配置")}</strong><small>{t("从头定义一个新的人格配置文件")}</small></span><button type="button" aria-label={t("关闭创建人设")} title={t("关闭")} onClick={() => setCreating(false)}><X /></button></div>
               <div className={styles.cardBody}>
                 <label className={styles.editorField}>
-                  <span>人设名称</span>
+                  <span>{t("人设名称")}</span>
                   <input
                     value={createName}
                     maxLength={80}
-                    aria-label="人设名称"
-                    placeholder="例如 温柔知性的伙伴"
+                    aria-label={t("人设名称")}
+                    placeholder={t("例如 温柔知性的伙伴")}
                     onChange={(event) => setCreateName(event.target.value)}
                   />
                 </label>
                 <label className={styles.editorField}>
-                  <span>卡片简介</span>
-                  <textarea value={createIntro} maxLength={160} aria-label="新人设的卡片简介" placeholder="用一两句话描述性格或定位" onChange={(event) => setCreateIntro(event.target.value)} />
+                  <span>{t("卡片简介")}</span>
+                  <textarea value={createIntro} maxLength={160} aria-label={t("新人设的卡片简介")} placeholder={t("用一两句话描述性格或定位")} onChange={(event) => setCreateIntro(event.target.value)} />
                 </label>
                 {CREATE_FIELDS.filter(([, , , required]) => required).map(([filename, label, description]) => (
                   <label key={filename} className={styles.editorField}>
-                    <span><FileText />{label}.md{filename === "IDENTITY.md" ? "（可选）" : ""}</span>
+                    <span><FileText />{t(label)}.md{filename === "IDENTITY.md" ? t("（可选）") : ""}</span>
                     <textarea
                       value={createDraft[filename] ?? ""}
-                      aria-label={`${label} 内容`}
+                      aria-label={"" + (label) + t(" 内容")}
                       placeholder={description}
                       onChange={(event) => setCreateDraft((current) => ({ ...current, [filename]: event.target.value }))}
                     />
                   </label>
                 ))}
                 <details className={styles.advanced}>
-                  <summary>高级规则</summary>
+                  <summary>{t("高级规则")}</summary>
                   {CREATE_FIELDS.filter(([, , , required]) => !required).map(([filename, label, description]) => (
                     <label key={filename} className={styles.editorField}>
-                      <span><FileText />{label}.md</span>
+                      <span><FileText />{t(label)}.md</span>
                       <textarea
                         value={createDraft[filename] ?? ""}
-                        aria-label={`${label} 内容`}
+                        aria-label={"" + (label) + t(" 内容")}
                         placeholder={description}
                         onChange={(event) => setCreateDraft((current) => ({ ...current, [filename]: event.target.value }))}
                       />
@@ -431,7 +434,7 @@ export function PersonaLibraryScreen({
                     disabled={createState === "busy"}
                     onClick={() => void submitCreate()}
                   >
-                    {createState === "busy" ? "创建中…" : linkingAvatarId ? "创建并关联" : "创建"}
+                    {createState === "busy" ? t("创建中…") : linkingAvatarId ? t("创建并关联") : t("创建")}
                   </button>
                   {createNotice ? <p role="status">{createNotice}</p> : null}
                 </div>

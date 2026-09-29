@@ -1,3 +1,5 @@
+
+import { LocalizedText } from "@/components/language/language-provider";
 import Link from "next/link";
 import { BookOpen, ChevronDown } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -20,9 +22,9 @@ export default async function DocumentPage({ params }: { params: Promise<{ slug:
     <header className={styles.documentHeader}>
       <div><h1>{title}</h1><p>{doc.category}</p></div>
       <details className={styles.documentMenu}>
-        <summary><BookOpen aria-hidden="true" /><span>文档目录</span><ChevronDown aria-hidden="true" /></summary>
+        <summary><BookOpen aria-hidden="true" /><span>{<LocalizedText text={"文档目录"} />}</span><ChevronDown aria-hidden="true" /></summary>
         <nav aria-label="文档目录">
-          <Link href="/docs" aria-label="全部文档">全部文档</Link>
+          <Link href="/docs" aria-label="全部文档">{<LocalizedText text={"全部文档"} />}</Link>
           {PUBLIC_DOCUMENTS.map(item => <Link key={item.slug} href={`/docs/${item.slug}`} aria-label={item.title} aria-current={item.slug === slug ? "page" : undefined}><small>{item.category}</small><span>{item.title}</span></Link>)}
         </nav>
       </details>

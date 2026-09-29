@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -179,14 +181,15 @@ export function AvatarAssetDeleteButton({
   busy: boolean;
   onDelete: () => void;
 }) {
+  const { t } = useLanguage();
   return <button
     className={styles.deleteAvatarAction}
     type="button"
-    aria-label={`删除数字人资产：${avatarName}`}
-    title="将数字人资产移入回收站"
+    aria-label={t("删除数字人资产：") + (avatarName) + ""}
+    title={t("将数字人资产移入回收站")}
     disabled={busy}
     onClick={onDelete}
-  >{busy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>{busy ? "正在删除数字人" : "删除数字人"}</span></button>;
+  >{busy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>{busy ? t("正在删除数字人") : t("删除数字人")}</span></button>;
 }
 
 export function getAvatarActionDockWheelDelta(deltaX: number, deltaY: number) {
@@ -228,6 +231,7 @@ export function AvatarActionRenameDialog({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useLanguage();
   const trimmedValue = value.trim();
   const isAvatar = assetKind === "avatar";
   const titleId = isAvatar ? "avatar-name-rename-title" : "avatar-action-rename-title";
@@ -245,14 +249,14 @@ export function AvatarActionRenameDialog({
       >
         <header>
           <span><Pencil /></span>
-          <div><h2 id={titleId}>{isAvatar ? "修改数字人名称" : "修改动作名称"}</h2></div>
-          <button type="button" aria-label={isAvatar ? "关闭数字人名称修改" : "关闭动作名称修改"} disabled={busy} onClick={onCancel}><X /></button>
+          <div><h2 id={titleId}>{isAvatar ? t("修改数字人名称") : t("修改动作名称")}</h2></div>
+          <button type="button" aria-label={isAvatar ? t("关闭数字人名称修改") : t("关闭动作名称修改")} disabled={busy} onClick={onCancel}><X /></button>
         </header>
         <label className={styles.renameField}>
-          <span>{isAvatar ? "数字人名称" : "动作名称"}</span>
+          <span>{isAvatar ? t("数字人名称") : t("动作名称")}</span>
           <input
             autoFocus
-            aria-label={isAvatar ? "新的数字人名称" : "新的动作名称"}
+            aria-label={isAvatar ? t("新的数字人名称") : t("新的动作名称")}
             value={value}
             maxLength={50}
             disabled={busy}
@@ -262,13 +266,13 @@ export function AvatarActionRenameDialog({
           <small>{value.length}/50</small>
         </label>
         <p className={styles.renameHint}>{isAvatar
-          ? "仅修改显示名称，不会改变数字人 ID、形象图片、动作或模型。"
-          : "仅修改列表中的显示名称，不会重新生成视频或影响口型模型。"}</p>
-        {error ? <p className={styles.replacementDialogError} role="alert">{error}</p> : null}
+          ? t("仅修改显示名称，不会改变数字人 ID、形象图片、动作或模型。")
+          : t("仅修改列表中的显示名称，不会重新生成视频或影响口型模型。")}</p>
+        {error ? <p className={styles.replacementDialogError} role="alert">{t(error)}</p> : null}
         <footer>
-          <button type="button" disabled={busy} onClick={onCancel}>取消</button>
+          <button type="button" disabled={busy} onClick={onCancel}>{t("取消")}</button>
           <button type="submit" disabled={busy || !trimmedValue || trimmedValue === actionName}>
-            {busy ? <><LoaderCircle className={styles.spin} />正在保存</> : "保存名称"}
+            {busy ? <><LoaderCircle className={styles.spin} />{t("正在保存")}</> : t("保存名称")}
           </button>
         </footer>
       </form>
@@ -289,20 +293,20 @@ export function AvatarPersonaStatus({
   linkedPersonaName: string | null;
   personaChecked: boolean;
 }) {
+  const { t } = useLanguage();
   if (!realtimeBound && !linkedPersonaName && !personaChecked) return null;
   const personaHref = `/personas?avatar_id=${encodeURIComponent(avatarId)}&avatar_display_name=${encodeURIComponent(avatarName)}`;
   return (
     <div className={styles.statuses}>
-      {realtimeBound ? <span><Radio />Anam 实时</span> : null}
+      {realtimeBound ? <span><Radio />{t("Anam 实时")}</span> : null}
       {linkedPersonaName ? (
         <span>
-          <Sparkles />默认 Persona：{linkedPersonaName}
-          <Link href={personaHref}>更换</Link>
+          <Sparkles />{t("默认 Persona：")}{linkedPersonaName}
+          <Link href={personaHref}>{t("更换")}</Link>
         </span>
       ) : personaChecked ? (
         <span>
-          <Sparkles />未关联 Persona
-          <Link href={personaHref}>关联 Persona</Link>
+          <Sparkles />{t("未关联 Persona")}<Link href={personaHref}>{t("关联 Persona")}</Link>
         </span>
       ) : null}
     </div>
@@ -310,6 +314,7 @@ export function AvatarPersonaStatus({
 }
 
 export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialActionId, returnTo }: { avatarId: string; backHref?: string; initialActionId?: string; returnTo?: string }) {
+  const { t } = useLanguage();
   const [detailState, setDetailState] = useState<AvatarDetailLoadState>(() => ({
     avatarId,
     status: "loading",
@@ -721,12 +726,12 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
   }
 
   if (loaded && !avatar) {
-    return <section className={styles.missing}><h1>找不到这个 Avatar</h1><p>它可能已被删除，或只存在于其他账户。</p><BackLink href="/resources?tab=avatars" label="返回资产管理" /></section>;
+    return <section className={styles.missing}><h1>{t("找不到这个 Avatar")}</h1><p>{t("它可能已被删除，或只存在于其他账户。")}</p><BackLink href="/resources?tab=avatars" label={t("返回资产管理")} /></section>;
   }
 
   return (
     <section className={styles.detail} aria-labelledby="avatar-detail-title">
-      <section className={styles.stage} aria-label={`${avatarName} 媒体舞台`}>
+      <section className={styles.stage} aria-label={"" + (avatarName) + t(" 媒体舞台")}>
         {avatar ? <Image className={styles.stageBackdrop} src={avatarImageUrl} alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized /> : null}
         <div className={styles.stageMedia} data-kind={activeAction ? "action" : "image"}>
           {avatar && (selectedTalkingVariant?.video_url || activeAction?.video_url) ? (
@@ -734,7 +739,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
               key={selectedTalkingVariant?.id ?? activeAction?.avatar_action_id}
               src={selectedTalkingVariant?.video_url ?? activeAction?.video_url ?? undefined}
               aria-label={selectedTalkingVariant
-                ? `${avatar.display_name} · ${selectedTalkingVariant.display_name} 口型对齐`
+                ? "" + (avatar.display_name) + " · " + (selectedTalkingVariant.display_name) + t(" 口型对齐")
                 : `${avatar.display_name} · ${activeAction?.display_name}`}
               autoPlay
               muted
@@ -748,7 +753,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
               }}
             />
           ) : avatar ? (
-            <Image src={avatarImageUrl} alt={`${avatar.display_name} 形象`} fill priority sizes="(max-width: 800px) 100vw, 1100px" unoptimized />
+            <Image src={avatarImageUrl} alt={"" + (avatar.display_name) + t(" 形象")} fill priority sizes="(max-width: 800px) 100vw, 1100px" unoptimized />
           ) : null}
         </div>
         <span className={styles.stageScrim} aria-hidden="true" />
@@ -762,12 +767,12 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
                   ref={renameAvatarTrigger}
                   className={styles.renameAvatar}
                   type="button"
-                  aria-label={`修改数字人名称：${avatarName}`}
-                  title="修改数字人名称"
+                  aria-label={t("修改数字人名称：") + (avatarName) + ""}
+                  title={t("修改数字人名称")}
                   disabled={avatarRenameBusy}
                   onClick={beginAvatarRename}
                 ><Pencil /></button> : null}
-                <span className={styles.actionCount}><Film />{actions.length ? `${actions.length} 个动作` : "尚未创建动作"}</span>
+                <span className={styles.actionCount}><Film />{actions.length ? "" + (actions.length) + t(" 个动作") : t("尚未创建动作")}</span>
               </div>
               <AvatarPersonaStatus
                 avatarId={avatarId}
@@ -779,25 +784,22 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
             </div>
 
             <div className={styles.stageActions}>
-              <Link className={styles.primaryAction} href={conversationHref} aria-label="开始对话">
-                <MessageCircle />开始对话
-              </Link>
-              {avatarId.startsWith("avatar-personal-") ? <Link className={styles.secondaryAction} href={avatarDetailActionHref(`/services/motion?avatar_id=${encodeURIComponent(avatarId)}`, returnTo)}><Film />管理个人动作</Link> : null}
+              <Link className={styles.primaryAction} href={conversationHref} aria-label={t("开始对话")}>
+                <MessageCircle />{t("开始对话")}</Link>
+              {avatarId.startsWith("avatar-personal-") ? <Link className={styles.secondaryAction} href={avatarDetailActionHref(`/services/motion?avatar_id=${encodeURIComponent(avatarId)}`, returnTo)}><Film />{t("管理个人动作")}</Link> : null}
               {avatar?.canCreateActions !== false ? (
                 <Link className={styles.secondaryAction} href={avatarDetailActionHref(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`, returnTo)}>
-                  <Film />创建动作
-                </Link>
+                  <Film />{t("创建动作")}</Link>
               ) : null}
               {avatar?.canCreateActions !== false ? <>
                 <button ref={replacementTrigger} className={styles.replaceAction} type="button" disabled={replacementBusy} onClick={() => replacementInput.current?.click()}>
-                  {replacementBusy ? <LoaderCircle className={styles.spin} /> : <ImagePlus />}更换图片
-                </button>
+                  {replacementBusy ? <LoaderCircle className={styles.spin} /> : <ImagePlus />}{t("更换图片")}</button>
                 <input
                   ref={replacementInput}
                   className={styles.hiddenFileInput}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  aria-label="选择新的 Avatar 形象图片"
+                  aria-label={t("选择新的 Avatar 形象图片")}
                   onChange={(event) => void prepareReplacement(event.target.files?.[0])}
                 />
               </> : null}
@@ -806,8 +808,8 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
                   ref={renameActionTrigger}
                   className={styles.renameAction}
                   type="button"
-                  aria-label={`修改动作名称：${activeAction.display_name}`}
-                  title="修改当前动作名称"
+                  aria-label={t("修改动作名称：") + (activeAction.display_name) + ""}
+                  title={t("修改当前动作名称")}
                   disabled={actionRenameBusy}
                   onClick={() => beginActionRename(activeAction)}
                 ><Pencil /></button>
@@ -816,11 +818,11 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
                 {activeAction && canDeleteActiveAction ? <button
                   className={styles.deleteAction}
                   type="button"
-                  aria-label={`删除当前动作：${activeAction.display_name}`}
-                  title={`仅删除当前动作：${activeAction.display_name}`}
+                  aria-label={t("删除当前动作：") + (activeAction.display_name) + ""}
+                  title={t("仅删除当前动作：") + (activeAction.display_name) + ""}
                   disabled={actionDeletionBusy}
                   onClick={() => void moveActiveActionToTrash()}
-                >{actionDeletionBusy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>删除当前动作</span></button> : null}
+                >{actionDeletionBusy ? <LoaderCircle className={styles.spin} /> : <Trash2 />}<span>{t("删除当前动作")}</span></button> : null}
                 {avatar?.canDelete ? <AvatarAssetDeleteButton
                   avatarName={avatar.display_name}
                   busy={avatarDeletionBusy}
@@ -856,7 +858,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
         <div
           className={styles.mediaDock}
           role="group"
-          aria-label="形象和动作切换"
+          aria-label={t("形象和动作切换")}
           data-auto-advance={autoAdvancePinned || dockHovered || dockFocused ? "paused" : "running"}
           onWheel={(event) => {
             if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return;
@@ -882,13 +884,13 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
             type="button"
             data-current={activeMediaIndex === 0}
             aria-current={activeMediaIndex === 0 ? "true" : undefined}
-            aria-label={`查看形象：${avatarName}`}
+            aria-label={t("查看形象：") + (avatarName) + ""}
             onPointerEnter={() => setPreviewMediaIndex(0)}
             onFocus={() => setPreviewMediaIndex(0)}
             onClick={() => selectMedia(0)}
           >
             <span className={styles.dockMedia}>{avatar ? <Image src={avatarImageUrl} alt="" fill sizes="100px" unoptimized /> : <ImageIcon />}</span>
-            <small>形象</small>
+            <small>{t("形象")}</small>
             <strong>{avatarName}</strong>
           </button>
           {actions.map((action, index) => (
@@ -897,7 +899,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
               type="button"
               data-current={activeMediaIndex === index + 1}
               aria-current={activeMediaIndex === index + 1 ? "true" : undefined}
-              aria-label={`查看动作：${action.display_name}`}
+              aria-label={t("查看动作：") + (action.display_name) + ""}
               onPointerEnter={() => setPreviewMediaIndex(index + 1)}
               onFocus={() => setPreviewMediaIndex(index + 1)}
               onClick={() => selectMedia(index + 1)}
@@ -906,19 +908,19 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
                 {action.video_url ? <ActionDockPreview
                   src={action.video_url}
                   poster={avatarImageUrl}
-                  label={`${avatarName} · ${action.display_name} 缩略预览`}
+                  label={"" + (avatarName) + " · " + (action.display_name) + t(" 缩略预览")}
                   playing={activeMediaIndex === index + 1 || previewMediaIndex === index + 1}
                   pageVisible={pageVisible}
                   startDelayMs={(index % 6) * 90}
                 /> : avatar ? <Image src={avatarImageUrl} alt="" fill sizes="100px" unoptimized /> : <Film />}
               </span>
-              <small>动作 {index + 1}</small>
+              <small>{t("动作 ")}{index + 1}</small>
               <strong>{action.display_name}</strong>
             </button>
           ))}
           {avatar?.canCreateActions !== false ? (
-            <Link className={styles.addMedia} href={avatarDetailActionHref(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`, returnTo)} aria-label="创建新的 Avatar 动作">
-              <Film /><span>新增动作</span>
+            <Link className={styles.addMedia} href={avatarDetailActionHref(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatarId)}`, returnTo)} aria-label={t("创建新的 Avatar 动作")}>
+              <Film /><span>{t("新增动作")}</span>
             </Link>
           ) : null}
         </div>
@@ -926,14 +928,14 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
 
       <details className={styles.technical}>
         <summary>
-          <span><Radio />技术信息</span>
-          <div><em>图片可直接使用</em><em>{actions.length ? `${actions.length} 个动作` : "尚未创建动作"}</em></div>
+          <span><Radio />{t("技术信息")}</span>
+          <div><em>{t("图片可直接使用")}</em><em>{actions.length ? "" + (actions.length) + t(" 个动作") : t("尚未创建动作")}</em></div>
           <ChevronDown />
         </summary>
         <div className={styles.technicalGrid}>
           <article><span>Avatar ID</span><code>{avatarId}</code></article>
-          <article><span>实时驱动</span><strong>{avatar?.realtime_binding ? "Anam 已连接" : avatar?.canCreateActions === false ? "供应商托管" : "未创建，可直接使用图片"}</strong></article>
-          <article><span>动作资产</span><strong>{actions.length ? `${actions.length} 个可选动作` : avatar?.canCreateActions === false ? "实时驱动无需动作" : "尚未创建动作"}</strong></article>
+          <article><span>{t("实时驱动")}</span><strong>{avatar?.realtime_binding ? t("Anam 已连接") : avatar?.canCreateActions === false ? t("供应商托管") : t("未创建，可直接使用图片")}</strong></article>
+          <article><span>{t("动作资产")}</span><strong>{actions.length ? "" + (actions.length) + t(" 个可选动作") : avatar?.canCreateActions === false ? t("实时驱动无需动作") : t("尚未创建动作")}</strong></article>
           {avatar?.realtime_binding ? <article><span>Provider / Model</span><code>{avatar.realtime_binding.provider_avatar_id} · {avatar.realtime_binding.avatar_model}</code></article> : null}
         </div>
       </details>
@@ -1017,6 +1019,7 @@ export function AvatarSourceReplacementDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useLanguage();
   const dialog = useRef<HTMLElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);
@@ -1068,30 +1071,30 @@ export function AvatarSourceReplacementDialog({
       <section ref={dialog} className={styles.replacementDialog} role="dialog" aria-modal="true" aria-labelledby="replace-avatar-image-title" aria-describedby="replace-avatar-image-description">
         <header>
           <span><ImagePlus /></span>
-          <div><h2 id="replace-avatar-image-title">更换“{avatarName}”的形象图片？</h2></div>
-          <button ref={closeButton} type="button" aria-label="取消更换形象图片" disabled={busy} onClick={onCancel}><X /></button>
+          <div><h2 id="replace-avatar-image-title">{t("更换“")}{avatarName}{t("”的形象图片？")}</h2></div>
+          <button ref={closeButton} type="button" aria-label={t("取消更换形象图片")} disabled={busy} onClick={onCancel}><X /></button>
         </header>
         <div className={styles.replacementPreview}>
-          <span><Image src={previewImageUrl} alt="新形象图片预览" fill sizes="120px" unoptimized /></span>
-          <div><small>新图片</small><strong>{fileName}</strong><p id="replace-avatar-image-description">Avatar 名称和 ID 将保持不变。</p></div>
+          <span><Image src={previewImageUrl} alt={t("新形象图片预览")} fill sizes="120px" unoptimized /></span>
+          <div><small>{t("新图片")}</small><strong>{fileName}</strong><p id="replace-avatar-image-description">{t("Avatar 名称和 ID 将保持不变。")}</p></div>
         </div>
         {hasRealtimeBinding ? (
           <div className={styles.replacementWarning}>
             <AlertTriangle />
-            <p><strong>实时绑定将自动解除</strong><span>当前绑定由旧图片创建。替换后需要重新创建并确认实时形象；Anam 远端形象不会被删除。</span></p>
+            <p><strong>{t("实时绑定将自动解除")}</strong><span>{t("当前绑定由旧图片创建。替换后需要重新创建并确认实时形象；Anam 远端形象不会被删除。")}</span></p>
           </div>
         ) : null}
         {actionCount ? (
           <label className={styles.replacementChoice}>
             <input type="checkbox" checked={trashActions} disabled={busy} onChange={(event) => onTrashActionsChange(event.target.checked)} />
             <span><Check /></span>
-            <p><strong>将 {actionCount} 个旧动作移入回收站</strong><small>取消勾选可保留动作，但动作画面仍会是旧人物。</small></p>
+            <p><strong>{t("将 ")}{actionCount}{t(" 个旧动作移入回收站")}</strong><small>{t("取消勾选可保留动作，但动作画面仍会是旧人物。")}</small></p>
           </label>
-        ) : <p className={styles.replacementNoActions}>当前没有旧动作需要处理。</p>}
-        {error ? <p className={styles.replacementDialogError} role="alert">{error}</p> : null}
+        ) : <p className={styles.replacementNoActions}>{t("当前没有旧动作需要处理。")}</p>}
+        {error ? <p className={styles.replacementDialogError} role="alert">{t(error)}</p> : null}
         <footer>
-          <button type="button" disabled={busy} onClick={onCancel}>取消</button>
-          <button type="button" disabled={busy} onClick={onConfirm}>{busy ? <LoaderCircle className={styles.spin} /> : <ImagePlus />}确认更换</button>
+          <button type="button" disabled={busy} onClick={onCancel}>{t("取消")}</button>
+          <button type="button" disabled={busy} onClick={onConfirm}>{busy ? <LoaderCircle className={styles.spin} /> : <ImagePlus />}{t("确认更换")}</button>
         </footer>
       </section>
     </div>

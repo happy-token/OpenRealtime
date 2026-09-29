@@ -12,6 +12,10 @@ import { AvatarUploadDialog, createdAvatarDisplayConfig } from "./avatar-upload-
 const LIBRARY_DEFAULT_CONFIG: AvatarDisplayConfig = {
   ...DEFAULT_AVATAR_DISPLAY_CONFIG,
   renderPath: "segmented",
+  segmentedPresetId: "custom-upload",
+  segmentedAvatarId: "",
+  segmentedDisplayName: "",
+  segmentedAvatarActionId: "",
 };
 
 export function AvatarResourceHome({
@@ -29,6 +33,7 @@ export function AvatarResourceHome({
 }) {
   const router = useRouter();
   const [config, setConfig] = useState<AvatarDisplayConfig>(LIBRARY_DEFAULT_CONFIG);
+  const [configReady, setConfigReady] = useState(false);
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [stagePreview, setStagePreview] = useState<{ url: string; name: string; kind?: "talking" } | null>(null);
 
@@ -37,7 +42,9 @@ export function AvatarResourceHome({
       const saved = window.localStorage.getItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY);
       if (saved) setConfig(parseAvatarDisplayConfig(JSON.parse(saved)));
     } catch {
-      // The shared library remains usable with the built-in default.
+      // Missing or invalid preferences leave the stage unselected.
+    } finally {
+      setConfigReady(true);
     }
   }, []);
 
@@ -63,6 +70,7 @@ export function AvatarResourceHome({
   return <>
     <HomePreviewWorkspace
       purpose="library"
+      configReady={configReady}
       connected
       error={null}
       visualTheme="liquid-glass"

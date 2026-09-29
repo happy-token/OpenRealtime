@@ -7,7 +7,7 @@ const voiceSelector = readFileSync(new URL("../voice/voice-selector.tsx", import
 
 describe("role detail configuration workspace", () => {
   it("opens a draggable liquid-glass configuration window from the top-right button", () => {
-    expect(component).toContain('aria-label="打开角色配置"');
+    expect(component).toContain("aria-label={t(\"打开角色配置\")}");
     expect(component).toContain("onPointerDown={startConfigDrag}");
     expect(component).toContain("onPointerMove={moveConfigPanel}");
     expect(component).not.toContain("homeControlsStyles.rightHandle");
@@ -19,7 +19,7 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain("useState(480)");
     expect(component).toContain("onPointerDown={startConfigResize}");
     expect(component).toContain("onPointerMove={resizeConfigPanel}");
-    expect(component).toContain('aria-label="调整配置窗口宽度"');
+    expect(component).toContain("aria-label={t(\"调整配置窗口宽度\")}");
     expect(component).toContain('"--config-width": `${configWidth}px`');
     expect(css).toContain("width: min(var(--config-width),calc(100vw - var(--workspace-sidebar-width,52px) - 36px))");
   });
@@ -34,10 +34,10 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain('<ConfigTaskModule id="avatar"');
     expect(component).toContain('<ConfigTaskModule id="action"');
     expect(component).toContain('<ConfigTaskModule id="talking"');
-    expect(component).toContain('aria-label="声音设置"');
-    expect(component).toContain('aria-label="Persona 设置"');
-    expect(component).toContain('aria-label="工具使用设置"');
-    expect(component).toContain('aria-label="知识库设置"');
+    expect(component).toContain("aria-label={t(\"声音设置\")}");
+    expect(component).toContain("aria-label={t(\"Persona 设置\")}");
+    expect(component).toContain("aria-label={t(\"工具使用设置\")}");
+    expect(component).toContain("aria-label={t(\"知识库设置\")}");
     expect(component).toContain("<VoiceSelector");
     expect(voiceSelector).toContain('/api/tts/preview?');
     expect(component).not.toContain('fetch("/api/conversations"');
@@ -47,7 +47,7 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain("<AvatarProductionOverlay");
     expect(component).toContain('openProductionTask("motion")');
     expect(component).toContain('openProductionTask("talking")');
-    expect(component).toContain('aria-label="新建动作"');
+    expect(component).toContain("aria-label={t(\"新建动作\")}");
     expect(component).toContain('className={styles.actionCardGrid}');
   });
 
@@ -84,15 +84,15 @@ describe("role detail configuration workspace", () => {
 
   it("organizes voices by provider, clone, official and dialect lists", () => {
     expect(component).toContain("<VoiceSelector");
-    expect(voiceSelector).toContain('aria-label="声音供应商"');
-    expect(voiceSelector).toContain('title="音色克隆"');
-    expect(voiceSelector).toContain('aria-label="官方音色"');
-    expect(voiceSelector).toContain('aria-label="方言"');
+    expect(voiceSelector).toContain('aria-label={t("声音供应商")}');
+    expect(voiceSelector).toContain('title={t("音色克隆")}');
+    expect(voiceSelector).toContain('aria-label={t("官方音色")}');
+    expect(voiceSelector).toContain('aria-label={t("方言")}');
     expect(voiceSelector).toContain('<VoiceClonePanel embedded');
     expect(component).toContain('voiceDialect: role.voice_dialect ?? ""');
     expect(component).toContain('voice_dialect: voice.dialect');
     expect(voiceSelector).not.toContain('className={styles.providerGroup}');
-    expect(voiceSelector).toContain('item.scope === "personal" ? "个人配置" : "平台配置"');
+    expect(voiceSelector).toContain('item.scope === "personal" ? t("个人配置") : t("平台配置")');
   });
 
   it("keeps selection and production inside the role editor", () => {
@@ -124,7 +124,7 @@ describe("role detail configuration workspace", () => {
   it("lets users select an unavailable mode and presents its missing setup as a task", () => {
     expect(component).not.toContain("if (!role || !presentationModeAvailable(mode)) return");
     expect(component).not.toContain("disabled={!available ||");
-    expect(component).toContain('available ? "当前形象素材可用" : "选择后继续完成所需配置"');
+    expect(component).toContain("available ? t(\"当前形象素材可用\") : t(\"选择后继续完成所需配置\")");
     expect(component).toContain('<ConfigTaskModule id="realtime"');
     expect(component).toContain("const configurationReady =");
     expect(component).toContain("disabled={saving || !configurationReady}");
@@ -155,7 +155,7 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain("工具使用");
     expect(component).toContain("知识库");
     expect(component).toContain("长期记忆");
-    expect(component).toContain('tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人"');
+    expect(component).toContain("tool.builtin ? t(\"内置\") : tool.public_enabled ? t(\"共享\") : t(\"个人\")");
     expect(component).not.toContain("模型 ID（高级配置）");
   });
 });

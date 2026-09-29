@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Braces, Check, ChevronRight, Cloud, LoaderCircle, Pencil, Plus, Server, Wrench, X } from "lucide-react";
@@ -44,6 +46,7 @@ const TEMPLATES: Array<{
 ];
 
 export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}) {
+  const { t } = useLanguage();
   const [tools, setTools] = useState<ToolRecord[] | null>(null);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -174,33 +177,33 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
   }
 
   return <div className={styles.page}>
-    <div className={styles.heading}><div><h2>工具</h2><p>Function Calling、HTTP API 与 MCP 统一为角色可绑定的工具。</p></div><button type="button" onClick={() => { setEditingId(null); resetDraft(); setCreating(true); }}><Plus />新建工具</button></div>
+    <div className={styles.heading}><div><h2>{t("工具")}</h2><p>{t("Function Calling、HTTP API 与 MCP 统一为角色可绑定的工具。")}</p></div><button type="button" onClick={() => { setEditingId(null); resetDraft(); setCreating(true); }}><Plus />{t("新建工具")}</button></div>
 
-    <section className={styles.templates} aria-label="工具示例">
-      {TEMPLATES.map((template) => <button key={template.kind} type="button" onClick={() => applyTemplate(template)}>{toolIcon(template.kind)}<span><strong>{template.title}</strong><small>{TOOL_KIND_LABELS[template.kind]} 示例</small></span><ChevronRight /></button>)}
+    <section className={styles.templates} aria-label={t("工具示例")}>
+      {TEMPLATES.map((template) => <button key={template.kind} type="button" onClick={() => applyTemplate(template)}>{toolIcon(template.kind)}<span><strong>{template.title}</strong><small>{TOOL_KIND_LABELS[template.kind]}{t(" 示例")}</small></span><ChevronRight /></button>)}
     </section>
 
-    {creating ? <section className={styles.editor} aria-label="新建工具">
-      <header><div><span>{editingId ? "EDIT TOOL" : "NEW TOOL"}</span><h3>{editingId ? "编辑工具" : "新建工具"}</h3></div><button type="button" aria-label="关闭" onClick={() => setCreating(false)}><X /></button></header>
+    {creating ? <section className={styles.editor} aria-label={t("新建工具")}>
+      <header><div><span>{editingId ? "EDIT TOOL" : "NEW TOOL"}</span><h3>{editingId ? t("编辑工具") : t("新建工具")}</h3></div><button type="button" aria-label={t("关闭")} onClick={() => setCreating(false)}><X /></button></header>
       <div className={styles.kindTabs}>{(["function", "api", "mcp"] as const).map((item) => <button key={item} type="button" data-active={kind === item} onClick={() => setKind(item)}>{TOOL_KIND_LABELS[item]}</button>)}</div>
       <div className={styles.fields}>
-        <label><span>名称</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="例如：查询订单" /></label>
-        <label><span>函数名称</span><input value={functionName} onChange={(event) => setFunctionName(event.target.value)} placeholder="get_order_status" /></label>
-        <label className={styles.wide}><span>说明</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="告诉模型何时使用这个工具" /></label>
-        <label className={styles.wide}><span>{kind === "mcp" ? "Streamable HTTP 服务地址" : kind === "function" ? "函数执行服务地址" : "API 地址"}</span><input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={kind === "mcp" ? "http://127.0.0.1:3001/mcp" : "https://api.example.com/action"} /></label>
-        {kind === "api" ? <label><span>请求方法</span><SelectMenu fullWidth value={String(method)} ariaLabel="请求方法" options={[{ value: "GET", label: "GET" }, { value: "POST", label: "POST" }]} onChange={value => setMethod(value === "GET" ? "GET" : "POST")} /></label> : null}
-        <label><span>风险等级</span><SelectMenu fullWidth value={String(riskLevel)} ariaLabel="风险等级" options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高 · 强确认" }, { value: "critical", label: "极高 · 禁止语音调用" }]} onChange={value => setRiskLevel(value as NonNullable<ToolRecord["risk_level"]>)} /></label>
-        <label><span>工具作用</span><SelectMenu fullWidth value={String(effect)} ariaLabel="工具作用" options={[{ value: "read_public", label: "读取公开信息" }, { value: "read_sensitive", label: "读取敏感信息" }, { value: "write_reversible", label: "可撤销写入" }, { value: "write_irreversible", label: "不可撤销写入" }, { value: "execute_code", label: "执行代码" }, { value: "communicate_external", label: "对外通信" }, { value: "spend_or_transfer", label: "支付或转账" }, { value: "control_device", label: "控制设备" }]} onChange={value => setEffect(value as NonNullable<ToolRecord["effect"]>)} /></label>
-        {kind === "mcp" ? <p>当前支持 Streamable HTTP；函数名称填写服务端已有的工具名称。</p> : null}
-        <p className={styles.wide}>工具服务来源须由管理员允许；保存后重新进入对话才会加载。</p>
-        <label className={styles.wide}><span>输入 Schema</span><textarea value={schema} onChange={(event) => setSchema(event.target.value)} spellCheck={false} /></label>
+        <label><span>{t("名称")}</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={t("例如：查询订单")} /></label>
+        <label><span>{t("函数名称")}</span><input value={functionName} onChange={(event) => setFunctionName(event.target.value)} placeholder="get_order_status" /></label>
+        <label className={styles.wide}><span>{t("说明")}</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t("告诉模型何时使用这个工具")} /></label>
+        <label className={styles.wide}><span>{kind === "mcp" ? t("Streamable HTTP 服务地址") : kind === "function" ? t("函数执行服务地址") : t("API 地址")}</span><input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={kind === "mcp" ? "http://127.0.0.1:3001/mcp" : "https://api.example.com/action"} /></label>
+        {kind === "api" ? <label><span>{t("请求方法")}</span><SelectMenu fullWidth value={String(method)} ariaLabel={t("请求方法")} options={[{ value: "GET", label: "GET" }, { value: "POST", label: "POST" }]} onChange={value => setMethod(value === "GET" ? "GET" : "POST")} /></label> : null}
+        <label><span>{t("风险等级")}</span><SelectMenu fullWidth value={String(riskLevel)} ariaLabel={t("风险等级")} options={[{ value: "low", label: t("低") }, { value: "medium", label: t("中") }, { value: "high", label: t("高 · 强确认") }, { value: "critical", label: t("极高 · 禁止语音调用") }]} onChange={value => setRiskLevel(value as NonNullable<ToolRecord["risk_level"]>)} /></label>
+        <label><span>{t("工具作用")}</span><SelectMenu fullWidth value={String(effect)} ariaLabel={t("工具作用")} options={[{ value: "read_public", label: t("读取公开信息") }, { value: "read_sensitive", label: t("读取敏感信息") }, { value: "write_reversible", label: t("可撤销写入") }, { value: "write_irreversible", label: t("不可撤销写入") }, { value: "execute_code", label: t("执行代码") }, { value: "communicate_external", label: t("对外通信") }, { value: "spend_or_transfer", label: t("支付或转账") }, { value: "control_device", label: t("控制设备") }]} onChange={value => setEffect(value as NonNullable<ToolRecord["effect"]>)} /></label>
+        {kind === "mcp" ? <p>{t("当前支持 Streamable HTTP；函数名称填写服务端已有的工具名称。")}</p> : null}
+        <p className={styles.wide}>{t("工具服务来源须由管理员允许；保存后重新进入对话才会加载。")}</p>
+        <label className={styles.wide}><span>{t("输入 Schema")}</span><textarea value={schema} onChange={(event) => setSchema(event.target.value)} spellCheck={false} /></label>
       </div>
-      <footer><button type="button" data-secondary="true" onClick={() => setCreating(false)}>取消</button><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? <LoaderCircle className={styles.spin} /> : <Check />}保存工具</button></footer>
+      <footer><button type="button" data-secondary="true" onClick={() => setCreating(false)}>{t("取消")}</button><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? <LoaderCircle className={styles.spin} /> : <Check />}{t("保存工具")}</button></footer>
     </section> : null}
 
-    {error ? <p className={styles.error} role="alert">{error}</p> : null}
-    {tools === null && !error ? <div className={styles.loading}><LoaderCircle className={styles.spin} />正在读取工具目录</div> : null}
-    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length} 个</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{!tool.builtin ? <button type="button" className={styles.editAction} aria-label={`编辑工具${tool.display_name}`} title="编辑工具" onClick={() => edit(tool)}><Pencil /></button> : null}{!tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={`${tool.public_enabled ? "关闭" : "允许"}${tool.display_name}公开语音使用`} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? "公开可用" : "仅内部"}</button> : null}<button type="button" disabled={tool.builtin} aria-label={`${tool.enabled ? "停用" : "启用"}${tool.display_name}`} onClick={() => void toggle(tool)}>{tool.builtin ? "内置" : tool.enabled ? "已启用" : "已停用"}</button></span></article>)}</div></section>)}
+    {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
+    {tools === null && !error ? <div className={styles.loading}><LoaderCircle className={styles.spin} />{t("正在读取工具目录")}</div> : null}
+    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length}{t(" 个")}</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{!tool.builtin ? <button type="button" className={styles.editAction} aria-label={t("编辑工具") + (tool.display_name) + ""} title={t("编辑工具")} onClick={() => edit(tool)}><Pencil /></button> : null}{!tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={"" + (tool.public_enabled ? "关闭" : "允许") + "" + (tool.display_name) + t("公开语音使用")} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? t("公开可用") : t("仅内部")}</button> : null}<button type="button" disabled={tool.builtin} aria-label={"" + (tool.enabled ? "停用" : "启用") + "" + (tool.display_name) + ""} onClick={() => void toggle(tool)}>{tool.builtin ? t("内置") : tool.enabled ? t("已启用") : t("已停用")}</button></span></article>)}</div></section>)}
   </div>;
 }
 

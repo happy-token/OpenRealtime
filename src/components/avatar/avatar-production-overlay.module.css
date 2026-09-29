@@ -88,7 +88,8 @@
 .panel[data-task="motion"] > header div { display: none; }
 .panel[data-task="motion"] > header button { width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; }
 .resizeHandle { position: absolute; z-index: 5; right: 0; bottom: 0; width: 28px; height: 28px; display: grid; place-items: center; outline: 0; color: var(--text-faint); cursor: nwse-resize; touch-action: none; }
-.resizeHandle::before { content: ""; position: absolute; inset: -7px; }
+.resizeHandle::before { content: ""; position: absolute; inset: 0; }
+.panel[data-task="motion"] .resizeHandle { right: -14px; bottom: -14px; }
 .resizeHandle svg { width: 13px; height: 13px; transition: color 160ms ease,transform 160ms ease; }
 .resizeHandle:hover svg,.resizeHandle:focus-visible svg,.panel[data-resizing="true"] .resizeHandle svg { color: var(--accent); transform: scale(1.12); }
 .missingAvatar { margin: 24px; color: var(--text-dim); font-size: .7rem; text-align: center; }
@@ -100,3 +101,7 @@
   .panel[data-task="talking"] { top: auto; right: 8px; bottom: 10px; left: 8px; width: auto; height: min(66dvh,590px); min-width: 0; min-height: 280px; }
   .resizeHandle { display: none; }
 }
+/* Leave the prompt controls clickable; retain a narrow strip for dragging. */
+.panel[data-task="motion"] > header { pointer-events: none; }
+.panel[data-task="motion"] > header button { pointer-events: auto; }
+.panel[data-task="motion"] > header::before { content: ""; position: absolute; top: 0; right: 40px; left: 40px; height: 10px; pointer-events: auto; }

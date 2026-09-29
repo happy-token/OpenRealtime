@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import { AudioLines, Check, Film, ImagePlus, MessageCircle, Plus, Sparkles, UserRound } from "lucide-react";
@@ -20,7 +22,7 @@ export function PreviewVideo({ src, poster, label, active = true }: { src: strin
     if (!active) { video.pause(); return; }
     void video.play().catch(() => undefined);
   }, [active, src]);
-  return <video ref={videoRef} src={src} poster={poster} aria-label={label} autoPlay={active} muted loop playsInline preload="auto" onCanPlay={(event) => {
+  return <video ref={videoRef} src={active ? src : undefined} poster={poster} aria-label={label} autoPlay={active} muted loop playsInline preload={active ? "auto" : "none"} onCanPlay={(event) => {
     if (active && event.currentTarget.paused) void event.currentTarget.play().catch(() => undefined);
   }} />;
 }
@@ -44,17 +46,18 @@ export function WorkbenchMediaOption({
   icon?: ReactNode;
   onSelect: () => void;
 }) {
+  const { t } = useLanguage();
   return <button
     type="button"
     className={styles.edgeMediaOption}
     data-selected={selected}
     data-axis={axis}
-    aria-label={`选择${name}`}
+    aria-label={t("选择") + (name) + ""}
     aria-pressed={selected}
     onClick={onSelect}
   >
     <span className={styles.edgeMediaVisual} data-placeholder={!video && !image}>
-      {video ? <PreviewVideo src={video} poster={image ?? undefined} label={`${name} 动作预览`} /> : image ? (
+      {video ? <PreviewVideo src={video} poster={image ?? undefined} label={"" + (name) + t(" 动作预览")} /> : image ? (
         <Image src={image} alt="" fill sizes={axis === "vertical" ? "180px" : "150px"} unoptimized={shouldLoadAvatarPreviewDirectly(image)} />
       ) : icon ?? <UserRound aria-hidden="true" />}
     </span>
@@ -158,10 +161,11 @@ export function WorkbenchActionFolder({
   createNote?: string;
   actionLabel?: string;
 }) {
+  const { t } = useLanguage();
   return <Folder
     className={styles.actionMaterialFolder}
     frontClassName={styles.edgeMediaOption}
-    ariaLabel={`${open ? "收起" : "展开"}${action.displayName}的${talkingLabel}，共 ${variants.length} 个`}
+    ariaLabel={"" + (open ? "收起" : "展开") + "" + (action.displayName) + t("的") + (talkingLabel) + t("，共 ") + (variants.length) + t(" 个")}
     frontSelected={selected}
     open={open}
     onOpenChange={onOpenChange}
@@ -179,20 +183,20 @@ export function WorkbenchActionFolder({
       if (variant) onSelectVariant(variant.id);
       else if (variantIndex === variants.length) onCreateTalking?.();
     }}
-    items={[...(onSelectRuntime ? [<span className={`${styles.actionFolderPaperContent} ${styles.actionFolderCreateContent}`} key="runtime"><AudioLines aria-hidden="true" /><strong>实时口型</strong><small>使用此底片</small></span>] : []), ...variants.map((variant) => <span className={styles.actionFolderPaperContent} key={variant.id}>
+    items={[...(onSelectRuntime ? [<span className={`${styles.actionFolderPaperContent} ${styles.actionFolderCreateContent}`} key="runtime"><AudioLines aria-hidden="true" /><strong>{t("实时口型")}</strong><small>{t("使用此底片")}</small></span>] : []), ...variants.map((variant) => <span className={styles.actionFolderPaperContent} key={variant.id}>
       {image ? <Image src={image} alt="" fill sizes="110px" unoptimized={shouldLoadAvatarPreviewDirectly(image)} /> : <Film aria-hidden="true" />}
-      <i aria-hidden="true" /><strong>{shortTalkingVariantName(action.displayName, variant)}</strong>{selectedVariantId === variant.id ? <small className={styles.actionFolderSelected}><Check aria-hidden="true" />已选中</small> : onSelectRuntime ? <small>预制口型</small> : null}
+      <i aria-hidden="true" /><strong>{shortTalkingVariantName(action.displayName, variant)}</strong>{selectedVariantId === variant.id ? <small className={styles.actionFolderSelected}><Check aria-hidden="true" />{t("已选中")}</small> : onSelectRuntime ? <small>{t("预制口型")}</small> : null}
     </span>), ...(onCreateTalking ? [<span className={`${styles.actionFolderPaperContent} ${styles.actionFolderCreateContent}`} key="create-talking">
       <Plus aria-hidden="true" /><strong>{createLabel}</strong><small>{createNote}</small>
     </span>] : [])]}
     front={<>
       <span className={styles.edgeMediaVisual}>
-        {action.videoUrl ? <PreviewVideo src={action.videoUrl} poster={image} label={`${action.displayName} 动作预览`} active={previewActive} /> : image ? (
+        {action.videoUrl ? <PreviewVideo src={action.videoUrl} poster={image} label={"" + (action.displayName) + t(" 动作预览")} active={previewActive} /> : image ? (
           <Image src={image} alt="" fill sizes="150px" unoptimized={shouldLoadAvatarPreviewDirectly(image)} />
         ) : <UserRound aria-hidden="true" />}
       </span>
       <small>{`${actionLabel} ${index + 1}`}</small><strong>{action.displayName}</strong>
-      <span className={styles.actionFolderCount} aria-label={`${variants.length} 个${talkingLabel}`}>{variants.length}</span>
+      <span className={styles.actionFolderCount} aria-label={"" + (variants.length) + t(" 个") + (talkingLabel) + ""}>{variants.length}</span>
     </>}
   />;
 }

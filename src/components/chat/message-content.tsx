@@ -1,3 +1,5 @@
+
+import { LocalizedText } from "@/components/language/language-provider";
 import type { ComponentProps } from "react";
 import { memo } from "react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
@@ -27,7 +29,7 @@ function MessageImage({ node, alt, src, ...props }: ComponentProps<"img"> & { no
         target="_blank"
         rel="noreferrer noopener"
       >
-        查看外部图片：{alt || "对话图片"}
+        {<LocalizedText text={"查看外部图片："} />}{alt || "对话图片"}
       </a>
     );
   }

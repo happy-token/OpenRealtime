@@ -116,3 +116,7 @@
 @media (max-width:760px) { .orbOptionGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width:480px) { .orbShowcaseBottom { align-items: stretch; flex-direction: column; } .previewStates { width: max-content; } .orbOptionGrid { gap: 8px; } .orbOptionVisual { height: 78px; } }
 @media (prefers-reduced-motion:reduce) { .orbShowcase *, .orbOptionGrid * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+.disclosure { margin-top: 14px; }
+.disclosure summary { width: fit-content; color: var(--text-dim); font-size: .8125rem; cursor: pointer; padding: 6px 0; }
+.disclosure[open] summary { color: var(--text); }

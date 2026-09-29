@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { Check, CircleAlert, LoaderCircle, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -21,6 +23,7 @@ const ENVIRONMENT_AVATAR = {
 };
 
 export function HostedAvatarCatalog({ active, disabled, selectedAvatarId, onSelect }: HostedAvatarCatalogProps) {
+  const { t } = useLanguage();
   const [avatars, setAvatars] = useState<AnamHostedAvatar[]>([]);
   const [phase, setPhase] = useState<CatalogPhase>("loading");
   const [notice, setNotice] = useState("正在读取可用形象");
@@ -70,34 +73,34 @@ export function HostedAvatarCatalog({ active, disabled, selectedAvatarId, onSele
       <div className="avatar-asset-library-toolbar">
         <label className="hosted-avatar-search">
           <Search aria-hidden="true" />
-          <input value={search} aria-label="搜索数字人形象" placeholder="搜索名称或标签" onChange={(event) => setSearch(event.target.value)} />
+          <input value={search} aria-label={t("搜索数字人形象")} placeholder={t("搜索名称或标签")} onChange={(event) => setSearch(event.target.value)} />
         </label>
         <span className="avatar-asset-library-status" data-state={phase} role="status">
           {phase === "loading" ? <LoaderCircle /> : phase === "error" ? <CircleAlert /> : <i />}
-          {notice}
+          {t(notice)}
         </span>
       </div>
 
       <HostedAvatarGroup
-        title="我的形象"
-        description="已经创建并可用于实时托管的形象"
+        title={t("我的形象")}
+        description={t("已经创建并可用于实时托管的形象")}
         avatars={personal}
         selectedAvatarId={effectiveSelectedAvatarId}
         disabled={disabled}
-        emptyLabel="当前没有可用的个人形象"
+        emptyLabel={t("当前没有可用的个人形象")}
         onSelect={onSelect}
         prefix={providerDefaultResolved ? undefined : <HostedAvatarCard avatar={ENVIRONMENT_AVATAR} selected={selectedAvatarId === ENVIRONMENT_AVATAR.id} disabled={disabled} onSelect={() => onSelect(ENVIRONMENT_AVATAR)} />}
       />
       <HostedAvatarGroup
-        title="内置形象"
-        description="平台提供、已经可以直接使用的参考形象"
+        title={t("内置形象")}
+        description={t("平台提供、已经可以直接使用的参考形象")}
         avatars={official}
         selectedAvatarId={effectiveSelectedAvatarId}
         disabled={disabled}
         emptyLabel={phase === "error" ? "暂时无法读取内置形象" : "没有匹配的内置形象"}
         onSelect={onSelect}
       />
-      {!searchTerm && allOfficial.length > official.length && <button className="hosted-avatar-show-all" type="button" onClick={() => setShowAllOfficial(true)}>显示全部 {allOfficial.length} 个内置形象</button>}
+      {!searchTerm && allOfficial.length > official.length && <button className="hosted-avatar-show-all" type="button" onClick={() => setShowAllOfficial(true)}>{t("显示全部 ")}{allOfficial.length}{t(" 个内置形象")}</button>}
     </div>
   );
 }
@@ -112,9 +115,10 @@ function HostedAvatarGroup({ title, description, avatars, selectedAvatarId, disa
   onSelect: HostedAvatarCatalogProps["onSelect"];
   prefix?: React.ReactNode;
 }) {
+  const { t } = useLanguage();
   return (
     <section className="hosted-avatar-group">
-      <header><div><strong>{title}</strong><small>{description}</small></div><em>{avatars.length + (prefix ? 1 : 0)} 个</em></header>
+      <header><div><strong>{title}</strong><small>{description}</small></div><em>{avatars.length + (prefix ? 1 : 0)}{t(" 个")}</em></header>
       <div className="avatar-library-grid">
         {prefix}
         {avatars.map((avatar) => <HostedAvatarCard key={avatar.id} avatar={avatar} selected={selectedAvatarId === avatar.id} disabled={disabled} onSelect={() => onSelect(avatar)} />)}
@@ -130,10 +134,11 @@ function HostedAvatarCard({ avatar, selected, disabled, onSelect }: {
   disabled: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <button type="button" data-selected={selected} aria-pressed={selected} disabled={disabled} onClick={onSelect}>
-      <span className="avatar-library-visual hosted-avatar-preview" style={avatar.imageUrl ? { backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` } : undefined}><span className="sr-only">{avatar.displayName} 预览</span></span>
-      <span><strong>{avatar.displayName}</strong><small>{avatar.id === "default-anam" ? "当前使用" : "实时托管"}</small></span>
+      <span className="avatar-library-visual hosted-avatar-preview" style={avatar.imageUrl ? { backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` } : undefined}><span className="sr-only">{avatar.displayName}{t(" 预览")}</span></span>
+      <span><strong>{avatar.displayName}</strong><small>{avatar.id === "default-anam" ? t("当前使用") : t("实时托管")}</small></span>
       <i>{selected ? <Check /> : null}</i>
     </button>
   );

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import {
@@ -50,6 +52,7 @@ export function SessionControlBar({
   onSendText,
   focusComposerRequest = 0,
 }: SessionControlBarProps) {
+  const { t } = useLanguage();
   const [text, setText] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -152,8 +155,8 @@ export function SessionControlBar({
               rows={1}
               value={text}
               autoComplete="off"
-              placeholder="输入文字…"
-              aria-label="输入对话消息"
+              placeholder={t("输入文字…")}
+              aria-label={t("输入对话消息")}
               onFocus={() => setComposerFocused(true)}
               onBlur={() => setComposerFocused(false)}
               onChange={(event) => {
@@ -166,9 +169,9 @@ export function SessionControlBar({
                 sendText();
               }}
             />
-            <button type="submit" className="session-send-btn" disabled={!text.trim()} aria-label="发送消息">
+            <button type="submit" className="session-send-btn" disabled={!text.trim()} aria-label={t("发送消息")}>
               <Send aria-hidden="true" />
-              <span>发送</span>
+              <span>{t("发送")}</span>
             </button>
           </div>
           {sendError && <p role="alert">{sendError}</p>}
@@ -177,14 +180,14 @@ export function SessionControlBar({
 
       <div className="session-fixed-actions">
             <ControlButton
-              label={paused ? "开启麦克风" : "关闭麦克风"}
+              label={paused ? t("开启麦克风") : t("关闭麦克风")}
               pressed={!paused}
               onClick={onPauseToggle}
             >
               {paused ? <MicOff /> : <Mic />}
             </ControlButton>
             <ControlButton
-              label={pageForm === "fullscreen" ? (composerOpen ? "收起文字输入" : "展开文字输入") : "聚焦文字输入"}
+              label={pageForm === "fullscreen" ? (composerOpen ? "收起文字输入" : "展开文字输入") : t("聚焦文字输入")}
               pressed={pageForm === "fullscreen" ? showComposer : composerFocused}
               onClick={handleTextInputAction}
             >
@@ -200,7 +203,7 @@ export function SessionControlBar({
               onKeyDown={handleLayoutMenuKeyDown}
             >
               <ControlButton
-                label={`页面形态：${activePageForm.label}`}
+                label={t("页面形态：") + (activePageForm.label) + ""}
                 expanded={layoutMenuOpen}
                 onClick={() => setLayoutMenuOpen(true)}
               >
@@ -210,7 +213,7 @@ export function SessionControlBar({
                 className="session-layout-menu"
                 data-open={layoutMenuOpen}
                 role="menu"
-                aria-label="页面形态"
+                aria-label={t("页面形态")}
                 aria-hidden={!layoutMenuOpen}
               >
                 {PAGE_FORM_OPTIONS.map((option) => (
@@ -230,13 +233,13 @@ export function SessionControlBar({
                     }}
                   >
                     <span className="session-layout-diagram" data-form={option.id}><i /><i /></span>
-                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                    <span><strong>{t(option.label)}</strong><small>{t(option.description)}</small></span>
                   </button>
                 ))}
               </div>
             </div>
-            <ControlButton label={captionsEnabled ? "隐藏临时字幕" : "显示临时字幕"} pressed={captionsEnabled} onClick={() => onCaptionsChange(!captionsEnabled)}><Captions /></ControlButton>
-            <ControlButton label="结束通话" danger onClick={onTerminate}><Phone className="session-hangup-icon" /></ControlButton>
+            <ControlButton label={captionsEnabled ? t("隐藏临时字幕") : t("显示临时字幕")} pressed={captionsEnabled} onClick={() => onCaptionsChange(!captionsEnabled)}><Captions /></ControlButton>
+            <ControlButton label={t("结束通话")} danger onClick={onTerminate}><Phone className="session-hangup-icon" /></ControlButton>
 
       </div>
     </div>
@@ -258,6 +261,7 @@ function ControlButton({
   expanded?: boolean;
   onClick: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <button
       type="button"
@@ -269,7 +273,7 @@ function ControlButton({
       onClick={onClick}
     >
       {children}
-      <span className="sr-only">{label}</span>
+      <span className="sr-only">{t(label)}</span>
     </button>
   );
 }

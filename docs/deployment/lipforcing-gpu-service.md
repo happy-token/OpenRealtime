@@ -1,6 +1,6 @@
 # Lip Forcing GPU 服务部署
 
-OpenRealtime 将 Lip Forcing 14B 作为独立的单并发 GPU 服务运行。Web 进程提交动作视频和参考音频，轮询任务状态，再下载生成的视频。服务只监听 GPU 主机的 `127.0.0.1:18190`，通过 SSH 隧道访问；API Bearer Token 保存在 GPU 主机的 `/etc/openrealtime-lipforcing.env`。
+OpenRealtime 将 Lip Forcing 14B 作为独立的单并发 GPU 服务运行。Web 进程提交动作视频和参考音频，轮询任务状态，再下载生成的视频。服务只监听 GPU 主机的 `127.0.0.1:8190`，通过 SSH 隧道访问；API Bearer Token 保存在 GPU 主机的 `/etc/openrealtime-lipforcing.env`。
 
 ## 前置条件
 
@@ -54,7 +54,7 @@ scripts/lipforcing_service.sh token
 在 Web 进程的私有环境文件中配置：
 
 ```dotenv
-LIPFORCING_API_URL=http://127.0.0.1:18190
+LIPFORCING_API_URL=http://127.0.0.1:8190
 LIPFORCING_API_TOKEN=<GPU 主机上的 Token>
 LIPFORCING_JOB_ROOT=/var/lib/openrealtime/lipforcing-jobs
 ```
@@ -66,7 +66,7 @@ LIPFORCING_JOB_ROOT=/var/lib/openrealtime/lipforcing-jobs
 健康检查无需 Token：
 
 ```bash
-curl --fail http://127.0.0.1:18190/health
+curl --fail http://127.0.0.1:8190/health
 ```
 
 提交任务：
@@ -77,18 +77,18 @@ curl --fail \
   -H "X-Job-Id: lipforcing-manual-001" \
   -F source_video=@source.mp4 \
   -F reference_audio=@reference.wav \
-  http://127.0.0.1:18190/v1/jobs
+  http://127.0.0.1:8190/v1/jobs
 ```
 
 查询和下载：
 
 ```bash
 curl --fail -H "Authorization: Bearer $LIPFORCING_API_TOKEN" \
-  http://127.0.0.1:18190/v1/jobs/lipforcing-manual-001
+  http://127.0.0.1:8190/v1/jobs/lipforcing-manual-001
 
 curl --fail -H "Authorization: Bearer $LIPFORCING_API_TOKEN" \
   -o output.mp4 \
-  http://127.0.0.1:18190/v1/jobs/lipforcing-manual-001/result
+  http://127.0.0.1:8190/v1/jobs/lipforcing-manual-001/result
 ```
 
 同一个 `X-Job-Id` 重复提交会返回已有任务，避免 Web 重试时重复占用 GPU。服务内部只有一个 worker，保证 14B 模型任务串行执行。

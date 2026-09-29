@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Check, ChevronDown, Fingerprint, Languages, LoaderCircle, Mic2, Play, Plus, X } from "lucide-react";
@@ -68,6 +70,7 @@ export function VoiceSelector({
   configurationTarget,
   onConfigurationChange,
 }: VoiceSelectorProps) {
+  const { t } = useLanguage();
   const [openModule, setOpenModule] = useState<VoiceModule | null>(null);
   const [cloneComposerOpen, setCloneComposerOpen] = useState(false);
   const [clonedVoices, setClonedVoices] = useState<BailianClonedVoice[]>([]);
@@ -283,38 +286,38 @@ export function VoiceSelector({
       <em>{TTS_PROVIDER_OPTIONS.find((item) => item.value === value.provider)?.label}</em>
     </div> : null}
     <div className={styles.moduleList}>
-      <VoiceModuleRow icon={<AudioLines />} title="供应商选择" detail={displayedConfiguration
+      <VoiceModuleRow icon={<AudioLines />} title={t("供应商选择")} detail={displayedConfiguration
         ? `${displayedConfiguration.name} · ${displayedConfiguration.scope === "personal" ? "个人配置" : "平台配置"}${selectedConfiguration ? "" : " · 自动匹配"}`
         : selectedConfiguration ? "已选配置不可用" : `${TTS_PROVIDER_OPTIONS.find((item) => item.value === value.provider)?.label} · 暂无可用配置`} open={openModule === "provider"} onToggle={() => toggleModule("provider")}>
-        <div className={styles.providerList} aria-label="声音供应商">
-          {configurationLoading ? <p className={styles.notice}>正在读取配置…</p> : [...configurations]
+        <div className={styles.providerList} aria-label={t("声音供应商")}>
+          {configurationLoading ? <p className={styles.notice}>{t("正在读取配置…")}</p> : [...configurations]
             .sort((left, right) => left.scope === right.scope ? 0 : left.scope === "platform" ? -1 : 1)
             .map((item) => <button key={item.target} type="button" aria-pressed={displayedTarget === item.target}
                 disabled={!item.selectable || configurationBusy} onClick={() => void selectConfiguration(item)}>
-                <span><strong>{item.name}</strong><small>{item.provider === "dashscope" ? "阿里云百炼" : "火山引擎"} · {item.scope === "personal" ? "个人配置" : "平台配置"}{item.selectable ? "" : " · 请先测试"}</small></span>
+                <span><strong>{item.name}</strong><small>{item.provider === "dashscope" ? t("阿里云百炼") : t("火山引擎")} · {item.scope === "personal" ? t("个人配置") : t("平台配置")}{item.selectable ? "" : t(" · 请先测试")}</small></span>
                 {displayedTarget === item.target ? <Check /> : null}</button>)}
-          {!configurationLoading && configurations.length === 0 ? <p className={styles.notice}>暂无可用 TTS 配置，请先到供应商页面添加。</p> : null}
+          {!configurationLoading && configurations.length === 0 ? <p className={styles.notice}>{t("暂无可用 TTS 配置，请先到供应商页面添加。")}</p> : null}
         </div>
         {configurationError ? <p className={styles.notice} role="alert">{configurationError}</p> : null}
       </VoiceModuleRow>
-      {allowClone ? <VoiceModuleRow icon={<Fingerprint />} title="音色克隆" detail={value.provider !== "bailian" ? "当前音色来源暂不支持克隆" : canCreateClone ? "可使用个人配置创建克隆音色" : "仅个人百炼配置可创建，平台配置不可克隆"} open={openModule === "cloned"} onToggle={() => toggleModule("cloned")} action={<button ref={cloneComposerTriggerRef} className={styles.moduleAction} type="button" disabled={value.provider !== "bailian" || !canCreateClone} onClick={() => { stopVoicePreview(); setOpenModule("cloned"); setCloneComposerOpen(true); }}><Plus />新建克隆音色</button>}>
+      {allowClone ? <VoiceModuleRow icon={<Fingerprint />} title={t("音色克隆")} detail={value.provider !== "bailian" ? "当前音色来源暂不支持克隆" : canCreateClone ? "可使用个人配置创建克隆音色" : "仅个人百炼配置可创建，平台配置不可克隆"} open={openModule === "cloned"} onToggle={() => toggleModule("cloned")} action={<button ref={cloneComposerTriggerRef} className={styles.moduleAction} type="button" disabled={value.provider !== "bailian" || !canCreateClone} onClick={() => { stopVoicePreview(); setOpenModule("cloned"); setCloneComposerOpen(true); }}><Plus />{t("新建克隆音色")}</button>}>
         <div className={styles.cloneLibrary}><VoiceClonePanel embedded hideToolbar allowManagement={allowManagement} provider={value.provider} selectedVoice={value.provider === "bailian" && !value.dialect ? value.voice : ""} previewVoice={previewVoice} previewState={previewState} composerOpen={cloneComposerOpen} onComposerOpenChange={setCloneComposerOpen} externalComposerTriggerRef={cloneComposerTriggerRef} onSelect={(voiceId, label) => { onChange({ provider: "bailian", voice: voiceId, dialect: "" }); setClonedVoices((items) => [{ id: voiceId, displayName: label, status: "OK", createdAt: null }, ...items.filter((item) => item.id !== voiceId)]); setOpenModule(null); onSelectionCommit?.(); }} onPreview={(voiceId, label) => void toggleVoicePreview("bailian", voiceId, label)} onCatalogChange={() => void loadClones()} /></div>
       </VoiceModuleRow> : null}
 
-      <VoiceModuleRow icon={<AudioLines />} title="官方音色" detail={`${officialVoices.length} 个当前供应商音色 · 支持试听`} open={openModule === "official"} onToggle={() => toggleModule("official")}>
-        <div className={styles.choiceList} aria-label="官方音色">{officialVoices.map((item) => {
+      <VoiceModuleRow icon={<AudioLines />} title={t("官方音色")} detail={`${officialVoices.length} 个当前供应商音色 · 支持试听`} open={openModule === "official"} onToggle={() => toggleModule("official")}>
+        <div className={styles.choiceList} aria-label={t("官方音色")}>{officialVoices.map((item) => {
           const selected = value.voice === item.value && !value.dialect;
           const previewing = previewVoice === item.value;
-          return <div className={styles.voiceOption} data-selected={selected} key={item.value}><button className={styles.voiceSelect} type="button" aria-pressed={selected} onClick={() => commit({ provider: value.provider, voice: item.value, dialect: "" })}><span><strong>{item.label}</strong><small>{item.description}</small></span>{selected ? <Check /> : null}</button><button className={styles.previewButton} type="button" aria-label={`${previewing && previewState === "playing" ? "停止试听" : "试听"} ${item.label}`} disabled={previewState === "loading" && !previewing} onClick={() => void toggleVoicePreview(value.provider, item.value, item.label)}>{previewing && previewState === "loading" ? <LoaderCircle className={styles.spin} /> : previewing && previewState === "playing" ? <X /> : <Play />}</button></div>;
+          return <div className={styles.voiceOption} data-selected={selected} key={item.value}><button className={styles.voiceSelect} type="button" aria-pressed={selected} onClick={() => commit({ provider: value.provider, voice: item.value, dialect: "" })}><span><strong>{item.label}</strong><small>{item.description}</small></span>{selected ? <Check /> : null}</button><button className={styles.previewButton} type="button" aria-label={"" + (previewing && previewState === "playing" ? "停止试听" : "试听") + " " + (item.label) + ""} disabled={previewState === "loading" && !previewing} onClick={() => void toggleVoicePreview(value.provider, item.value, item.label)}>{previewing && previewState === "loading" ? <LoaderCircle className={styles.spin} /> : previewing && previewState === "playing" ? <X /> : <Play />}</button></div>;
         })}</div>
       </VoiceModuleRow>
 
-      <VoiceModuleRow icon={<Languages />} title="方言支持" detail={`${dialects.length} 种当前供应商方言 · 支持试听`} open={openModule === "dialect"} onToggle={() => toggleModule("dialect")}>
-        <div className={styles.choiceList} aria-label="方言">{dialects.map((item) => {
+      <VoiceModuleRow icon={<Languages />} title={t("方言支持")} detail={`${dialects.length} 种当前供应商方言 · 支持试听`} open={openModule === "dialect"} onToggle={() => toggleModule("dialect")}>
+        <div className={styles.choiceList} aria-label={t("方言")}>{dialects.map((item) => {
           const voice = value.provider === "bailian" ? "longanhuan_v3" : DIALECT_TTS_VOICE;
           const previewing = previewVoice === `${voice}:${item.value}`;
           const selected = value.dialect === item.value;
-          return <div className={styles.voiceOption} data-selected={selected} key={item.value}><button className={styles.voiceSelect} type="button" aria-pressed={selected} onClick={() => selectDialect(item.value)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{selected ? <Check /> : null}</button><button className={styles.previewButton} type="button" aria-label={`${previewing && previewState === "playing" ? "停止试听" : "试听"} ${item.label}`} disabled={previewState === "loading" && !previewing} onClick={() => void toggleVoicePreview(value.provider, voice, item.label, item.value)}>{previewing && previewState === "loading" ? <LoaderCircle className={styles.spin} /> : previewing && previewState === "playing" ? <X /> : <Play />}</button></div>;
+          return <div className={styles.voiceOption} data-selected={selected} key={item.value}><button className={styles.voiceSelect} type="button" aria-pressed={selected} onClick={() => selectDialect(item.value)}><span><strong>{item.label}</strong><small>{item.description}</small></span>{selected ? <Check /> : null}</button><button className={styles.previewButton} type="button" aria-label={"" + (previewing && previewState === "playing" ? "停止试听" : "试听") + " " + (item.label) + ""} disabled={previewState === "loading" && !previewing} onClick={() => void toggleVoicePreview(value.provider, voice, item.label, item.value)}>{previewing && previewState === "loading" ? <LoaderCircle className={styles.spin} /> : previewing && previewState === "playing" ? <X /> : <Play />}</button></div>;
         })}</div>
       </VoiceModuleRow>
 

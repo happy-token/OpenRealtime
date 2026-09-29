@@ -57,7 +57,7 @@ describe("ResourceLibraryScreen", () => {
     expect(librarySource).toContain("<VoiceSelector");
     expect(selectorSource).toContain("<VoiceClonePanel");
     expect(roleSource).toContain("<VoiceSelector");
-    expect(selectorSource).toContain('aria-label="官方音色"');
+    expect(selectorSource).toContain("aria-label={t(\"官方音色\")}");
     expect(selectorSource).toContain("toggleVoicePreview");
     expect(selectorCss).toMatch(/\.moduleList\s*\{[^}]*display:\s*grid/s);
     expect(selectorCss).toMatch(/\.choiceList\s*\{[^}]*max-height:\s*320px[^}]*overflow-y:\s*auto/s);
@@ -68,10 +68,14 @@ describe("ResourceLibraryScreen", () => {
     const html = renderToStaticMarkup(<ProviderKeyGate><ResourceLibraryScreen tab="avatars" returnToRoleId="role-personal-123" /></ProviderKeyGate>);
 
     expect(html).toContain('aria-label="数字人资产主页"');
+    expect(html).toContain("正在加载形象…");
+    expect(html).not.toContain("shuchang-realtime-idle.mp4");
+    const stage = html.split('aria-label="打开数字人形象"')[0];
+    expect(stage).not.toContain("shuchang-preview.jpg");
     expect(html).toContain("创建形象");
     expect(html).not.toContain("配置实时驱动");
-    expect(html).toContain("生成动作");
-    expect(html).toContain("新建口型动作");
+    expect(html).toContain('aria-label="动作"');
+    expect(html).not.toContain('aria-label="新建口型动作"');
     expect(html).not.toContain("/services/motion");
     expect(html).not.toContain("/services/talking");
   });

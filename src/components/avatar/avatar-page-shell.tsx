@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Link from "next/link";
 import { useAvatarCapabilities } from "@/hooks/use-avatar-capabilities";
@@ -33,6 +35,7 @@ export function AvatarPageShell({
   hideNavigation?: boolean;
   children: ReactNode;
 }) {
+  const { t } = useLanguage();
   const { capabilities, error, retry } = useAvatarCapabilities();
   const [preferences, setPreferences] = useState(DEFAULT_WORKBENCH_VISUAL_PREFERENCES);
   useEffect(() => {
@@ -63,11 +66,11 @@ export function AvatarPageShell({
           <Link className={styles.back} href={back.href} aria-label={back.label}><ArrowLeft aria-hidden="true" /></Link>
           {pageTitle ? <h1 className={styles.pageTitle}>{pageTitle}</h1> : null}
         </div>
-        {!hideNavigation ? <nav className={styles.nav} aria-label="Avatar 页面">
+        {!hideNavigation ? <nav className={styles.nav} aria-label={t("Avatar 页面")}>
           <span className={styles.navTrack} data-active={active} aria-hidden="true" />
-          <Link href="/resources?tab=avatars" data-active={active === "library"}>资产管理</Link>
-          <Link href="/avatars/create" data-active={active === "create"}>创建数字人</Link>
-          <Link href="/personas" data-active={active === "personas"}>Persona 库</Link>
+          <Link href="/resources?tab=avatars" data-active={active === "library"}>{t("资产管理")}</Link>
+          <Link href="/avatars/create" data-active={active === "create"}>{t("创建数字人")}</Link>
+          <Link href="/personas" data-active={active === "personas"}>{t("Persona 库")}</Link>
         </nav> : null}
         <span className={styles.wordmark}>OPENREALTIME</span>
       </header>

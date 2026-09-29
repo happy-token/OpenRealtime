@@ -64,7 +64,8 @@ describe("WorkspaceShell", () => {
     expect(html).toContain('aria-valuenow="236"');
     expect(html).not.toMatch(/aria-label="调整侧边栏宽度"[^>]*><span/);
     expect(html).not.toContain('data-page-glass="true"');
-    expect(html).not.toContain('href="https://github.com/happy-token/OpenRealtime"');
+    expect(html).toContain('href="https://github.com/happy-token/OpenRealtime"');
+    expect(html).toContain('aria-label="界面语言"');
   });
 
   it.each([
@@ -86,6 +87,8 @@ describe("WorkspaceShell", () => {
     expect(html).toContain('data-home-background="true"');
     expect(html).toContain('data-page-glass="true"');
     expect(html).not.toContain('title="在 GitHub 为 OpenRealtime 点 Star"');
+    expect(html).not.toContain('href="https://github.com/happy-token/OpenRealtime"');
+    expect(html).not.toContain('data-compact="true"');
   });
 
   it("keeps the resource library beside roles in primary navigation", () => {

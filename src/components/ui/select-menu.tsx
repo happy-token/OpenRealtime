@@ -1,6 +1,8 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
 
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export interface SelectMenuOption<T extends string> {
@@ -21,6 +23,9 @@ interface SelectMenuProps<T extends string> {
   searchable?: boolean;
   renderOptionAction?: (option: SelectMenuOption<T>) => ReactNode;
   cardOptions?: boolean;
+  localizeLabels?: boolean;
+  triggerContent?: ReactNode;
+  triggerRole?: "combobox";
 }
 
 export function SelectMenu<T extends string>({
@@ -35,7 +40,12 @@ export function SelectMenu<T extends string>({
   searchable = false,
   renderOptionAction,
   cardOptions = false,
+  localizeLabels = false,
+  triggerContent,
+  triggerRole,
 }: SelectMenuProps<T>) {
+  const { t } = useLanguage();
+  const listboxId = useId();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [query, setQuery] = useState("");
@@ -117,6 +127,7 @@ export function SelectMenu<T extends string>({
       className={`select-menu-popover ${renderOptionAction ? "select-menu-with-actions" : ""}`}
       style={fullWidth ? { position: "fixed", zIndex: 10000, left: popoverPosition.left, top: popoverPosition.top, right: "auto", bottom: "auto", width: popoverPosition.width, maxHeight: popoverPosition.maxHeight } : undefined}
       role="listbox"
+      id={listboxId}
       aria-label={ariaLabel}
     >
       {searchable && (
@@ -129,8 +140,8 @@ export function SelectMenu<T extends string>({
             ref={searchRef}
             className="select-menu-search"
             value={query}
-            placeholder="搜索音色或场景"
-            aria-label={`搜索${ariaLabel}`}
+            placeholder={t("搜索音色或场景")}
+            aria-label={t("搜索") + (ariaLabel) + ""}
             onChange={(event) => {
               setQuery(event.target.value);
               setActiveIndex(0);
@@ -146,7 +157,7 @@ export function SelectMenu<T extends string>({
             <button
               type="button"
               className="select-menu-search-clear"
-              aria-label="清除搜索"
+              aria-label={t("清除搜索")}
               onClick={() => {
                 setQuery("");
                 searchRef.current?.focus();
@@ -189,15 +200,15 @@ export function SelectMenu<T extends string>({
               {option.value === value ? "✓" : ""}
             </span>
             <span className="select-menu-option-copy">
-              <strong>{option.label}</strong>
-              {option.description && <small>{option.description}</small>}
+              <strong>{localizeLabels ? t(option.label) : option.label}</strong>
+              {option.description && <small>{localizeLabels ? t(option.description) : option.description}</small>}
             </span>
           </button>
           {renderOptionAction?.(option)}
         </div>
       ))}
       {visibleOptions.length === 0 && (
-        <div className="select-menu-empty">没有匹配的音色</div>
+        <div className="select-menu-empty">{t("没有匹配的音色")}</div>
       )}
     </div>
   );
@@ -210,8 +221,11 @@ export function SelectMenu<T extends string>({
       <button
         type="button"
         className="select-menu-trigger"
+        role={triggerRole}
+        data-value={value}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
+        aria-controls={listboxId}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
@@ -223,7 +237,7 @@ export function SelectMenu<T extends string>({
           }
         }}
       >
-        <span>{selected?.label}</span>
+        <span>{triggerContent ?? (selected && (localizeLabels ? t(selected.label) : selected.label))}</span>
         <svg viewBox="0 0 20 20" aria-hidden="true">
           <path d="m6 8 4 4 4-4" />
         </svg>

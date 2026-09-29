@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -10,6 +12,7 @@ import { ChatView } from "@/components/chat/chat-view";
 import styles from "./conversation-history-screen.module.css";
 
 export function ConversationDetailScreen({ id }: { id: string }) {
+  const { t } = useLanguage();
   const [item, setItem] = useState<ConversationHistoryItem | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -24,9 +27,9 @@ export function ConversationDetailScreen({ id }: { id: string }) {
   }, [id]);
 
   return <div className={styles.detail}>
-    <header><BackLink href="/conversations" label="返回对话记录" />{item ? <><h1>{item.title}</h1><p>{item.role_name} · {isRolePresentationMode(item.mode) ? ROLE_MODE_LABELS[item.mode] : item.mode} · {new Date(item.started_at).toLocaleString("zh-CN")}</p></> : null}</header>
-    {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-    {!item && !error ? <p className={styles.empty}>正在读取对话…</p> : null}
+    <header><BackLink href="/conversations" label={t("返回对话记录")} />{item ? <><h1>{item.title}</h1><p>{item.role_name} · {isRolePresentationMode(item.mode) ? ROLE_MODE_LABELS[item.mode] : item.mode} · {new Date(item.started_at).toLocaleString("zh-CN")}</p></> : null}</header>
+    {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
+    {!item && !error ? <p className={styles.empty}>{t("正在读取对话…")}</p> : null}
     {item ? <div className={styles.transcript}><ChatView entries={item.entries} /></div> : null}
   </div>;
 }

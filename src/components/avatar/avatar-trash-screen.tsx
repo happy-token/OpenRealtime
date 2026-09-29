@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -14,6 +16,7 @@ import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import styles from "./avatar-trash-screen.module.css";
 
 export function AvatarTrashScreen({ returnHref = "/resources?tab=avatars" }: { returnHref?: string }) {
+  const { t } = useLanguage();
   const [avatars, setAvatars] = useState<OwnedAvatarRecord[]>([]);
   const refresh = async () => setAvatars(await fetchOwnedAvatars());
   useEffect(() => {
@@ -24,23 +27,23 @@ export function AvatarTrashScreen({ returnHref = "/resources?tab=avatars" }: { r
 
   return (
     <section className={styles.trash} aria-labelledby="avatar-trash-title">
-      <header><h1 id="avatar-trash-title">回收站</h1><span>删除内容保留 30 天，期间可恢复。</span></header>
+      <header><h1 id="avatar-trash-title">{t("回收站")}</h1><span>{t("删除内容保留 30 天，期间可恢复。")}</span></header>
       {!deletedAvatars.length && !deletedActions.length ? (
-        <div className={styles.empty}><Trash2 /><strong>回收站是空的</strong><BackLink href={returnHref} label="返回资产管理" /></div>
+        <div className={styles.empty}><Trash2 /><strong>{t("回收站是空的")}</strong><BackLink href={returnHref} label={t("返回资产管理")} /></div>
       ) : (
         <div className={styles.sections}>
-          {deletedAvatars.length ? <section><h2>数字人</h2><div className={styles.grid}>{deletedAvatars.map((avatar) => (
+          {deletedAvatars.length ? <section><h2>{t("数字人")}</h2><div className={styles.grid}>{deletedAvatars.map((avatar) => (
             <article key={avatar.avatar_id}>
               <div className={styles.image}><Image src={avatar.source_image_url} alt="" fill sizes="180px" unoptimized /></div>
-              <div><strong>{avatar.display_name}</strong><span>{remainingDays(avatar.deleted_at)} 天后清理</span></div>
-              <button type="button" onClick={() => void setOwnedAvatarDeletion(avatar.avatar_id, false).then(refresh)}><RotateCcw />恢复</button>
+              <div><strong>{avatar.display_name}</strong><span>{remainingDays(avatar.deleted_at)}{t(" 天后清理")}</span></div>
+              <button type="button" onClick={() => void setOwnedAvatarDeletion(avatar.avatar_id, false).then(refresh)}><RotateCcw />{t("恢复")}</button>
             </article>
           ))}</div></section> : null}
-          {deletedActions.length ? <section><h2>动作</h2><div className={styles.grid}>{deletedActions.map(({ avatar, action }) => (
+          {deletedActions.length ? <section><h2>{t("动作")}</h2><div className={styles.grid}>{deletedActions.map(({ avatar, action }) => (
             <article key={action.avatar_action_id}>
               <div className={styles.actionIcon}><Film /></div>
-              <div><strong>{action.display_name}</strong><small>{avatar.display_name}</small><span>{remainingDays(action.deleted_at)} 天后清理</span></div>
-              <button type="button" onClick={() => void updateOwnedAvatarAction(avatar.avatar_id, action.avatar_action_id, { operation: "restore" }).then(refresh)}><RotateCcw />恢复</button>
+              <div><strong>{action.display_name}</strong><small>{avatar.display_name}</small><span>{remainingDays(action.deleted_at)}{t(" 天后清理")}</span></div>
+              <button type="button" onClick={() => void updateOwnedAvatarAction(avatar.avatar_id, action.avatar_action_id, { operation: "restore" }).then(refresh)}><RotateCcw />{t("恢复")}</button>
             </article>
           ))}</div></section> : null}
         </div>

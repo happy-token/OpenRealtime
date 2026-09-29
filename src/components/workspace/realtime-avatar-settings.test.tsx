@@ -24,6 +24,6 @@ describe("real-time avatar settings window", () => {
     expect(source).toContain("长期记忆");
     expect(source).not.toContain('title="角色基础"');
     expect(source).not.toContain('title="长期记忆"');
-    expect(source).toContain('aria-label="启用长期记忆"');
+    expect(source).toContain("aria-label={t(\"启用长期记忆\")}");
   });
 });

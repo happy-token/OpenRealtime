@@ -5,7 +5,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 via_host=${LIPFORCING_GPU_VIA_HOST:-beike}
 gpu_host=${LIPFORCING_GPU_SSH_TARGET:-root@localhost}
 gpu_ssh_port=${LIPFORCING_GPU_SSH_PORT:-10022}
-local_port=${LIPFORCING_LOCAL_API_PORT:-18190}
+local_port=${LIPFORCING_LOCAL_API_PORT:-8190}
 proxy_command=${LIPFORCING_GPU_PROXY_COMMAND:-ssh -o BatchMode=yes "$via_host" -W localhost:"$gpu_ssh_port"}
 ssh_options=(-o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -o "ProxyCommand=$proxy_command")
 
@@ -22,7 +22,7 @@ Commands:
   logs         follow service logs
   smoke        query the remote health endpoint through SSH
   token        print the API token for application configuration
-  tunnel       expose the remote loopback API on local port 18190
+  tunnel       expose the remote loopback API on local port 8190
 EOF
 }
 
@@ -59,14 +59,14 @@ case "$command" in
     remote "if systemctl show-environment >/dev/null 2>&1; then journalctl -u openrealtime-lipforcing.service -f -n 100; else touch /var/log/openrealtime-lipforcing.log; tail -n 100 -f /var/log/openrealtime-lipforcing.log; fi"
     ;;
   smoke)
-    remote "curl --fail --silent --show-error http://127.0.0.1:18190/health"
+    remote "curl --fail --silent --show-error http://127.0.0.1:8190/health"
     echo
     ;;
   token)
     remote "sed -n 's/^LIPFORCING_API_TOKEN=//p' /etc/openrealtime-lipforcing.env"
     ;;
   tunnel)
-    exec ssh "${ssh_options[@]}" -N -L "127.0.0.1:$local_port:127.0.0.1:18190" "$gpu_host"
+    exec ssh "${ssh_options[@]}" -N -L "127.0.0.1:$local_port:127.0.0.1:8190" "$gpu_host"
     ;;
   *)
     usage

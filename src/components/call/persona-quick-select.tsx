@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { FileText } from "lucide-react";
 
@@ -16,6 +18,7 @@ export function PersonaQuickSelect({
   avatarDisplayName: string;
   placement?: "top" | "bottom";
 }) {
+  const { t } = useLanguage();
   const { linkedPersona, personaOptions, switchState, switchNotice, switchPersona } = usePersonaLink(
     avatarId,
     avatarDisplayName,
@@ -32,7 +35,7 @@ export function PersonaQuickSelect({
       <div className={styles.chipBody}>
         <small>Persona</small>
         <SelectMenu
-          ariaLabel="选择 Persona"
+          ariaLabel={t("选择 Persona")}
           value={linkedPersona?.personaId ?? ""}
           options={personaSelectOptions(personaOptions, linkedPersona?.personaId ?? null)}
           disabled={switchState === "busy"}

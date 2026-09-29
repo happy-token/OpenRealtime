@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import { ImagePlus, LoaderCircle, Play, Upload, X } from "lucide-react";
@@ -51,6 +53,7 @@ export function AvatarUploadDialog({
   sourceAvatar?: OwnedAvatarRecord;
   sourceName?: string;
 }) {
+  const { t } = useLanguage();
   const ensureProviderKey = useProviderKeyGate();
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
@@ -188,14 +191,14 @@ export function AvatarUploadDialog({
     }}>
       <section className={styles.panel}>
         <header>
-          <div><h2 id={`${inputId}-title`}>{mode === "realtime" ? "创建实时数字人" : "创建形象"}</h2></div>
-          <button type="button" aria-label={mode === "realtime" ? "关闭创建实时数字人窗口" : "关闭创建形象窗口"} disabled={busy} onClick={requestClose}><X aria-hidden="true" /></button>
+          <div><h2 id={`${inputId}-title`}>{mode === "realtime" ? t("创建实时数字人") : t("创建形象")}</h2></div>
+          <button type="button" aria-label={mode === "realtime" ? t("关闭创建实时数字人窗口") : t("关闭创建形象窗口")} disabled={busy} onClick={requestClose}><X aria-hidden="true" /></button>
         </header>
 
         <div className={styles.body}>
-          <div className={styles.intro}><ImagePlus aria-hidden="true" /><div><strong>{sourceAvatar ? "使用当前角色形象" : "上传一张清晰的人像图片"}</strong><span>{sourceAvatar ? "使用当前角色的形象图片生成实时数字人，确认效果后加入此角色。" : mode === "realtime" ? "上传后生成实时驱动效果，确认预览后才会启用。" : "建议正面、无遮挡、光线均匀；创建后会自动成为当前形象。"}</span></div></div>
+          <div className={styles.intro}><ImagePlus aria-hidden="true" /><div><strong>{sourceAvatar ? t("使用当前角色形象") : t("上传一张清晰的人像图片")}</strong><span>{sourceAvatar ? t("使用当前角色的形象图片生成实时数字人，确认效果后加入此角色。") : mode === "realtime" ? t("上传后生成实时驱动效果，确认预览后才会启用。") : t("建议正面、无遮挡、光线均匀；创建后会自动成为当前形象。")}</span></div></div>
           {candidate ? <div className={styles.candidatePreview}>
-            {candidate.videoUrl ? <video src={candidate.videoUrl} controls autoPlay muted loop playsInline aria-label="实时数字人效果预览" /> : <p>实时效果正在处理。请确认后启用，稍后可在形象目录查看预览。</p>}
+            {candidate.videoUrl ? <video src={candidate.videoUrl} controls autoPlay muted loop playsInline aria-label={t("实时数字人效果预览")} /> : <p>{t("实时效果正在处理。请确认后启用，稍后可在形象目录查看预览。")}</p>}
             <strong>{candidate.displayName}</strong>
           </div> : null}
           {!candidate ? <>
@@ -211,21 +214,21 @@ export function AvatarUploadDialog({
             onDrop={(event: DragEvent<HTMLLabelElement>) => { event.preventDefault(); if (!sourceAvatar) chooseFile(event.dataTransfer.files[0]); }}
           >
             <input id={inputId} type="file" accept="image/*" disabled={busy || Boolean(ownedAvatar)} onChange={(event) => chooseFile(event.target.files?.[0])} />
-            {previewImageUrl ? <Image src={previewImageUrl} alt="待创建形象预览" fill sizes="680px" unoptimized /> : null}
+            {previewImageUrl ? <Image src={previewImageUrl} alt={t("待创建形象预览")} fill sizes="680px" unoptimized /> : null}
             <span className={styles.dropzoneWash} aria-hidden="true" />
-            {!sourceAvatar ? <span className={styles.uploadPrompt}><Upload aria-hidden="true" /><strong>{file ? "更换图片" : "拖拽图片到这里"}</strong><small>{file ? file.name : "或点击整个区域选择图片"}</small><i>选择图片</i></span> : null}
+            {!sourceAvatar ? <span className={styles.uploadPrompt}><Upload aria-hidden="true" /><strong>{file ? t("更换图片") : t("拖拽图片到这里")}</strong><small>{file ? file.name : t("或点击整个区域选择图片")}</small><i>{t("选择图片")}</i></span> : null}
           </label>
 
           <label className={styles.nameField}>
-            <span>形象名称</span>
-            <input value={displayName} maxLength={50} placeholder="例如：品牌主播" disabled={busy || Boolean(ownedAvatar)} onChange={(event) => { setDisplayName(event.target.value); if (mode === "realtime") setAnamName(suggestAnamAvatarName(event.target.value)); }} />
+            <span>{t("形象名称")}</span>
+            <input value={displayName} maxLength={50} placeholder={t("例如：品牌主播")} disabled={busy || Boolean(ownedAvatar)} onChange={(event) => { setDisplayName(event.target.value); if (mode === "realtime") setAnamName(suggestAnamAvatarName(event.target.value)); }} />
           </label>
-          {mode === "realtime" ? <label className={styles.nameField}><span>实时形象名称</span><input value={anamName} maxLength={50} disabled={busy} onChange={(event) => setAnamName(event.target.value)} /><small>Anam 要求 3–50 个字符</small></label> : null}
+          {mode === "realtime" ? <label className={styles.nameField}><span>{t("实时形象名称")}</span><input value={anamName} maxLength={50} disabled={busy} onChange={(event) => setAnamName(event.target.value)} /><small>{t("Anam 要求 3–50 个字符")}</small></label> : null}
           </> : null}
-          {error ? <p className={styles.error} role="alert">{error}</p> : null}
+          {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
         </div>
 
-        <footer><button type="button" disabled={busy} onClick={requestClose}>取消</button><button type="button" disabled={busy || (mode === "realtime" ? !candidate && ((!file && !sourceAvatar) || !displayName.trim() || !isValidAnamAvatarName(anamName)) : !file || !displayName.trim())} onClick={() => void (mode === "realtime" ? candidate ? confirmRealtime() : createRealtime() : createAvatar())}>{busy ? <LoaderCircle aria-hidden="true" /> : mode === "realtime" ? <Play aria-hidden="true" /> : <ImagePlus aria-hidden="true" />}{busy ? "正在处理" : mode === "realtime" ? candidate ? "确认效果并启用" : "生成实时数字人" : "创建形象"}</button></footer>
+        <footer><button type="button" disabled={busy} onClick={requestClose}>{t("取消")}</button><button type="button" disabled={busy || (mode === "realtime" ? !candidate && ((!file && !sourceAvatar) || !displayName.trim() || !isValidAnamAvatarName(anamName)) : !file || !displayName.trim())} onClick={() => void (mode === "realtime" ? candidate ? confirmRealtime() : createRealtime() : createAvatar())}>{busy ? <LoaderCircle aria-hidden="true" /> : mode === "realtime" ? <Play aria-hidden="true" /> : <ImagePlus aria-hidden="true" />}{busy ? t("正在处理") : mode === "realtime" ? candidate ? t("确认效果并启用") : t("生成实时数字人") : t("创建形象")}</button></footer>
       </section>
     </div>,
     document.body,

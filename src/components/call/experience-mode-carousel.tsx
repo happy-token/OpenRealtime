@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { ArrowRight, Check, ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type WheelEvent } from "react";
@@ -43,6 +45,7 @@ export function ExperienceModeCarousel({
   autoPlayIntervalMs = DEFAULT_MODE_CAROUSEL_INTERVAL_MS,
   voiceVisualTheme = "cloud",
 }: ExperienceModeCarouselProps) {
+  const { t } = useLanguage();
   const [hoverPaused, setHoverPaused] = useState(false);
   const [manualPause, setManualPause] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(true);
@@ -108,7 +111,7 @@ export function ExperienceModeCarousel({
       className={styles.carousel}
       data-paused={motionPaused}
       data-autoplay-interval={autoPlayIntervalMs}
-      aria-label="展示模式轮播"
+      aria-label={t("展示模式轮播")}
       onMouseEnter={() => setHoverPaused(true)}
       onMouseLeave={() => setHoverPaused(false)}
       onFocusCapture={() => setHoverPaused(true)}
@@ -117,7 +120,7 @@ export function ExperienceModeCarousel({
       }}
       onWheel={handleWheel}
     >
-      <div className={styles.track} role="radiogroup" aria-label="选择展示模式">
+      <div className={styles.track} role="radiogroup" aria-label={t("选择展示模式")}>
         {EXPERIENCE_MODE_OPTIONS.map((option) => {
           const position = positionFor(option.id);
           const selected = position === "active";
@@ -146,31 +149,31 @@ export function ExperienceModeCarousel({
               <span className={styles.shade} aria-hidden="true" />
               <span className={styles.number}>{MODE_META[option.id].number}</span>
               <div className={styles.copy}>
-                <small>{option.description}</small>
-                <h2>{option.label}</h2>
+                <small>{t(option.description)}</small>
+                <h2>{t(option.label)}</h2>
                 <span>{MODE_META[option.id].action}<ArrowRight /></span>
               </div>
-              <span className={styles.selected}><Check />已选择</span>
+              <span className={styles.selected}><Check />{t("已选择")}</span>
             </article>
           );
         })}
       </div>
 
-      <button className={`${styles.arrow} ${styles.previous}`} type="button" aria-label="上一个模式" onClick={() => move(-1)}><ChevronLeft /></button>
-      <button className={`${styles.arrow} ${styles.next}`} type="button" aria-label="下一个模式" onClick={() => move(1)}><ChevronRight /></button>
+      <button className={`${styles.arrow} ${styles.previous}`} type="button" aria-label={t("上一个模式")} onClick={() => move(-1)}><ChevronLeft /></button>
+      <button className={`${styles.arrow} ${styles.next}`} type="button" aria-label={t("下一个模式")} onClick={() => move(1)}><ChevronRight /></button>
 
       <div className={styles.start}>
         <VoiceStartButton connected={connected} onPress={() => onStartSession(value)} />
-        {error && <small className="voice-session-start-error">{error}</small>}
+        {error && <small className="voice-session-start-error">{t(error)}</small>}
       </div>
 
       <footer className={styles.footer}>
-        <div className={styles.dots} aria-label="轮播位置">
+        <div className={styles.dots} aria-label={t("轮播位置")}>
           {EXPERIENCE_MODE_OPTIONS.map((option) => (
             <button
               key={option.id}
               type="button"
-              aria-label={`选择${option.label}`}
+              aria-label={t("选择") + (option.label) + ""}
               data-active={value === option.id}
               onClick={() => onChange(option.id)}
             />
@@ -184,9 +187,9 @@ export function ExperienceModeCarousel({
           onClick={() => setManualPause((paused) => !paused)}
         >
           {manualPause ? <Play /> : <Pause />}
-          {reduceMotion || prefersReducedMotion ? "已减少动态" : manualPause ? "继续轮播" : "暂停轮播"}
+          {reduceMotion || prefersReducedMotion ? t("已减少动态") : manualPause ? t("继续轮播") : t("暂停轮播")}
         </button>
-        <p>当前选择：<strong>{selectedLabel}</strong></p>
+        <p>{t("当前选择：")}<strong>{selectedLabel}</strong></p>
       </footer>
     </section>
   );

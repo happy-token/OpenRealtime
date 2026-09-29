@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import { Pause, Play, UserRound } from "lucide-react";
@@ -43,6 +45,7 @@ export function ExperienceModeDemo({
   reduceMotion = false,
   voiceVisualTheme = "cloud",
 }: ExperienceModeDemoProps) {
+  const { t } = useLanguage();
   const [videoFailed, setVideoFailed] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(true);
   const [playbackEnabled, setPlaybackEnabled] = useState(true);
@@ -89,13 +92,13 @@ export function ExperienceModeDemo({
       onClick={() => setPlaybackEnabled((enabled) => !enabled)}
     >
       {motionActive ? <Pause /> : <Play />}
-      {reduceMotion || prefersReducedMotion ? "已减少动态" : motionActive ? "暂停演示" : "播放演示"}
+      {reduceMotion || prefersReducedMotion ? t("已减少动态") : motionActive ? t("暂停演示") : t("播放演示")}
     </button>
   );
 
   if (mode === "avatar") {
     return (
-      <div className="mode-demo mode-demo-avatar" data-compact={compact} data-active={motionActive} aria-label="数字人模式动态演示">
+      <div className="mode-demo mode-demo-avatar" data-compact={compact} data-active={motionActive} aria-label={t("数字人模式动态演示")}>
         {motionToggle}
         {canPlayAvatar ? (
           <video
@@ -106,27 +109,27 @@ export function ExperienceModeDemo({
             loop
             playsInline
             preload="metadata"
-            aria-label={`${avatarName} 口型动态演示`}
+            aria-label={"" + (avatarName) + t(" 口型动态演示")}
             onError={() => setVideoFailed(true)}
           />
         ) : avatarImage ? (
           <Image
             src={avatarImage}
-            alt={`${avatarName} 数字人形象演示`}
+            alt={"" + (avatarName) + t(" 数字人形象演示")}
             fill
             sizes={compact ? "50vw" : "(max-width: 900px) 92vw, 860px"}
             priority={!compact}
           />
         ) : <div className="mode-demo-avatar-placeholder">
           <UserRound aria-hidden="true" />
-          <strong>{avatarName}</strong>
-          <small>当前人物暂无可用静态预览</small>
+          <strong>{t(avatarName)}</strong>
+          <small>{t("当前人物暂无可用静态预览")}</small>
         </div>}
         <span className="mode-demo-avatar-badge"><UserRound /> {avatarName.toUpperCase()}</span>
         <div className="mode-demo-avatar-copy">
           <span><i /> {canPlayAvatar ? "LIP SYNC DEMO" : "AVATAR PREVIEW"}</span>
-          <strong>{avatarName}</strong>
-          <small>切换形象与口型方案查看效果</small>
+          <strong>{t(avatarName)}</strong>
+          <small>{t("切换形象与口型方案查看效果")}</small>
         </div>
       </div>
     );
@@ -138,7 +141,7 @@ export function ExperienceModeDemo({
       data-compact={compact}
       data-active={motionActive}
       data-visual-theme={voiceVisualTheme}
-      aria-label={`对话模式${VOICE_VISUAL_THEME_LABELS[voiceVisualTheme]}主题动态演示`}
+      aria-label={t("对话模式") + (VOICE_VISUAL_THEME_LABELS[voiceVisualTheme]) + t("主题动态演示")}
     >
       {motionToggle}
       <div className="classic-preview-visual" aria-hidden="true">
@@ -153,8 +156,8 @@ export function ExperienceModeDemo({
       <span className="classic-theme-label">{VOICE_VISUAL_THEME_LABELS[voiceVisualTheme]}</span>
       <div className="mode-demo-voice-copy">
         <span><i /> REALTIME VOICE</span>
-        <strong>自然开口，即刻回应</strong>
-        <small>视觉主题跟随聆听、思考与回复状态变化</small>
+        <strong>{t("自然开口，即刻回应")}</strong>
+        <small>{t("视觉主题跟随聆听、思考与回复状态变化")}</small>
       </div>
     </div>
   );

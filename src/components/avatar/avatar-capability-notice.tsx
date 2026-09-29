@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { CircleAlert, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -10,6 +12,7 @@ export function AvatarCapabilityNotice({ capability, error, onRetry, variant = "
   onRetry: () => void;
   variant?: "default" | "stage";
 }) {
+  const { t } = useLanguage();
   // The capability request normally resolves quickly after hydration. Keep that
   // transient state visually quiet so refreshing the homepage does not flash a
   // status card over the avatar; actionable results still remain visible.
@@ -22,10 +25,10 @@ export function AvatarCapabilityNotice({ capability, error, onRetry, variant = "
   >
     {variant === "stage" ? <CircleAlert className="avatar-capability-notice__icon" aria-hidden="true" /> : null}
     <span className="avatar-capability-notice__message">{error ?? capability?.message}</span>
-    {capability?.state === "login_required" && <Link href="/admin">管理员登录</Link>}
-    {error && <button type="button" aria-label="重新检查" title="重新检查" onClick={onRetry}>
+    {capability?.state === "login_required" && <Link href="/admin">{t("管理员登录")}</Link>}
+    {error && <button type="button" aria-label={t("重新检查")} title={t("重新检查")} onClick={onRetry}>
       {variant === "stage" ? <RefreshCw aria-hidden="true" /> : null}
-      <span className={variant === "stage" ? "sr-only" : undefined}>重新检查</span>
+      <span className={variant === "stage" ? "sr-only" : undefined}>{t("重新检查")}</span>
     </button>}
   </div>;
 }

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import Link from "next/link";
@@ -67,6 +69,7 @@ export function AvatarAssetLibrary({
   embedded?: boolean;
   returnTo?: string;
 }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [scope, setScope] = useState(initialScope);
   const [realtimeScope, setRealtimeScope] = useState(initialRealtimeScope);
@@ -149,52 +152,51 @@ export function AvatarAssetLibrary({
   }
 
   return (
-    <section className={styles.library} data-embedded={embedded} aria-label="数字人资产" aria-busy={loading || undefined}>
+    <section className={styles.library} data-embedded={embedded} aria-label={t("数字人资产")} aria-busy={loading || undefined}>
       <header className={styles.header}>
         <div className={styles.toolbar}>
-          <div className={styles.scopeSwitch} aria-label="Avatar 分类">
+          <div className={styles.scopeSwitch} aria-label={t("Avatar 分类")}>
             <span className={styles.scopeSwitchTrack} data-scope={scope} aria-hidden="true" />
             <button type="button" data-active={scope === "realtime"} aria-pressed={scope === "realtime"} onClick={() => selectScope("realtime")}>
-              <Sparkles aria-hidden="true" />实时驱动 <em>{loading ? "…" : realtimeCount}</em>
+              <Sparkles aria-hidden="true" />{t("实时驱动 ")}<em>{loading ? "…" : realtimeCount}</em>
             </button>
             <button type="button" data-active={scope === "internal-preset"} aria-pressed={scope === "internal-preset"} onClick={() => selectScope("internal-preset")}>
-              <UserRound aria-hidden="true" />内部预制 <em>{loading ? "…" : segmentedAvatarCount}</em>
+              <UserRound aria-hidden="true" />{t("内部预制 ")}<em>{loading ? "…" : segmentedAvatarCount}</em>
             </button>
           </div>
           <label className={styles.search}>
             <Search aria-hidden="true" />
-            <span className="sr-only">搜索 Avatar</span>
+            <span className="sr-only">{t("搜索 Avatar")}</span>
             <input
               value={query}
               disabled={loading}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索名称或 ID"
+              placeholder={t("搜索名称或 ID")}
             />
           </label>
-          <Link className={styles.trashLink} href={appendReturnTo("/avatars/trash", returnTo)}><Trash2 />回收站</Link>
+          <Link className={styles.trashLink} href={appendReturnTo("/avatars/trash", returnTo)}><Trash2 />{t("回收站")}</Link>
           <Link className={styles.createButton} href={appendReturnTo("/avatars/create", returnTo)}>
             <Plus aria-hidden="true" />
-            创建数字人
-          </Link>
+            {t("创建数字人")}</Link>
         </div>
         <div className={styles.productionBar}>
-          <div><Film aria-hidden="true" /><span><strong>动作与口型对齐</strong><small>素材归属于数字人；口型对齐继续归属于对应动作。</small></span></div>
-          <nav aria-label="数字人素材制作">
-            <Link href={appendReturnTo("/services/motion", returnTo)}><Sparkles aria-hidden="true" />生成动作</Link>
-            <Link href={appendReturnTo("/services/talking", returnTo)}><AudioLines aria-hidden="true" />制作口型对齐</Link>
+          <div><Film aria-hidden="true" /><span><strong>{t("动作与口型对齐")}</strong><small>{t("素材归属于数字人；口型对齐继续归属于对应动作。")}</small></span></div>
+          <nav aria-label={t("数字人素材制作")}>
+            <Link href={appendReturnTo("/services/motion", returnTo)}><Sparkles aria-hidden="true" />{t("生成动作")}</Link>
+            <Link href={appendReturnTo("/services/talking", returnTo)}><AudioLines aria-hidden="true" />{t("制作口型对齐")}</Link>
           </nav>
         </div>
       </header>
 
       {!loading && scope === "realtime" ? (
-        <div className={styles.realtimeScope} aria-label="实时驱动分类">
+        <div className={styles.realtimeScope} aria-label={t("实时驱动分类")}>
           <div className={styles.realtimeScopeSwitch}>
             <span className={styles.realtimeScopeTrack} data-scope={realtimeScope} aria-hidden="true" />
             <button type="button" data-active={realtimeScope === "custom"} aria-pressed={realtimeScope === "custom"} onClick={() => selectRealtimeScope("custom")}>
-              自定义 Avatar <em>{customRealtimeCount}</em>
+              {t("自定义 Avatar")}<em>{customRealtimeCount}</em>
             </button>
             <button type="button" data-active={realtimeScope === "built-in"} aria-pressed={realtimeScope === "built-in"} onClick={() => selectRealtimeScope("built-in")}>
-              官方内置 Avatar <em>{builtInRealtimeCount}</em>
+              {t("官方内置 Avatar")}<em>{builtInRealtimeCount}</em>
             </button>
           </div>
         </div>
@@ -202,7 +204,7 @@ export function AvatarAssetLibrary({
 
       {loading ? (
         <div className={styles.loadingGrid} role="status" aria-live="polite">
-          <span className="sr-only">正在加载数字人资产</span>
+          <span className="sr-only">{t("正在加载数字人资产")}</span>
           {[0, 1, 2, 3].map((index) => <i key={index} aria-hidden="true" />)}
         </div>
       ) : visibleAvatars.length ? (
@@ -233,9 +235,9 @@ export function AvatarAssetLibrary({
       ) : (
         <div className={styles.empty}>
           <Sparkles aria-hidden="true" />
-          <h2>{query ? "没有匹配的 Avatar" : scope === "realtime" ? realtimeScope === "custom" ? "暂无自定义实时 Avatar" : "暂无官方内置 Avatar" : "暂无内部预制形象"}</h2>
-          <p>{query ? "尝试搜索其他名称或 ID。" : scope === "realtime" ? realtimeScope === "custom" ? "创建或接入实时驱动 Avatar 后会显示在这里。" : "供应商内置 Avatar 加载后会显示在这里。" : "内部预制形象加载后会显示在这里。"}</p>
-          {!query && scope === "realtime" ? <Link href={appendReturnTo("/avatars/create", returnTo)}>开始创建</Link> : null}
+          <h2>{query ? t("没有匹配的 Avatar") : scope === "realtime" ? realtimeScope === "custom" ? t("暂无自定义实时 Avatar") : t("暂无官方内置 Avatar") : t("暂无内部预制形象")}</h2>
+          <p>{query ? t("尝试搜索其他名称或 ID。") : scope === "realtime" ? realtimeScope === "custom" ? t("创建或接入实时驱动 Avatar 后会显示在这里。") : t("供应商内置 Avatar 加载后会显示在这里。") : t("内部预制形象加载后会显示在这里。")}</p>
+          {!query && scope === "realtime" ? <Link href={appendReturnTo("/avatars/create", returnTo)}>{t("开始创建")}</Link> : null}
         </div>
       )}
 
@@ -250,16 +252,16 @@ export function AvatarAssetLibrary({
             <span className={styles.deleteDialogIcon}><Trash2 aria-hidden="true" /></span>
             <div>
               <p>{pendingDeletion.kind === "avatar" ? "DELETE AVATAR" : "DELETE ACTION"}</p>
-              <h2 id="delete-avatar-asset-title">{pendingDeletion.kind === "avatar" ? "删除数字人形象？" : "删除数字人动作？"}</h2>
+              <h2 id="delete-avatar-asset-title">{pendingDeletion.kind === "avatar" ? t("删除数字人形象？") : t("删除数字人动作？")}</h2>
               <span>
                 {pendingDeletion.kind === "avatar"
-                  ? `删除“${pendingDeletion.displayName}”后，这个形象及其动作会从内部预置资产中移除。`
-                  : `删除动作“${pendingDeletion.displayName}”后，数字人形象和其他动作不受影响。`}
+                  ? t("删除“") + (pendingDeletion.displayName) + t("”后，这个形象及其动作会从内部预置资产中移除。")
+                  : t("删除动作“") + (pendingDeletion.displayName) + t("”后，数字人形象和其他动作不受影响。")}
               </span>
             </div>
             <footer>
-              <button type="button" onClick={() => setPendingDeletion(null)}>取消</button>
-              <button type="button" data-danger="true" onClick={confirmAssetDeletion}>确认删除</button>
+              <button type="button" onClick={() => setPendingDeletion(null)}>{t("取消")}</button>
+              <button type="button" data-danger="true" onClick={confirmAssetDeletion}>{t("确认删除")}</button>
             </footer>
           </section>
         </div>,
@@ -288,6 +290,7 @@ function AvatarCard({
   onDeleteAvatar: () => void;
   onDeleteAction: (action: AvatarAction) => void;
 }) {
+  const { t } = useLanguage();
   const summary = summarizeAvatarCapabilities(avatar);
   const startHref = `/conversation?avatar_id=${encodeURIComponent(avatar.avatarId)}&experience=avatar`;
   const detailQuery = segmentedAsset
@@ -403,7 +406,7 @@ function AvatarCard({
               <div className={styles.expandedPreview}>
                 {selectedTalkingVariant ? <div className={styles.talkingPreview}>
                   <Image className={styles.talkingBackdrop} src={avatar.source.imageUrl} alt="" fill sizes="100vw" unoptimized />
-                  <video key={selectedTalkingVariant.id} src={selectedTalkingVariant.video_url} aria-label={`${avatar.displayName} · ${selectedTalkingVariant.display_name} 口型对齐`} autoPlay muted loop playsInline controls preload="auto" />
+                  <video key={selectedTalkingVariant.id} src={selectedTalkingVariant.video_url} aria-label={"" + (avatar.displayName) + " · " + (selectedTalkingVariant.display_name) + t(" 口型对齐")} autoPlay muted loop playsInline controls preload="auto" />
                 </div> : <AvatarMediaCoverflow
                   avatarId={avatar.avatarId}
                   avatarName={avatar.displayName}
@@ -461,7 +464,7 @@ function AvatarCard({
                   <Image
                     className={styles.portraitImage}
                     src={avatar.source.imageUrl}
-                    alt={`${avatar.displayName} 形象`}
+                    alt={"" + (avatar.displayName) + t(" 形象")}
                     fill
                     sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     unoptimized
@@ -473,7 +476,7 @@ function AvatarCard({
           {segmentedAsset && playableActions.length ? <button
             className={styles.materialTrigger}
             type="button"
-            aria-label={`选择 ${avatar.displayName} 的口型对齐`}
+            aria-label={t("选择 ") + (avatar.displayName) + t(" 的口型对齐")}
             aria-expanded={expanded && materialMenuOpen}
             onClick={() => {
               if (!expanded) {
@@ -485,10 +488,10 @@ function AvatarCard({
                 setMaterialMenuOpen(open => !open);
               }
             }}
-          ><Film aria-hidden="true" />口型对齐</button> : null}
+          ><Film aria-hidden="true" />{t("口型对齐")}</button> : null}
           {expanded && materialMenuOpen && talkingAction ? materialsError ? <div className={styles.materialsSideState} role="alert">
-            <span>{materialsError}</span><button type="button" onClick={() => setMaterialsRefresh(value => value + 1)}>重试</button>
-          </div> : materialsLoading ? <div className={styles.materialsSideState} role="status">正在读取口型对齐…</div> : <AvatarTalkingMaterialRail
+            <span>{materialsError}</span><button type="button" onClick={() => setMaterialsRefresh(value => value + 1)}>{t("重试")}</button>
+          </div> : materialsLoading ? <div className={styles.materialsSideState} role="status">{t("正在读取口型对齐…")}</div> : <AvatarTalkingMaterialRail
             key={talkingAction.avatar_action_id}
             avatarId={avatar.avatarId}
             action={talkingAction}
@@ -506,22 +509,21 @@ function AvatarCard({
           /> : null}
           <div className={styles.mediaMeta}>
             {segmentedAsset && playableActions.length ? (
-              <button type="button" aria-label={`管理 ${avatar.displayName} 的动作`} onClick={() => {
+              <button type="button" aria-label={t("管理 ") + (avatar.displayName) + t(" 的动作")} onClick={() => {
                 setActiveMediaIndex(1);
                 setSelectedTalkingVariantId(null);
                 onExpandedChange(true);
               }}>
-                {playableActions.length} 个动作
-              </button>
+                {playableActions.length} {t("个动作")}</button>
             ) : (
               <span data-muted={segmentedAsset && !playableActions.length}>
-                {segmentedAsset ? "未创建动作" : summary.realtimeLabel || summary.actionLabel}
+                {segmentedAsset ? t("未创建动作") : summary.realtimeLabel || summary.actionLabel}
               </span>
             )}
             {!internalPreset && summary.realtimeLabel && avatar.canCreateActions && avatar.actions.length
               ? <span>{summary.actionLabel}</span>
               : null}
-            {!internalPreset && summary.pendingActionCount > 0 ? <span data-progress="true">{summary.pendingActionCount} 个动作待适配</span> : null}
+            {!internalPreset && summary.pendingActionCount > 0 ? <span data-progress="true">{summary.pendingActionCount}{t(" 个动作待适配")}</span> : null}
           </div>
           <div className={styles.body}>
             <div className={styles.titleRow}>
@@ -531,47 +533,47 @@ function AvatarCard({
                     ref={detailLinkRef}
                     className={styles.titleLink}
                     href={detailHref}
-                    aria-label={`查看 ${avatar.displayName} 详情`}
+                    aria-label={t("查看 ") + (avatar.displayName) + t(" 详情")}
                   >
                     {avatar.displayName}
                   </Link>
                 </h2>
-                {!expanded && segmentedAsset && activeAction ? <small>{`动作 · ${activeAction.displayName}`}</small> : null}
+                {!expanded && segmentedAsset && activeAction ? <small>{t("动作 · ") + (activeAction.displayName) + ""}</small> : null}
               </div>
               {expanded ? <div className={styles.actions}>
-                <Link className={styles.primaryAction} href={startHref} aria-label={`与 ${avatar.displayName} 对话`}><MessageCircle aria-hidden="true" />对话</Link>
-                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={`为 ${avatar.displayName} 创建动作`} title="创建动作"><Plus aria-hidden="true" /></Link>
-                <Link className={styles.detailLink} href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`} title="查看详情"><ArrowUpRight aria-hidden="true" /></Link>
+                <Link className={styles.primaryAction} href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
+                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (avatar.displayName) + t(" 创建动作")} title={t("创建动作")}><Plus aria-hidden="true" /></Link>
+                <Link className={styles.detailLink} href={detailHref} aria-label={t("打开 ") + (avatar.displayName) + t(" 详情")} title={t("查看详情")}><ArrowUpRight aria-hidden="true" /></Link>
                 {segmentedAsset && expanded && activeAction ? (
                   <>
-                    <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={talkingCreationHref(avatar, activeAction, returnTo)} aria-label={`为 ${activeAction.displayName} 制作口型对齐`} title="制作口型对齐"><AudioLines aria-hidden="true" /></Link>
+                    <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={talkingCreationHref(avatar, activeAction, returnTo)} aria-label={t("为 ") + (activeAction.displayName) + t(" 制作口型对齐")} title={t("制作口型对齐")}><AudioLines aria-hidden="true" /></Link>
                     {!selectedTalkingVariant ? <button
                       className={`${styles.secondaryAction} ${styles.iconAction}`}
                       type="button"
-                      aria-label={`放大预览：${activeAction.displayName}`}
-                      title="放大预览"
+                      aria-label={t("放大预览：") + (activeAction.displayName) + ""}
+                      title={t("放大预览")}
                       onClick={() => setPreviewAction(activeAction)}
                     >
                       <Maximize2 aria-hidden="true" />
                     </button> : null}
-                    {internalPreset ? <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除动作：${activeAction.displayName}`} title="删除动作" onClick={() => onDeleteAction(activeAction)}>
+                    {internalPreset ? <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={t("删除动作：") + (activeAction.displayName) + ""} title={t("删除动作")} onClick={() => onDeleteAction(activeAction)}>
                       <Trash2 aria-hidden="true" />
                     </button> : null}
                   </>
                 ) : internalPreset ? (
-                  <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={`删除形象：${avatar.displayName}`} title="删除形象" onClick={onDeleteAvatar}>
+                  <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={t("删除形象：") + (avatar.displayName) + ""} title={t("删除形象")} onClick={onDeleteAvatar}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 ) : null}
                 {segmentedAsset && expanded ? (
-                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={`收起 ${avatar.displayName} 的形象和动作`} title="收起预览" onClick={() => { setSelectedTalkingVariantId(null); setMaterialMenuOpen(false); onExpandedChange(false); }}>
+                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={t("收起 ") + (avatar.displayName) + t(" 的形象和动作")} title={t("收起预览")} onClick={() => { setSelectedTalkingVariantId(null); setMaterialMenuOpen(false); onExpandedChange(false); }}>
                     <Minimize2 aria-hidden="true" />
                   </button>
                 ) : null}
               </div> : (
                 <div className={styles.collapsedActions}>
-                  <Link className={`${styles.quickStart} liquid-glass-button`} data-variant="primary" href={startHref} aria-label={`与 ${avatar.displayName} 对话`}><MessageCircle aria-hidden="true" />对话</Link>
-                  <button className={styles.moreButton} type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                  <Link className={`${styles.quickStart} liquid-glass-button`} data-variant="primary" href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
+                  <button className={styles.moreButton} type="button" aria-label={t("更多操作：") + (avatar.displayName) + ""} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
                     <MoreHorizontal aria-hidden="true" />
                   </button>
                 </div>
@@ -579,11 +581,11 @@ function AvatarCard({
             </div>
           </div>
           {!expanded ? (
-            <div className={styles.actionMenu} aria-label={`${avatar.displayName} 操作菜单`} hidden={!menuOpen}>
-              <Link href={startHref} aria-label={`与 ${avatar.displayName} 对话`}>开始对话</Link>
-              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={`为 ${avatar.displayName} 创建动作`}>创建动作</Link> : null}
-              <Link href={detailHref} aria-label={`打开 ${avatar.displayName} 详情`}>查看详情</Link>
-              {internalPreset ? <button type="button" aria-label={`删除形象：${avatar.displayName}`} onClick={onDeleteAvatar}>删除 Avatar</button> : null}
+            <div className={styles.actionMenu} aria-label={"" + (avatar.displayName) + t(" 操作菜单")} hidden={!menuOpen}>
+              <Link href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}>{t("开始对话")}</Link>
+              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (avatar.displayName) + t(" 创建动作")}>{t("创建动作")}</Link> : null}
+              <Link href={detailHref} aria-label={t("打开 ") + (avatar.displayName) + t(" 详情")}>{t("查看详情")}</Link>
+              {internalPreset ? <button type="button" aria-label={t("删除形象：") + (avatar.displayName) + ""} onClick={onDeleteAvatar}>{t("删除 Avatar")}</button> : null}
             </div>
           ) : null}
         </div>
@@ -600,7 +602,7 @@ function AvatarCard({
             className={styles.actionModal}
             role="dialog"
             aria-modal="true"
-            aria-label={`${previewAction.displayName} 动作预览`}
+            aria-label={"" + (previewAction.displayName) + t(" 动作预览")}
           >
             <Image className={styles.actionModalBackdropImage} src={avatar.source.imageUrl} alt="" aria-hidden="true" fill sizes="100vw" unoptimized />
             <span className={styles.actionModalScrim} aria-hidden="true" />
@@ -608,11 +610,11 @@ function AvatarCard({
               <div className={styles.actionModalTitle}>
                 <span><Film aria-hidden="true" /></span>
                 <div>
-                  <p>{avatar.displayName} · 动作预览</p>
+                  <p>{avatar.displayName}{t(" · 动作预览")}</p>
                   <h2>{previewAction.displayName}</h2>
                 </div>
               </div>
-              <button type="button" aria-label="关闭动作预览" onClick={() => setPreviewAction(null)}>
+              <button type="button" aria-label={t("关闭动作预览")} onClick={() => setPreviewAction(null)}>
                 <X aria-hidden="true" />
               </button>
             </header>
@@ -630,13 +632,13 @@ function AvatarCard({
                     preload="auto"
                   />
                 ) : (
-                  <span className={styles.actionModalFallback}><Film aria-hidden="true" />暂无可预览视频</span>
+                  <span className={styles.actionModalFallback}><Film aria-hidden="true" />{t("暂无可预览视频")}</span>
                 )}
               </div>
             </div>
             <footer className={styles.actionModalFooter}>
-              <span><Film aria-hidden="true" />当前动作</span>
-              <p>自动循环播放 · 可使用播放器控制进度、音量和全屏显示</p>
+              <span><Film aria-hidden="true" />{t("当前动作")}</span>
+              <p>{t("自动循环播放 · 可使用播放器控制进度、音量和全屏显示")}</p>
             </footer>
           </section>
         </div>,

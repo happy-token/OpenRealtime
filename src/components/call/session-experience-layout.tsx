@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { Columns2, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
@@ -32,6 +34,7 @@ export function SessionExperienceLayout({
   onEnterFullscreen,
   onEnterSidecar,
 }: SessionExperienceLayoutProps) {
+  const { t } = useLanguage();
   const [motionAspectRatio, setMotionAspectRatio] = useState(16 / 9);
   const [portraitAspectRatio, setPortraitAspectRatio] = useState<number | null>(null);
   useEffect(() => {
@@ -133,7 +136,7 @@ export function SessionExperienceLayout({
         className="session-surface-region"
         data-corner={companionCorner}
         data-clickable={pageForm === "content"}
-        aria-label="实时展示"
+        aria-label={t("实时展示")}
         tabIndex={pageForm === "content" ? 0 : undefined}
         style={{ ...surfaceStyle, "--motion-aspect-ratio": companionAspectRatio } as CSSProperties}
         onLoadedMetadataCapture={(event) => { const video = event.target; if (video instanceof HTMLVideoElement && video.videoWidth && video.videoHeight && (!event.currentTarget.querySelector(".digital-human-motion-base-video") || video.classList.contains("digital-human-motion-base-video"))) setMotionAspectRatio(video.videoWidth / video.videoHeight); }}
@@ -146,24 +149,24 @@ export function SessionExperienceLayout({
         <div className="session-surface-content">{surface}</div>
         {pageForm !== "content" ? surfaceOverlay : null}
         {pageForm === "content" && (
-          <div className="session-surface-actions" role="toolbar" aria-label="小窗显示控制">
-            <button type="button" className="session-surface-fullscreen" aria-label="全屏展示" onClick={onEnterFullscreen}>
+          <div className="session-surface-actions" role="toolbar" aria-label={t("小窗显示控制")}>
+            <button type="button" className="session-surface-fullscreen" aria-label={t("全屏展示")} onClick={onEnterFullscreen}>
               <Maximize2 />
             </button>
-            <button type="button" className="session-surface-sidecar" aria-label="并排展示" onClick={onEnterSidecar}><Columns2 /></button>
+            <button type="button" className="session-surface-sidecar" aria-label={t("并排展示")} onClick={onEnterSidecar}><Columns2 /></button>
           </div>
         )}
       </section>
       {pageForm === "content" && surfaceOverlay ? (
         <div className="session-content-stage-overlay">{surfaceOverlay}</div>
       ) : null}
-      <section className="session-conversation-region" aria-label="对话内容" aria-hidden={pageForm === "fullscreen"}>
+      <section className="session-conversation-region" aria-label={t("对话内容")} aria-hidden={pageForm === "fullscreen"}>
         {conversation}
       </section>
       {pageForm === "sidecar" && <div
         className="session-sidecar-resizer"
         role="separator"
-        aria-label="调整对话区宽度"
+        aria-label={t("调整对话区宽度")}
         aria-orientation="vertical"
         aria-valuemin={38}
         aria-valuemax={68}
@@ -176,7 +179,7 @@ export function SessionExperienceLayout({
         onKeyDown={adjustSidecarWidthByKeyboard}
       />}
       {recovery ? <div className="session-recovery-region">{recovery}</div> : null}
-      {controls ? <div className="session-controls-region" aria-label="会话操作">
+      {controls ? <div className="session-controls-region" aria-label={t("会话操作")}>
         {controls}
       </div> : null}
     </section>

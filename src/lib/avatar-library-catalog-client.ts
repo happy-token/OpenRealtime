@@ -66,13 +66,18 @@ export function loadInternalPresetAvatars(
 
 export async function loadCurrentAvatarCatalog(
   signal?: AbortSignal,
-  options: { includeHostedAvatars?: boolean; includeOwnedBuiltinActions?: boolean } = {},
+  options: {
+    includeHostedAvatars?: boolean;
+    includeOwnedBuiltinActions?: boolean;
+    ownedAvatars?: Promise<OwnedAvatarRecord[]>;
+    personalAvatars?: Promise<OwnedAvatarRecord[]>;
+  } = {},
 ): Promise<AvatarAsset[]> {
   const includeHostedAvatars = options.includeHostedAvatars ?? true;
   const includeOwnedBuiltinActions = options.includeOwnedBuiltinActions ?? false;
   const [ownedResult, personalResult, anamResult] = await Promise.allSettled([
-    fetchOwnedAvatars(signal),
-    fetchPersonalAvatars(signal),
+    options.ownedAvatars ?? fetchOwnedAvatars(signal),
+    options.personalAvatars ?? fetchPersonalAvatars(signal),
     includeHostedAvatars
       ? fetch("/api/anam/avatars", { cache: "no-store", signal }).then(async (response) => {
         const payload = await readJsonResponse<{ avatars?: AnamHostedAvatar[] }>(response, "Anam 目录读取失败");

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Check, LoaderCircle, Plus, PlugZap, Settings2, Trash2 } from "lucide-react";
@@ -31,6 +33,7 @@ const PIPELINE: { id: ProviderCapability; label: string; detail: string }[] = [
 ];
 
 export function ProviderInstanceManager({ admin }: { admin: boolean }) {
+  const { t } = useLanguage();
   const [instances, setInstances] = useState<ProviderInstance[]>([]);
   const [selections, setSelections] = useState<Partial<Record<ProviderCapability, string>>>({});
   const [platformSelections, setPlatformSelections] = useState<Partial<Record<ProviderCapability, string>>>({});
@@ -237,21 +240,21 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
   }
 
   return <div className={styles.manager}>
-    {signedOut && <p className={styles.authNotice}>登录后可以管理个人供应商实例。<Link href="/api/user/login?next=/settings/providers">登录</Link></p>}
-    {error && <p className={styles.error} role="alert">{error}</p>}
+    {signedOut && <p className={styles.authNotice}>{t("登录后可以管理个人供应商实例。")}<Link href="/api/user/login?next=/settings/providers">{t("登录")}</Link></p>}
+    {error && <p className={styles.error} role="alert">{t(error)}</p>}
     {feedback && <p className={styles.authNotice} role="status">{feedback}</p>}
-    <section className={styles.pipeline} aria-label="当前语音交互链路">
-      <div className={styles.pipelineHeading}><h2>默认语音交互链路</h2><span>新角色默认 / 未指定角色时使用 · ASR → LLM → TTS</span></div>
+    <section className={styles.pipeline} aria-label={t("当前语音交互链路")}>
+      <div className={styles.pipelineHeading}><h2>{t("默认语音交互链路")}</h2><span>{t("新角色默认 / 未指定角色时使用 · ASR → LLM → TTS")}</span></div>
       <div className={styles.pipelineSteps}>{PIPELINE.map((step) => {
         const value = pipelineValue(step.id);
         return <div className={styles.pipelineStep} key={step.id} data-unconfigured={value.scope === "none"}>
           <div className={styles.pipelineStage}><strong>{step.label}</strong><small>{step.detail}</small></div>
-          <div className={styles.pipelineBinding}><span>{loading ? "读取中…" : value.name}</span>
-            {!loading && <small>{value.scope === "personal" ? "个人配置" : value.scope === "platform" ? "平台配置" : "未配置"}
+          <div className={styles.pipelineBinding}><span>{loading ? t("读取中…") : value.name}</span>
+            {!loading && <small>{value.scope === "personal" ? t("个人配置") : value.scope === "platform" ? t("平台配置") : t("未配置")}
               {value.keySuffix ? ` · Key ····${value.keySuffix}` : ""}</small>}</div>
         </div>;
       })}</div>
-      <p>显示配置名称及个人／平台来源。TTS 是默认配置；已有角色按其音色来源使用同供应商配置。</p>
+      <p>{t("显示配置名称及个人／平台来源。TTS 是默认配置；已有角色按其音色来源使用同供应商配置。")}</p>
     </section>
     {CAPABILITIES.map((capability) => {
       const entries = instances.filter((instance) => instance.capability === capability.id);
@@ -259,18 +262,18 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
         <div className={styles.instanceHeading}>
           <h2>{capability.title}</h2>
           <button className={styles.addProviderButton} type="button" disabled={busy || loading || signedOut}
-            onClick={() => startCreate(capability.id)}><Plus aria-hidden="true" />新建供应商</button>
+            onClick={() => startCreate(capability.id)}><Plus aria-hidden="true" />{t("新建供应商")}</button>
         </div>
         {selections[capability.id] && <div className={styles.selectionActions}>
           {selections[capability.id] && <button type="button" disabled={busy}
-            onClick={() => void clearSelection(capability.id, "personal")}>恢复平台默认</button>}
+            onClick={() => void clearSelection(capability.id, "personal")}>{t("恢复平台默认")}</button>}
         </div>}
-        {loading ? <p className={styles.emptyInstances}>正在读取实例…</p> : <div className={styles.scopeGroups}>{PROVIDER_SCOPE_DISPLAY_ORDER.map((scope) => {
+        {loading ? <p className={styles.emptyInstances}>{t("正在读取实例…")}</p> : <div className={styles.scopeGroups}>{PROVIDER_SCOPE_DISPLAY_ORDER.map((scope) => {
           const scoped = entries.filter((instance) => instance.scope === scope);
           const fallback = scope === "platform" ? platformCredentials.filter((item) => item.capability === capability.id) : [];
           return <div className={styles.scopeGroup} key={scope}>
-            <div className={styles.scopeHeading}><h3>{scope === "personal" ? "我的配置" : "平台配置"}</h3><span>{scoped.length + fallback.length ? `${scoped.length + fallback.length} 项` : "未配置"}</span></div>
-            {scoped.length + fallback.length === 0 ? <p className={styles.emptyInstances}>{scope === "platform" ? "暂无平台配置" : "暂无个人配置"}</p>
+            <div className={styles.scopeHeading}><h3>{scope === "personal" ? t("我的配置") : t("平台配置")}</h3><span>{scoped.length + fallback.length ? "" + (scoped.length + fallback.length) + t(" 项") : t("未配置")}</span></div>
+            {scoped.length + fallback.length === 0 ? <p className={styles.emptyInstances}>{scope === "platform" ? t("暂无平台配置") : t("暂无个人配置")}</p>
               : <div className={styles.instanceList}>{scoped.map((instance) => <article className={styles.instanceCard}
               data-selected={activeToken(capability.id) === instance.id}
               key={instance.id}>
@@ -278,19 +281,19 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
               <div className={styles.instanceIdentity}><h4>{instance.displayName}</h4><span>{instance.provider}</span><span>{instance.model ? `${instance.model} · ` : ""}Key ····{instance.keySuffix}</span></div>
               <div className={styles.instanceBadges}>
                 {activeToken(capability.id) === instance.id &&
-                  <span className={styles.state} data-configured="true">{capability.id === "tts" ? "默认使用" : "当前使用"}</span>}
-                <span className={styles.state} data-test={instance.connectionStatus} title={instance.testMessage || undefined}>{instance.enabled ? statusLabel(instance) : "已停用"}</span>
+                  <span className={styles.state} data-configured="true">{capability.id === "tts" ? t("默认使用") : t("当前使用")}</span>}
+                <span className={styles.state} data-test={instance.connectionStatus} title={instance.testMessage || undefined}>{instance.enabled ? statusLabel(instance) : t("已停用")}</span>
               </div>
             </div>
             <div className={styles.instanceActions}>
               {signedIn && instance.enabled && <button type="button" disabled={busy || activeToken(capability.id) === instance.id}
                 onClick={() => void act(instance, "select")}><Check />{instance.connectionStatus === "passed"
-                  ? capability.id === "tts" ? "设为默认" : "设为当前"
-                  : capability.id === "tts" ? "测试并设为默认" : "测试并设为当前"}</button>}
-              <button type="button" disabled={busy} onClick={() => void act(instance, "test")}><PlugZap />测试</button>
+                  ? capability.id === "tts" ? t("设为默认") : t("设为当前")
+                  : capability.id === "tts" ? t("测试并设为默认") : t("测试并设为当前")}</button>}
+              <button type="button" disabled={busy} onClick={() => void act(instance, "test")}><PlugZap />{t("测试")}</button>
               {instance.scope === "personal" && <>
-                <button type="button" disabled={busy} onClick={() => startEdit(instance)}><Settings2 />编辑</button>
-                <button type="button" disabled={busy} onClick={() => void act(instance, "delete")}><Trash2 />删除</button>
+                <button type="button" disabled={busy} onClick={() => startEdit(instance)}><Settings2 />{t("编辑")}</button>
+                <button type="button" disabled={busy} onClick={() => void act(instance, "delete")}><Trash2 />{t("删除")}</button>
               </>}
             </div>
           </article>)}{fallback.map((item) => {
@@ -298,15 +301,15 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
             return <article className={styles.instanceCard} data-selected={activeToken(capability.id) === `env:${item.provider}`}
               key={`env:${item.capability}:${item.provider}`}>
               <div className={styles.instanceMeta}>
-                <div className={styles.instanceIdentity}><h4>{item.name}</h4><span>环境变量</span><span>Key ····{item.keySuffix}</span></div>
+                <div className={styles.instanceIdentity}><h4>{item.name}</h4><span>{t("环境变量")}</span><span>Key ····{item.keySuffix}</span></div>
                 <div className={styles.instanceBadges}>{activeToken(capability.id) === `env:${item.provider}` &&
-                  <span className={styles.state} data-configured="true">{capability.id === "tts" ? "默认使用" : "当前使用"}</span>}<span className={styles.state} data-test={result ? result.ok ? "passed" : "failed" : "untested"}
-                  title={result?.message}>{result ? result.ok ? "测试通过" : "测试未通过" : "未测试"}</span></div>
+                  <span className={styles.state} data-configured="true">{capability.id === "tts" ? t("默认使用") : t("当前使用")}</span>}<span className={styles.state} data-test={result ? result.ok ? "passed" : "failed" : "untested"}
+                  title={result?.message}>{result ? result.ok ? t("测试通过") : t("测试未通过") : t("未测试")}</span></div>
               </div>
               <div className={styles.instanceActions}>
                 {signedIn && <button type="button" disabled={busy || activeToken(capability.id) === `env:${item.provider}`}
-                  onClick={() => void selectPlatform(item)}><Check />{capability.id === "tts" ? "设为默认" : "设为当前"}</button>}
-                <button type="button" disabled={busy} onClick={() => void testPlatform(item)}><PlugZap />测试</button>
+                  onClick={() => void selectPlatform(item)}><Check />{capability.id === "tts" ? t("设为默认") : t("设为当前")}</button>}
+                <button type="button" disabled={busy} onClick={() => void testPlatform(item)}><PlugZap />{t("测试")}</button>
               </div>
             </article>;
           })}</div>}
@@ -314,33 +317,33 @@ export function ProviderInstanceManager({ admin }: { admin: boolean }) {
         })}</div>}
       </section>;
     })}
-    <p className={styles.footnote}>未测试的个人配置会先运行实时能力测试，通过后才能选用；ASR 测试会使用平台豆包 TTS 生成固定音频，TTS 测试会发送两段固定文本，可能产生少量供应商用量。测试失败不会切换。角色音色与默认 TTS 来源不同时，会优先匹配同供应商已测试的配置。自定义 bridge 在隔离运行环境就绪前不会执行用户代码。</p>
+    <p className={styles.footnote}>{t("未测试的个人配置会先运行实时能力测试，通过后才能选用；ASR 测试会使用平台豆包 TTS 生成固定音频，TTS 测试会发送两段固定文本，可能产生少量供应商用量。测试失败不会切换。角色音色与默认 TTS 来源不同时，会优先匹配同供应商已测试的配置。自定义 bridge 在隔离运行环境就绪前不会执行用户代码。")}</p>
     {draft && <div className={styles.instanceDialogBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDraft(null); }}>
       <div className={styles.instanceDialog} role="dialog" aria-modal="true" aria-labelledby="provider-instance-title">
-        <h2 id="provider-instance-title">{draft.id ? "编辑供应商" : `新建 ${draft.capability.toUpperCase()} 供应商`}</h2>
+        <h2 id="provider-instance-title">{draft.id ? t("编辑供应商") : t("新建 ") + (draft.capability.toUpperCase()) + t(" 供应商")}</h2>
         <form onSubmit={(event) => void save(event)} className={styles.instanceForm}>
-          {!draft.id && <label>供应商<SelectMenu fullWidth value={String(draft.provider)} ariaLabel="供应商" options={[...(PROVIDER_CATALOG[draft.capability].map((preset) => ({ value: String(preset.id), label: String(preset.name) })))]} onChange={value => changeDraftProvider(value as BuiltinProvider)} /></label>}
-          <p className={styles.providerIntro}>{PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.intro} <a href={PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.keyUrl} target="_blank" rel="noopener noreferrer">前往官网申请 API Key ↗</a>
-            {draft.id ? " 修改配置会结束正在使用该实例的会话。" : ""}</p>
-          {admin && !draft.id && <label>配置范围<SelectMenu fullWidth value={String(draft.scope)} ariaLabel="配置范围" options={[...(signedIn ? [{ value: "personal", label: "我的配置" }] : []), { value: "platform", label: "平台配置" }]} onChange={value => setDraft({ ...draft, scope: value as ProviderScope })} /></label>}
-          <label>名称<input value={draft.displayName} maxLength={80} required onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} /></label>
+          {!draft.id && <label>{t("供应商")}<SelectMenu fullWidth value={String(draft.provider)} ariaLabel={t("供应商")} options={[...(PROVIDER_CATALOG[draft.capability].map((preset) => ({ value: String(preset.id), label: String(preset.name) })))]} onChange={value => changeDraftProvider(value as BuiltinProvider)} /></label>}
+          <p className={styles.providerIntro}>{PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.intro} <a href={PROVIDER_CATALOG[draft.capability].find((item) => item.id === draft.provider)?.keyUrl} target="_blank" rel="noopener noreferrer">{t("前往官网申请 API Key ↗")}</a>
+            {draft.id ? t(" 修改配置会结束正在使用该实例的会话。") : ""}</p>
+          {admin && !draft.id && <label>{t("配置范围")}<SelectMenu fullWidth value={String(draft.scope)} ariaLabel={t("配置范围")} options={[...(signedIn ? [{ value: "personal", label: t("我的配置") }] : []), { value: "platform", label: t("平台配置") }]} onChange={value => setDraft({ ...draft, scope: value as ProviderScope })} /></label>}
+          <label>{t("名称")}<input value={draft.displayName} maxLength={80} required onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} /></label>
           <label>Base URL<input value={draft.baseUrl} type="url" required onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
-          <p className={styles.urlHint}>内置 bridge 仅允许对应供应商的官方 HTTPS 地址。</p>
-          {draft.capability === "llm" && <label>模型 ID<input value={draft.model} maxLength={100} placeholder="留空使用服务端默认模型"
+          <p className={styles.urlHint}>{t("内置 bridge 仅允许对应供应商的官方 HTTPS 地址。")}</p>
+          {draft.capability === "llm" && <label>{t("模型 ID")}<input value={draft.model} maxLength={100} placeholder={t("留空使用服务端默认模型")}
             onChange={(event) => setDraft({ ...draft, model: event.target.value })} /></label>}
           <label>API Key<input value={draft.apiKey} type="password" autoComplete="off" minLength={draft.id ? undefined : 8}
-            required={!draft.id} placeholder={draft.id ? "留空则保留现有 Key" : "填写供应商 API Key"}
+            required={!draft.id} placeholder={draft.id ? t("留空则保留现有 Key") : t("填写供应商 API Key")}
             onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>
           {draft.id && <label className={styles.checkboxLabel}><input type="checkbox" checked={draft.enabled}
-            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />启用实例</label>}
+            onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} />{t("启用实例")}</label>}
           {draftTest?.signature === JSON.stringify([draft.scope, draft.capability, draft.provider, draft.baseUrl, draft.model, draft.apiKey]) &&
             <p className={draftTest.ok ? styles.testPassed : styles.testFailed} role="status">{draftTest.message}</p>}
           <div className={styles.instanceActions}>
             <button type="button" disabled={busy || draft.apiKey.length < 8 || !normalizeProviderBaseUrl(draft.capability, draft.provider, draft.baseUrl)}
-              onClick={() => void testDraft()}><PlugZap />测试</button>
+              onClick={() => void testDraft()}><PlugZap />{t("测试")}</button>
             <button type="submit" disabled={busy || !draft.displayName.trim() || !normalizeProviderBaseUrl(draft.capability, draft.provider, draft.baseUrl) || (!draft.id && draft.apiKey.length < 8)}>
-              {busy ? <LoaderCircle className={styles.spin} /> : <Check />}保存</button>
-            <button type="button" disabled={busy} onClick={() => setDraft(null)}>取消</button>
+              {busy ? <LoaderCircle className={styles.spin} /> : <Check />}{t("保存")}</button>
+            <button type="button" disabled={busy} onClick={() => setDraft(null)}>{t("取消")}</button>
           </div>
         </form>
       </div>

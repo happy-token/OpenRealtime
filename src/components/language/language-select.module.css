@@ -1,0 +1,9 @@
+.control { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-width: 0; color: var(--text); font-size: .8125rem; line-height: 1.4; }
+.control > span { flex: 0 0 auto; white-space: nowrap; font-weight: 500; }
+.control > div { flex: 0 1 200px; min-width: 0; }
+.control :global(.select-menu-trigger) { min-height: 36px; font-size: .8125rem; line-height: 1.4; }
+.control[data-compact="true"] { width: 36px; height: 36px; }
+.control[data-compact="true"] :global(.select-menu-trigger) { width: 36px; min-height: 36px; padding: 8px; justify-content: center; border-color: transparent; border-radius: var(--dropdown-radius,12px); background: transparent; box-shadow: none; }
+.control[data-compact="true"] :global(.select-menu-trigger:hover), .control[data-compact="true"] :global(.select-menu-trigger[aria-expanded="true"]) { border-color: var(--border-strong); background: var(--surface-solid); }
+.control[data-compact="true"] :global(.select-menu-trigger > svg) { display: none; }
+.control[data-compact="true"] :global(.select-menu-trigger > span > svg) { transform: none; }

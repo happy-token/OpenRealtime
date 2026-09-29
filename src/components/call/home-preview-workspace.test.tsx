@@ -10,6 +10,7 @@ import { readDigitalHumanAssetCatalog } from "@/lib/digital-human-asset-catalog"
 import type { RoleRecord } from "@/lib/role-records";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import { HomeRoleModeControls } from "./home-role-mode-controls";
+import { PreviewVideo } from "@/components/workspace/workbench-resource-rails";
 import {
   ActionMaterialFolder,
   buildSegmentedIdentityChoices,
@@ -33,6 +34,20 @@ it("unmounts the GPU orb while the avatar preview is selected", () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("home action preview", () => {
+  it("does not request a hidden action video and restores it when activated", () => {
+    const hidden = renderToStaticMarkup(<PreviewVideo src="/large-motion.mp4" label="动作" active={false} />);
+    expect(hidden).not.toContain('src="/large-motion.mp4"');
+    expect(hidden).toContain('preload="none"');
+    const visible = renderToStaticMarkup(<PreviewVideo src="/large-motion.mp4" label="动作" active />);
+    expect(visible).toContain('src="/large-motion.mp4"');
+    expect(visible).toContain('autoPlay=""');
+  });
+  it("does not show a library action before the saved selection is restored", () => {
+    const html = renderAvatarLibraryHome(false, false);
+    expect(html).toContain("正在加载形象…");
+    expect(html).not.toMatch(/<video[^>]*aria-label="陪伴 动作预览"/);
+    expect(renderAvatarLibraryHome()).toMatch(/<video[^>]*aria-label="陪伴 动作预览"/);
+  });
   it("offers an expandable create-talking card for a library action with zero talking variants", () => {
     const html = renderAvatarLibraryHome();
 
@@ -249,11 +264,12 @@ function renderHome(
   );
 }
 
-function renderAvatarLibraryHome(collapseResourceRails = false) {
+function renderAvatarLibraryHome(collapseResourceRails = false, configReady = true) {
   return renderToStaticMarkup(
     <ProviderKeyGate>
       <HomePreviewWorkspace
         purpose="library"
+        configReady={configReady}
         connected
         error={null}
         visualTheme="liquid-glass"
@@ -331,7 +347,7 @@ describe("HomePreviewWorkspace", () => {
     expect(html).not.toContain('aria-label="Persona 快捷配置"');
   });
 
-  it("keeps both library rails open and puts creation cards first", () => {
+  it("keeps library rails open with role and action creation at the end", () => {
     const html = renderAvatarLibraryHome();
     const component = readFileSync(new URL("./home-preview-workspace.tsx", import.meta.url), "utf8");
     const css = readFileSync(new URL("./preview-workspace-lab.module.css", import.meta.url), "utf8");
@@ -339,7 +355,9 @@ describe("HomePreviewWorkspace", () => {
     expect(html).toMatch(/data-open="true"[^>]*aria-label="数字人形象"/);
     expect(html).toMatch(/data-open="true"[^>]*aria-label="动作"/);
     expect(html.indexOf("创建形象")).toBeLessThan(html.indexOf("选择Shuchang"));
-    expect(html.indexOf("创建动作")).toBeLessThan(html.indexOf("展开陪伴 · 内置动作的口型素材"));
+    expect(html).toContain('aria-label="创建角色"');
+    expect(html.indexOf("创建角色")).toBeGreaterThan(html.indexOf("选择Shuchang"));
+    expect(html.indexOf("创建动作")).toBeGreaterThan(html.indexOf("展开陪伴 · 内置动作的口型素材"));
     expect(component).not.toContain('eyebrow="实时形象"');
     expect(css).not.toContain("width: 216px");
     expect(css).toMatch(/\.workspace\[data-purpose="library"\] \.actionEdgePanel\s*\{[^}]*left:\s*calc\(var\(--workspace-sidebar-width,0px\) \+ 22px\)/s);

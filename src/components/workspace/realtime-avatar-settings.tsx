@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -24,6 +26,7 @@ const RESIZE_EDGES: ResizeEdge[] = ["left", "right", "top", "bottom"];
 const RESIZE_EDGE_LABELS: Record<ResizeEdge, string> = { left: "左", right: "右", top: "上", bottom: "下" };
 
 export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const { avatars, personalAvatars, configured, loading } = useOfficialRealtimeAvatars();
   const avatar = [...avatars, ...personalAvatars].find((item) => item.id === avatarId);
@@ -139,39 +142,39 @@ export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
   }
   function toggleModule(module: Module) { setOpenModule((current) => current === module ? null : module); }
 
-  if (loading) return <p className={styles.status}>正在读取实时数字人…</p>;
-  if (!configured || !avatar) return <div className={styles.status}>当前形象不可用或尚未配置 Anam。<BackLink href="/resources?tab=official-realtime" label="返回资源库" /></div>;
+  if (loading) return <p className={styles.status}>{t("正在读取实时数字人…")}</p>;
+  if (!configured || !avatar) return <div className={styles.status}>{t("当前形象不可用或尚未配置 Anam。")}<BackLink href="/resources?tab=official-realtime" label={t("返回资源库")} /></div>;
   if (!profile) return null;
   return <main className={styles.page}>
     <div className={styles.stage}>
       {avatar.imageUrl ? <Image src={avatar.imageUrl} alt="" fill sizes="100vw" unoptimized /> : null}
       <div className={styles.stageShade} />
-      <div className={styles.stageTitle}><h1>{profile.displayName}</h1><p>{avatar.origin === "official" ? "官方" : "我的"}实时数字人 · 对话配置</p></div>
+      <div className={styles.stageTitle}><h1>{profile.displayName}</h1><p>{avatar.origin === "official" ? t("官方") : t("我的")}{t("实时数字人 · 对话配置")}</p></div>
     </div>
     <header className={styles.topbar}>
-      <Link href="/resources?tab=official-realtime" aria-label="返回实时数字人"><ArrowLeft /></Link>
-      <strong>实时数字人</strong>
-      <div><button type="button" aria-label="打开角色设置" aria-expanded={panelOpen} onClick={() => setPanelOpen((open) => !open)}><Settings2 />角色设置</button><button type="button" onClick={() => void save(true)}><Play />开始对话</button></div>
+      <Link href="/resources?tab=official-realtime" aria-label={t("返回实时数字人")}><ArrowLeft /></Link>
+      <strong>{t("实时数字人")}</strong>
+      <div><button type="button" aria-label={t("打开角色设置")} aria-expanded={panelOpen} onClick={() => setPanelOpen((open) => !open)}><Settings2 />{t("角色设置")}</button><button type="button" onClick={() => void save(true)}><Play />{t("开始对话")}</button></div>
     </header>
-    <aside ref={panelRef} className={styles.panel} data-open={panelOpen} data-dragging={dragging} data-resizing={resizing} aria-label="角色设置" aria-hidden={!panelOpen} inert={!panelOpen}
+    <aside ref={panelRef} className={styles.panel} data-open={panelOpen} data-dragging={dragging} data-resizing={resizing} aria-label={t("角色设置")} aria-hidden={!panelOpen} inert={!panelOpen}
       style={{ "--panel-x": `${panelPosition.x}px`, "--panel-y": `${panelPosition.y}px`, "--panel-width": `${panelSize.width}px`, "--panel-height": `${panelSize.height}px` } as CSSProperties}>
       <header className={styles.panelHead} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={stopDrag} onPointerCancel={stopDrag}>
-        <GripHorizontal aria-hidden="true" /><div><h2>角色设置</h2></div><button type="button" aria-label="关闭角色设置" onClick={() => setPanelOpen(false)}><X /></button>
+        <GripHorizontal aria-hidden="true" /><div><h2>{t("角色设置")}</h2></div><button type="button" aria-label={t("关闭角色设置")} onClick={() => setPanelOpen(false)}><X /></button>
       </header>
       <div className={styles.panelBody}>
-        <SettingsModule title="声音" detail={profile.voiceId} icon={<Volume2 />} open={openModule === "voice"} onToggle={() => toggleModule("voice")}><VoiceSelector showCurrent={false} value={{ provider: profile.voiceProvider, voice: profile.voiceId, dialect: profile.voiceDialect }} onChange={(voice) => setProfile({ ...profile, voiceProvider: voice.provider, voiceId: voice.voice, voiceDialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} /></SettingsModule>
-        <SettingsModule title="Persona" detail={personas.find((item) => item.personaId === profile.personaId)?.personaName ?? "默认助手"} icon={<Sparkles />} open={openModule === "persona"} onToggle={() => toggleModule("persona")}><PersonaChoiceGrid personas={personas} value={profile.personaId} onChange={(personaId) => setProfile({ ...profile, personaId })} /><div className={styles.moduleToolbar}><span>选择对话风格</span><Link href="/resources?tab=personas"><Plus />新建人设</Link></div></SettingsModule>
-        <SettingsModule title="工具" detail={`已选择 ${profile.toolIds.length} 个`} icon={<Wrench />} open={openModule === "tools"} onToggle={() => toggleModule("tools")}><div className={styles.moduleToolbar}><span>选择对话时可调用的工具</span><Link href="/resources?tab=tools"><Plus />新建</Link></div><div className={styles.toolList} aria-label="角色工具">{tools.map((tool) => {
+        <SettingsModule title={t("声音")} detail={profile.voiceId} icon={<Volume2 />} open={openModule === "voice"} onToggle={() => toggleModule("voice")}><VoiceSelector showCurrent={false} value={{ provider: profile.voiceProvider, voice: profile.voiceId, dialect: profile.voiceDialect }} onChange={(voice) => setProfile({ ...profile, voiceProvider: voice.provider, voiceId: voice.voice, voiceDialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} /></SettingsModule>
+        <SettingsModule title="Persona" detail={personas.find((item) => item.personaId === profile.personaId)?.personaName ?? "默认助手"} icon={<Sparkles />} open={openModule === "persona"} onToggle={() => toggleModule("persona")}><PersonaChoiceGrid personas={personas} value={profile.personaId} onChange={(personaId) => setProfile({ ...profile, personaId })} /><div className={styles.moduleToolbar}><span>{t("选择对话风格")}</span><Link href="/resources?tab=personas"><Plus />{t("新建人设")}</Link></div></SettingsModule>
+        <SettingsModule title={t("工具")} detail={`已选择 ${profile.toolIds.length} 个`} icon={<Wrench />} open={openModule === "tools"} onToggle={() => toggleModule("tools")}><div className={styles.moduleToolbar}><span>{t("选择对话时可调用的工具")}</span><Link href="/resources?tab=tools"><Plus />{t("新建")}</Link></div><div className={styles.toolList} aria-label={t("角色工具")}>{tools.map((tool) => {
           const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint);
-          return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={profile.toolIds.includes(tool.tool_id)} onChange={(event) => setProfile({ ...profile, toolIds: event.target.checked ? [...profile.toolIds, tool.tool_id] : profile.toolIds.filter((id) => id !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{disabled ? "需要补充服务地址后才能执行" : tool.description}</small></span><em>{tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人"}</em></label>;
+          return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={profile.toolIds.includes(tool.tool_id)} onChange={(event) => setProfile({ ...profile, toolIds: event.target.checked ? [...profile.toolIds, tool.tool_id] : profile.toolIds.filter((id) => id !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{disabled ? t("需要补充服务地址后才能执行") : tool.description}</small></span><em>{tool.builtin ? t("内置") : tool.public_enabled ? t("共享") : t("个人")}</em></label>;
         })}</div></SettingsModule>
-        <SettingsModule title="知识库" detail={knowledgeIds.length ? `已选择 ${knowledgeIds.length} 份` : "暂未选择"} icon={<BookOpen />} open={openModule === "knowledge"} onToggle={() => toggleModule("knowledge")}><div className={styles.moduleToolbar}><span>选择对话时可检索的资料</span><Link href="/resources?tab=knowledge"><Plus />新建</Link></div><div className={styles.toolList} aria-label="角色知识库资料">{knowledgeDocuments.map((document) => <label key={document.document_id}><input type="checkbox" checked={knowledgeIds.includes(document.document_id)} onChange={(event) => setKnowledgeIds((ids) => event.target.checked ? [...ids, document.document_id] : ids.filter((id) => id !== document.document_id))} /><span><strong>{document.title}</strong><small>{document.source_url ? "包含外部来源" : "本地资料"}</small></span><em>{document.owner_id === null ? "共享" : "个人"}</em></label>)}</div>{knowledgeDocuments.length === 0 ? <p>暂无可用资料，请先到资源库创建知识库内容。</p> : null}</SettingsModule>
-        <label className={styles.memorySwitch}><MemoryStick aria-hidden="true" /><span><strong>长期记忆</strong><small>仅用于这个实时数字人的对话</small></span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} aria-label="启用长期记忆" /></label>
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
+        <SettingsModule title={t("知识库")} detail={knowledgeIds.length ? `已选择 ${knowledgeIds.length} 份` : "暂未选择"} icon={<BookOpen />} open={openModule === "knowledge"} onToggle={() => toggleModule("knowledge")}><div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料")}</span><Link href="/resources?tab=knowledge"><Plus />{t("新建")}</Link></div><div className={styles.toolList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((document) => <label key={document.document_id}><input type="checkbox" checked={knowledgeIds.includes(document.document_id)} onChange={(event) => setKnowledgeIds((ids) => event.target.checked ? [...ids, document.document_id] : ids.filter((id) => id !== document.document_id))} /><span><strong>{document.title}</strong><small>{document.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{document.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>{knowledgeDocuments.length === 0 ? <p>{t("暂无可用资料，请先到资源库创建知识库内容。")}</p> : null}</SettingsModule>
+        <label className={styles.memorySwitch}><MemoryStick aria-hidden="true" /><span><strong>{t("长期记忆")}</strong><small>{t("仅用于这个实时数字人的对话")}</small></span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} aria-label={t("启用长期记忆")} /></label>
+        {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
+        {notice ? <p role="status" className={styles.notice}>{t(notice)}</p> : null}
       </div>
-      <footer className={styles.panelFooter}><button type="button" onClick={() => void save(false)}><Save />保存配置</button></footer>
-      {RESIZE_EDGES.map((edge) => <div key={edge} className={styles.resizeEdge} data-edge={edge} role="separator" aria-orientation={edge === "left" || edge === "right" ? "vertical" : "horizontal"} aria-label={`拖动${RESIZE_EDGE_LABELS[edge]}侧边缘调整窗口大小`} tabIndex={0} onPointerDown={(event) => startResize(event, edge)} onPointerMove={moveResize} onPointerUp={stopResize} onPointerCancel={stopResize} onKeyDown={(event) => resizeWithKeyboard(event, edge)} />)}
+      <footer className={styles.panelFooter}><button type="button" onClick={() => void save(false)}><Save />{t("保存配置")}</button></footer>
+      {RESIZE_EDGES.map((edge) => <div key={edge} className={styles.resizeEdge} data-edge={edge} role="separator" aria-orientation={edge === "left" || edge === "right" ? "vertical" : "horizontal"} aria-label={t("拖动") + (RESIZE_EDGE_LABELS[edge]) + t("侧边缘调整窗口大小")} tabIndex={0} onPointerDown={(event) => startResize(event, edge)} onPointerMove={moveResize} onPointerUp={stopResize} onPointerCancel={stopResize} onKeyDown={(event) => resizeWithKeyboard(event, edge)} />)}
     </aside>
   </main>;
 }

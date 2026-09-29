@@ -63,8 +63,8 @@ describe("AvatarStudio", () => {
     expect(html).not.toContain("关闭配置");
     expect(html).not.toContain("收起配置");
     expect(source).toContain('import { StudioConfigOverlay } from "./studio-config-overlay";');
-    expect(source).toMatch(/<StudioConfigOverlay open=\{mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label="配置 Avatar"/);
-    expect(source).toMatch(/<StudioConfigOverlay open=\{task === "realtime" && mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label="实时驱动配置"/);
+    expect(source).toMatch(/<StudioConfigOverlay open=\{mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label=\{t\("配置 Avatar"\)\}/);
+    expect(source).toMatch(/<StudioConfigOverlay open=\{task === "realtime" && mobileConfigOpen\} onOpenChange=\{setMobileConfigOpen\} label=\{t\("实时驱动配置"\)\}/);
     expect(source).toContain('mobileConfigOpen={task === "action" && mobileConfigOpen}');
     expect(source).toContain("onMobileConfigOpenChange={setMobileConfigOpen}");
     expect(source).not.toContain("mobileDrawerBackdrop");

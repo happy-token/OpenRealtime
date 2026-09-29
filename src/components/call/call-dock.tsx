@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useState } from "react";
 import { Icon } from "@/components/ui/icons";
@@ -13,6 +15,7 @@ interface CallDockProps {
 }
 
 export function CallDock({ micActive, connected, onToggleMic, onSendText, onShowChat }: CallDockProps) {
+  const { t } = useLanguage();
   const [textMode, setTextMode] = useState(false);
   const [text, setText] = useState("");
 
@@ -31,22 +34,22 @@ export function CallDock({ micActive, connected, onToggleMic, onSendText, onShow
           <button
             type="button"
             className="text-mode-back"
-            aria-label="返回语音控制"
+            aria-label={t("返回语音控制")}
             onClick={() => setTextMode(false)}
           >
             <Icon name="arrow-left" />
-            <span>返回语音</span>
+            <span>{t("返回语音")}</span>
           </button>
           <input
             type="text"
-            placeholder="输入文字…"
+            placeholder={t("输入文字…")}
             autoComplete="off"
             value={text}
             onChange={(event) => setText(event.target.value)}
           />
-          <button type="submit" className="text-row-send" aria-label="发送文字消息">
+          <button type="submit" className="text-row-send" aria-label={t("发送文字消息")}>
             <Icon name="send" />
-            <span>发送</span>
+            <span>{t("发送")}</span>
           </button>
         </form>
       ) : (
@@ -54,11 +57,11 @@ export function CallDock({ micActive, connected, onToggleMic, onSendText, onShow
           <button
             type="button"
             className="dock-action"
-            aria-label="切换到文字输入"
+            aria-label={t("切换到文字输入")}
             onClick={() => setTextMode(true)}
           >
             <Icon name="keyboard" />
-            <span>文字输入</span>
+            <span>{t("文字输入")}</span>
           </button>
           <div className="dock-main-wrap">
             <MicButton
@@ -67,16 +70,16 @@ export function CallDock({ micActive, connected, onToggleMic, onSendText, onShow
               connected={connected}
               onClick={onToggleMic}
             />
-            <span className="dock-main-label">{micActive ? "结束通话" : "开始对话"}</span>
+            <span className="dock-main-label">{micActive ? t("结束通话") : t("开始对话")}</span>
           </div>
           <button
             type="button"
             className="dock-action"
-            aria-label="查看对话记录"
+            aria-label={t("查看对话记录")}
             onClick={onShowChat}
           >
             <Icon name="list" />
-            <span>对话记录</span>
+            <span>{t("对话记录")}</span>
           </button>
         </div>
       )}

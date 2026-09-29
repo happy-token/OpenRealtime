@@ -1,5 +1,8 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
 
+
+import { LanguageSelect } from "@/components/language/language-select";
 import { BackLink } from "@/components/workspace/back-link";
 
 import Link from "next/link";
@@ -80,8 +83,21 @@ export function WorkspaceShell({
   resourceTab?: ResourceNavigationTab;
   resourceReturnTo?: string;
 }) {
+  const { t } = useLanguage();
   const pathname = usePathname() ?? "";
   const router = useRouter();
+  const homeMode = pathname === "/" || pathname === "/conversation";
+  const [githubStars, setGithubStars] = useState<number | null>(null);
+  useEffect(() => {
+    if (!homeMode) return;
+    const controller = new AbortController();
+    void fetch("/api/github-stars", { signal: controller.signal }).then(async (response) => {
+      if (!response.ok) return;
+      const payload = await response.json() as { stars?: unknown };
+      if (!controller.signal.aborted && typeof payload.stars === "number" && Number.isFinite(payload.stars) && payload.stars >= 0) setGithubStars(payload.stars);
+    }).catch(() => { /* Keep the GitHub link available when counts cannot be read. */ });
+    return () => controller.abort();
+  }, [homeMode]);
   const settingsMode = pathname === "/settings" || pathname.startsWith("/settings/");
   const resourceMode = Boolean(resourceTab) || isResourceWorkspacePath(pathname);
   const { configured: realtimeConfigured } = useOfficialRealtimeAvatars(resourceMode);
@@ -225,7 +241,7 @@ export function WorkspaceShell({
   }
 
   function scheduleSidebarPreviewClose() {
-    if (!window.matchMedia("(min-width: 761px)").matches || sidebarPinned || sidebarResizeRef.current) return;
+    if (!window.matchMedia("(min-width: 761px)").matches || sidebarPinned || accountOpen || sidebarResizeRef.current) return;
     if (sidebarPreviewOpenTimer.current !== null) window.clearTimeout(sidebarPreviewOpenTimer.current);
     sidebarPreviewOpenTimer.current = null;
     if (sidebarPreviewCloseTimer.current !== null) window.clearTimeout(sidebarPreviewCloseTimer.current);
@@ -249,7 +265,7 @@ export function WorkspaceShell({
   }
 
   const sectionSidebar = settingsMode || resourceMode;
-  const sidebarResizeHandle = <div className={styles.sidebarResizeHandle} role="separator" aria-label="调整侧边栏宽度" aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={MAX_SIDEBAR_WIDTH} aria-valuenow={sidebarWidth} tabIndex={0} onPointerDown={startSidebarResize} onPointerMove={moveSidebarResize} onPointerUp={stopSidebarResize} onPointerCancel={stopSidebarResize} onKeyDown={resizeSidebarWithKeyboard} />;
+  const sidebarResizeHandle = <div className={styles.sidebarResizeHandle} role="separator" aria-label={t("调整侧边栏宽度")} aria-orientation="vertical" aria-valuemin={MIN_SIDEBAR_WIDTH} aria-valuemax={MAX_SIDEBAR_WIDTH} aria-valuenow={sidebarWidth} tabIndex={0} onPointerDown={startSidebarResize} onPointerMove={moveSidebarResize} onPointerUp={stopSidebarResize} onPointerCancel={stopSidebarResize} onKeyDown={resizeSidebarWithKeyboard} />;
   const currentResourceTab = resourceTab ?? "avatars";
   const resourceHref = (tab: ResourceNavigationTab) => `/resources?tab=${tab}${resourceReturnTo ? `&return_to=${encodeURIComponent(resourceReturnTo)}` : ""}`;
 
@@ -262,35 +278,35 @@ export function WorkspaceShell({
     data-mode={sidebarMode}
     aria-hidden={!sidebarOpen && !mobileOpen}
     inert={!sidebarOpen && !mobileOpen}
-    aria-label={settingsMode ? "设置导航" : "资源导航"}
+    aria-label={settingsMode ? t("设置导航") : t("资源导航")}
     onClickCapture={keepSidebarOpenOnNavigation}
     onPointerEnter={keepSidebarPreviewOpen}
     onPointerLeave={scheduleSidebarPreviewClose}
   >
     <div className={styles.settingsTop}>
-      <BackLink className={styles.settingsBack} href="/" label="返回应用" />
-      <button className={styles.mobileClose} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X /></button>
+      <BackLink className={styles.settingsBack} href="/" label={t("返回应用")} />
+      <button className={styles.mobileClose} type="button" aria-label={t("关闭导航")} onClick={() => setMobileOpen(false)}><X /></button>
     </div>
-    <div className={styles.settingsTitle}>{settingsMode ? "设置" : "资源库"}</div>
-    {settingsMode ? <nav className={styles.settingsNav} aria-label="设置选项">
-      <NavLink href="/settings" active={pathname === "/settings"} icon={<Settings />} label="总览" />
-      <div className={styles.settingsGroupLabel}>账户</div>
-      <NavLink href="/settings/profile" active={pathname === "/settings/profile"} icon={<UserRound />} label="个人资料" />
-      <NavLink href="/settings/providers" active={pathname === "/settings/providers"} icon={<SlidersHorizontal />} label="供应商" />
-      <NavLink href="/settings/services" active={pathname === "/settings/services"} icon={<PlugZap />} label="模型服务" />
-      <div className={styles.settingsGroupLabel}>偏好</div>
-      <NavLink href="/settings/appearance" active={pathname === "/settings/appearance"} icon={<Palette />} label="外观" />
-      <NavLink href="/settings/memory" active={pathname === "/settings/memory"} icon={<MemoryStick />} label="Memory 与隐私" />
-      <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label="高级配置" />
-    </nav> : <nav className={styles.settingsNav} aria-label="资源分类">
-      <div className={styles.settingsGroupLabel}>角色素材</div>
-      <NavLink href={resourceHref("voices")} active={currentResourceTab === "voices"} icon={<Mic2 />} label="声音" onClick={() => setMobileOpen(false)} />
-      <NavLink href={resourceHref("personas")} active={currentResourceTab === "personas"} icon={<Bot />} label="人设" onClick={() => setMobileOpen(false)} />
-      <NavLink href={resourceHref("avatars")} active={currentResourceTab === "avatars"} icon={<Sparkles />} label="离线数字人" onClick={() => setMobileOpen(false)} />
-      {realtimeConfigured ? <NavLink href={resourceHref("official-realtime")} active={currentResourceTab === "official-realtime"} icon={<UserRound />} label="实时数字人" onClick={() => setMobileOpen(false)} /> : null}
-      <div className={styles.settingsGroupLabel}>对话能力</div>
-      <NavLink href={resourceHref("tools")} active={currentResourceTab === "tools"} icon={<Wrench />} label="工具" onClick={() => setMobileOpen(false)} />
-      <NavLink href={resourceHref("knowledge")} active={currentResourceTab === "knowledge"} icon={<BookOpen />} label="知识库" onClick={() => setMobileOpen(false)} />
+    <div className={styles.settingsTitle}>{settingsMode ? t("设置") : t("资源库")}</div>
+    {settingsMode ? <nav className={styles.settingsNav} aria-label={t("设置选项")}>
+      <NavLink href="/settings" active={pathname === "/settings"} icon={<Settings />} label={t("总览")} />
+      <div className={styles.settingsGroupLabel}>{t("账户")}</div>
+      <NavLink href="/settings/profile" active={pathname === "/settings/profile"} icon={<UserRound />} label={t("个人资料")} />
+      <NavLink href="/settings/providers" active={pathname === "/settings/providers"} icon={<SlidersHorizontal />} label={t("供应商")} />
+      <NavLink href="/settings/services" active={pathname === "/settings/services"} icon={<PlugZap />} label={t("模型服务")} />
+      <div className={styles.settingsGroupLabel}>{t("偏好")}</div>
+      <NavLink href="/settings/appearance" active={pathname === "/settings/appearance"} icon={<Palette />} label={t("外观")} />
+      <NavLink href="/settings/memory" active={pathname === "/settings/memory"} icon={<MemoryStick />} label={t("Memory 与隐私")} />
+      <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label={t("高级配置")} />
+    </nav> : <nav className={styles.settingsNav} aria-label={t("资源分类")}>
+      <div className={styles.settingsGroupLabel}>{t("角色素材")}</div>
+      <NavLink href={resourceHref("voices")} active={currentResourceTab === "voices"} icon={<Mic2 />} label={t("声音")} onClick={() => setMobileOpen(false)} />
+      <NavLink href={resourceHref("personas")} active={currentResourceTab === "personas"} icon={<Bot />} label={t("人设")} onClick={() => setMobileOpen(false)} />
+      <NavLink href={resourceHref("avatars")} active={currentResourceTab === "avatars"} icon={<Sparkles />} label={t("离线数字人")} onClick={() => setMobileOpen(false)} />
+      {realtimeConfigured ? <NavLink href={resourceHref("official-realtime")} active={currentResourceTab === "official-realtime"} icon={<UserRound />} label={t("实时数字人")} onClick={() => setMobileOpen(false)} /> : null}
+      <div className={styles.settingsGroupLabel}>{t("对话能力")}</div>
+      <NavLink href={resourceHref("tools")} active={currentResourceTab === "tools"} icon={<Wrench />} label={t("工具")} onClick={() => setMobileOpen(false)} />
+      <NavLink href={resourceHref("knowledge")} active={currentResourceTab === "knowledge"} icon={<BookOpen />} label={t("知识库")} onClick={() => setMobileOpen(false)} />
     </nav>}
     {sidebarResizeHandle}
   </aside> : <aside
@@ -303,20 +319,20 @@ export function WorkspaceShell({
     data-mode={sidebarMode}
     aria-hidden={!sidebarOpen && !mobileOpen}
     inert={!sidebarOpen && !mobileOpen}
-    aria-label="OpenRealtime 导航"
+    aria-label={t("OpenRealtime 导航")}
     onClickCapture={keepSidebarOpenOnNavigation}
     onPointerEnter={keepSidebarPreviewOpen}
     onPointerLeave={scheduleSidebarPreviewClose}
   >
     <div className={styles.brandRow}>
-      <Link className={styles.brand} href="/" aria-label="OpenRealtime 首页">
+      <Link className={styles.brand} href="/" aria-label={t("OpenRealtime 首页")}>
         <span className={styles.brandMark}>OR</span>
         <span className={styles.sidebarCopy}>OpenRealtime</span>
       </Link>
-      <button className={styles.mobileClose} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)}><X /></button>
+      <button className={styles.mobileClose} type="button" aria-label={t("关闭导航")} onClick={() => setMobileOpen(false)}><X /></button>
     </div>
 
-    <nav className={styles.primaryNav} aria-label="主要导航">
+    <nav className={styles.primaryNav} aria-label={t("主要导航")}>
       <button className={styles.navRow} type="button" onClick={() => {
         if (sidebarMode === "preview") setSidebarPinned(true);
         // A same-route reset must tear down the active media session; other pages can use fast client navigation.
@@ -324,17 +340,17 @@ export function WorkspaceShell({
         else router.push("/conversation");
       }}>
         <MessageSquarePlus />
-        <span className={styles.sidebarCopy}>新对话</span>
+        <span className={styles.sidebarCopy}>{t("新对话")}</span>
       </button>
-      <NavLink href="/roles" active={pathname.startsWith("/roles")} icon={<UsersRound />} label="角色" />
-      <NavLink href="/resources" active={isResourceWorkspacePath(pathname)} icon={<LibraryBig />} label="资源" />
-      <NavLink href="/docs" active={pathname.startsWith("/docs")} icon={<BookOpen />} label="文档" />
+      <NavLink href="/roles" active={pathname.startsWith("/roles")} icon={<UsersRound />} label={t("角色")} />
+      <NavLink href="/resources" active={isResourceWorkspacePath(pathname)} icon={<LibraryBig />} label={t("资源")} />
+      <NavLink href="/docs" active={pathname.startsWith("/docs")} icon={<BookOpen />} label={t("文档")} />
     </nav>
 
-    <section className={styles.recentSection} aria-label="最近对话">
+    <section className={styles.recentSection} aria-label={t("最近对话")}>
       <div className={styles.recentHeading}>
-        <Link className={styles.sidebarCopy} href="/conversations"><History />最近对话</Link>
-        <button type="button" aria-label="搜索最近对话" onClick={() => setSearchOpen(true)}><Search /></button>
+        <Link className={styles.sidebarCopy} href="/conversations"><History />{t("最近对话")}</Link>
+        <button type="button" aria-label={t("搜索最近对话")} onClick={() => setSearchOpen(true)}><Search /></button>
       </div>
       <div className={styles.searchField} data-open={searchOpen}>
         <Search />
@@ -348,10 +364,10 @@ export function WorkspaceShell({
               setQuery("");
             }
           }}
-          placeholder="搜索对话"
-          aria-label="搜索最近对话"
+          placeholder={t("搜索对话")}
+          aria-label={t("搜索最近对话")}
         />
-        <button type="button" aria-label="关闭搜索" onClick={() => { setSearchOpen(false); setQuery(""); }}><X /></button>
+        <button type="button" aria-label={t("关闭搜索")} onClick={() => { setSearchOpen(false); setQuery(""); }}><X /></button>
       </div>
       <div className={styles.recentList}>
         {filteredRecents.map((item) => (
@@ -359,42 +375,47 @@ export function WorkspaceShell({
             <span className={styles.sidebarCopy}>{item.title}</span>
           </Link>
         ))}
-        {!filteredRecents.length ? <p className={styles.sidebarCopy}>{query ? "没有匹配的对话" : "还没有对话记录"}</p> : null}
+        {!filteredRecents.length ? <p className={styles.sidebarCopy}>{query ? t("没有匹配的对话") : t("还没有对话记录")}</p> : null}
       </div>
     </section>
 
-    <div className={styles.accountArea}>
-      {currentUser.status === "signed-in" ? <><button
+    <div className={styles.accountArea} onKeyDown={(event) => { if (event.key === "Escape") setAccountOpen(false); }}>
+      <button
         className={styles.accountButton}
         type="button"
+        aria-label={currentUser.status === "signed-in" ? t("设置与账户") : t("设置")}
         aria-expanded={accountOpen}
+        aria-controls="workspace-account-options"
         onClick={() => setAccountOpen((open) => !open)}
       >
-        <span className={styles.accountAvatar}><UserRound /></span>
-        <span className={styles.sidebarCopy}><strong>{currentUser.user.subject}</strong><small>{accountIssuerLabel(currentUser.user.issuer)}</small></span>
+        <span className={styles.accountAvatar}>{currentUser.status === "signed-in" ? <UserRound /> : <Settings />}</span>
+        <span className={styles.sidebarCopy}><strong>{currentUser.status === "signed-in" ? currentUser.user.subject : t("设置")}</strong><small>{currentUser.status === "signed-in" ? accountIssuerLabel(currentUser.user.issuer) : t("本地偏好，无需登录")}</small></span>
         <ChevronDown className={styles.sidebarCopy} />
       </button>
-      {accountOpen ? <div className={styles.accountMenu}>
-        <Link href="/settings/profile"><UserRound />个人资料</Link>
-        <Link href="/settings"><Settings />设置</Link>
-        <Link href="/settings/providers"><SlidersHorizontal />供应商</Link>
-        <button type="button" disabled={loggingOut} onClick={() => void logout()}><LogOut />{loggingOut ? "正在退出…" : "退出登录"}</button>
-        {accountError ? <p className={styles.accountError} role="alert">{accountError}</p> : null}
-      </div> : null}</> : <Link className={styles.accountButton} href={accountLoginHref(pathname || "/")}>
-        <span className={styles.accountAvatar}><LogIn /></span>
-        <span className={styles.sidebarCopy}><strong>登录</strong><small>{currentUser.status === "loading" ? "正在检查账户" : currentUser.status === "unavailable" ? "账户服务暂不可用" : "同步个人配置"}</small></span>
-      </Link>}
+      {accountOpen ? <div className={styles.accountMenu} id="workspace-account-options" aria-label={t("设置与账户")}>
+        <div className={styles.accountLanguage}><LanguageSelect /></div>
+        <Link href="/settings/appearance"><Palette />{t("外观")}</Link>
+        <div className={styles.accountDivider} />
+        {currentUser.status === "signed-in" ? <>
+          <Link href="/settings"><Settings />{t("设置")}</Link>
+          <button type="button" disabled={loggingOut} onClick={() => void logout()}><LogOut />{loggingOut ? t("正在退出…") : t("退出登录")}</button>
+          {accountError ? <p className={styles.accountError} role="alert">{t(accountError)}</p> : null}
+        </> : <>
+          <Link href={accountLoginHref(pathname || "/")}><LogIn />{t("登录账户")}</Link>
+          <p className={styles.accountNote}>{currentUser.status === "loading" ? t("正在检查账户") : currentUser.status === "unavailable" ? t("账户服务暂不可用") : t("管理个人角色、素材和 API Key")}</p>
+        </>}
+      </div> : null}
     </div>
     {sidebarResizeHandle}
   </aside>;
 
   return <div className={styles.shell} style={{ "--sidebar-width": `${sidebarWidth}px`, "--workspace-navigation-offset": sidebarOpen ? `${sidebarWidth + 24}px` : "0px", "--workspace-sidebar-width": sidebarPinned ? `${sidebarWidth + 24}px` : "0px" } as CSSProperties} data-settings={settingsMode} data-resources={resourceMode} data-session={session} data-floating-sidebar="true" data-sidebar-open={sidebarOpen} data-sidebar-pinned={sidebarPinned} data-sidebar-mode={sidebarMode} data-sidebar-ready={sidebarReady}>
-    <button className={styles.mobileMenu} type="button" aria-label="打开导航" onClick={() => setMobileOpen(true)}><Menu /></button>
+    <button className={styles.mobileMenu} type="button" aria-label={t("打开导航")} onClick={() => setMobileOpen(true)}><Menu /></button>
     <button
       ref={sidebarToggleRef}
       className={styles.sidebarToggle}
       type="button"
-      aria-label={sidebarPinned ? "折叠侧边栏" : "固定展开侧边栏"}
+      aria-label={sidebarPinned ? t("折叠侧边栏") : t("固定展开侧边栏")}
       aria-expanded={sidebarOpen}
       aria-controls="workspace-navigation"
       data-open={sidebarOpen}
@@ -410,8 +431,9 @@ export function WorkspaceShell({
       onPointerEnter={queueSidebarPreview}
       onPointerLeave={scheduleSidebarPreviewClose}
     ><span className={styles.sidebarHoverRailLine} /></div>
+    {homeMode && <div className={styles.languageActions}><a href="https://github.com/happy-token/OpenRealtime" target="_blank" rel="noopener noreferrer" aria-label="GitHub" title={t("在 GitHub 为 OpenRealtime 点 Star")}><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.1c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.69.08-.69 1.13.08 1.73 1.16 1.73 1.16 1 .72 2.54.52 3.18.4.1-.73.39-1.22.71-1.5-2.5-.29-5.13-1.25-5.13-5.57 0-1.23.44-2.23 1.16-3.01-.12-.28-.5-1.43.11-2.98 0 0 .94-.3 3.1 1.15a10.7 10.7 0 0 1 5.64 0c2.15-1.45 3.09-1.15 3.09-1.15.62 1.55.23 2.7.12 2.98.72.78 1.15 1.78 1.15 3.01 0 4.34-2.64 5.28-5.15 5.56.4.35.76 1.04.76 2.1v3.61c0 .3.2.65.78.54A11.25 11.25 0 0 0 12 .75Z" /></svg><span aria-label="GitHub Stars">★ {formatGithubStars(githubStars)}</span></a><LanguageSelect compact /></div>}
     {sidebar}
-    {mobileOpen ? <button className={styles.mobileBackdrop} type="button" aria-label="关闭导航" onClick={() => setMobileOpen(false)} /> : null}
+    {mobileOpen ? <button className={styles.mobileBackdrop} type="button" aria-label={t("关闭导航")} onClick={() => setMobileOpen(false)} /> : null}
     <main className={styles.content} data-home-background={!session}>
       {session || immersive ? children : <div className={styles.pageGlass} data-page-glass="true">{children}</div>}
     </main>
@@ -419,8 +441,9 @@ export function WorkspaceShell({
 }
 
 function NavLink({ href, active, icon, label, onClick }: { href: string; active: boolean; icon: ReactNode; label: string; onClick?: () => void }) {
+  const { t } = useLanguage();
   return <Link className={styles.navRow} data-active={active} aria-current={active ? "page" : undefined} href={href} onClick={onClick}>
-    {icon}<span className={styles.sidebarCopy}>{label}</span>
+    {icon}<span className={styles.sidebarCopy}>{t(label)}</span>
   </Link>;
 }
 

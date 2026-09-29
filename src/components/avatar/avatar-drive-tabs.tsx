@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import styles from "./avatar-studio.module.css";
 
@@ -11,8 +13,9 @@ export function AvatarDriveTabs({ value, onChange, disabled = false, tasks }: {
   disabled?: boolean;
   tasks?: readonly AvatarCreationTask[];
 }) {
-  return <div className={styles.driveTabs} role="group" aria-label="数字人驱动方式">
+  const { t } = useLanguage();
+  return <div className={styles.driveTabs} role="group" aria-label={t("数字人驱动方式")}>
     {DRIVE_OPTIONS.filter(([id]) => !tasks || tasks.includes(id)).map(([id, label]) =>
-      <button key={id} type="button" aria-pressed={value === id} disabled={disabled} onClick={() => onChange(id)}>{label}</button>)}
+      <button key={id} type="button" aria-pressed={value === id} disabled={disabled} onClick={() => onChange(id)}>{t(label)}</button>)}
   </div>;
 }

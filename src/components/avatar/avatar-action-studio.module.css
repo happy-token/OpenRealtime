@@ -377,3 +377,12 @@
 
 .studio[data-motion-creation="focused"] .parameterSelect .actionSelectTrigger { min-height: 28px; padding-block: 3px; }
 .studio[data-motion-creation="focused"] .uploadMotion > button:first-child { min-height: 28px; padding-block: 3px; }
+
+.promptHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.promptLanguageControl { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: .6rem; font-weight: 500; }
+.promptLanguageControl select, .promptModal select { border: 1px solid var(--action-glass-border); border-radius: 7px; padding: 3px 6px; color: var(--text); background: var(--control-surface); font: inherit; cursor: pointer; }
+.studio[data-motion-creation="focused"] .advancedOptionsContent:has(.actionSelect[data-open="true"]) { overflow: visible; }
+
+.promptLanguageControl :global(.select-menu) { width: 116px; flex: 0 0 116px; }
+.promptLanguageControl :global(.select-menu-trigger) { min-height: 25px; padding-block: 3px; font-size: .6rem; }
+.studio[data-motion-creation="focused"] .promptLanguageControl { position: relative; z-index: 9; margin-right: 28px; }

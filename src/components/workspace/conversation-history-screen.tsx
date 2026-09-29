@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 import { SelectMenu } from "@/components/ui/select-menu";
 
 import Link from "next/link";
@@ -13,6 +15,7 @@ import styles from "./conversation-history-screen.module.css";
 type Summary = Omit<ConversationHistoryItem, "owner_id" | "entries"> & { entry_count: number };
 
 export function ConversationHistoryScreen() {
+  const { t } = useLanguage();
   const params = useSearchParams();
   const [items, setItems] = useState<Summary[]>([]);
   const [error, setError] = useState("");
@@ -55,18 +58,18 @@ export function ConversationHistoryScreen() {
   }
 
   return <div className={styles.page}>
-    <header><h1>对话记录</h1><p>按角色、方式和时间查找对话；删除后无法恢复。</p></header>
+    <header><h1>{t("对话记录")}</h1><p>{t("按角色、方式和时间查找对话；删除后无法恢复。")}</p></header>
     <div className={styles.filters}>
-      <label><Search /><input aria-label="搜索对话记录" placeholder="搜索对话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-      <SelectMenu fullWidth value={String(role)} ariaLabel="按角色筛选" options={[{ value: "", label: "全部角色" }, ...(roles.map(([id, name]) => ({ value: String(id ?? ""), label: String(name) })))]} onChange={value => setRole(value)} />
-      <SelectMenu fullWidth value={String(mode)} ariaLabel="按呈现方式筛选" options={[{ value: "", label: "全部方式" }, ...([...new Set(items.map((item) => item.mode))].map((item) => ({ value: String(item), label: String(isRolePresentationMode(item) ? ROLE_MODE_LABELS[item] : item) })))]} onChange={value => setMode(value)} />
-      <SelectMenu fullWidth value={String(period)} ariaLabel="按时间筛选" options={[{ value: "all", label: "全部时间" }, { value: "7d", label: "最近 7 天" }, { value: "30d", label: "最近 30 天" }]} onChange={value => setPeriod(value)} />
+      <label><Search /><input aria-label={t("搜索对话记录")} placeholder={t("搜索对话")} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+      <SelectMenu fullWidth value={String(role)} ariaLabel={t("按角色筛选")} options={[{ value: "", label: t("全部角色") }, ...(roles.map(([id, name]) => ({ value: String(id ?? ""), label: String(name) })))]} onChange={value => setRole(value)} />
+      <SelectMenu fullWidth value={String(mode)} ariaLabel={t("按呈现方式筛选")} options={[{ value: "", label: t("全部方式") }, ...([...new Set(items.map((item) => item.mode))].map((item) => ({ value: String(item), label: t(String(isRolePresentationMode(item) ? ROLE_MODE_LABELS[item] : item)) })))]} onChange={value => setMode(value)} />
+      <SelectMenu fullWidth value={String(period)} ariaLabel={t("按时间筛选")} options={[{ value: "all", label: t("全部时间") }, { value: "7d", label: t("最近 7 天") }, { value: "30d", label: t("最近 30 天") }]} onChange={value => setPeriod(value)} />
     </div>
-    {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-    {loading ? <p className={styles.empty}>正在读取对话记录…</p> : filtered.length ? <div className={styles.list}>{filtered.map((item) => <article key={item.id}>
-      <Link href={`/conversations/${encodeURIComponent(item.id)}`}><strong>{item.title}</strong><small>{item.role_name} · {isRolePresentationMode(item.mode) ? ROLE_MODE_LABELS[item.mode] : item.mode} · {new Date(item.updated_at).toLocaleString("zh-CN")} · {item.entry_count} 条消息</small></Link>
-      <button type="button" aria-label={`删除对话 ${item.title}`} onClick={() => setDeleting(item.id)}><Trash2 /></button>
-    </article>)}</div> : <p className={styles.empty}>没有匹配的对话记录</p>}
-    {deleting ? <div className={styles.backdrop}><div role="alertdialog" aria-modal="true" aria-label="确认删除对话"><h2>删除这段对话？</h2><p>删除后无法恢复。</p><div><button type="button" onClick={() => setDeleting(null)}>取消</button><button type="button" onClick={() => void remove(deleting)}>确认删除</button></div></div></div> : null}
+    {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
+    {loading ? <p className={styles.empty}>{t("正在读取对话记录…")}</p> : filtered.length ? <div className={styles.list}>{filtered.map((item) => <article key={item.id}>
+      <Link href={`/conversations/${encodeURIComponent(item.id)}`}><strong>{item.title}</strong><small>{item.role_name} · {isRolePresentationMode(item.mode) ? ROLE_MODE_LABELS[item.mode] : item.mode} · {new Date(item.updated_at).toLocaleString("zh-CN")} · {item.entry_count}{t(" 条消息")}</small></Link>
+      <button type="button" aria-label={t("删除对话 ") + (item.title) + ""} onClick={() => setDeleting(item.id)}><Trash2 /></button>
+    </article>)}</div> : <p className={styles.empty}>{t("没有匹配的对话记录")}</p>}
+    {deleting ? <div className={styles.backdrop}><div role="alertdialog" aria-modal="true" aria-label={t("确认删除对话")}><h2>{t("删除这段对话？")}</h2><p>{t("删除后无法恢复。")}</p><div><button type="button" onClick={() => setDeleting(null)}>{t("取消")}</button><button type="button" onClick={() => void remove(deleting)}>{t("确认删除")}</button></div></div></div> : null}
   </div>;
 }

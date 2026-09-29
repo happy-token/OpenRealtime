@@ -32,7 +32,7 @@ describe("PersonaLibraryScreen", () => {
 
   it("keeps renaming in the editor and hides the technical Persona ID from creation", () => {
     const source = readFileSync(new URL("./persona-library-screen.tsx", import.meta.url), "utf8");
-    expect(source).toContain('aria-label={`${persona.personaName}的人设名称`}');
+    expect(source).toContain("aria-label={\"\" + (persona.personaName) + t(\"的人设名称\")}");
     expect(source).not.toContain('aria-label="Persona ID"');
     expect(source).not.toContain('>更名</button>');
     expect(source).not.toContain("createId");
@@ -40,8 +40,8 @@ describe("PersonaLibraryScreen", () => {
 
   it("gives icon-only edit and create-panel close actions accessible names", () => {
     const source = readFileSync(new URL("./persona-library-screen.tsx", import.meta.url), "utf8");
-    expect(source).toContain('aria-label={`编辑人设${persona.personaName}`}');
-    expect(source).toContain('aria-label="关闭创建人设"');
+    expect(source).toContain("aria-label={t(\"编辑人设\") + (persona.personaName) + \"\"}");
+    expect(source).toContain("aria-label={t(\"关闭创建人设\")}");
     expect(source).not.toContain('<Pencil />编辑</button>');
     expect(source).not.toContain('>关闭</button>');
   });

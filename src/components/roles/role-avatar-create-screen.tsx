@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -9,6 +11,7 @@ import { readJsonResponse } from "@/lib/http-json-response";
 import styles from "./role-avatar-create-screen.module.css";
 
 export function RoleAvatarCreateScreen({ roleId }: { roleId: string }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [name, setName] = useState("");
   const [image, setImage] = useState<File | null>(null);
@@ -34,18 +37,18 @@ export function RoleAvatarCreateScreen({ roleId }: { roleId: string }) {
   }
 
   return <main className={styles.page}>
-    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回当前角色" />
+    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label={t("返回当前角色")} />
     <section className={styles.card}>
-      <span>数字人形象</span>
-      <h1>上传角色形象</h1>
-      <p>上传后会返回角色配置，并选中新形象。动作和口型对齐可以稍后添加。</p>
+      <span>{t("数字人形象")}</span>
+      <h1>{t("上传角色形象")}</h1>
+      <p>{t("上传后会返回角色配置，并选中新形象。动作和口型对齐可以稍后添加。")}</p>
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-        <label htmlFor="avatar-name">形象名称</label>
-        <input id="avatar-name" value={name} maxLength={50} onChange={(event) => setName(event.target.value)} placeholder="例如：产品顾问形象" />
-        <label htmlFor="avatar-image">形象图片</label>
+        <label htmlFor="avatar-name">{t("形象名称")}</label>
+        <input id="avatar-name" value={name} maxLength={50} onChange={(event) => setName(event.target.value)} placeholder={t("例如：产品顾问形象")} />
+        <label htmlFor="avatar-image">{t("形象图片")}</label>
         <input id="avatar-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setImage(event.target.files?.[0] ?? null)} />
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        <button type="submit" disabled={busy || !name.trim() || !image}>{busy ? <LoaderCircle /> : <Upload />}{busy ? "正在上传…" : "创建形象"}</button>
+        {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
+        <button type="submit" disabled={busy || !name.trim() || !image}>{busy ? <LoaderCircle /> : <Upload />}{busy ? t("正在上传…") : t("创建形象")}</button>
       </form>
     </section>
   </main>;

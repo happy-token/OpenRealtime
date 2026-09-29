@@ -6,14 +6,16 @@ import { shouldShowRouteLoading, NAVIGATION_START_EVENT } from "./navigation-eve
 import { RouteLoading } from "./route-loading";
 
 const NAVIGATION_TIMEOUT_MS = 10_000;
+const NAVIGATION_FEEDBACK_DELAY_MS = 180;
 
 export function NavigationFeedback() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const locationKey = `${pathname}?${searchParams.toString()}`;
   const [pending, setPending] = useState(false);
+  const [visible, setVisible] = useState(false);
 
-  useEffect(() => setPending(false), [locationKey]);
+  useEffect(() => { setPending(false); setVisible(false); }, [locationKey]);
 
   useEffect(() => {
     const beginNavigation = () => setPending(true);
@@ -37,9 +39,10 @@ export function NavigationFeedback() {
 
   useEffect(() => {
     if (!pending) return;
-    const timeout = window.setTimeout(() => setPending(false), NAVIGATION_TIMEOUT_MS);
-    return () => window.clearTimeout(timeout);
+    const delay = window.setTimeout(() => setVisible(true), NAVIGATION_FEEDBACK_DELAY_MS);
+    const timeout = window.setTimeout(() => { setPending(false); setVisible(false); }, NAVIGATION_TIMEOUT_MS);
+    return () => { window.clearTimeout(delay); window.clearTimeout(timeout); };
   }, [pending]);
 
-  return pending ? <RouteLoading /> : null;
+  return pending && visible ? <RouteLoading /> : null;
 }

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import {
   useState,
@@ -85,6 +87,7 @@ export default function Folder({
   onFrontBlur,
   onItemSelect,
 }: FolderProps) {
+  const { t } = useLanguage();
   const [internalOpen, setInternalOpen] = useState(false);
   const [paperOffsets, setPaperOffsets] = useState<Record<number, { x: number; y: number }>>({});
   const open = controlledOpen ?? internalOpen;
@@ -129,7 +132,7 @@ export default function Folder({
             key={itemAriaLabels[index] ?? index}
             type="button"
             data-selected={selectedItemIndex === index}
-            aria-label={itemAriaLabels[index] ?? `选择素材 ${index + 1}`}
+            aria-label={itemAriaLabels[index] ?? t("选择素材 ") + (index + 1) + ""}
             aria-pressed={selectedItemIndex === index}
             aria-hidden={!open}
             tabIndex={open ? 0 : -1}

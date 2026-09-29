@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { KeyRound, LoaderCircle, LockKeyhole, Trash2 } from "lucide-react";
@@ -21,6 +23,7 @@ const PROVIDERS: { id: PersonalKeyProvider; label: string; purpose: string }[] =
 ];
 
 export function UserKeySettings() {
+  const { t } = useLanguage();
   const [statuses, setStatuses] = useState<KeyStatus[]>([]);
   const [active, setActive] = useState<PersonalKeyProvider | null>(null);
   const [value, setValue] = useState("");
@@ -92,50 +95,50 @@ export function UserKeySettings() {
     <div className={styles.shell}>
       <div className={styles.heading}>
         <span className={styles.headingIcon}><KeyRound size={23} /></span>
-        <div><p className={styles.eyebrow}>账户设置</p><h1>API Key</h1></div>
+        <div><p className={styles.eyebrow}>{t("账户设置")}</p><h1>API Key</h1></div>
       </div>
-      <p className={styles.intro}>你保存的 Key 仅用于你本人发起的请求，不会提供给其他访客。保存后只显示末尾几位，可随时更换或清空。</p>
-      <p className={styles.notice}>未填写个人 Key 的实时服务会使用网站提供的 Key。平台语音识别和语音合成有并发及单次体验时长限制。动作服务页支持使用个人 MiniMax Key 生成视频；其他付费创作逐项验收后开放。个人 Key 无效或额度不足时会提示你处理，不会自动改用平台 Key。</p>
-      {error && <p className={styles.error} role="alert">{error}</p>}
+      <p className={styles.intro}>{t("你保存的 Key 仅用于你本人发起的请求，不会提供给其他访客。保存后只显示末尾几位，可随时更换或清空。")}</p>
+      <p className={styles.notice}>{t("未填写个人 Key 的实时服务会使用网站提供的 Key。平台语音识别和语音合成有并发及单次体验时长限制。动作服务页支持使用个人 MiniMax Key 生成视频；其他付费创作逐项验收后开放。个人 Key 无效或额度不足时会提示你处理，不会自动改用平台 Key。")}</p>
+      {error && <p className={styles.error} role="alert">{t(error)}</p>}
       {message && <p className={styles.success} role="status">{message}</p>}
-      <section className={styles.list} aria-label="服务商 API Key">
-        {loading ? <p className={styles.loading}><LoaderCircle size={18} className={styles.spin} /> 正在读取配置</p>
+      <section className={styles.list} aria-label={t("服务商 API Key")}>
+        {loading ? <p className={styles.loading}><LoaderCircle size={18} className={styles.spin} /> {t(" 正在读取配置")}</p>
           : PROVIDERS.map(({ id, label, purpose }) => {
             const status = statuses.find((item) => item.provider === id);
             return <article key={id} className={styles.card}>
               <div className={styles.cardHead}>
-                <div><h2>{label}</h2><p>{purpose}</p></div>
+                <div><h2>{t(label)}</h2><p>{purpose}</p></div>
                 <span className={status?.configured ? styles.personalBadge : styles.platformBadge}>
-                  {status?.configured ? "我的 Key" : id !== "minimax" && status?.platformConfigured ? "平台 Key" : "未配置"}
+                  {status?.configured ? t("我的 Key") : id !== "minimax" && status?.platformConfigured ? t("平台 Key") : t("未配置")}
                 </span>
               </div>
               <p className={styles.status}>{status?.configured
-                ? <>已保存 ····{status.suffix}</>
-                : id === "minimax" ? "保存个人 Key 后可在动作服务页生成视频"
-                  : status?.platformConfigured ? "已配置平台 Key；实时会话未设置个人 Key 时使用" : "当前没有可用的 Key"}</p>
+                ? <>{t("已保存 ····")}{status.suffix}</>
+                : id === "minimax" ? t("保存个人 Key 后可在动作服务页生成视频")
+                  : status?.platformConfigured ? t("已配置平台 Key；实时会话未设置个人 Key 时使用") : t("当前没有可用的 Key")}</p>
               {active === id ? <form className={styles.form} onSubmit={(event) => void save(event)}>
-                <label htmlFor={`key-${id}`}>填写 {label} API Key</label>
+                <label htmlFor={`key-${id}`}>{t("填写 ")}{t(label)} API Key</label>
                 <input id={`key-${id}`} type="password" autoComplete="off" value={value}
-                  onChange={(event) => setValue(event.target.value)} placeholder="粘贴你的 API Key" autoFocus />
+                  onChange={(event) => setValue(event.target.value)} placeholder={t("粘贴你的 API Key")} autoFocus />
                 <div className={styles.actions}>
-                  <button type="submit" disabled={saving || !value.trim()}>{saving ? "正在保存" : "保存 Key"}</button>
+                  <button type="submit" disabled={saving || !value.trim()}>{saving ? t("正在保存") : t("保存 Key")}</button>
                   <button type="button" className={styles.secondary} disabled={saving}
-                    onClick={() => { setActive(null); setValue(""); }}>取消</button>
+                    onClick={() => { setActive(null); setValue(""); }}>{t("取消")}</button>
                 </div>
               </form> : <div className={styles.actions}>
                 <button type="button" disabled={saving} onClick={() => { setActive(id); setValue(""); }}>
-                  {status?.configured ? "更换 Key" : "填写我的 Key"}
+                  {status?.configured ? t("更换 Key") : t("填写我的 Key")}
                 </button>
                 {status?.configured && <button type="button" className={styles.remove} disabled={saving}
-                  onClick={() => void remove(id)}><Trash2 size={15} /> 清空</button>}
+                  onClick={() => void remove(id)}><Trash2 size={15} /> {t(" 清空")}</button>}
               </div>}
             </article>;
           })}
       </section>
-      <p className={styles.footnote}><LockKeyhole size={15} /> Key 在服务端加密保存。完整内容不会再次显示，也不会写入浏览器本地存储。</p>
+      <p className={styles.footnote}><LockKeyhole size={15} /> {t(" Key 在服务端加密保存。完整内容不会再次显示，也不会写入浏览器本地存储。")}</p>
       <button className={styles.logout} type="button" onClick={() => void fetch("/api/user/logout", { method: "POST" })
         .then((response) => { if (!response.ok) throw new Error("退出登录失败"); window.location.href = "/"; })
-        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "退出登录失败"))}>退出登录</button>
+        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "退出登录失败"))}>{t("退出登录")}</button>
     </div>
   </div>;
 }

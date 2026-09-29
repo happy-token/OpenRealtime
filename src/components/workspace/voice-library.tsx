@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useState } from "react";
 import {
@@ -17,6 +19,7 @@ const DEFAULT_SELECTION: VoiceSelection = {
 };
 
 export function VoiceLibrary() {
+  const { t } = useLanguage();
   const [selection, setSelection] = useState<VoiceSelection>(DEFAULT_SELECTION);
 
   useEffect(() => {
@@ -40,7 +43,7 @@ export function VoiceLibrary() {
 
   return <div className={styles.libraryView}>
     <div className={styles.libraryHeading}>
-      <div><h2>声音</h2><p>选择对话默认声音；供应商、克隆、官方音色和方言与角色配置共用同一套能力。</p></div>
+      <div><h2>{t("声音")}</h2><p>{t("选择对话默认声音；供应商、克隆、官方音色和方言与角色配置共用同一套能力。")}</p></div>
     </div>
     <div className={styles.sharedVoiceSelector}>
       <VoiceSelector value={selection} onChange={choose} allowClone allowManagement currentLabel="当前对话默认声音" />

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useRef, useState, useSyncExternalStore, type SyntheticEvent } from "react";
 import Link from "next/link";
@@ -55,6 +57,7 @@ export function buildTalkingMaterialCatalog(catalog: AvatarAsset[], owned: Owned
 }
 
 export function MotionOrchestrationConfig({ config, onChange, catalog, active = true }: { config: AvatarDisplayConfig; onChange: (value: AvatarDisplayConfig) => void; catalog: AvatarAsset[]; active?: boolean }) {
+  const { t } = useLanguage();
   const [avatars, setAvatars] = useState<OwnedAvatarRecord[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -66,26 +69,27 @@ export function MotionOrchestrationConfig({ config, onChange, catalog, active = 
     return () => controller.abort();
   }, [active, catalog]);
   const materials = buildTalkingMaterialCatalog(catalog, avatars);
-  return <section aria-label="动作编排配置" className={styles.motionOrchestrationConfig}>
+  return <section aria-label={t("动作编排配置")} className={styles.motionOrchestrationConfig}>
     <div className={styles.segmentedAvatarAssets}>
       <div className={styles.segmentedAvatarAssetsHeader}>
-        <span><strong>口型对齐</strong></span>
-        {!config.segmentedAvatarId.startsWith("avatar-personal-") ? <Link href={`/avatars/create?task=lightweight${config.segmentedAvatarId ? `&avatar_id=${encodeURIComponent(config.segmentedAvatarId)}` : ""}`}>生成口型对齐</Link> : null}
+        <span><strong>{t("口型对齐")}</strong></span>
+        {!config.segmentedAvatarId.startsWith("avatar-personal-") ? <Link href={`/avatars/create?task=lightweight${config.segmentedAvatarId ? `&avatar_id=${encodeURIComponent(config.segmentedAvatarId)}` : ""}`}>{t("生成口型对齐")}</Link> : null}
       </div>
-      <SegmentedAvatarAssetPicker actionsOnly avatars={materials} selectedAvatarId={config.segmentedAvatarId} selectedActionId={config.motionTalkingVariantId ?? ""} disabled={false} active={active} showCollapsedSummary={false} ariaLabel="动作编排口型对齐" onSelect={(next, material) => {
+      <SegmentedAvatarAssetPicker actionsOnly avatars={materials} selectedAvatarId={config.segmentedAvatarId} selectedActionId={config.motionTalkingVariantId ?? ""} disabled={false} active={active} showCollapsedSummary={false} ariaLabel={t("动作编排口型对齐")} onSelect={(next, material) => {
         const avatar = avatars.find(a => a.avatar_id === next.avatarId && !a.deleted_at);
         const base = avatar?.actions.find(a => !a.deleted_at && a.video_url && a.talking_variants?.some(v => v.id === material?.avatarActionId && !v.deleted_at && v.source_video_url === a.video_url));
         if (!base || !material) return;
         onChange({ ...config, segmentedAvatarId: next.avatarId, segmentedDisplayName: next.displayName, segmentedAvatarActionId: base.avatar_action_id, motionTalkingVariantId: material.avatarActionId });
       }} />
-      <p>选择口型对齐即可，待机时自动播放对应的原动作。</p>
+      <p>{t("选择口型对齐即可，待机时自动播放对应的原动作。")}</p>
     </div>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{t(error)}</p>}
   </section>;
 
 }
 
 export function MotionOrchestrationStage({ config, onReady, caption, statusLabel, onAmbientColorChange }: { config: AvatarDisplayConfig; onReady?: () => void; caption?: string; statusLabel?: string; onAmbientColorChange?: (color: string | null) => void }) {
+  const { t } = useLanguage();
   const audioActive = useSyncExternalStore(subscribePlaybackActivity, getPlaybackActive, getServerPlaybackActive);
   const [degraded, setDegraded] = useState(false);
   const showingTalking = shouldShowTalkingMotion(audioActive, degraded);
@@ -173,29 +177,28 @@ export function MotionOrchestrationStage({ config, onReady, caption, statusLabel
   }
 
   return <div className="digital-human-call-stage" data-render-path="orchestrated" data-renderer-state={degraded ? "degraded" : error ? "error" : loaded === 3 ? "ready" : "connecting"}>
-    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className={`digital-human-live-video${isTalking ? "" : " digital-human-motion-base-video"}`} src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? "编排讲话画面" : "编排待机画面"} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
+    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className={`digital-human-live-video${isTalking ? "" : " digital-human-motion-base-video"}`} src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? t("编排讲话画面") : t("编排待机画面")} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
     {!degraded && !error && loaded !== 3 ? <div className="avatar-startup-dialog" role="status" aria-live="polite">
       <LoaderCircle aria-hidden="true" />
       <div>
-        <strong>正在准备数字人</strong>
-        <span>正在加载待机与讲话动作…</span>
-        {showStartupFallback ? <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button> : null}
+        <strong>{t("正在准备数字人")}</strong>
+        <span>{t("正在加载待机与讲话动作…")}</span>
+        {showStartupFallback ? <button type="button" onClick={continueWithCurrentVisual}>{t("使用当前画面继续")}</button> : null}
       </div>
     </div> : null}
     <div className="digital-human-call-copy">
       <span className="digital-human-state" role="status" aria-live="polite" aria-atomic="true">{statusLabel}</span>
       {caption && <p aria-live="polite">{caption}</p>}
       {error ? <div className="digital-human-recovery" role="alert">
-        <span>{error}</span>
+        <span>{t(error)}</span>
         <div className="digital-human-recovery-actions">
           <button type="button" onClick={retryMotion}>
-            <RotateCcw aria-hidden="true" />重试素材
-          </button>
-          <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button>
+            <RotateCcw aria-hidden="true" />{t("重试素材")}</button>
+          <button type="button" onClick={continueWithCurrentVisual}>{t("使用当前画面继续")}</button>
         </div>
       </div> : degraded ? <div className="digital-human-recovery" role="status">
-        <span>实时口型暂时不可用，已使用当前画面继续对话</span>
-        <button type="button" onClick={retryMotion}><RotateCcw aria-hidden="true" />重试口型</button>
+        <span>{t("实时口型暂时不可用，已使用当前画面继续对话")}</span>
+        <button type="button" onClick={retryMotion}><RotateCcw aria-hidden="true" />{t("重试口型")}</button>
       </div> : null}
     </div>
   </div>;

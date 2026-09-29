@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -10,6 +12,7 @@ import styles from "./role-avatar-create-screen.module.css";
 type Job = { id: string; state: "queued" | "processing" | "ready_for_review" | "success" | "failed"; error?: string; variant?: { video_url: string } };
 
 export function RoleTalkingCreateScreen({ roleId, avatarId, actionId }: { roleId: string; avatarId: string; actionId: string }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [audio, setAudio] = useState<File | null>(null);
   const [job, setJob] = useState<Job | null>(null);
@@ -67,20 +70,20 @@ export function RoleTalkingCreateScreen({ roleId, avatarId, actionId }: { roleId
   }
 
   return <main className={styles.page}>
-    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回当前角色" />
+    <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label={t("返回当前角色")} />
     <section className={styles.card}>
-      <span>离线数字人</span>
-      <h1>创建口型对齐</h1>
-      <p>Lip Forcing 会根据当前动作底片生成口型。默认使用角色声音作为参考，也可以上传自己的参考音频。</p>
-      {!avatarId || !actionId ? <p className={styles.error} role="alert">缺少数字人或动作底片。</p> : <>
+      <span>{t("离线数字人")}</span>
+      <h1>{t("创建口型对齐")}</h1>
+      <p>{t("Lip Forcing 会根据当前动作底片生成口型。默认使用角色声音作为参考，也可以上传自己的参考音频。")}</p>
+      {!avatarId || !actionId ? <p className={styles.error} role="alert">{t("缺少数字人或动作底片。")}</p> : <>
         <form onSubmit={(event) => { event.preventDefault(); void generate(); }}>
-          <label htmlFor="reference-audio">参考音频（可选）</label>
+          <label htmlFor="reference-audio">{t("参考音频（可选）")}</label>
           <input id="reference-audio" type="file" accept="audio/wav,audio/mpeg,audio/mp4,audio/x-m4a" onChange={(event) => setAudio(event.target.files?.[0] ?? null)} />
           {error || job?.error ? <p className={styles.error} role="alert">{error || job?.error}</p> : null}
-          {job?.state === "queued" || job?.state === "processing" ? <p role="status">正在生成，完成后可预览。</p> : null}
-          {job?.state !== "ready_for_review" && job?.state !== "success" ? <button type="submit" disabled={busy || job?.state === "queued" || job?.state === "processing" || Boolean(job?.error)}>{busy ? <LoaderCircle /> : <Upload />}{busy ? "正在提交…" : "生成口型对齐"}</button> : null}
+          {job?.state === "queued" || job?.state === "processing" ? <p role="status">{t("正在生成，完成后可预览。")}</p> : null}
+          {job?.state !== "ready_for_review" && job?.state !== "success" ? <button type="submit" disabled={busy || job?.state === "queued" || job?.state === "processing" || Boolean(job?.error)}>{busy ? <LoaderCircle /> : <Upload />}{busy ? t("正在提交…") : t("生成口型对齐")}</button> : null}
         </form>
-        {job?.variant?.video_url && (job.state === "ready_for_review" || job.state === "success") ? <div className={styles.review}><video src={job.variant.video_url} controls playsInline /><p>请先预览效果，再保存到当前形象。</p>{job.state === "ready_for_review" ? <button type="button" onClick={() => void accept()} disabled={busy}><Check />保存并返回角色</button> : <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label="返回角色" />}</div> : null}
+        {job?.variant?.video_url && (job.state === "ready_for_review" || job.state === "success") ? <div className={styles.review}><video src={job.variant.video_url} controls playsInline /><p>{t("请先预览效果，再保存到当前形象。")}</p>{job.state === "ready_for_review" ? <button type="button" onClick={() => void accept()} disabled={busy}><Check />{t("保存并返回角色")}</button> : <BackLink href={`/roles/${encodeURIComponent(roleId)}`} label={t("返回角色")} />}</div> : null}
       </>}
     </section>
   </main>;

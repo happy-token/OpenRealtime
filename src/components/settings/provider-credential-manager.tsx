@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Link from "next/link";
 import { Check, ChevronDown, LoaderCircle, PlugZap, Trash2 } from "lucide-react";
@@ -29,6 +31,7 @@ const GROUPS: { title: string; description: string; items: ProviderItem[] }[] = 
 ];
 
 export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "other" }) {
+  const { t } = useLanguage();
   const [statuses, setStatuses] = useState<KeyStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -130,29 +133,28 @@ export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "ot
           <span className={styles.providerMark}>{item.name.slice(0, 1)}</span>
           <div><h3>{item.name}</h3><p>{item.detail}</p></div>
         </div>
-        <span className={styles.state} data-configured={Boolean(status?.configured)}>{state}</span>
+        <span className={styles.state} data-configured={Boolean(status?.configured)}>{t(state)}</span>
         <ChevronDown className={styles.disclosureIcon} aria-hidden="true" />
       </summary>
       <div className={styles.cardBody}>
       {!signedOut && !loading && !loadFailed && <>
-        <div className={styles.credentialLine}>{status?.configured ? `个人 Key ····${status.suffix ?? ""}` : status?.platformConfigured ? "当前使用平台提供的 Key" : "尚未添加个人 Key"}</div>
+        <div className={styles.credentialLine}>{status?.configured ? t("个人 Key ····") + (status.suffix ?? "") + "" : status?.platformConfigured ? t("当前使用平台提供的 Key") : t("尚未添加个人 Key")}</div>
         {isEditing ? <form className={styles.form} onSubmit={(event) => void save(event, item)}>
           <label htmlFor={`provider-key-${item.id}-${item.name}`}>{item.name} API Key</label>
           <input id={`provider-key-${item.id}-${item.name}`} type="password" autoComplete="off" value={draft}
-            onChange={(event) => setDraft(event.target.value)} placeholder="粘贴 API Key" />
+            onChange={(event) => setDraft(event.target.value)} placeholder={t("粘贴 API Key")} />
           <div className={styles.actions}>
-            <button type="submit" disabled={Boolean(busy) || !draft.trim()}>{isBusy ? <LoaderCircle className={styles.spin} /> : <Check />}保存</button>
-            {item.testable && <button type="button" className={styles.secondary} disabled={Boolean(busy) || !draft.trim()} onClick={() => void test(item)}><PlugZap />测试</button>}
-            <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => { setEditing(null); setDraft(""); }}>取消</button>
+            <button type="submit" disabled={Boolean(busy) || !draft.trim()}>{isBusy ? <LoaderCircle className={styles.spin} /> : <Check />}{t("保存")}</button>
+            {item.testable && <button type="button" className={styles.secondary} disabled={Boolean(busy) || !draft.trim()} onClick={() => void test(item)}><PlugZap />{t("测试")}</button>}
+            <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => { setEditing(null); setDraft(""); }}>{t("取消")}</button>
           </div>
         </form> : <div className={styles.actions}>
           <button type="button" disabled={Boolean(busy)} onClick={() => { setEditing(item.name); setDraft(""); setFeedback((current) => ({ ...current, [item.name]: undefined })); }}>
-            {status?.configured ? "更换 Key" : "添加 Key"}
+            {status?.configured ? t("更换 Key") : t("添加 Key")}
           </button>
           {item.testable && status?.configured && <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => void test(item)}>
-            {isBusy ? <LoaderCircle className={styles.spin} /> : <PlugZap />}测试连接
-          </button>}
-          {status?.configured && <button type="button" className={`${styles.secondary} ${styles.delete}`} disabled={Boolean(busy)} onClick={() => void remove(item)}><Trash2 />删除</button>}
+            {isBusy ? <LoaderCircle className={styles.spin} /> : <PlugZap />}{t("测试连接")}</button>}
+          {status?.configured && <button type="button" className={`${styles.secondary} ${styles.delete}`} disabled={Boolean(busy)} onClick={() => void remove(item)}><Trash2 />{t("删除")}</button>}
         </div>}
       </>}
       {current?.message && <p className={styles.feedback} data-ok={current.ok} role="status">{current.message}</p>}
@@ -161,18 +163,18 @@ export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "ot
   }
 
   return <div className={styles.manager}>
-    {signedOut && <div className={styles.authNotice}>登录后可查看配置状态并保存个人凭证。<Link href="/api/user/login?next=/settings/providers">登录</Link></div>}
-    {error && <div className={styles.error} role="alert">{error}{loadFailed && <button type="button" onClick={() => {
+    {signedOut && <div className={styles.authNotice}>{t("登录后可查看配置状态并保存个人凭证。")}<Link href="/api/user/login?next=/settings/providers">{t("登录")}</Link></div>}
+    {error && <div className={styles.error} role="alert">{t(error)}{loadFailed && <button type="button" onClick={() => {
       setLoading(true); setError("");
       void refresh().catch((cause: unknown) => { setLoadFailed(true); setError(cause instanceof Error ? cause.message : "无法读取供应商配置"); })
         .finally(() => setLoading(false));
-    }}>重试</button>}</div>}
-    {mode === "other" ? <div className={styles.cards} aria-label="高级服务">{GROUPS[3].items.map(card)}</div>
+    }}>{t("重试")}</button>}</div>}
+    {mode === "other" ? <div className={styles.cards} aria-label={t("高级服务")}>{GROUPS[3].items.map(card)}</div>
       : GROUPS.map((group) => <section className={styles.group} aria-label={group.title} key={group.title}>
       <div className={styles.groupHeading}><h2>{group.title}</h2><p>{group.description}</p></div>
       <div className={styles.cards}>{group.items.map(card)}</div>
     </section>)}
-    <p className={styles.footnote}>{mode === "other" ? "服务凭证在服务端加密保存，仅用于各自的数字人或视频生成能力。"
-      : "凭证在服务端加密保存。连接测试会向对应供应商发送请求；豆包语音测试会合成一小段语音，可能产生少量用量。"}</p>
+    <p className={styles.footnote}>{mode === "other" ? t("服务凭证在服务端加密保存，仅用于各自的数字人或视频生成能力。")
+      : t("凭证在服务端加密保存。连接测试会向对应供应商发送请求；豆包语音测试会合成一小段语音，可能产生少量用量。")}</p>
   </div>;
 }

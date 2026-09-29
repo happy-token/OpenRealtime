@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -104,6 +106,7 @@ export function OpenRealtimeApp({
   publicVoiceEnabled?: boolean;
   defaultTtsProvider?: TtsProvider;
 }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const engine = useVoiceSession({ publicVoiceEnabled, roleProviders: { asr: initialRole?.asr_provider, llm: initialRole?.llm_provider } });
   const { unlockAudioOutput } = engine;
@@ -712,7 +715,7 @@ export function OpenRealtimeApp({
           </span>
           {engine.credentialSummary && <span role="status" style={{ fontSize: 12, opacity: .8 }}>{engine.credentialSummary}</span>}
           {engine.trialSecondsRemaining !== null && <span role="timer" style={{ fontSize: 12 }}>
-            平台语音剩余 {Math.floor(engine.trialSecondsRemaining / 60)}:{String(engine.trialSecondsRemaining % 60).padStart(2, "0")}
+            {t("平台语音剩余")}{Math.floor(engine.trialSecondsRemaining / 60)}:{String(engine.trialSecondsRemaining % 60).padStart(2, "0")}
           </span>}
         </div>
       </header>
@@ -862,8 +865,8 @@ export function OpenRealtimeApp({
         <button
           type="button"
           className="avatar-startup-return"
-          aria-label="取消启动并返回主页"
-          title="取消启动并返回主页"
+          aria-label={t("取消启动并返回主页")}
+          title={t("取消启动并返回主页")}
           onClick={cancelAvatarStartup}
         >
           <ArrowLeft aria-hidden="true" />

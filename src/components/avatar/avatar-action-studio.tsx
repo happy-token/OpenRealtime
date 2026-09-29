@@ -1,5 +1,10 @@
 "use client";
 
+import { SelectMenu } from "@/components/ui/select-menu";
+import { useLanguage } from "@/components/language/language-provider";
+import { parseVideoPromptDrafts, videoPromptDraftStorageKey, type VideoPromptDrafts } from "@/lib/video-prompt-drafts";
+import type { AppLanguage } from "@/lib/app-language";
+
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronDown, CircleAlert, Eye, LoaderCircle, Maximize2, Minimize2, RefreshCw, Upload, Wand2, X } from "lucide-react";
@@ -121,6 +126,7 @@ function GenerationParameterSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [focusedValue, setFocusedValue] = useState(value);
   const root = useRef<HTMLDivElement>(null);
@@ -171,7 +177,7 @@ function GenerationParameterSelect({
   }
 
   return <div className={styles.miniMaxParameterField}>
-    {label ? <span>{label}</span> : null}
+    {label ? <span>{t(label)}</span> : null}
     <div
       className={`${styles.actionSelect} ${styles.parameterSelect}`}
       ref={root}
@@ -194,10 +200,10 @@ function GenerationParameterSelect({
         }}
         onKeyDown={handleKeyDown}
       >
-        <span className={styles.actionSelectValue}><strong>{selected.label}</strong></span>
+        <span className={styles.actionSelectValue}><strong>{t(selected.label)}</strong></span>
         <ChevronDown aria-hidden="true" />
       </button>
-      <div className={styles.actionSelectMenu} id={listboxId} role="listbox" aria-label={`${ariaLabel}选项`} hidden={!open}>
+      <div className={styles.actionSelectMenu} id={listboxId} role="listbox" aria-label={"" + (ariaLabel) + t("选项")} hidden={!open}>
         {options.map((option) => {
           const optionId = `${listboxId}-${option.value.replace(/[^A-Za-z0-9_-]/g, "-")}`;
           return <button
@@ -212,7 +218,7 @@ function GenerationParameterSelect({
             onPointerEnter={() => { if (!option.disabled) setFocusedValue(option.value); }}
             onClick={() => select(option.value)}
           >
-            <span className={styles.actionOptionCopy}><strong>{option.label}</strong>{option.detail ? <small>{option.detail}</small> : null}</span>
+            <span className={styles.actionOptionCopy}><strong>{t(option.label)}</strong>{option.detail ? <small>{t(option.detail)}</small> : null}</span>
             <Check aria-hidden="true" />
           </button>;
         })}
@@ -233,6 +239,7 @@ export function AvatarActionStudio({
   onSaved,
   onPreviewChange,
   focusedCreation = false,
+  freshCreation = focusedCreation,
   configHeader,
   active = true,
 }: {
@@ -249,12 +256,19 @@ export function AvatarActionStudio({
   onSaved?: (action: OwnedAvatarActionRecord) => void;
   onPreviewChange?: (preview: { url: string; name: string } | null) => void;
   focusedCreation?: boolean;
+  /** Start a new action without restoring previous generation results. */
+  freshCreation?: boolean;
 }) {
+  const { t } = useLanguage();
   const mediaRoot = useRef<HTMLElement>(null);
   const ensureProviderKey = useProviderKeyGate();
   useEffect(() => {
     if (!active) mediaRoot.current?.querySelectorAll("video").forEach(video => video.pause());
   }, [active]);
+  const { language } = useLanguage();
+  const [promptLanguageOverride, setPromptLanguageOverride] = useState<AppLanguage | null>(null);
+  const promptLanguage = promptLanguageOverride ?? language;
+  const [promptDrafts, setPromptDrafts] = useState<VideoPromptDrafts>({});
   const [avatar, setAvatar] = useState<OwnedAvatarRecord | null>(null);
   const [provider, setProvider] = useState<ActionProvider>(focusedCreation ? "ltx" : initialProvider);
   const [livePortraitRuntime, setLivePortraitRuntime] = useState<RuntimeState>("checking");
@@ -283,8 +297,27 @@ export function AvatarActionStudio({
   const [videoPromptChoiceId, setVideoPromptChoiceId] = useState<VideoPromptChoiceId>(VIDEO_PROMPT_STYLES[0].id);
   const [focusedVideoPromptChoiceId, setFocusedVideoPromptChoiceId] = useState<VideoPromptChoiceId>(VIDEO_PROMPT_STYLES[0].id);
   const [ltxPromptMenuOpen, setLtxPromptMenuOpen] = useState(false);
-  const [ltxPrompt, setLtxPrompt] = useState<string>(() => composeVideoGenerationPrompt(LTX_PROMPT_PRESETS[0].id, "sweet-vitality"));
-  const [customLtxPrompt, setCustomLtxPrompt] = useState("");
+  const generatedPrompt = videoPromptChoiceId === "custom" ? "" : composeVideoGenerationPrompt(LTX_PROMPT_PRESETS[0].id, videoPromptChoiceId, promptLanguage);
+  const ltxPrompt = promptDrafts[videoPromptChoiceId]?.[promptLanguage] ?? generatedPrompt;
+  useEffect(() => {
+    try { setPromptDrafts(parseVideoPromptDrafts(localStorage.getItem(videoPromptDraftStorageKey(avatarId)))); }
+    catch { setPromptDrafts({}); }
+  }, [avatarId]);
+  function setLtxPrompt(value: string) {
+    const next = { ...promptDrafts, [videoPromptChoiceId]: { ...promptDrafts[videoPromptChoiceId], [promptLanguage]: value } };
+    setPromptDrafts(next);
+    try { localStorage.setItem(videoPromptDraftStorageKey(avatarId), JSON.stringify(next)); }
+    catch { /* Editing remains available without persistent browser storage. */ }
+  }
+  function editVideoPrompt(value: string) {
+    setLtxPrompt(value);
+    resetGeneratedPreview();
+  }
+  function changePromptLanguage(value: AppLanguage) {
+    setPromptLanguageOverride(value);
+    resetGeneratedPreview();
+  }
+
   const [miniMaxRatio, setMiniMaxRatio] = useState<MiniMaxRatio>("16:9");
   const [miniMaxResolution, setMiniMaxResolution] = useState<MiniMaxResolution>("768P");
   const [miniMaxDuration, setMiniMaxDuration] = useState<MiniMaxDuration>(6);
@@ -365,6 +398,7 @@ export function AvatarActionStudio({
   useEffect(() => {
     let cancelled = false;
     async function recover() {
+      if (freshCreation) return;
       let recovered = readRecoverableGenerationTask(avatarId, "action");
       if (!recovered) {
         try {
@@ -390,7 +424,6 @@ export function AvatarActionStudio({
       if (recoveredPrompt) {
         setVideoPromptChoiceId(recoveredPrompt.id);
         setFocusedVideoPromptChoiceId(recoveredPrompt.id);
-        setLtxPrompt(composeVideoGenerationPrompt("video-conversation", recoveredPrompt.id));
       }
       if (recovered.provider === "liveportrait") setProvider("liveportrait");
       else {
@@ -400,7 +433,7 @@ export function AvatarActionStudio({
     }
     void recover();
     return () => { cancelled = true; };
-  }, [avatarId, focusedCreation]);
+  }, [avatarId, focusedCreation, freshCreation]);
 
   useEffect(() => {
     if (!submissionRequestId || taskProvider === "liveportrait" || !actionName.trim()) return;
@@ -733,13 +766,13 @@ export function AvatarActionStudio({
     setFocusedVideoPromptChoiceId(value);
     setLtxPromptMenuOpen(false);
     if (value === "custom") {
-      setLtxPrompt(customLtxPrompt);
+
       setActionName("自定义动作");
       setLtxActionName("自定义动作");
     } else {
       const style = VIDEO_PROMPT_STYLES.find((item) => item.id === value);
       if (!style) return;
-      setLtxPrompt(composeVideoGenerationPrompt("video-conversation", style.id));
+
       setActionName(style.name);
       setLtxActionName(style.name);
     }
@@ -910,6 +943,7 @@ export function AvatarActionStudio({
       if (miniMaxResolution === "2K") setMiniMaxResolution("768P");
       if (miniMaxDuration === 4) setMiniMaxDuration(5);
     }
+    if (value !== "MiniMax-H3-Max" && miniMaxResolution === "480P") setMiniMaxResolution("768P");
     resetGeneratedPreview();
   }
 
@@ -1057,14 +1091,16 @@ export function AvatarActionStudio({
   const generationProgress = busy ? estimateGenerationProgress(elapsedMs, taskProvider) : 0;
   const selectedAction = LIVEPORTRAIT_ACTIONS.find((action) => action.id === selectedActionId) ?? LIVEPORTRAIT_ACTIONS[0];
   const selectedLtxPrompt = VIDEO_PROMPT_CHOICES.find((choice) => choice.id === videoPromptChoiceId) ?? VIDEO_PROMPT_CHOICES[0];
-  const selectedPromptAlreadyGenerated = provider === "ltx"
+  const selectedPromptAlreadyGenerated = !freshCreation
+    && provider === "ltx"
     && selectedLtxPrompt.id !== "custom"
+    && !promptDrafts[videoPromptChoiceId]?.[promptLanguage]
     && hasGeneratedAvatarAction(avatar?.actions ?? [], selectedLtxPrompt.name);
   const selectedVideoVendor = VIDEO_GENERATION_PROVIDERS.find((item) => item.id === videoVendor) ?? VIDEO_GENERATION_PROVIDERS[0];
   const availableVideoModels = VIDEO_GENERATION_MODELS.filter((model) => model.provider === videoVendor);
   const selectedVideoModel = VIDEO_GENERATION_MODELS.find((model) => model.id === ltxModel) ?? VIDEO_GENERATION_MODELS[0];
   const miniMaxResolutions: MiniMaxResolution[] = ltxModel === "MiniMax-H3-Max" ? ["480P", "768P"] : ["768P", "2K"];
-  const miniMaxDurations = MINIMAX_DURATIONS.filter((duration) => duration === 6);
+  const miniMaxDurations = MINIMAX_DURATIONS.filter((duration) => ltxModel !== "MiniMax-H3-Max" || duration >= 5);
   const miniMaxImageRoleOptions = ltxModel === "MiniMax-H3-Max"
     ? MINIMAX_IMAGE_ROLE_OPTIONS.filter((option) => option.value !== "reference_image")
     : MINIMAX_IMAGE_ROLE_OPTIONS;
@@ -1077,11 +1113,11 @@ export function AvatarActionStudio({
   const showingResult = previewMode === "result" && Boolean(resultUrl);
   const showingReference = previewMode === "reference" && Boolean(referencePreviewUrl);
   const actionProviderOptions = [
-    { value: "ltx", label: "视频生成", detail: "提示词驱动 · 默认" },
+    { value: "ltx", label: t("视频生成"), detail: t("提示词驱动 · 默认") },
     {
       value: "liveportrait",
       label: "LivePortrait",
-      detail: livePortraitRuntime === "ready" ? "动作迁移" : livePortraitRuntime === "checking" ? "正在检测服务" : "服务未启动 · 暂不可选",
+      detail: livePortraitRuntime === "ready" ? t("动作迁移") : livePortraitRuntime === "checking" ? t("正在检测服务") : t("服务未启动 · 暂不可选"),
       disabled: livePortraitRuntime !== "ready",
     },
   ] as const;
@@ -1094,40 +1130,40 @@ export function AvatarActionStudio({
       {...(embedded ? { "data-transition": "in-page" } : {})}
     >
       <header className={styles.intro}>
-        <p>{focusedCreation ? "MULTI-SEGMENT MOTION" : "Avatar Action / LivePortrait + 视频生成"}</p>
-        {!embedded ? <h1 id="action-studio-title">创建动作</h1> : null}
-        <span>{focusedCreation ? "选择动作风格并生成，结果将在资源库主屏直接预览。" : "从当前 Avatar 源图生成可复用动作，并为所有已启用口型模型准备资产。"}</span>
+        <p>{focusedCreation ? "MULTI-SEGMENT MOTION" : t("Avatar Action / LivePortrait + 视频生成")}</p>
+        {!embedded ? <h1 id="action-studio-title">{t("创建动作")}</h1> : null}
+        <span>{focusedCreation ? t("选择动作风格并生成，结果将在资源库主屏直接预览。") : t("从当前 Avatar 源图生成可复用动作，并为所有已启用口型模型准备资产。")}</span>
       </header>
 
       <div className={styles.layout} data-result-maximized={!focusedCreation && showingResult && resultMaximized}>
         {!embedded ? <aside className={styles.sourcePanel}>
-          <span>当前 Avatar 形象</span>
+          <span>{t("当前 Avatar 形象")}</span>
           <div className={styles.sourceImage}>
             {avatar ? <Image src={avatar.source_image_url} alt={avatar.display_name} fill sizes="280px" unoptimized /> : <LoaderCircle className={styles.spin} />}
           </div>
-          <strong>{avatar?.display_name || "正在读取…"}</strong>
-          <p>源图只读，新动作会归属于当前数字人。</p>
+          <strong>{avatar?.display_name || t("正在读取…")}</strong>
+          <p>{t("源图只读，新动作会归属于当前数字人。")}</p>
         </aside> : null}
 
         {(() => {
           const controlsPanel = (
           <div className={styles.controls}>
           {configHeader}
-          {!focusedCreation && embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label="数字人形象 · 当前共享 Avatar">
-            <button type="button" aria-label={`预览 ${avatar?.display_name || avatarId}`} onClick={onPreviewAvatar}>
+          {!focusedCreation && embedded && onChangeAvatar ? <section className={styles.selectedAvatarSummary} aria-label={t("数字人形象 · 当前共享 Avatar")}>
+            <button type="button" aria-label={t("预览 ") + (avatar?.display_name || avatarId) + ""} onClick={onPreviewAvatar}>
               {avatar ? <Image src={previewImageUrl || avatar.source_image_url} alt="" fill sizes="56px" unoptimized /> : <LoaderCircle className={styles.spin} />}
             </button>
-            <span><strong>{avatar?.display_name || "正在读取…"}</strong></span>
-            <button type="button" aria-label="上一步：返回选择 Avatar 形象" onClick={onChangeAvatar}><ArrowLeft aria-hidden="true" />上一步</button>
+            <span><strong>{avatar?.display_name || t("正在读取…")}</strong></span>
+            <button type="button" aria-label={t("上一步：返回选择 Avatar 形象")} onClick={onChangeAvatar}><ArrowLeft aria-hidden="true" />{t("上一步")}</button>
           </section> : null}
-          {focusedCreation ? <span className={styles.focusedModeBadge}>多段式合成</span> : <div className={styles.sectionHeading}>
-            <h2 {...(embedded ? { id: "action-studio-title" } : {})}>{embedded ? "动作创作" : "动作来源"}</h2>
+          {focusedCreation ? <span className={styles.focusedModeBadge}>{t("多段式合成")}</span> : <div className={styles.sectionHeading}>
+            <h2 {...(embedded ? { id: "action-studio-title" } : {})}>{embedded ? t("动作创作") : t("动作来源")}</h2>
           </div>}
           {!focusedCreation ? <div className={styles.creationModeField}>
-            <span>创作方式</span>
+            <span>{t("创作方式")}</span>
             <div className={styles.creationModeRow}>
               <GenerationParameterSelect
-                ariaLabel="动作创作方式"
+                ariaLabel={t("动作创作方式")}
                 value={provider}
                 disabled={busy}
                 options={actionProviderOptions}
@@ -1136,28 +1172,28 @@ export function AvatarActionStudio({
               <div className={styles.uploadMotion} data-active={motionSourceMode === "upload"}>
                 <button
                   type="button"
-                  aria-label={drivingFile ? `上传动作，已选择 ${drivingFile.name}` : "上传动作"}
+                  aria-label={drivingFile ? t("上传动作，已选择 ") + (drivingFile.name) + "" : t("上传动作")}
                   aria-describedby={uploadMotionHintId}
                   disabled={busy || livePortraitRuntime !== "ready"}
                   onClick={() => drivingInput.current?.click()}
                 >
                   <Upload aria-hidden="true" />
-                  <span><strong>上传动作</strong></span>
+                  <span><strong>{t("上传动作")}</strong></span>
                 </button>
-                {drivingFile ? <button type="button" aria-label="移除动作参考" disabled={busy} onClick={() => { setDrivingFile(null); setMotionSourceMode("template"); setActionName(selectedAction.name); setLivePortraitActionName(selectedAction.name); setPreviewMode("avatar"); setResultUrl(""); setSavedActionId(""); }}><X /></button> : null}
+                {drivingFile ? <button type="button" aria-label={t("移除动作参考")} disabled={busy} onClick={() => { setDrivingFile(null); setMotionSourceMode("template"); setActionName(selectedAction.name); setLivePortraitActionName(selectedAction.name); setPreviewMode("avatar"); setResultUrl(""); setSavedActionId(""); }}><X /></button> : null}
                 <input ref={drivingInput} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" onChange={(event) => { selectDrivingFile(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-                <span className={styles.uploadMotionHint} id={uploadMotionHintId} role="tooltip">{livePortraitRuntime === "ready" ? "MP4、WebM 或 MOV，最大 50MB" : "LivePortrait 服务未就绪，暂时无法上传动作"}</span>
+                <span className={styles.uploadMotionHint} id={uploadMotionHintId} role="tooltip">{livePortraitRuntime === "ready" ? t("MP4、WebM 或 MOV，最大 50MB") : t("LivePortrait 服务未就绪，暂时无法上传动作")}</span>
               </div>
             </div>
           </div> : null}
           {!focusedCreation && provider === "liveportrait" ? <>
-          <div className={styles.actionSourcePicker} aria-label="动作来源">
+          <div className={styles.actionSourcePicker} aria-label={t("动作来源")}>
             <div className={styles.actionSelect} ref={actionSelect} data-open={actionMenuOpen}>
               <button
                 className={styles.actionSelectTrigger}
                 type="button"
                 role="combobox"
-                aria-label="动作选项"
+                aria-label={t("动作选项")}
                 aria-controls={actionListboxId}
                 aria-expanded={actionMenuOpen}
                 aria-haspopup="listbox"
@@ -1171,10 +1207,10 @@ export function AvatarActionStudio({
                 }}
                 onKeyDown={handleActionPickerKeyDown}
               >
-                <span className={styles.actionSelectValue}><strong>{selectedAction.name}</strong></span>
+                <span className={styles.actionSelectValue}><strong>{t(selectedAction.name)}</strong></span>
                 <ChevronDown aria-hidden="true" />
               </button>
-              <div className={styles.actionSelectMenu} id={actionListboxId} role="listbox" aria-label="内置动作选项" hidden={!actionMenuOpen}>
+              <div className={styles.actionSelectMenu} id={actionListboxId} role="listbox" aria-label={t("内置动作选项")} hidden={!actionMenuOpen}>
                 {LIVEPORTRAIT_ACTIONS.map((action) => {
                   const unavailable = livePortraitRuntime === "ready" && !availableTemplates.has(action.id);
                   const selected = action.id === selectedActionId;
@@ -1191,7 +1227,7 @@ export function AvatarActionStudio({
                       onPointerEnter={() => setFocusedActionId(action.id)}
                       onClick={() => selectTemplateAction(action.id)}
                     >
-                      <span className={styles.actionOptionCopy}><strong>{action.name}</strong><small>{unavailable ? "当前素材不可用" : action.description}</small></span>
+                      <span className={styles.actionOptionCopy}><strong>{action.name}</strong><small>{unavailable ? t("当前素材不可用") : action.description}</small></span>
                       <span className={styles.actionOptionMeta}>{action.duration}</span>
                       <Check aria-hidden="true" />
                     </button>
@@ -1202,11 +1238,11 @@ export function AvatarActionStudio({
           </div>
 
           <fieldset className={styles.strengthField}>
-            <legend><span>动作幅度</span><output>{motionMultiplier.toFixed(2)}×</output></legend>
+            <legend><span>{t("动作幅度")}</span><output>{motionMultiplier.toFixed(2)}×</output></legend>
             <div className={styles.strengthControl}>
               <input
                 type="range"
-                aria-label="动作幅度数值"
+                aria-label={t("动作幅度数值")}
                 min={MOTION_MULTIPLIER_MIN}
                 max={MOTION_MULTIPLIER_MAX}
                 step={0.01}
@@ -1215,7 +1251,7 @@ export function AvatarActionStudio({
                 style={{ "--strength-progress": `${((motionMultiplier - MOTION_MULTIPLIER_MIN) / (MOTION_MULTIPLIER_MAX - MOTION_MULTIPLIER_MIN)) * 100}%` } as CSSProperties}
                 onChange={(event) => updateMotionMultiplier(Number(event.target.value))}
               />
-              <div className={styles.strengthPresets} aria-label="推荐动作幅度">
+              <div className={styles.strengthPresets} aria-label={t("推荐动作幅度")}>
                 {MOTION_STRENGTH_PRESETS.map((preset) => (
                   <button
                     key={preset.value}
@@ -1225,7 +1261,7 @@ export function AvatarActionStudio({
                     style={{ "--preset-position": `${((preset.value - MOTION_MULTIPLIER_MIN) / (MOTION_MULTIPLIER_MAX - MOTION_MULTIPLIER_MIN)) * 100}%` } as CSSProperties}
                     onClick={() => updateMotionMultiplier(preset.value)}
                   >
-                    <strong>{preset.label}</strong>
+                    <strong>{t(preset.label)}</strong>
                     <small>{preset.value.toFixed(2)}×</small>
                   </button>
                 ))}
@@ -1233,15 +1269,15 @@ export function AvatarActionStudio({
             </div>
           </fieldset>
           </> : <div className={styles.ltxFields}>
-            <div className={styles.videoProviderModelGrid} aria-label={focusedCreation ? "供应商与模型" : undefined}>
+            <div className={styles.videoProviderModelGrid} aria-label={focusedCreation ? t("供应商与模型") : undefined}>
               <div className={styles.selectField}>
-                <span>供应商</span>
+                <span>{t("供应商")}</span>
                 <div className={styles.actionSelect} ref={videoVendorSelect} data-open={videoVendorMenuOpen}>
                   <button
                     className={styles.actionSelectTrigger}
                     type="button"
                     role="combobox"
-                    aria-label="视频生成供应商选择"
+                    aria-label={t("视频生成供应商选择")}
                     aria-controls={videoVendorListboxId}
                     aria-expanded={videoVendorMenuOpen}
                     aria-haspopup="listbox"
@@ -1255,10 +1291,10 @@ export function AvatarActionStudio({
                     }}
                     onKeyDown={handleVideoVendorPickerKeyDown}
                   >
-                    <span className={styles.actionSelectValue}><strong>{selectedVideoVendor.name}</strong><small>{selectedVideoVendor.detail}</small></span>
+                    <span className={styles.actionSelectValue}><strong>{t(selectedVideoVendor.name)}</strong><small>{t(selectedVideoVendor.detail)}</small></span>
                     <ChevronDown aria-hidden="true" />
                   </button>
-                  <div className={styles.actionSelectMenu} id={videoVendorListboxId} role="listbox" aria-label="视频生成供应商选项" hidden={!videoVendorMenuOpen}>
+                  <div className={styles.actionSelectMenu} id={videoVendorListboxId} role="listbox" aria-label={t("视频生成供应商选项")} hidden={!videoVendorMenuOpen}>
                     {VIDEO_GENERATION_PROVIDERS.map((item) => <button
                       id={`${videoVendorListboxId}-${item.id}`}
                       key={item.id}
@@ -1276,13 +1312,13 @@ export function AvatarActionStudio({
                 </div>
               </div>
               <div className={styles.selectField}>
-                <span>模型选择</span>
+                <span>{t("模型选择")}</span>
                 <div className={styles.actionSelect} ref={videoModelSelect} data-open={videoModelMenuOpen}>
                 <button
                   className={styles.actionSelectTrigger}
                   type="button"
                   role="combobox"
-                  aria-label="视频生成模型选择"
+                  aria-label={t("视频生成模型选择")}
                   aria-controls={videoModelListboxId}
                   aria-expanded={videoModelMenuOpen}
                   aria-haspopup="listbox"
@@ -1297,10 +1333,10 @@ export function AvatarActionStudio({
                   }}
                   onKeyDown={handleVideoModelPickerKeyDown}
                 >
-                  <span className={styles.actionSelectValue}><strong>{selectedVideoModel.name}</strong><small>{selectedVideoModel.detail}</small></span>
+                  <span className={styles.actionSelectValue}><strong>{t(selectedVideoModel.name)}</strong><small>{t(selectedVideoModel.detail)}</small></span>
                   <ChevronDown aria-hidden="true" />
                 </button>
-                <div className={styles.actionSelectMenu} id={videoModelListboxId} role="listbox" aria-label="视频生成模型选项" hidden={!videoModelMenuOpen}>
+                <div className={styles.actionSelectMenu} id={videoModelListboxId} role="listbox" aria-label={t("视频生成模型选项")} hidden={!videoModelMenuOpen}>
                   {availableVideoModels.map((model) => {
                     const selected = model.id === ltxModel;
                     const focused = model.id === focusedVideoModel;
@@ -1315,7 +1351,7 @@ export function AvatarActionStudio({
                         onPointerEnter={() => setFocusedVideoModel(model.id)}
                         onClick={() => selectVideoModel(model.id)}
                       >
-                        <span className={styles.actionOptionCopy}><strong>{model.name}</strong><small>{model.detail}</small></span>
+                        <span className={styles.actionOptionCopy}><strong>{t(model.name)}</strong><small>{t(model.detail)}</small></span>
                         <Check aria-hidden="true" />
                       </button>
                     );
@@ -1325,22 +1361,18 @@ export function AvatarActionStudio({
               </div>
             </div>
             <div className={styles.promptChoiceField}>
-              <span>{focusedCreation ? "动作描述" : "提示词选择"}</span>
+              <span className={styles.promptHeading}><span>{focusedCreation ? t("动作描述") : t("提示词选择")}</span>
+                <label className={styles.promptLanguageControl}><span>{t("提示词语言")}</span><SelectMenu<AppLanguage> fullWidth compact triggerRole="combobox" ariaLabel={t("提示词语言")} value={promptLanguage} disabled={busy} options={[{ value: "zh-CN", label: "简体中文" }, { value: "en", label: "English" }]} onChange={changePromptLanguage} /></label>
+              </span>
               {focusedCreation ? <textarea
                 className={styles.focusedPromptInput}
-                aria-label="动作提示词内容"
+                aria-label={t("动作提示词内容")}
                 value={ltxPrompt}
                 disabled={busy}
                 rows={3}
                 onChange={(event) => {
                   const nextPrompt = event.target.value;
-                  setLtxPrompt(nextPrompt);
-                  setCustomLtxPrompt(nextPrompt);
-                  setVideoPromptChoiceId("custom");
-                  setFocusedVideoPromptChoiceId("custom");
-                  setResultUrl("");
-                  setSavedActionId("");
-                  setTaskState("idle");
+                  editVideoPrompt(nextPrompt);
                 }}
               /> : null}
               <div className={styles.promptChoiceRow}>
@@ -1349,7 +1381,7 @@ export function AvatarActionStudio({
                     className={styles.actionSelectTrigger}
                     type="button"
                     role="combobox"
-                    aria-label="视频生成提示词选择"
+                    aria-label={t("视频生成提示词选择")}
                     aria-controls={ltxPromptListboxId}
                     aria-expanded={ltxPromptMenuOpen}
                     aria-haspopup="listbox"
@@ -1364,10 +1396,10 @@ export function AvatarActionStudio({
                     }}
                     onKeyDown={handleLtxPromptPickerKeyDown}
                   >
-                    <span className={styles.actionSelectValue}><strong>{selectedLtxPrompt.name}</strong><small>{selectedPromptAlreadyGenerated ? "已生成 · 请直接使用" : selectedLtxPrompt.description}</small></span>
+                    <span className={styles.actionSelectValue}><strong>{t(selectedLtxPrompt.name)}</strong><small>{selectedPromptAlreadyGenerated ? t("已生成 · 请直接使用") : selectedLtxPrompt.description}</small></span>
                     <ChevronDown aria-hidden="true" />
                   </button>
-                  <div className={styles.actionSelectMenu} id={ltxPromptListboxId} role="listbox" aria-label="视频生成提示词选项" hidden={!ltxPromptMenuOpen}>
+                  <div className={styles.actionSelectMenu} id={ltxPromptListboxId} role="listbox" aria-label={t("视频生成提示词选项")} hidden={!ltxPromptMenuOpen}>
                     {VIDEO_PROMPT_CHOICES.map((choice) => {
                       const selected = choice.id === videoPromptChoiceId;
                       const focused = choice.id === focusedVideoPromptChoiceId;
@@ -1383,28 +1415,27 @@ export function AvatarActionStudio({
                           onPointerEnter={() => setFocusedVideoPromptChoiceId(choice.id)}
                           onClick={() => selectVideoPromptChoice(choice.id)}
                         >
-                          <span className={styles.actionOptionCopy}><strong>{choice.name}</strong><small>{choice.description}</small></span>
-                          {generated ? <span className={styles.generatedBadge}>已生成</span> : null}
+                          <span className={styles.actionOptionCopy}><strong>{t(choice.name)}</strong><small>{t(choice.description)}</small></span>
+                          {generated ? <span className={styles.generatedBadge}>{t("已生成")}</span> : null}
                           <Check aria-hidden="true" />
                         </button>
                       );
                     })}
                   </div>
                 </div>
-                {!focusedCreation ? <button className={styles.promptViewButton} ref={promptViewButton} type="button" aria-label="查看当前视频生成提示词" onClick={() => setPromptModalOpen(true)}>
-                  <Eye aria-hidden="true" />查看
-                </button> : null}
+                {!focusedCreation ? <button className={styles.promptViewButton} ref={promptViewButton} type="button" aria-label={t("查看当前视频生成提示词")} onClick={() => setPromptModalOpen(true)}>
+                  <Eye aria-hidden="true" />{t("查看")}</button> : null}
               </div>
             </div>
-            {selectedPromptAlreadyGenerated ? <p className={styles.generatedPromptNotice}><Check aria-hidden="true" /><span>这个预设已经生成过动作，请直接使用已有动作，避免重复消耗额度。</span></p> : null}
+            {selectedPromptAlreadyGenerated ? <p className={styles.generatedPromptNotice}><Check aria-hidden="true" /><span>{t("这个预设已经生成过动作，请直接使用已有动作，避免重复消耗额度。")}</span></p> : null}
             <details className={styles.advancedOptions}>
-              <summary><span><strong>高级选项</strong><small>画幅、清晰度与参考素材</small></span><ChevronDown aria-hidden="true" /></summary>
+              <summary><span><strong>{t("高级选项")}</strong><small>{t("画幅、清晰度与参考素材")}</small></span><ChevronDown aria-hidden="true" /></summary>
               <div className={styles.advancedOptionsContent}>
             {videoVendor === "minimax" ? <>
               <div className={styles.miniMaxParameterGrid}>
                 <GenerationParameterSelect
-                  label="数字人形象用途"
-                  ariaLabel="数字人形象角色"
+                  label={t("数字人形象用途")}
+                  ariaLabel={t("数字人形象角色")}
                   value={miniMaxImageRole}
                   disabled={busy}
                   options={miniMaxImageRoleOptions}
@@ -1412,18 +1443,17 @@ export function AvatarActionStudio({
                   const nextRole = value as MiniMaxImageRole;
                   setMiniMaxImageRole(nextRole);
                   if (nextRole !== "reference_image") {
-                    setMiniMaxRatio("adaptive");
                     setMiniMaxReferenceVideo(null);
                     setPreviewMode("avatar");
                   }
                   resetGeneratedPreview();
                 }} />
                 <GenerationParameterSelect
-                  label="Ratio"
-                  ariaLabel="MiniMax 画面比例"
+                  label={t("画面比例")}
+                  ariaLabel={t("MiniMax 画面比例")}
                   value={miniMaxRatio}
                   disabled={busy}
-                  options={MINIMAX_RATIOS.map((ratio) => ({ value: ratio, label: ratio === "adaptive" ? "自适应" : ratio }))}
+                  options={MINIMAX_RATIOS.map((ratio) => ({ value: ratio, label: ratio === "adaptive" ? t("自适应") : ratio }))}
                   onChange={(value) => {
                     const nextRatio = value as MiniMaxRatio;
                     setMiniMaxRatio(nextRatio);
@@ -1431,50 +1461,50 @@ export function AvatarActionStudio({
                   }}
                 />
                 <GenerationParameterSelect
-                  label="Resolution"
-                  ariaLabel="MiniMax 分辨率"
+                  label={t("分辨率")}
+                  ariaLabel={t("MiniMax 分辨率")}
                   value={miniMaxResolution}
                   disabled={busy}
                   options={miniMaxResolutions.map((resolution) => ({ value: resolution, label: resolution }))}
                   onChange={(value) => { setMiniMaxResolution(value as MiniMaxResolution); resetGeneratedPreview(); }}
                 />
                 <GenerationParameterSelect
-                  label="Duration"
-                  ariaLabel="MiniMax 时长"
+                  label={t("时长")}
+                  ariaLabel={t("MiniMax 时长")}
                   value={String(miniMaxDuration)}
                   disabled={busy}
-                  options={miniMaxDurations.map((duration) => ({ value: String(duration), label: `${duration} 秒` }))}
+                  options={miniMaxDurations.map((duration) => ({ value: String(duration), label: `${duration}${t(" 秒")}` }))}
                   onChange={(value) => { setMiniMaxDuration(Number(value) as MiniMaxDuration); resetGeneratedPreview(); }}
                 />
               </div>
               <p className={styles.miniMaxModeNote}>
                 {ltxModel === "MiniMax-H3-Max"
-                  ? "首帧 / 尾帧会先安全扩展到所选画幅，再由 H3 Max 按输入图片比例生成。"
+                  ? t("首帧 / 尾帧会先安全扩展到所选画幅，再由 H3 Max 按输入图片比例生成。")
                   : miniMaxUsesFrameRole
-                    ? "首帧 / 尾帧会先安全扩展到所选画幅；人物完整保留，空白区域使用柔和背景延展。"
-                    : "多模态参考模式可指定 Ratio；数字人形象使用 reference_image。"}
+                    ? t("首帧 / 尾帧会先安全扩展到所选画幅；人物完整保留，空白区域使用柔和背景延展。")
+                    : t("多模态参考模式可指定 Ratio；数字人形象使用 reference_image。")}
               </p>
-              <div className={styles.miniMaxContent} aria-label="MiniMax 参考视频输入">
+              <div className={styles.miniMaxContent} aria-label={t("MiniMax 参考视频输入")}>
                 <div className={styles.miniMaxVideoInput} data-active={Boolean(miniMaxReferenceVideo)}>
                   <button type="button" disabled={busy || ltxModel === "MiniMax-H3-Max"} aria-describedby={miniMaxUploadHintId} onClick={() => miniMaxReferenceInput.current?.click()}>
-                    <Upload aria-hidden="true" /><span><strong>{miniMaxReferenceVideo ? miniMaxReferenceVideo.name : "上传参考视频"}</strong><small>固定 role · reference_video</small></span>
+                    <Upload aria-hidden="true" /><span><strong>{miniMaxReferenceVideo ? miniMaxReferenceVideo.name : t("上传参考视频")}</strong><small>{t("固定 role · reference_video")}</small></span>
                   </button>
-                  {miniMaxReferenceVideo ? <button type="button" aria-label="移除 MiniMax 参考视频" disabled={busy} onClick={() => { setMiniMaxReferenceVideo(null); setPreviewMode("avatar"); resetGeneratedPreview(); }}><X aria-hidden="true" /></button> : null}
+                  {miniMaxReferenceVideo ? <button type="button" aria-label={t("移除 MiniMax 参考视频")} disabled={busy} onClick={() => { setMiniMaxReferenceVideo(null); setPreviewMode("avatar"); resetGeneratedPreview(); }}><X aria-hidden="true" /></button> : null}
                   <input ref={miniMaxReferenceInput} type="file" accept="video/mp4,video/quicktime,.mov" onChange={(event) => { selectMiniMaxReferenceVideo(event.target.files?.[0]); event.currentTarget.value = ""; }} />
                 </div>
-                <span id={miniMaxUploadHintId} className={styles.miniMaxUploadHint}>{ltxModel === "MiniMax-H3-Max" ? "H3 Max 不支持参考视频" : "MP4 / MOV，2–15 秒，最大 50MB；相同内容不会重复上传"}</span>
+                <span id={miniMaxUploadHintId} className={styles.miniMaxUploadHint}>{ltxModel === "MiniMax-H3-Max" ? t("H3 Max 不支持参考视频") : t("MP4 / MOV，2–15 秒，最大 50MB；相同内容不会重复上传")}</span>
               </div>
-              <p className={styles.costNote}>{ltxModel === "MiniMax-H3-Context-IR" ? "Context IR 会先增强提示词，再调用 H3 生成视频。" : ""} 首尾帧与多模态参考互斥；点击生成才会上传素材并消耗 MiniMax 额度。</p>
-            </> : <p className={styles.costNote}>LTX 输出 720×1280 / 25 FPS；点击生成会消耗 LTX API 额度。</p>}
+              <p className={styles.costNote}>{ltxModel === "MiniMax-H3-Context-IR" ? t("Context IR 会先增强提示词，再调用 H3 生成视频。") : ""}{t(" 首尾帧与多模态参考互斥；点击生成才会上传素材并消耗 MiniMax 额度。")}</p>
+            </> : <p className={styles.costNote}>{t("LTX 输出 720×1280 / 25 FPS；点击生成会消耗 LTX API 额度。")}</p>}
               </div>
             </details>
           </div>}
-          {activeRuntime === "error" ? <div className={styles.notice}><CircleAlert /><span>{activeRuntimeMessage}</span><button type="button" onClick={() => void (provider === "ltx" ? checkLtxRuntime() : checkLivePortraitRuntime())}><RefreshCw />重试</button></div> : null}
-          {error ? <div className={styles.notice} data-error><CircleAlert /><span>{error}</span>
-            {provider === "ltx" && videoVendor === "minimax" && error.includes("API Key") && <button type="button" onClick={() => void ensureProviderKey("minimax", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 API Key"))}>更换 Key</button>}
+          {activeRuntime === "error" ? <div className={styles.notice}><CircleAlert /><span>{t(activeRuntimeMessage)}</span><button type="button" onClick={() => void (provider === "ltx" ? checkLtxRuntime() : checkLivePortraitRuntime())}><RefreshCw />{t("重试")}</button></div> : null}
+          {error ? <div className={styles.notice} data-error><CircleAlert /><span>{t(error)}</span>
+            {provider === "ltx" && videoVendor === "minimax" && error.includes("API Key") && <button type="button" onClick={() => void ensureProviderKey("minimax", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 API Key"))}>{t("更换 Key")}</button>}
           </div> : null}
-          <div className={styles.actionFooter} role="group" aria-label="动作名称与生成">
-            {!focusedCreation ? <label className={styles.nameField}><span>动作名称</span><input value={actionName} maxLength={50} onChange={(event) => {
+          <div className={styles.actionFooter} role="group" aria-label={t("动作名称与生成")}>
+            {!focusedCreation ? <label className={styles.nameField}><span>{t("动作名称")}</span><input value={actionName} maxLength={50} onChange={(event) => {
               setActionName(event.target.value);
               if (provider === "ltx") setLtxActionName(event.target.value);
               else setLivePortraitActionName(event.target.value);
@@ -1485,22 +1515,22 @@ export function AvatarActionStudio({
               data-generate-action="true"
               data-already-generated={selectedPromptAlreadyGenerated || undefined}
               aria-busy={busy}
-              title={selectedPromptAlreadyGenerated ? "该预设已生成，请选择其他预设或修改提示词" : undefined}
+              title={selectedPromptAlreadyGenerated ? t("该预设已生成，请选择其他预设或修改提示词") : undefined}
               disabled={!avatar || !actionName.trim() || activeRuntime !== "ready" || busy || selectedPromptAlreadyGenerated || (provider === "ltx" ? !ltxPrompt.trim() : motionSourceMode === "upload" && !drivingFile)}
               onClick={() => void generatePreview()}
-            >{busy ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{busy ? "生成中…" : selectedPromptAlreadyGenerated ? focusedCreation ? "已生成" : "该预设已生成" : focusedCreation ? "生成" : "生成动作"}</button>
+            >{busy ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{busy ? t("生成中…") : selectedPromptAlreadyGenerated ? focusedCreation ? t("已生成") : t("该预设已生成") : focusedCreation ? t("生成") : t("生成动作")}</button>
           </div>
-          {focusedCreation ? <div className={styles.focusedResultActions} role="group" aria-label="生成结果操作" hidden={!busy && !resultUrl}>
-            {busy ? <div className={styles.focusedGenerationProgress} aria-label="视频生成进度">
+          {focusedCreation ? <div className={styles.focusedResultActions} role="group" aria-label={t("生成结果操作")} hidden={!busy && !resultUrl}>
+            {busy ? <div className={styles.focusedGenerationProgress} aria-label={t("视频生成进度")}>
               <LoaderCircle className={styles.spin} aria-hidden="true" />
-              <span><strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong><small>{pollWarning ? `${pollWarning} · 正在自动重试` : `已用时 ${formatElapsedTime(elapsedMs)} · 结果会显示在主屏`}</small></span>
+              <span><strong role="status" aria-live="polite">{taskState === "queueing" ? t("排队中…") : t("视频生成中…")}</strong><small>{pollWarning ? "" + (pollWarning) + t(" · 正在自动重试") : t("已用时 ") + (formatElapsedTime(elapsedMs)) + t(" · 结果会显示在主屏")}</small></span>
               <i aria-hidden="true"><b style={{ "--progress": generationProgress } as CSSProperties} /></i>
             </div> : resultUrl ? <>
-              <video className={styles.focusedResultPreview} aria-label="生成动作预览" src={resultUrl} controls muted loop playsInline />
-              <label className={styles.focusedResultName}><span>动作名称</span><input value={actionName} maxLength={50} onChange={(event) => { setActionName(event.target.value); setLtxActionName(event.target.value); }} /></label>
+              <video className={styles.focusedResultPreview} aria-label={t("生成动作预览")} src={resultUrl} controls muted loop playsInline />
+              <label className={styles.focusedResultName}><span>{t("动作名称")}</span><input value={actionName} maxLength={50} onChange={(event) => { setActionName(event.target.value); setLtxActionName(event.target.value); }} /></label>
               <button className={styles.accept} type="button" data-saved={Boolean(savedActionId)} disabled={saving || Boolean(savedActionId)} onClick={() => void createActionAsset()}>
                 {saving ? <LoaderCircle className={styles.spin} /> : null}
-                {saving ? "正在保存" : savedActionId ? "动作已保存" : "保存动作"}
+                {saving ? t("正在保存") : savedActionId ? t("动作已保存") : t("保存动作")}
               </button>
             </> : null}
           </div> : null}
@@ -1510,7 +1540,7 @@ export function AvatarActionStudio({
             <StudioConfigOverlay
               open={Boolean(mobileConfigOpen)}
               onOpenChange={onMobileConfigOpenChange}
-              label="动作配置"
+              label={t("动作配置")}
               icon={<Wand2 aria-hidden="true" />}
             >
               {controlsPanel}
@@ -1518,43 +1548,43 @@ export function AvatarActionStudio({
           ) : controlsPanel;
         })()}
 
-        {!focusedCreation ? <aside className={styles.previewPanel} aria-label="动作效果预览" data-has-result={Boolean(resultUrl)} data-floating-preview="true">
+        {!focusedCreation ? <aside className={styles.previewPanel} aria-label={t("动作效果预览")} data-has-result={Boolean(resultUrl)} data-floating-preview="true">
           <div className={styles.previewFrame} data-preview-frame="true">
             {showingResult
-              ? <video data-fit={previewFit} aria-label={`生成效果预览：${actionName}`} src={resultUrl} controls autoPlay={active} muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
+              ? <video data-fit={previewFit} aria-label={t("生成效果预览：") + (actionName) + ""} src={resultUrl} controls autoPlay={active} muted loop playsInline onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
               : showingReference
-                ? <video key={referencePreviewUrl} data-fit={previewFit} aria-label={`参考动作预览：${provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作"}`} src={referencePreviewUrl} controls autoPlay={active} muted loop playsInline preload="metadata" onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
+                ? <video key={referencePreviewUrl} data-fit={previewFit} aria-label={t("参考动作预览：") + (provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : "自定义动作") + ""} src={referencePreviewUrl} controls autoPlay={active} muted loop playsInline preload="metadata" onLoadedMetadata={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} />
                 : avatar
-                  ? <Image data-fit={previewFit} src={previewImageUrl || avatar.source_image_url} alt={`当前形象预览：${avatar.display_name}`} fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))} />
+                  ? <Image data-fit={previewFit} src={previewImageUrl || avatar.source_image_url} alt={t("当前形象预览：") + (avatar.display_name) + ""} fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={(event) => setPreviewFit(classifyMediaAspectRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight))} />
                   : null}
             <div className={styles.previewChrome}>
               <div className={styles.previewTitle}>
-                <span>{showingResult ? "生成效果" : showingReference ? "参考动作" : "当前形象"}</span>
-                <strong>{showingResult ? actionName : showingReference ? provider === "ltx" ? miniMaxReferenceVideo?.name || "参考视频" : motionSourceMode === "template" ? selectedAction.name : drivingFile?.name || "自定义动作" : "形象预览"}</strong>
+                <span>{showingResult ? t("生成效果") : showingReference ? t("参考动作") : t("当前形象")}</span>
+                <strong>{showingResult ? actionName : showingReference ? provider === "ltx" ? miniMaxReferenceVideo?.name || t("参考视频") : motionSourceMode === "template" ? selectedAction.name : drivingFile?.name || t("自定义动作") : t("形象预览")}</strong>
                 {showingReference && provider === "liveportrait" && motionSourceMode === "template" && selectedAction.caution ? <em>{selectedAction.caution}</em> : null}
               </div>
               <div className={styles.previewToolbar}>
-                <div className={styles.previewModeSwitch} role="group" aria-label="预览内容">
-                  <button type="button" data-active={!showingReference && !showingResult} aria-pressed={!showingReference && !showingResult} disabled={!avatar} onClick={() => { setPreviewMode("avatar"); setResultMaximized(false); }}>当前形象</button>
-                  <button type="button" data-active={showingReference} aria-pressed={showingReference} disabled={!referencePreviewUrl} onClick={() => { setPreviewMode("reference"); setResultMaximized(false); }}>参考动作</button>
-                  <button type="button" data-active={showingResult} aria-pressed={showingResult} disabled={!resultUrl} onClick={() => { setPreviewMode("result"); setResultMaximized(true); }}>生成效果</button>
+                <div className={styles.previewModeSwitch} role="group" aria-label={t("预览内容")}>
+                  <button type="button" data-active={!showingReference && !showingResult} aria-pressed={!showingReference && !showingResult} disabled={!avatar} onClick={() => { setPreviewMode("avatar"); setResultMaximized(false); }}>{t("当前形象")}</button>
+                  <button type="button" data-active={showingReference} aria-pressed={showingReference} disabled={!referencePreviewUrl} onClick={() => { setPreviewMode("reference"); setResultMaximized(false); }}>{t("参考动作")}</button>
+                  <button type="button" data-active={showingResult} aria-pressed={showingResult} disabled={!resultUrl} onClick={() => { setPreviewMode("result"); setResultMaximized(true); }}>{t("生成效果")}</button>
                 </div>
                 {showingResult ? <button
                   className={styles.previewSizeToggle}
                   type="button"
-                  aria-label={resultMaximized ? "返回动作配置" : "整窗预览生成视频"}
+                  aria-label={resultMaximized ? t("返回动作配置") : t("整窗预览生成视频")}
                   onClick={() => setResultMaximized((maximized) => !maximized)}
                 >
                   {resultMaximized ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-                  <span>{resultMaximized ? "返回配置" : "整窗预览"}</span>
+                  <span>{resultMaximized ? t("返回配置") : t("整窗预览")}</span>
                 </button> : null}
               </div>
               {busy ? (
-                <div className={styles.generationProgress} aria-label="视频生成进度">
+                <div className={styles.generationProgress} aria-label={t("视频生成进度")}>
                   <LoaderCircle className={styles.spin} aria-hidden="true" />
                   <div className={styles.generationProgressCopy}>
-                    <strong role="status" aria-live="polite">{taskState === "queueing" ? "排队中…" : "视频生成中…"}</strong>
-                    <span aria-live="off">{pollWarning ? `${pollWarning} · 正在自动重试` : `已用时 ${formatElapsedTime(elapsedMs)} · 刷新后会自动恢复`}</span>
+                    <strong role="status" aria-live="polite">{taskState === "queueing" ? t("排队中…") : t("视频生成中…")}</strong>
+                    <span aria-live="off">{pollWarning ? "" + (pollWarning) + t(" · 正在自动重试") : t("已用时 ") + (formatElapsedTime(elapsedMs)) + t(" · 刷新后会自动恢复")}</span>
                   </div>
                   <div className={styles.generationProgressTrack} aria-hidden="true">
                     <span className={styles.generationProgressFill} style={{ "--progress": generationProgress } as CSSProperties} />
@@ -1564,9 +1594,9 @@ export function AvatarActionStudio({
                 <div className={styles.previewActions}>
                   <button className={styles.accept} type="button" data-saved={Boolean(savedActionId)} disabled={!resultUrl || saving || Boolean(savedActionId)} onClick={() => void createActionAsset()}>
                     {saving ? <LoaderCircle className={styles.spin} /> : null}
-                    {saving ? "正在创建并准备模型" : savedActionId ? "动作资产已创建" : "创建动作资产"}
+                    {saving ? t("正在创建并准备模型") : savedActionId ? t("动作资产已创建") : t("创建动作资产")}
                   </button>
-                  {savedActionId ? <Link className={styles.viewAvatar} href={`/avatars/${encodeURIComponent(avatarId)}`}>查看 Avatar</Link> : null}
+                  {savedActionId ? <Link className={styles.viewAvatar} href={`/avatars/${encodeURIComponent(avatarId)}`}>{t("查看 Avatar")}</Link> : null}
                 </div>
               )}
             </div>
@@ -1586,31 +1616,26 @@ export function AvatarActionStudio({
         }}
       >
           <header>
-            <span><strong id="ltx-prompt-modal-title">{selectedLtxPrompt.name}</strong></span>
-            <button type="button" aria-label="关闭提示词弹窗" autoFocus onClick={closePromptModal}><X aria-hidden="true" /></button>
+            <span><strong id="ltx-prompt-modal-title">{t(selectedLtxPrompt.name)}</strong></span>
+            <button type="button" aria-label={t("关闭提示词弹窗")} autoFocus onClick={closePromptModal}><X aria-hidden="true" /></button>
           </header>
           <label>
-            <span>完整提示词 <small>{ltxPrompt.length} / 5000</small></span>
+            <span>{t("完整提示词 ")}<SelectMenu<AppLanguage> fullWidth compact triggerRole="combobox" ariaLabel={t("弹窗提示词语言")} value={promptLanguage} disabled={busy} options={[{ value: "zh-CN", label: "简体中文" }, { value: "en", label: "English" }]} onChange={changePromptLanguage} /><small>{ltxPrompt.length} / 5000</small></span>
             <textarea
-              aria-label="视频生成弹窗提示词内容"
+              aria-label={t("视频生成弹窗提示词内容")}
               value={ltxPrompt}
               maxLength={5000}
               rows={12}
-              readOnly={videoPromptChoiceId !== "custom" || busy}
+              readOnly={busy}
               onChange={(event) => {
                 const nextPrompt = event.target.value;
-                setLtxPrompt(nextPrompt);
-                setCustomLtxPrompt(nextPrompt);
-                setResultUrl("");
-                setTaskId("");
-                setTaskState("idle");
-                setSavedActionId("");
+                editVideoPrompt(nextPrompt);
               }}
             />
           </label>
           <footer>
-            <span>{videoPromptChoiceId === "custom" ? "可直接编辑自定义提示词" : "预设提示词为只读内容"}</span>
-            <button type="button" onClick={closePromptModal}>完成</button>
+            <span>{t("当前语种的修改独立保存")}</span>
+            <button type="button" onClick={closePromptModal}>{t("完成")}</button>
           </footer>
       </dialog> : null}
     </section>

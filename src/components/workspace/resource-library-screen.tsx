@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -36,6 +38,7 @@ export function ResourceLibraryScreen({
   returnToRoleCreate?: boolean;
   returnToRoleId?: string;
 }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [catalogRevision, setCatalogRevision] = useState(0);
   const { avatars: officialAvatars, personalAvatars, configured, loading: realtimeLoading } = useOfficialRealtimeAvatars(tab === "official-realtime", catalogRevision);
@@ -48,27 +51,27 @@ export function ResourceLibraryScreen({
   />;
   const returnToRole = returnToRoleId ? () => router.push(`/roles/${encodeURIComponent(returnToRoleId)}`) : undefined;
   return <div className={styles.page}>
-    {returnToRoleId ? <BackLink className={styles.returnLink} href={`/roles/${encodeURIComponent(returnToRoleId)}`} label="返回当前角色" /> : null}
-    {returnToRoleCreate ? <BackLink className={styles.returnLink} href="/roles/new" label="返回创建角色并选择资源" /> : null}
+    {returnToRoleId ? <BackLink className={styles.returnLink} href={`/roles/${encodeURIComponent(returnToRoleId)}`} label={t("返回当前角色")} /> : null}
+    {returnToRoleCreate ? <BackLink className={styles.returnLink} href="/roles/new" label={t("返回创建角色并选择资源")} /> : null}
     <section className={styles.content}>
       {tab === "voices" ? <VoiceLibrary /> : null}
       {tab === "personas" ? <PersonaLibraryScreen embedded onCreated={returnToRole} /> : null}
       {tab === "tools" ? <ToolLibraryScreen onCreated={returnToRole} /> : null}
       {tab === "knowledge" ? <KnowledgeLibraryScreen onCreated={returnToRole} /> : null}
-      {tab === "official-realtime" ? realtimeLoading ? <p>正在读取实时数字人…</p> : configured ? <>
-        {([{ title: "我的数字人形象", avatars: personalAvatars, collapsible: false }, { title: "官方配置的数字人形象", avatars: officialAvatars, collapsible: true }] as const).map((group) => {
+      {tab === "official-realtime" ? realtimeLoading ? <p>{t("正在读取实时数字人…")}</p> : configured ? <>
+        {([{ title: t("我的数字人形象"), avatars: personalAvatars, collapsible: false }, { title: t("官方配置的数字人形象"), avatars: officialAvatars, collapsible: true }] as const).map((group) => {
           const cards = group.avatars.length ? <div className={styles.officialRealtimeGrid}>{group.avatars.map((avatar) => <Link key={avatar.id} className={styles.officialRealtimeCard}
             href={`/resources/realtime/${encodeURIComponent(avatar.id)}`}>
             <span className={styles.officialRealtimeImage}>{avatar.imageUrl ? <Image src={avatar.imageUrl} alt="" fill sizes="(max-width: 760px) 45vw, 210px" unoptimized /> : null}</span>
-            <strong>{avatar.displayName}</strong><small>配置声音、人设和工具</small>
-          </Link>)}</div> : <p>暂无可用形象。</p>;
+            <strong>{avatar.displayName}</strong><small>{t("配置声音、人设和工具")}</small>
+          </Link>)}</div> : <p>{t("暂无可用形象。")}</p>;
           return group.collapsible ? <details key={group.title} className={styles.realtimeSection} aria-label={group.title}>
-            <summary>{group.title}<small>{group.avatars.length} 个形象</small></summary>{cards}
+            <summary>{group.title}<small>{group.avatars.length}{t(" 个形象")}</small></summary>{cards}
           </details> : <section key={group.title} className={styles.realtimeSection} aria-label={group.title}>
-            <div className={styles.realtimeHeading}><h2>{group.title}</h2><Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />创建数字人</Link></div>{cards}
+            <div className={styles.realtimeHeading}><h2>{group.title}</h2><Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link></div>{cards}
           </section>;
         })}
-      </> : <p>配置 Anam 后，才可使用实时数字人。</p> : null}
+      </> : <p>{t("配置 Anam 后，才可使用实时数字人。")}</p> : null}
     </section>
     {tab === "official-realtime" && avatarTask === "realtime" && configured ? <AvatarUploadDialog
       mode="realtime"

@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,6 +37,7 @@ export function VoicePickerModal({
   onClose,
   onConfirm,
 }: VoicePickerModalProps) {
+  const { t } = useLanguage();
   const [draftVoice, setDraftVoice] = useState<TtsVoice>(value);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
@@ -155,7 +158,7 @@ export function VoicePickerModal({
         <button
           type="button"
           className="voice-picker-preview"
-          aria-label={previewing && previewState === "playing" ? `停止试听 ${voice.label}` : `试听 ${voice.label}`}
+          aria-label={previewing && previewState === "playing" ? t("停止试听 ") + (voice.label) + "" : t("试听 ") + (voice.label) + ""}
           disabled={!previewAvailable || (previewState === "loading" && !previewing)}
           data-state={previewing ? previewState : "idle"}
           onClick={() => preview(voice.value)}
@@ -174,15 +177,15 @@ export function VoicePickerModal({
 
   return (
     <div className="voice-picker-layer">
-      <button className="voice-picker-backdrop" aria-label="关闭音色选择" onClick={onClose} />
+      <button className="voice-picker-backdrop" aria-label={t("关闭音色选择")} onClick={onClose} />
       <section className="voice-picker-modal" role="dialog" aria-modal="true" aria-labelledby="voice-picker-title">
         <header className="voice-picker-header">
           <div>
             <span>DOUBAO SEED TTS 2.0</span>
-            <h2 id="voice-picker-title">选择一个喜欢的声音</h2>
-            <p>选中前可直接试听，也可以粘贴账户中的其他音色 ID</p>
+            <h2 id="voice-picker-title">{t("选择一个喜欢的声音")}</h2>
+            <p>{t("选中前可直接试听，也可以粘贴账户中的其他音色 ID")}</p>
           </div>
-          <button type="button" className="icon-btn" aria-label="关闭音色选择" onClick={onClose}>✕</button>
+          <button type="button" className="icon-btn" aria-label={t("关闭音色选择")} onClick={onClose}>✕</button>
         </header>
 
         <div className="voice-picker-search">
@@ -193,14 +196,14 @@ export function VoicePickerModal({
           <input
             value={query}
             autoFocus
-            placeholder="搜索音色、场景，或粘贴音色 ID"
-            aria-label="搜索音色"
+            placeholder={t("搜索音色、场景，或粘贴音色 ID")}
+            aria-label={t("搜索音色")}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <span>{filteredVoices.length}{showCustomVoice ? "+1" : ""} 个结果</span>
+          <span>{filteredVoices.length}{showCustomVoice ? "+1" : ""}{t(" 个结果")}</span>
         </div>
 
-        <div className="voice-picker-categories" aria-label="音色分类">
+        <div className="voice-picker-categories" aria-label={t("音色分类")}>
           {categories.map((item) => (
             <button
               type="button"
@@ -216,21 +219,21 @@ export function VoicePickerModal({
         <div className="voice-picker-list">
           {showCustomVoice && renderVoice({
             value: customVoice,
-            label: "自定义音色 ID",
+            label: t("自定义音色 ID"),
             description: customVoice,
           })}
           {filteredVoices.map(renderVoice)}
           {!filteredVoices.length && !showCustomVoice && (
             <div className="voice-picker-empty">
-              <strong>没有匹配的音色</strong>
-              <span>可尝试其他名称，或粘贴完整的豆包音色 ID</span>
+              <strong>{t("没有匹配的音色")}</strong>
+              <span>{t("可尝试其他名称，或粘贴完整的豆包音色 ID")}</span>
             </div>
           )}
         </div>
 
         <footer className="voice-picker-footer">
           <div>
-            <span>当前准备选择</span>
+            <span>{t("当前准备选择")}</span>
             <strong>{draftLabel}</strong>
             {previewNotice && <small role="status">{previewNotice}</small>}
           </div>
@@ -243,8 +246,7 @@ export function VoicePickerModal({
               onClose();
             }}
           >
-            应用此音色
-          </button>
+            {t("应用此音色")}</button>
         </footer>
       </section>
     </div>

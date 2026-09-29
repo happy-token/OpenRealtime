@@ -19,12 +19,10 @@ export default async function ConversationPage({ searchParams }: {
   searchParams: Promise<{ role_id?: string; role_mode?: string; official_avatar_id?: string; realtime_avatar_id?: string }>;
 }) {
   const previewPolicy = avatarEvaluationPreviewPolicyFromEnv();
-  const admin = await currentAdmin();
+  const [admin, query, requestHeaders] = await Promise.all([currentAdmin(), searchParams, headers()]);
   const avatarArtifactPreviewEnabled = previewPolicy.enabled
     && (previewPolicy.localDevelopmentAccess || Boolean(admin));
-  const query = await searchParams;
   const hostedAvatarId = query.realtime_avatar_id ?? query.official_avatar_id;
-  const requestHeaders = await headers();
   const user = await userFromRequest(new Request("http://localhost", { headers: requestHeaders }));
   const defaultOwner = user ?? (admin ? LOCAL_DEFAULT_ROLE_OWNER : localDefaultRoleOwnerForPage(requestHeaders.get("host")));
   const roleId = query.role_id ?? (hostedAvatarId ? "" : (defaultOwner ? await readUserDefaultRole(defaultOwner).catch(() => null) : null) ?? "default-assistant");

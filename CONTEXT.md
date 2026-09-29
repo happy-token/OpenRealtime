@@ -1043,3 +1043,7 @@ _Avoid_: streaming TTS module (use "StreamingTtsEngine" for this specific plugin
 **DuplexStreamingTtsEngine**:
 The legacy Cascaded adapter interface for simultaneous incremental text input and audio output: `synthesize_duplex(text_stream) -> AsyncIterator[SynthesizedAudioChunk]`. It remains behind the migration adapter until the target session-scoped TTS capability adopts the Speech Output command/event lifecycle. See [ADR-0062](docs/adr/0062-duplex-text-audio-streaming-tts.md) and [ADR-0063](docs/adr/0063-stateful-realtime-engine-command-event-contract.md).
 _Avoid_: TTS segment stream (use "DuplexStreamingTtsEngine" when both directions stream)
+
+**Silent Base Motion（静默动作底片）**:
+用于视频通话、供后续口型对齐使用的人物动作视频。人物不做说话或发声口型，脸部与嘴部持续清晰可见，以正面姿态和自然细微动作呈现通话中的互动感。
+_Avoid_: 说话视频、口型对齐成片

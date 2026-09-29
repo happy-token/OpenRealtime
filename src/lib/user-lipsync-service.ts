@@ -36,12 +36,15 @@ export function normalizePersonalLipsyncUrl(value: unknown): string {
   if (typeof value !== "string" || !value || value.length > 2048 || value !== value.trim()) throw new Error("请输入有效的服务地址");
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("请输入有效的服务地址"); }
-  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/"
-    || isIP(url.hostname) || url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname.endsWith(".local")) {
-    throw new Error("口型服务必须使用 HTTPS 根地址，不含凭据或查询参数");
-  }
   const allowed = (process.env.VOICEAGENT_PERSONAL_LIPSYNC_ALLOWED_ORIGINS ?? "")
     .split(",").map((item) => item.trim()).filter(Boolean);
+  const approvedHttp = url.protocol === "http:" && allowed.includes(url.origin);
+  const approvedPublicIp = url.protocol === "https:" && Boolean(isIP(url.hostname)) && allowed.includes(url.origin);
+  if ((!approvedHttp && !approvedPublicIp && (url.protocol !== "https:"
+    || isIP(url.hostname) || url.hostname === "localhost" || url.hostname.endsWith(".localhost") || url.hostname.endsWith(".local")))
+    || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("口型服务必须使用运营方允许的 HTTP(S) 根地址，不含凭据或查询参数");
+  }
   if (!allowed.includes(url.origin)) throw new Error("此口型服务域名尚未获得站点运营方允许");
   return url.origin;
 }

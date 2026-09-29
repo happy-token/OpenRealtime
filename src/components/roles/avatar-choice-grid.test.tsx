@@ -8,7 +8,7 @@ describe("shared avatar choice cards", () => {
   it("matches the creation task card anatomy and action count", () => {
     expect(component).toContain("styles.avatarMedia");
     expect(component).toContain("styles.avatarCopy");
-    expect(component).toContain("{actionCount} 个动作");
+    expect(component).toContain('{actionCount}{t(" 个动作")}');
     expect(component).not.toContain("仅对话");
     expect(css).toMatch(/\.avatarGrid\s*\{[^}]*repeat\(3,minmax\(0,1fr\)\)/s);
     expect(css).toMatch(/\.avatarMedia\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3/s);

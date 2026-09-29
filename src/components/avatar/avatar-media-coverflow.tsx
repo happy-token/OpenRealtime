@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import { Check, ChevronLeft, ChevronRight, Film, ImageIcon } from "lucide-react";
@@ -83,6 +85,7 @@ export function AvatarMediaCoverflow({
   onActiveIndexChange: (index: number) => void;
   onCurrentActionClick?: (action: AvatarAction) => void;
 }) {
+  const { t } = useLanguage();
   const playableActions = useMemo(
     () => filterPlayableActions
       ? actions.filter((action) => action.state === "available" && action.pendingModelCount === 0 && Boolean(action.videoUrl))
@@ -140,7 +143,7 @@ export function AvatarMediaCoverflow({
       <div
         className={styles.viewport}
         role="group"
-        aria-label={size === "workbench" ? `${avatarName} 形象与动作左右切换` : `${avatarName} 形象与动作层叠浏览`}
+        aria-label={size === "workbench" ? "" + (avatarName) + t(" 形象与动作左右切换") : "" + (avatarName) + t(" 形象与动作层叠浏览")}
         onPointerDown={(event) => { pointerStartX.current = event.clientX; }}
         onPointerUp={finishSwipe}
         onPointerCancel={() => { pointerStartX.current = null; }}
@@ -156,7 +159,7 @@ export function AvatarMediaCoverflow({
                 key={mediaId}
               className={styles.card}
               type="button"
-              aria-label={action ? `预览动作：${action.displayName}` : `预览 ${avatarName} 形象`}
+              aria-label={action ? t("预览动作：") + (action.displayName) + "" : t("预览 ") + (avatarName) + t(" 形象")}
               aria-current={current ? "true" : undefined}
               data-current={current}
               data-kind={action ? "action" : "image"}
@@ -201,7 +204,7 @@ export function AvatarMediaCoverflow({
                 ) : (
                   <>
                     <Image className={styles.mediaBackdrop} src={imageUrl} alt="" aria-hidden="true" fill sizes={size === "library" ? "310px" : size === "compact" ? "170px" : "100vw"} unoptimized />
-                    <Image className={styles.mediaPortrait} src={imageUrl} alt={`${avatarName} 形象`} fill sizes={size === "library" ? "310px" : size === "compact" ? "170px" : "100vw"} unoptimized />
+                    <Image className={styles.mediaPortrait} src={imageUrl} alt={"" + (avatarName) + t(" 形象")} fill sizes={size === "library" ? "310px" : size === "compact" ? "170px" : "100vw"} unoptimized />
                   </>
                 )}
               </span>
@@ -209,31 +212,31 @@ export function AvatarMediaCoverflow({
               <span className={styles.copy}>
                 {size === "compact" ? null : <small>{action
                   ? action.state === "available" && action.pendingModelCount === 0
-                    ? "Avatar 动作"
-                    : "待适配动作"
-                  : "Avatar 形象"}</small>}
+                    ? t("Avatar 动作")
+                    : t("待适配动作")
+                  : t("Avatar 形象")}</small>}
                 <strong>{action?.displayName ?? avatarName}</strong>
-                <em>{current ? "当前预览" : "点击移至中央"}</em>
+                <em>{current ? t("当前预览") : t("点击移至中央")}</em>
               </span>
               {size === "compact" ? null : (
                 <span className={styles.kind}>
                   {action
                     ? action.state === "available" && action.pendingModelCount === 0
-                      ? <><Film />动作</>
-                      : <><Film />待适配动作</>
-                    : <><ImageIcon />形象</>
+                      ? <><Film />{t("动作")}</>
+                      : <><Film />{t("待适配动作")}</>
+                    : <><ImageIcon />{t("形象")}</>
                   }
                 </span>
               )}
-              {selectedMediaId === mediaId ? <span className={styles.selected}><Check />当前使用</span> : null}
+              {selectedMediaId === mediaId ? <span className={styles.selected}><Check />{t("当前使用")}</span> : null}
             </button>
           );
         })}
       </div>
       <div className={styles.controls}>
-        {mediaCount > 1 ? <button type="button" aria-label={`浏览 ${avatarName} 的上一个媒体`} onClick={() => showMedia(normalizedIndex - 1)}><ChevronLeft /></button> : <span />}
-        <strong>{mediaLabel}</strong>
-        {mediaCount > 1 ? <button type="button" aria-label={`浏览 ${avatarName} 的下一个媒体`} onClick={() => showMedia(normalizedIndex + 1)}><ChevronRight /></button> : <span />}
+        {mediaCount > 1 ? <button type="button" aria-label={t("浏览 ") + (avatarName) + t(" 的上一个媒体")} onClick={() => showMedia(normalizedIndex - 1)}><ChevronLeft /></button> : <span />}
+        <strong>{t(mediaLabel)}</strong>
+        {mediaCount > 1 ? <button type="button" aria-label={t("浏览 ") + (avatarName) + t(" 的下一个媒体")} onClick={() => showMedia(normalizedIndex + 1)}><ChevronRight /></button> : <span />}
       </div>
     </div>
   );

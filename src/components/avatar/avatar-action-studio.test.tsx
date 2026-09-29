@@ -11,6 +11,14 @@ function renderToStaticMarkup(element: ReactNode) {
 }
 
 describe("AvatarActionStudio", () => {
+  it("starts focused new-action creation without local or server history and permits another generation", () => {
+    const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
+    expect(source).toContain("freshCreation = focusedCreation");
+    expect(source).toContain('let recovered = readRecoverableGenerationTask(avatarId, "action");');
+    expect(source).toMatch(/async function recover\(\) \{\s*if \(freshCreation\) return;/);
+    expect(source).toContain("const selectedPromptAlreadyGenerated = !freshCreation");
+    expect(source).toContain('clearRecoverableGenerationTask(avatar.avatar_id, "action");');
+  });
   it("uses the focused motion form without duplicate creation modes or a side preview", () => {
     const html = renderToStaticMarkup(<AvatarActionStudio avatarId="avatar-123" embedded focusedCreation />);
 
@@ -127,11 +135,12 @@ describe("AvatarActionStudio", () => {
 
     expect(html).toContain('role="listbox" aria-label="视频生成提示词选项"');
     expect(html).not.toContain('aria-label="提示词风格模块"');
-    expect(html).toContain("甜美元气");
-    expect(html).toContain("纯欲柔光");
-    expect(html).toContain("冷艳夜色");
-    expect(html).toContain("知性温柔");
-    expect(html).toContain("忧郁共鸣");
+    expect(html).toContain("温柔陪伴");
+    expect(html).toContain("活泼朋友");
+    expect(html).toContain("专业顾问");
+    expect(html).toContain("耐心老师");
+    expect(html).toContain("冷静学者");
+    expect(html).toContain("自信搭档");
     expect(html).not.toContain("自然对话");
     expect(html).not.toContain("专业主播");
     expect(html).not.toContain("亲和客服");
@@ -204,17 +213,17 @@ describe("AvatarActionStudio", () => {
 
     expect(css).toContain("--avatar-action-menu-row-height: 44px");
     expect(css).toMatch(/\.actionSelectMenu > button \{[^}]*min-height: var\(--avatar-action-menu-row-height\)/);
-    expect(css).toMatch(/\.actionSelectTrigger \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
+    expect(css).toMatch(/\.actionSelectTrigger \{[^}]*min-height: var\(--avatar-button-height-standard(?:,36px)?\)/);
   });
 
   it("aligns both custom pickers, their options, upload, and prompt action heights", () => {
     const css = readFileSync(new URL("./avatar-action-studio.module.css", import.meta.url), "utf8");
 
-    expect(css).toMatch(/\.actionSelectTrigger \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
+    expect(css).toMatch(/\.actionSelectTrigger \{[^}]*min-height: var\(--avatar-button-height-standard(?:,36px)?\)/);
     expect(css).toMatch(/\.actionSelectMenu > button \{[^}]*min-height: var\(--avatar-action-menu-row-height\)/);
     expect(css).toMatch(/\.creationModeRow \{[^}]*grid-template-columns: minmax\(0,1fr\) auto/);
-    expect(css).toMatch(/\.uploadMotion > button:first-child \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
-    expect(css).toMatch(/\.promptViewButton \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
+    expect(css).toMatch(/\.uploadMotion > button:first-child \{[^}]*min-height: var\(--avatar-button-height-standard(?:,36px)?\)/);
+    expect(css).toMatch(/\.promptViewButton \{[^}]*min-height: var\(--avatar-button-height-standard(?:,36px)?\)/);
   });
 
   it("splits provider and model into side-by-side custom lists and exposes all MiniMax H3 models", () => {
@@ -234,8 +243,8 @@ describe("AvatarActionStudio", () => {
     expect(html).toContain("多模态参考图");
     const durationOptions = html.match(/role="listbox" aria-label="MiniMax 时长选项"[^>]*>([\s\S]*?)<\/div>/)?.[1] || "";
     expect(durationOptions).toContain("6 秒");
-    expect(durationOptions).not.toContain("4 秒");
-    expect(durationOptions).not.toContain("15 秒");
+    expect(durationOptions).toContain("4 秒");
+    expect(durationOptions).toContain("15 秒");
     expect(html).toContain("固定 role · reference_video");
     expect(html.indexOf(">供应商</span>")).toBeLessThan(html.indexOf(">提示词选择</span>"));
     expect(VIDEO_GENERATION_MODELS.filter((model) => model.provider === "minimax").map((model) => model.name)).toEqual([
@@ -275,7 +284,7 @@ describe("AvatarActionStudio", () => {
     expect(menuRule).toContain("backdrop-filter: blur(var(--panel-blur,26px)) saturate(155%)");
     expect(css).toContain('.actionSelect[data-open="true"] { z-index: 40; }');
     expect(css).toMatch(/\.parameterSelect \.actionSelectMenu \{[^}]*border-radius: 16px/);
-    expect(css).toMatch(/\.miniMaxVideoInput \{[^}]*min-height: var\(--avatar-button-height-standard\)/);
+    expect(css).toMatch(/\.miniMaxVideoInput \{[^}]*min-height: var\(--avatar-button-height-standard(?:,36px)?\)/);
     expect(css).toMatch(/\.miniMaxContent \{[^}]*display: grid;[^}]*gap: 4px/);
   });
 
@@ -305,9 +314,9 @@ describe("AvatarActionStudio", () => {
     const source = readFileSync(new URL("./avatar-action-studio.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('const busy = taskState === "queueing" || taskState === "processing";');
-    expect(source).toContain('taskState === "queueing" ? "排队中…" : "视频生成中…"');
-    expect(source).toContain("`已用时 ${formatElapsedTime(elapsedMs)} · 刷新后会自动恢复`");
-    expect(source).toContain("`${pollWarning} · 正在自动重试`");
+    expect(source).toContain('taskState === "queueing" ? t("排队中…") : t("视频生成中…")');
+    expect(source).toContain('t("已用时 ") + (formatElapsedTime(elapsedMs)) + t(" · 刷新后会自动恢复")');
+    expect(source).toContain('t(" · 正在自动重试")');
     expect(source).toContain("submissionInFlight,");
     expect(source).toContain('saveRecoverableGenerationTask({');
     expect(source).toContain('requestId,');

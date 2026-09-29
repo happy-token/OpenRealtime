@@ -1,18 +1,21 @@
 .loading {
   position: fixed;
   z-index: 1000;
-  inset: 0;
-  display: grid;
-  place-items: center;
+  inset: 0 0 auto;
+  height: 3px;
+  overflow: hidden;
   pointer-events: none;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(var(--panel-blur,8px));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-@media (min-width: 761px) {
-  :global(body:has([data-sidebar-open="true"])) .loading {
-    left: 260px;
-  }
+.loading .indicator {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: var(--accent);
+  animation: route-loading-progress 1.2s ease-in-out infinite;
 }
 
 .indicator {
@@ -35,6 +38,12 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes route-loading-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .indicator { animation-duration: 1.6s; }
+  .loading .indicator { animation: none; width: 100%; opacity: 0.6; }
 }

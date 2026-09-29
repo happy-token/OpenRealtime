@@ -25,88 +25,38 @@ export const VIDEO_GENERATION_DEFAULT_MODELS = {
   minimax: "MiniMax-H3",
 } as const satisfies Record<VideoGenerationProvider, VideoGenerationModelId>;
 
-const MOUTH_AND_IDENTITY_CONSTRAINTS = `Keep the lips gently closed in the natural resting shape from the reference frame, with no visible gap, teeth, or tongue. The closed mouth and relaxed jaw must move coherently with the cheeks, head, breathing, and whole-face perspective instead of remaining pinned to a fixed screen position. Allow only tiny non-articulatory soft-tissue settling around the closed lips; there are no phoneme or viseme transitions, no speech articulation, and no lip-sync movement. Preserve the exact identity, facial proportions, hairstyle, clothing, background, lighting, crop, and focal length.`;
+export type PromptLanguage = "zh-CN" | "en";
 
-const LOOP_RETURN_CONSTRAINTS = `From 4.5 to 5.5 seconds, settle smoothly and precisely back to the original reference pose. From 5.5 to 6.0 seconds, hold the exact starting pose for loop continuity. No hand movement, camera movement, zoom, cut, background motion, new objects, identity drift, facial deformation, or flicker.`;
+export const BASE_MOTION_CONSTRAINTS = {"zh-CN": "以所提供参考图中的人物为唯一主体，保留其身份、五官、发型、服装、配饰、背景和光照。生成适用于一对一视频通话、可重复循环播放的静默动作底片。沿用参考图构图，固定镜头，不推拉、不摇移、不切镜。人物主要正对镜头，视线自然朝向镜头附近，双眼、完整脸部和嘴部始终清晰可见。保持头部基本水平，不明显转成侧脸，不低头，不让头发、手或物体遮住脸和嘴。嘴唇自然轻闭，下颌放松，全程不说话、不做发音口型、不张嘴、不露齿；可有稳定、轻微的闭嘴微笑。嘴部随脸部自然运动，不僵硬冻结。只表现下述角色动作，配合轻微呼吸和稀疏、自然的眨眼；不招手、不指向、不竖拇指、不反复点头、不进行有明确开始结束含义的手势。手保持在参考图中的自然位置，不新增道具。动作在片段中段自然展开，在结尾平缓回到开头的姿态、头部位置和表情，运动速度也平滑衔接；不突然复位，不淡出，不制造停顿卡点。无说话声、无发声、无音乐。", "en": "Use the person in the supplied reference image as the sole subject. Preserve their identity, facial features, hairstyle, clothing, accessories, background, and lighting. Create a silent base-motion clip for continuous looping during a one-to-one video call. Retain the reference framing with a locked camera, no zoom, pan, or cuts. Keep the person predominantly frontal with natural attention near the lens. Both eyes, the full face, and the mouth remain clearly visible throughout. Keep the head approximately level: no pronounced profile turns, downward head movement, or face and mouth occlusion by hair, hands, or objects. Keep the lips naturally and gently closed and the jaw relaxed. No speaking, speech articulation, open mouth, or visible teeth. A subtle, steady closed-mouth smile is allowed. Let the mouth move naturally with the face rather than freezing it. Perform only the role motion below, accompanied by subtle breathing and sparse natural blinks. No waving, pointing, thumbs-up, repeated nodding, or gestures that imply a distinct greeting, response, or farewell. Keep the hands in their natural reference position and introduce no props. Let the motion unfold naturally through the middle of the clip, then ease back to the opening posture, head position, and expression, with smoothly compatible motion at the loop boundary. No abrupt reset, fade-out, or conspicuous pause. No speech, vocalization, or music."} as const;
 
-const SPEECH_COMPATIBLE_MOTION_CONSTRAINTS = `This is a speech-ready base-motion plate for a downstream lip-sync model. Follow the style-specific gaze and head-pose choreography exactly, keeping the face within 8 degrees of frontal yaw, pitch, and roll so the mouth remains fully visible. Keep the mouth region unobstructed and stable relative to the face in scale, perspective, and lighting, while allowing it to travel naturally with whole-face motion. No deep bow, large lean toward or away from the camera, or motion beyond the explicitly described choreography that would disrupt continuous speaking. Emotional emphasis must use eyes, eyebrows, blinking, and small shoulder or upper-torso motion timed like natural phrase-boundary gestures.`;
-
-export const LTX_PROMPT_PRESETS = [
-  {
-    id: "video-conversation",
-    name: "视频对话",
-    actionName: "视频对话 · 甜美元气",
-    description: "视频通话构图，适合后续口型模型的说话兼容动作",
-    prompt: `A seamless silent base-motion loop for a person who will appear to speak continuously in a one-to-one video-call conversation after downstream lip-sync processing, shot as one locked-off medium close-up. From 0.0 to 0.7 seconds, hold the exact reference pose. From 0.7 to 4.5 seconds, perform exactly the style-specific choreography described above with smooth human timing, natural easing, subtle upper-chest breathing, one or two blinks, and phrase-boundary emotional emphasis. Keep the lips gently closed and the jaw relaxed while allowing the mouth region to follow the whole face naturally; never freeze, paste, or pixel-lock the mouth in screen space. Diegetic audio is quiet room tone only: no speech, no vocalization, no music, and no sound effects. ${SPEECH_COMPATIBLE_MOTION_CONSTRAINTS} ${MOUTH_AND_IDENTITY_CONSTRAINTS} ${LOOP_RETURN_CONSTRAINTS} No extra gesture or motion beyond the explicitly described style-specific choreography.` ,
-  },
-] as const;
-
+export const LTX_PROMPT_PRESETS = [{
+  id: "video-conversation", name: "视频对话", actionName: "视频对话 · 温柔陪伴",
+  description: "视频通话静默循环底片，供后续口型对齐使用",
+  prompt: BASE_MOTION_CONSTRAINTS.en,
+}] as const;
 export type LtxPromptPresetId = (typeof LTX_PROMPT_PRESETS)[number]["id"] | "custom";
 
-const COMPANION_REFERENCE_LOCK = "Use the current reference image exactly as supplied: do not restyle or change the person's hairstyle, makeup, facial features, clothing, accessories, lighting, background, or setting. The persona's visual reference is metadata for future source-image creation only. This action must remain compatible with continuous downstream lip-sync: keep the mouth region visible and geometrically stable relative to the face, and express the persona through eyes, eyebrows, blinking, shoulders, small upper-torso motion, and timing.";
-
-export const COMPANION_EMOTION_STYLES = [
-  {
-    id: "sweet-vitality",
-    name: "甜美元气",
-    emotion: "开心惊喜",
-    description: "可爱活泼 · 眉眼双拍与轻快肩部律动",
-    visualReference: "高马尾、圆眼、酒窝、落日屋顶",
-    speechCompatible: true,
-    prompt: `${COMPANION_REFERENCE_LOCK} Choreography: create buoyant speaking energy with no nod and no downward head movement. Keep the head, chin, and mouth region level and frontal. From 0.7 to 1.6 seconds, brighten the eyes, lift both eyebrows in one quick happy recognition beat, and open the shoulders laterally by about 1 centimeter. From 1.6 to 3.2 seconds, create two lively phrase-emphasis beats using alternating eyebrow lifts and a tiny 1-centimeter lateral shoulder sway, separated by one quick natural blink. From 3.2 to 4.5 seconds, settle the shoulders while keeping warm direct lens eye contact. Emotional tone: cute, energetic, eager, affectionate, and spontaneous without becoming childish or theatrical.`,
-  },
-  {
-    id: "soft-glow",
-    name: "纯欲柔光",
-    emotion: "害羞依恋",
-    description: "乖巧甜美 · 害羞眉眼与轻柔肩部收放",
-    visualReference: "低马尾、清透妆感、象牙白缎面、窗边柔光",
-    speechCompatible: true,
-    prompt: `${COMPANION_REFERENCE_LOCK} Choreography: create shy but connected speaking presence that feels trusting and emotionally close. Keep the head, chin, and gaze level toward the lens; do not look down. From 0.7 to 1.8 seconds, let the shoulders draw inward laterally by about 1 centimeter while the inner eyebrows soften. From 1.8 to 3.1 seconds, use one soft blink and a tiny asymmetrical eyebrow response, as if quietly gathering courage, without changing the lips. From 3.1 to 4.5 seconds, let the shoulders relax open and maintain gentle direct eye contact. Emotional tone: sweet, well-behaved, shy, trusting, affectionate, and soft; never sexualized or performative.`,
-  },
-  {
-    id: "cool-night",
-    name: "冷艳夜色",
-    emotion: "冷静自持",
-    description: "冷艳自信 · 稳定直视与克制眉眼强调",
-    visualReference: "猫系眼型、黑色长发、单肩造型、城市夜景",
-    speechCompatible: true,
-    prompt: `${COMPANION_REFERENCE_LOCK} Choreography: create cool self-possessed speaking presence without looking away. Keep the head and chin level and frontal. From 0.7 to 1.8 seconds, settle one shoulder laterally by about 1 centimeter while holding steady cat-like lens eye contact. From 1.8 to 3.2 seconds, make one precise outer-eyebrow emphasis followed by a slow controlled blink. From 3.2 to 4.5 seconds, re-balance the shoulders and maintain calm direct gaze. Emotional tone: cool, elegant, confident, restrained, subtly intriguing, and never hostile.`,
-  },
-  {
-    id: "gentle-intellectual",
-    name: "知性温柔",
-    emotion: "共情安慰",
-    description: "温柔共情 · 内眉安慰与稳定陪伴感",
-    visualReference: "低发髻、克制妆容、燕麦色针织、温暖书房",
-    speechCompatible: true,
-    prompt: `${COMPANION_REFERENCE_LOCK} Choreography: create empathetic reassuring speaking presence that feels like fully understanding the other person's feelings. Keep the head and chin level and frontal. From 0.7 to 1.9 seconds, let both shoulders settle down about 1 centimeter while lifting the inner eyebrows gently. From 1.9 to 3.2 seconds, hold direct lens eye contact with one soft blink and a second smaller sympathetic eyebrow emphasis. From 3.2 to 4.5 seconds, let the upper torso shift laterally about 1 centimeter and return to center. Emotional tone: intelligent, warm, patient, accepting, emotionally grounded, and quietly reassuring.`,
-  },
-  {
-    id: "melancholy-empathy",
-    name: "忧郁共鸣",
-    emotion: "温柔忧郁",
-    description: "夜晚独处 · 侧垂避视与脆弱停顿",
-    visualReference: "柔顺深色长发、低饱和妆容、雾蓝针织、雨夜窗边",
-    speechCompatible: true,
-    prompt: `${COMPANION_REFERENCE_LOCK} Choreography: create the private loneliness of a quiet late night when she believes she is alone, not a face-to-face reassurance moment. Once motion begins, she does not look into the lens. From 0.7 to 1.55 seconds, her gaze slowly slips about 12 degrees below and to one side of the camera as her head inclines laterally 4 to 6 degrees and lowers only 3 to 4 degrees, like a small involuntary droop rather than a nod or bow. Her shoulders draw inward about 1 centimeter and the inner eyebrows pull gently upward and together. From 1.55 to 3.25 seconds, hold the lowered off-camera gaze through a fragile still pause, followed by one slow heavy blink and a restrained breath catch; keep the lips softly closed and naturally coupled to the cheeks and jaw, with no smile or speech articulation. From 3.25 to 4.5 seconds, release a long silent exhale while the shoulders sink about 1 centimeter and the head remains slightly side-dropped, never meeting the lens during the emotional beat. Convey a young woman quietly enduring sadness by herself, making the viewer instinctively want to comfort, protect, and stay beside her. Emotional tone: lonely, vulnerable, tender, quietly heartbroken, restrained, and deeply pitiable without performance. No direct lens gaze during the emotional action, no comforting nod, therapist expression, warm smile, composed professional demeanor, glamour pose, melodrama, sobbing, visible tears, hostility, or dramatic collapse.`,
-  },
-] as const;
-
 export const VIDEO_PROMPT_STYLES = [
-  ...COMPANION_EMOTION_STYLES,
-] as const;
-
+  {"id": "gentle-companion", "name": "温柔陪伴", "nameEn": "Gentle Companion", "description": "呈现温柔、放松且始终在场的陪伴感", "descriptionEn": "Convey a warm, relaxed, consistently present companion.", "speechCompatible": true, "prompt": "Convey a warm, relaxed, consistently present companion. Keep the shoulders open, the gaze soft, and a faint closed-mouth smile steady. During the first half, let the upper body ease slightly closer to the camera as a natural posture adjustment, keeping the head level and frontal. During the second half, gently return to the opening position. Keep the eyes and brows relaxed, without eyebrow emphasis, nodding, or comforting gestures. Use one smooth, gentle posture arc rather than repeated rocking.", "promptZh": "呈现温柔、放松且始终在场的陪伴感。肩部舒展，目光柔和，保持淡淡的闭嘴微笑。片段前半段，上身缓慢、轻微地向镜头靠近，头部仍水平正面，像自然调整坐姿；后半段缓慢回到初始位置。眉眼保持舒缓，不挑眉强调，不点头，不做安慰手势。整个动作连贯、柔和，避免反复前后摇摆。"},
+  {"id": "lively-friend", "name": "活泼朋友", "nameEn": "Lively Friend", "description": "呈现明朗、有精神但不过度兴奋的朋友感", "descriptionEn": "Convey a bright, engaged friend without excessive excitement.", "speechCompatible": true, "prompt": "Convey a bright, engaged friend without excessive excitement. Keep the eyes alert, the brows slightly open, and a natural closed-mouth smile steady. Through the middle of the clip, let the shoulders and upper body make one light, very small lateral weight adjustment, then naturally return to center. Keep the head level and facing the camera. Use a slightly livelier pace than the gentle companion, without shoulder bouncing, repeated swaying, double eyebrow beats, surprise reactions, or greetings.", "promptZh": "呈现明朗、有精神但不过度兴奋的朋友感。眼神明亮，眉部略舒展，闭嘴微笑自然稳定。片段中段，肩部与上身一起做一次轻盈、幅度很小的横向重心调整，再自然回到中心；头部保持水平朝向镜头。动作节奏比温柔陪伴稍轻快，但不抖肩、不左右连续摇摆、不挑眉双拍，不出现惊喜或打招呼的表演。"},
+  {"id": "professional-advisor", "name": "专业顾问", "nameEn": "Professional Advisor", "description": "呈现稳重、可靠的专业顾问", "descriptionEn": "Convey a composed, dependable professional advisor.", "speechCompatible": true, "prompt": "Convey a composed, dependable professional advisor. Sit upright with balanced shoulders, steady attention toward the lens, and a calm expression; a very faint closed-mouth smile is acceptable. Through the middle, subtly adjust the uprightness of the torso as if settling comfortably into the seat, then restore the opening posture. Keep head displacement minimal. Motion is restrained and even, without approving nods, thoughtful frowns, or explanatory gestures.", "promptZh": "呈现稳重、可靠的专业顾问。坐姿挺拔、肩部平衡，视线稳定朝向镜头，表情平和，可保留极轻微闭嘴微笑。片段中段缓慢调整上身的挺拔程度，像舒适地坐稳，随后恢复开头姿态；头部位置变化极小。动作克制、均匀，不做认可点头、不皱眉思考、不作陈述手势。"},
+  {"id": "patient-teacher", "name": "耐心老师", "nameEn": "Patient Teacher", "description": "呈现亲切、耐心且容易接近的老师", "descriptionEn": "Convey an approachable, kind, patient teacher.", "speechCompatible": true, "prompt": "Convey an approachable, kind, patient teacher. Keep an open shoulder posture, attentive yet gentle eyes, and a slight closed-mouth smile. Through the middle, slowly relax and open both shoulders a little, allowing the upper chest posture to ease naturally, then smoothly return to the opening state. Stay centered and frontal with an even pace. No instructional hand gestures, glances toward off-screen materials, looking down, or repeated encouraging nods.", "promptZh": "呈现亲切、耐心且容易接近的老师。肩姿开放，眼神专注而柔和，保持轻微闭嘴微笑。片段中段，双肩缓慢放松并略微展开，胸口姿态随之自然舒展，随后平缓回到开头状态。身体保持居中正面，节奏平稳；不抬手讲解、不看向画面外的教材、不低头、不用反复点头表示鼓励。"},
+  {"id": "calm-scholar", "name": "冷静学者", "nameEn": "Calm Scholar", "description": "呈现安静、专注、沉着的学者", "descriptionEn": "Convey a quiet, focused, composed scholar.", "speechCompatible": true, "prompt": "Convey a quiet, focused, composed scholar. Keep the torso steady, the shoulders natural, the lips gently closed, and the expression neutral but approachable. Maintain a settled posture for most of the clip, with subtle breathing, natural eye activity, and sparse blinks. Through the middle, make only one very slight relaxation of seated weight, then slowly return. Allow longer settled intervals than the other styles without appearing frozen, theatrically staring, looking down to read, or touching the chin.", "promptZh": "呈现安静、专注、沉着的学者。上身稳定，肩部自然，嘴唇轻闭，表情中性而不冷漠。大部分时间保持安定姿态，以轻微呼吸、自然眼部变化和稀疏眨眼体现生命感。片段中段只做一次非常轻微的坐姿重心松弛，随后缓慢回到原位。比其他风格保留更长的安定间隔，但不僵硬、不凝视表演、不低头阅读、不摸下巴。"},
+  {"id": "confident-partner", "name": "自信搭档", "nameEn": "Confident Partner", "description": "呈现从容、平等、可靠的搭档", "descriptionEn": "Convey an assured, equal, dependable partner.", "speechCompatible": true, "prompt": "Convey an assured, equal, dependable partner. Keep the gaze steady yet relaxed, the shoulders loose, and a very slight closed-mouth smile stable. During the first half, slowly shift seated weight a small distance to one side, with a subtle adjustment of the shoulder line. During the second half, return to the opening balance at an unhurried pace. Keep the head level and frontal rather than turning with the shoulders. Motion is more grounded than the lively friend, with slightly clearer displacement, without posing, shrugging, or provocative eyebrow raises.", "promptZh": "呈现从容、平等、可靠的搭档。目光稳定而放松，肩部松弛，嘴角保持极轻微的闭嘴微笑。片段前半段，上身缓慢做一次小幅侧向重心转移，肩线随之轻微调整；后半段以从容的节奏回到起始重心。头部保持水平正面，不随肩部转向侧脸。动作比活泼朋友更沉稳、幅度略清晰，但不摆造型、不耸肩、不做挑眉挑衅。"},
+ ] as const;
+// Kept as an export alias for consumers of the previous catalog.
+export const COMPANION_EMOTION_STYLES = VIDEO_PROMPT_STYLES;
 export type VideoPromptStyleId = (typeof VIDEO_PROMPT_STYLES)[number]["id"];
 
 export function composeVideoGenerationPrompt(
   presetId: Exclude<LtxPromptPresetId, "custom">,
   styleId: VideoPromptStyleId,
+  language: PromptLanguage = "en",
 ) {
   const preset = LTX_PROMPT_PRESETS.find((item) => item.id === presetId);
   const style = VIDEO_PROMPT_STYLES.find((item) => item.id === styleId);
   if (!preset || !style) throw new Error("视频生成提示词模块无效");
-  return `${style.prompt} ${preset.prompt}`;
+  return `${BASE_MOTION_CONSTRAINTS[language]} ${language === "zh-CN" ? style.promptZh : style.prompt}`;
 }
 
 export function isVideoGenerationModelId(value: unknown): value is VideoGenerationModelId {

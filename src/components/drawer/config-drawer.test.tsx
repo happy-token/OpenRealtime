@@ -184,7 +184,7 @@ describe("ConfigDrawer", () => {
   });
 
   it("renders the hosted asset configuration without provider administration", () => {
-    const html = renderDrawer("avatar");
+    const html = renderDrawer("avatar", { ...DEFAULT_AVATAR_DISPLAY_CONFIG, renderPath: "hosted", hostedAvatarDisplayName: "当前环境形象", hostedAvatarImageUrl: "/digital-human/shuchang-preview.jpg" });
 
     expect(html).toContain("当前环境形象 · CONFIG PREVIEW");
     expect(html).not.toContain("你好，我是 Shuchang");

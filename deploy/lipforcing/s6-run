@@ -9,6 +9,6 @@ exec >>/var/log/openrealtime-lipforcing.log 2>&1
 exec /opt/openrealtime-lipforcing-service/venv/bin/uvicorn app:create_app \
   --factory \
   --host 127.0.0.1 \
-  --port 18190 \
+  --port 8190 \
   --workers 1 \
   --no-proxy-headers

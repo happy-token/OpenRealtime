@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -13,6 +15,7 @@ interface AdminLoginProps {
 }
 
 export function AdminLogin({ configured, defaultCredentials }: AdminLoginProps) {
+  const { t } = useLanguage();
   const [username, setUsername] = useState(defaultCredentials?.username ?? "");
   const [password, setPassword] = useState(defaultCredentials?.password ?? "");
   const [error, setError] = useState(configured ? "" : "请先在环境变量中配置管理员账户");
@@ -43,15 +46,15 @@ export function AdminLogin({ configured, defaultCredentials }: AdminLoginProps) 
       <form className={styles.loginCard} onSubmit={submit}>
         <span className={styles.loginIcon}><RadioTower aria-hidden="true" /></span>
 
-        <h1>运行诊断中心</h1>
-        <p className={styles.loginIntro}>仅管理员可查看会话链路、性能指标和错误日志。</p>
-        <label>管理员账户<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} disabled={!configured} /></label>
-        <label>密码<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={!configured} /></label>
-        {error ? <p className={styles.formError} role="alert">{error}</p> : null}
+        <h1>{t("运行诊断中心")}</h1>
+        <p className={styles.loginIntro}>{t("仅管理员可查看会话链路、性能指标和错误日志。")}</p>
+        <label>{t("管理员账户")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} disabled={!configured} /></label>
+        <label>{t("密码")}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} disabled={!configured} /></label>
+        {error ? <p className={styles.formError} role="alert">{t(error)}</p> : null}
         <button type="submit" disabled={!configured || loading}>
-          <LockKeyhole aria-hidden="true" />{loading ? "正在验证…" : "安全登录"}
+          <LockKeyhole aria-hidden="true" />{loading ? t("正在验证…") : t("安全登录")}
         </button>
-        <BackLink href="/" label="返回语音主页" />
+        <BackLink href="/" label={t("返回语音主页")} />
       </form>
     </main>
   );

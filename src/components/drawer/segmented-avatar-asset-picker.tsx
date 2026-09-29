@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import Link from "next/link";
@@ -61,6 +63,7 @@ export function SegmentedAvatarAssetPicker({
   selectedPreviewControls?: ReactNode;
   onSelect: (avatar: AvatarAsset, action: AvatarAction | null) => void;
 }) {
+  const { t } = useLanguage();
   const segmentedAvatars = useMemo(() => actionsOnly
     ? avatars.filter(avatar => avatar.source.kind === "owned" && !avatar.deletedAt && avatar.actions.length > 0)
     : filterSegmentedAvatarAssets(avatars), [avatars, actionsOnly]);
@@ -75,8 +78,8 @@ export function SegmentedAvatarAssetPicker({
     <section className="segmented-avatar-picker" aria-label={ariaLabel} data-focus-active={Boolean(focusedAvatarId)}>
       {focusedAvatarId || showCollapsedSummary ? (
         <div className="segmented-avatar-picker-summary">
-          <strong>{focusedAvatarId ? "形象与动作" : "内置 Avatar"}</strong>
-          <span>{focusedAvatarId ? "使用左右按钮切换预览" : `${segmentedAvatars.length} 个形象`}</span>
+          <strong>{focusedAvatarId ? t("形象与动作") : t("内置 Avatar")}</strong>
+          <span>{focusedAvatarId ? t("使用左右按钮切换预览") : "" + (segmentedAvatars.length) + t(" 个形象")}</span>
         </div>
       ) : null}
       <div className="segmented-avatar-picker-grid">
@@ -97,7 +100,7 @@ export function SegmentedAvatarAssetPicker({
             onSelect={onSelect}
           />
         ))}
-        {segmentedAvatars.length === 0 ? <p className="segmented-avatar-picker-empty">暂无可用 Avatar</p> : null}
+        {segmentedAvatars.length === 0 ? <p className="segmented-avatar-picker-empty">{t("暂无可用 Avatar")}</p> : null}
       </div>
     </section>
   );
@@ -130,6 +133,7 @@ function SegmentedAvatarCard({
   onCloseFocus: () => void;
   onSelect: (avatar: AvatarAsset, action: AvatarAction | null) => void;
 }) {
+  const { t } = useLanguage();
   const actions = useMemo(() => avatar.actions, [avatar.actions]);
   const playableActions = useMemo(
     () => actions.filter((action) => isPlayableAvatarAction(action) && Boolean(action.videoUrl)),
@@ -199,7 +203,7 @@ function SegmentedAvatarCard({
     <article
       ref={cardRef}
       className="segmented-avatar-card"
-      aria-label={`${avatar.displayName} 形象与动作`}
+      aria-label={"" + (avatar.displayName) + t(" 形象与动作")}
       data-selected={selected}
       data-avatar-selected={avatarSelected}
       data-focused={focused}
@@ -229,16 +233,16 @@ function SegmentedAvatarCard({
             ) : (
               <>
                 <Image className="segmented-avatar-card-backdrop" src={avatar.source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 700px) 100vw, 260px" unoptimized />
-                <Image className="segmented-avatar-card-portrait" src={avatar.source.imageUrl} alt={`${avatar.displayName} 形象`} fill sizes="(max-width: 700px) 100vw, 260px" unoptimized />
+                <Image className="segmented-avatar-card-portrait" src={avatar.source.imageUrl} alt={"" + (avatar.displayName) + t(" 形象")} fill sizes="(max-width: 700px) 100vw, 260px" unoptimized />
               </>
             )}
           </div>
-          <button className="segmented-avatar-card-expand" type="button" aria-label={`展开 ${avatar.displayName} 的形象和动作`} onClick={onFocus} />
+          <button className="segmented-avatar-card-expand" type="button" aria-label={t("展开 ") + (avatar.displayName) + t(" 的形象和动作")} onClick={onFocus} />
           {mediaCount > 1 ? (
-            <div className="segmented-avatar-card-media-navigation" aria-label={`${avatar.displayName} 形象与动作切换`}>
+            <div className="segmented-avatar-card-media-navigation" aria-label={"" + (avatar.displayName) + t(" 形象与动作切换")}>
               <button
                 type="button"
-                aria-label={`上一项：${avatar.displayName}`}
+                aria-label={t("上一项：") + (avatar.displayName) + ""}
                 onClick={() => {
                   setManuallyPaused(true);
                   setMediaIndex((current) => actionsOnly ? ((current - 2 + actions.length) % actions.length) + 1 : (current - 1 + mediaCount) % mediaCount);
@@ -248,7 +252,7 @@ function SegmentedAvatarCard({
               </button>
               <button
                 type="button"
-                aria-label={`下一项：${avatar.displayName}`}
+                aria-label={t("下一项：") + (avatar.displayName) + ""}
                 onClick={() => {
                   setManuallyPaused(true);
                   setMediaIndex((current) => actionsOnly ? (current % actions.length) + 1 : (current + 1) % mediaCount);
@@ -263,15 +267,15 @@ function SegmentedAvatarCard({
             type="button"
             data-selected={selected}
             disabled={disabled || selected}
-            aria-label={selected ? `当前使用：${action?.displayName ?? avatar.displayName}` : selectionLabel}
+            aria-label={selected ? t("当前使用：") + (action?.displayName ?? avatar.displayName) + "" : selectionLabel}
             onClick={() => onSelect(avatar, action)}
           >
-            {selected ? <><Check aria-hidden="true" />当前使用</> : "确认使用"}
+            {selected ? <><Check aria-hidden="true" />{t("当前使用")}</> : t("确认使用")}
           </button>
           {selected && selectedPreviewControls ? selectedPreviewControls : null}
-          {avatarSelected && !selectedPreviewControls ? <span className="segmented-avatar-card-selected"><Check />当前 Avatar</span> : null}
-          <button style={selected && selectedPreviewControls ? { top: 48 } : undefined} className="segmented-avatar-card-action-count" type="button" aria-label={`浏览 ${avatar.displayName} 的形象与动作`} onClick={onFocus}>
-            {avatar.actions.length ? `${avatar.actions.length} 个${actionsOnly ? "口型对齐" : "动作"}` : "未创建动作"}
+          {avatarSelected && !selectedPreviewControls ? <span className="segmented-avatar-card-selected"><Check />{t("当前 Avatar")}</span> : null}
+          <button style={selected && selectedPreviewControls ? { top: 48 } : undefined} className="segmented-avatar-card-action-count" type="button" aria-label={t("浏览 ") + (avatar.displayName) + t(" 的形象与动作")} onClick={onFocus}>
+            {avatar.actions.length ? "" + (avatar.actions.length) + t(" 个") + (actionsOnly ? "口型对齐" : "动作") + "" : t("未创建动作")}
           </button>
         </div>
       )}
@@ -279,9 +283,9 @@ function SegmentedAvatarCard({
       {focused ? (
         <div className="segmented-avatar-card-body segmented-avatar-card-confirmation">
           <button className="segmented-avatar-card-use" type="button" data-selected={selected} disabled={disabled || selected} onClick={() => onSelect(avatar, action)}>
-            {selected ? <><Check />当前使用</> : selectionLabel}
+            {selected ? <><Check />{t("当前使用")}</> : selectionLabel}
           </button>
-          <button className="segmented-avatar-card-close-preview" type="button" aria-label={`收起 ${avatar.displayName} 动作选择`} title="收起预览" onClick={onCloseFocus}><Minimize2 /></button>
+          <button className="segmented-avatar-card-close-preview" type="button" aria-label={t("收起 ") + (avatar.displayName) + t(" 动作选择")} title={t("收起预览")} onClick={onCloseFocus}><Minimize2 /></button>
         </div>
       ) : (
         <div className="segmented-avatar-card-body">
@@ -289,16 +293,16 @@ function SegmentedAvatarCard({
             <span>
               <strong>{avatar.displayName}</strong>
               <em>{action
-                ? `${actionsOnly ? "口型对齐" : action.state === "available" && !action.pendingModelCount ? "动作" : "待适配动作"} · ${action.displayName}`
-                : "形象预览"}</em>
+                ? "" + (actionsOnly ? "口型对齐" : action.state === "available" && !action.pendingModelCount ? "动作" : "待适配动作") + " · " + (action.displayName) + ""
+                : t("形象预览")}</em>
             </span>
-            <button className="segmented-avatar-card-more" type="button" aria-label={`更多操作：${avatar.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+            <button className="segmented-avatar-card-more" type="button" aria-label={t("更多操作：") + (avatar.displayName) + ""} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               <MoreHorizontal />
             </button>
           </div>
-          <div className="segmented-avatar-card-menu" aria-label={`${avatar.displayName} 操作菜单`} hidden={!menuOpen}>
-            <button type="button" onClick={() => { setMenuOpen(false); onFocus(); }}>查看形象与动作</button>
-            <Link href="/resources?tab=avatars&scope=internal-preset" onClick={() => setMenuOpen(false)}>数字人资产管理</Link>
+          <div className="segmented-avatar-card-menu" aria-label={"" + (avatar.displayName) + t(" 操作菜单")} hidden={!menuOpen}>
+            <button type="button" onClick={() => { setMenuOpen(false); onFocus(); }}>{t("查看形象与动作")}</button>
+            <Link href="/resources?tab=avatars&scope=internal-preset" onClick={() => setMenuOpen(false)}>{t("数字人资产管理")}</Link>
           </div>
         </div>
       )}

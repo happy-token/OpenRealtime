@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 import { SelectMenu } from "@/components/ui/select-menu";
 
 import Link from "next/link";
@@ -32,6 +34,7 @@ export function PersonalVideoGeneration({
   onActionSaved?: (action: OwnedAvatarActionRecord) => void;
   onPreviewChange?: (url: string) => void;
 } = {}) {
+  const { t } = useLanguage();
   const router = useRouter();
   const [available, setAvailable] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
@@ -224,32 +227,32 @@ export function PersonalVideoGeneration({
     } finally { setBusy(false); }
   }
 
-  if (signedOut) return <section className={styles.work} data-embedded-action={embedded || undefined}><div className={styles.sectionHeading}><h2>登录后创建个人动作</h2></div><p className={styles.empty}>个人动作会保存到你的资源库并绑定当前形象。<Link href={`/api/user/login?next=${encodeURIComponent(`/roles/new/action?avatar_id=${initialAvatarId ?? ""}`)}`}>前往登录</Link></p></section>;
-  if (!available) return embedded ? <section className={styles.work} data-embedded-action="true"><p className={styles.empty}>正在准备个人动作工作台…</p></section> : null;
+  if (signedOut) return <section className={styles.work} data-embedded-action={embedded || undefined}><div className={styles.sectionHeading}><h2>{t("登录后创建个人动作")}</h2></div><p className={styles.empty}>{t("个人动作会保存到你的资源库并绑定当前形象。")}<Link href={`/api/user/login?next=${encodeURIComponent(`/roles/new/action?avatar_id=${initialAvatarId ?? ""}`)}`}>{t("前往登录")}</Link></p></section>;
+  if (!available) return embedded ? <section className={styles.work} data-embedded-action="true"><p className={styles.empty}>{t("正在准备个人动作工作台…")}</p></section> : null;
   const selectedAvatar = personalAvatars.find((avatar) => avatar.avatar_id === selectedAvatarId);
-  return <section className={styles.work} data-embedded-action={embedded || undefined} aria-label="个人 MiniMax 视频生成">
-    <div className={styles.sectionHeading}><h2>{embedded ? `为 ${selectedAvatar?.display_name ?? "当前形象"} 创建动作` : "使用个人 Key 生成视频"}</h2><p>{embedded ? "当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。" : "上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。"}</p></div>
-    {!configured ? <p className={styles.empty}>尚未保存个人 MiniMax Key。<Link href="/settings/providers">前往供应商设置</Link></p>
-      : !ready ? <p className={styles.empty}>付费视频生成尚未在当前环境启用。</p>
+  return <section className={styles.work} data-embedded-action={embedded || undefined} aria-label={t("个人 MiniMax 视频生成")}>
+    <div className={styles.sectionHeading}><h2>{embedded ? t("为 ") + (selectedAvatar?.display_name ?? "当前形象") + t(" 创建动作") : t("使用个人 Key 生成视频")}</h2><p>{embedded ? t("当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。") : t("上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。")}</p></div>
+    {!configured ? <p className={styles.empty}>{t("尚未保存个人 MiniMax Key。")}<Link href="/settings/providers">{t("前往供应商设置")}</Link></p>
+      : !ready ? <p className={styles.empty}>{t("付费视频生成尚未在当前环境启用。")}</p>
         : <div className={styles.personalForm}>
-          {embedded ? <div className={styles.lockedResource}><span>当前形象</span><strong>{selectedAvatar?.display_name ?? "正在读取…"}</strong><small>使用该形象的源图生成动作，不会修改原图。</small></div>
-            : <label>参考图片（JPG、PNG、WebP，≤ 4.5MB）<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setImage(event.target.files?.[0] || null)} /></label>}
-          <label>动作提示词<textarea value={prompt} maxLength={2000} disabled={busy} onChange={event => setPrompt(event.target.value)} placeholder="描述人物要做的动作、镜头和情绪" /></label>
-          <label>视频时长<SelectMenu fullWidth value={String(duration)} ariaLabel="视频时长" options={[...(Array.from({ length: 12 }, (_, index) => index + 4).map(seconds => ({ value: String(seconds), label: String(seconds + "秒") })))]} onChange={value => setDuration(Number(value))} disabled={busy} /></label>
-          <label className={styles.confirm}><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我确认拥有图片使用权，并同意本次生成消耗个人 MiniMax API 额度</label>
-          <button type="button" disabled={!image || !prompt.trim() || !confirmed || busy} onClick={() => void submit()}>{busy ? "生成中…" : `生成 ${duration} 秒视频`}</button>
+          {embedded ? <div className={styles.lockedResource}><span>{t("当前形象")}</span><strong>{selectedAvatar?.display_name ?? t("正在读取…")}</strong><small>{t("使用该形象的源图生成动作，不会修改原图。")}</small></div>
+            : <label>{t("参考图片（JPG、PNG、WebP，≤ 4.5MB）")}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setImage(event.target.files?.[0] || null)} /></label>}
+          <label>{t("动作提示词")}<textarea value={prompt} maxLength={2000} disabled={busy} onChange={event => setPrompt(event.target.value)} placeholder={t("描述人物要做的动作、镜头和情绪")} /></label>
+          <label>{t("视频时长")}<SelectMenu fullWidth value={String(duration)} ariaLabel={t("视频时长")} options={[...(Array.from({ length: 12 }, (_, index) => index + 4).map(seconds => ({ value: String(seconds), label: String(seconds) + t(" 秒") })))]} onChange={value => setDuration(Number(value))} disabled={busy} /></label>
+          <label className={styles.confirm}><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />{t("我确认拥有图片使用权，并同意本次生成消耗个人 MiniMax API 额度")}</label>
+          <button type="button" disabled={!image || !prompt.trim() || !confirmed || busy} onClick={() => void submit()}>{busy ? t("生成中…") : t("生成 ") + (duration) + t(" 秒视频")}</button>
         </div>}
-    {notice ? <p className={styles.personalNotice} role="status">{notice}</p> : null}
-    {resultUrl ? <div className={styles.personalResult}><video src={resultUrl} controls playsInline /><a className={styles.primary} href={resultUrl}>下载生成视频</a></div> : null}
-    {embedded && finishedTaskId ? <button className={styles.primary} type="button" disabled={busy || !selectedAvatarId} onClick={() => void saveAndAttachToCurrentAvatar()}>{busy ? "正在保存…" : "保存动作并返回任务"}</button>
-      : finishedTaskId && !assets.some(asset => asset.taskId === finishedTaskId) ? <button className={styles.primary} type="button" disabled={busy} onClick={() => void saveToLibrary()}>保存到个人动作素材库</button> : null}
+    {notice ? <p className={styles.personalNotice} role="status">{t(notice)}</p> : null}
+    {resultUrl ? <div className={styles.personalResult}><video src={resultUrl} controls playsInline /><a className={styles.primary} href={resultUrl}>{t("下载生成视频")}</a></div> : null}
+    {embedded && finishedTaskId ? <button className={styles.primary} type="button" disabled={busy || !selectedAvatarId} onClick={() => void saveAndAttachToCurrentAvatar()}>{busy ? t("正在保存…") : t("保存动作并返回任务")}</button>
+      : finishedTaskId && !assets.some(asset => asset.taskId === finishedTaskId) ? <button className={styles.primary} type="button" disabled={busy} onClick={() => void saveToLibrary()}>{t("保存到个人动作素材库")}</button> : null}
     {!embedded && !returnToRoleId ? <div className={styles.personalForm}>
-      <h3>我的数字人</h3>
-      <label>名称<input type="text" value={avatarName} maxLength={50} disabled={busy} onChange={event => setAvatarName(event.target.value)} placeholder="给数字人起个名字" /></label>
-      <label>形象图片（可使用上方已选图片）<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setAvatarImage(event.target.files?.[0] || null)} /></label>
-      <button type="button" disabled={busy || !avatarName.trim() || !(avatarImage || image)} onClick={() => void createAvatar()}>创建个人数字人</button>
-      {personalAvatars.length ? <label>关联动作的数字人<SelectMenu fullWidth value={String(selectedAvatarId)} ariaLabel="关联动作的数字人" options={[...(personalAvatars.map(avatar => ({ value: String(avatar.avatar_id), label: String(avatar.display_name) })))]} onChange={value => setSelectedAvatarId(value)} /></label> : null}
+      <h3>{t("我的数字人")}</h3>
+      <label>{t("名称")}<input type="text" value={avatarName} maxLength={50} disabled={busy} onChange={event => setAvatarName(event.target.value)} placeholder={t("给数字人起个名字")} /></label>
+      <label>{t("形象图片（可使用上方已选图片）")}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => setAvatarImage(event.target.files?.[0] || null)} /></label>
+      <button type="button" disabled={busy || !avatarName.trim() || !(avatarImage || image)} onClick={() => void createAvatar()}>{t("创建个人数字人")}</button>
+      {personalAvatars.length ? <label>{t("关联动作的数字人")}<SelectMenu fullWidth value={String(selectedAvatarId)} ariaLabel={t("关联动作的数字人")} options={[...(personalAvatars.map(avatar => ({ value: String(avatar.avatar_id), label: String(avatar.display_name) })))]} onChange={value => setSelectedAvatarId(value)} /></label> : null}
     </div> : null}
-    {!embedded && assets.length ? <div className={styles.personalForm}><h3>我的动作素材</h3>{assets.map(asset => <div key={asset.id}><span>{asset.prompt.slice(0, 80)} · {asset.duration} 秒</span> <a href={`/api/user/motion-assets/${asset.id}`}>下载</a> {selectedAvatarId && !personalAvatars.find(avatar => avatar.avatar_id === selectedAvatarId)?.actions.some(action => action.video_url?.includes(asset.id)) ? <button type="button" disabled={busy} onClick={() => void attachToAvatar(asset.id)}>关联到数字人</button> : null}</div>)}</div> : null}
+    {!embedded && assets.length ? <div className={styles.personalForm}><h3>{t("我的动作素材")}</h3>{assets.map(asset => <div key={asset.id}><span>{asset.prompt.slice(0, 80)} · {asset.duration}{t(" 秒")}</span> <a href={`/api/user/motion-assets/${asset.id}`}>{t("下载")}</a> {selectedAvatarId && !personalAvatars.find(avatar => avatar.avatar_id === selectedAvatarId)?.actions.some(action => action.video_url?.includes(asset.id)) ? <button type="button" disabled={busy} onClick={() => void attachToAvatar(asset.id)}>{t("关联到数字人")}</button> : null}</div>)}</div> : null}
   </section>;
 }

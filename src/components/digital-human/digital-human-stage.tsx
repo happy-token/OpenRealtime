@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import { MotionOrchestrationStage } from "./motion-orchestration";
@@ -80,6 +82,7 @@ function RenderedDigitalHumanStage({
   roleId,
   onVoiceAdmission,
 }: DigitalHumanStageProps) {
+  const { t } = useLanguage();
   const ensureProviderKey = useProviderKeyGate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const anamBridgeRef = useRef(new AnamAudioBridge(24_000));
@@ -467,13 +470,13 @@ function RenderedDigitalHumanStage({
       {fallbackImage ? <Image
         className="digital-human-call-image"
         src={fallbackImage}
-        alt={`${displayConfig.renderPath === "segmented" ? `${segmentedAvatarName} 数字人测试形象` : `${hostedAvatarName} 数字人形象`}`}
+        alt={"" + (displayConfig.renderPath === "segmented" ? `${segmentedAvatarName} 数字人测试形象` : `${hostedAvatarName} 数字人形象`) + ""}
         fill
         priority
         unoptimized={fallbackImage.startsWith("https://") || fallbackImage.startsWith("/api/user/")}
         sizes="(max-width: 900px) 100vw, 900px"
         onLoad={handleFallbackImageLoad}
-      /> : <div className="digital-human-call-placeholder"><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? "数字人形象"}</strong><small>预览资产将在 Renderer 接入后显示</small></div>}
+      /> : <div className="digital-human-call-placeholder"><strong>{displayConfig.renderPath === "hosted" ? hostedAvatarName : selectedSegmentedAvatar?.name ?? t("数字人形象")}</strong><small>{t("预览资产将在 Renderer 接入后显示")}</small></div>}
       {displayConfig.renderPath === "hosted" && displayConfig.provider === "anam" && <video
         id="anam-digital-human-video"
         ref={videoRef}
@@ -481,7 +484,7 @@ function RenderedDigitalHumanStage({
         autoPlay
         onLoadedData={handleVideoMetadata}
         playsInline
-        aria-label="Anam 实时数字人画面"
+        aria-label={t("Anam 实时数字人画面")}
       />}
       {segmentedRuntime && <video
         ref={videoRef}
@@ -489,7 +492,7 @@ function RenderedDigitalHumanStage({
         autoPlay
         onLoadedData={handleVideoMetadata}
         playsInline
-        aria-label="Wav2Lip 实时数字人画面"
+        aria-label={t("Wav2Lip 实时数字人画面")}
       />}
       {displayConfig.renderPath === "segmented" && segmentedVideoUrl && <video
         className="digital-human-live-video digital-human-motion-base-video"
@@ -499,17 +502,17 @@ function RenderedDigitalHumanStage({
         loop
         muted
         playsInline
-        aria-label="已选择动作底片预览"
+        aria-label={t("已选择动作底片预览")}
       />}
       <div className="digital-human-call-vignette" aria-hidden="true" />
       {rendererState === "connecting" && (
         <div className="avatar-startup-dialog" role="status" aria-live="polite">
           <LoaderCircle aria-hidden="true" />
           <div>
-            <strong>正在准备数字人</strong>
-            <span>{rendererMessage || "正在初始化画面与口型服务，请稍候…"}</span>
+            <strong>{t("正在准备数字人")}</strong>
+            <span>{rendererMessage || t("正在初始化画面与口型服务，请稍候…")}</span>
             {showStartupFallback ? (
-              <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button>
+              <button type="button" onClick={continueWithCurrentVisual}>{t("使用当前画面继续")}</button>
             ) : null}
           </div>
         </div>
@@ -524,14 +527,13 @@ function RenderedDigitalHumanStage({
             <span>{rendererMessage}</span>
             <div className="digital-human-recovery-actions">
               {rendererState === "error" && displayConfig.renderPath === "hosted" && displayConfig.provider === "anam" && rendererMessage.includes("API Key") && (
-                <button type="button" onClick={() => void ensureProviderKey("anam", true).then((ready) => { if (ready) retryRenderer(); }).catch((cause: unknown) => setRendererMessage(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>更换 Anam Key</button>
+                <button type="button" onClick={() => void ensureProviderKey("anam", true).then((ready) => { if (ready) retryRenderer(); }).catch((cause: unknown) => setRendererMessage(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>{t("更换 Anam Key")}</button>
               )}
-              <button type="button" aria-label="重新连接数字人画面" onClick={retryRenderer}>
+              <button type="button" aria-label={t("重新连接数字人画面")} onClick={retryRenderer}>
                 <RotateCcw aria-hidden="true" />
-                重连画面
-              </button>
+                {t("重连画面")}</button>
               {rendererState === "error" ? (
-                <button type="button" onClick={continueWithCurrentVisual}>使用当前画面继续</button>
+                <button type="button" onClick={continueWithCurrentVisual}>{t("使用当前画面继续")}</button>
               ) : null}
             </div>
           </div>

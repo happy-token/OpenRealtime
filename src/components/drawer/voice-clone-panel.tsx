@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -74,6 +76,7 @@ export function VoiceClonePanel({
   hideToolbar = false,
   externalComposerTriggerRef,
 }: VoiceClonePanelProps) {
+  const { t } = useLanguage();
   const [voices, setVoices] = useState<ClonedVoice[]>([]);
   const [activeVoiceId, setActiveVoiceId] = useState<string | null>(null);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -386,12 +389,12 @@ export function VoiceClonePanel({
     <details className="config-card voice-clone-card voice-library-disclosure" data-embedded={embedded} open={embedded || managementOnly || undefined}>
       <summary className="config-card-heading voice-clone-heading">
         <span className="config-step"><UserRound /></span>
-        <div><h4>克隆音色</h4><p>{provider === "bailian" ? `${displayedVoices.length} 个可用音色` : "当前供应商暂未接入克隆接口"}</p></div>
+        <div><h4>{t("克隆音色")}</h4><p>{provider === "bailian" ? "" + (displayedVoices.length) + t(" 个可用音色") : t("当前供应商暂未接入克隆接口")}</p></div>
         <ChevronDown className="voice-library-chevron" />
       </summary>
 
       {!hideToolbar ? <div className="voice-clone-toolbar">
-        {embedded ? <span><strong>克隆音色</strong><small>{provider === "bailian" ? `${displayedVoices.length} 个可用音色` : "当前供应商暂未开放"}</small></span> : null}
+        {embedded ? <span><strong>{t("克隆音色")}</strong><small>{provider === "bailian" ? "" + (displayedVoices.length) + t(" 个可用音色") : t("当前供应商暂未开放")}</small></span> : null}
         <button
           ref={composerTriggerRef}
           type="button"
@@ -403,12 +406,12 @@ export function VoiceClonePanel({
             setSubmitNotice("");
           }}
         >
-          {composerOpen ? <X /> : <Plus />}{composerOpen ? "关闭" : embedded ? "新建克隆" : "添加音色"}
+          {composerOpen ? <X /> : <Plus />}{composerOpen ? t("关闭") : embedded ? t("新建克隆") : t("添加音色")}
         </button>
       </div> : null}
 
       {provider === "bailian" ? (
-        <div className="voice-catalog-list cloned-voice-list" aria-label="克隆音色列表">
+        <div className="voice-catalog-list cloned-voice-list" aria-label={t("克隆音色列表")}>
           {displayedVoices.map((voice) => {
             const selected = selectedVoice === voice.id;
             const previewing = previewVoice === voice.id;
@@ -419,73 +422,73 @@ export function VoiceClonePanel({
             return <div className="provider-voice-row cloned-voice-row" data-selected={selected} key={voice.id}>
               {managementOnly ? <div className="provider-voice-select">
                 <span className="provider-voice-avatar"><UserRound /></span>
-                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? "部署中 · 暂不可用" : voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}</small></span>
+                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")}</small></span>
               </div> : <button type="button" className="provider-voice-select" aria-pressed={selected} disabled={voice.status === "UNDEPLOYED"} onClick={() => onSelect(voice.id, voice.displayName)}>
                 <span className="provider-voice-avatar">{selected ? <Check /> : <UserRound />}</span>
-                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? "部署中 · 暂不可用" : selected ? `已选中 · ${voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}` : voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境"}</small></span>
+                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : selected ? t("已选中 · ") + (voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境") + "" : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")}</small></span>
               </button>}
               <div className="voice-clone-row-actions">
-                {!managementOnly ? <button type="button" className="provider-voice-preview" aria-label={`${isPlaying ? "停止试听" : "试听"} ${voice.displayName}`} disabled={voice.status === "UNDEPLOYED" || (previewState === "loading" && !previewing)} onClick={() => onPreview(voice.id, voice.displayName)}>
+                {!managementOnly ? <button type="button" className="provider-voice-preview" aria-label={"" + (isPlaying ? "停止试听" : "试听") + " " + (voice.displayName) + ""} disabled={voice.status === "UNDEPLOYED" || (previewState === "loading" && !previewing)} onClick={() => onPreview(voice.id, voice.displayName)}>
                   {isLoading ? <span className="preview-spinner" /> : isPlaying ? <Square /> : <Play />}
                 </button> : null}
-                {manageable ? <button type="button" aria-label={`重命名 ${voice.displayName}`} title="重命名" onClick={() => { setEditingVoiceId(voice.id); setEditingDisplayName(voice.displayName); setPendingDeleteVoiceId(null); }}><Pencil /></button> : null}
-                {deletable ? <button type="button" data-danger="true" aria-label={`删除 ${voice.displayName}`} title="删除" onClick={() => { setPendingDeleteVoiceId(voice.id); setEditingVoiceId(null); }}><Trash2 /></button> : null}
+                {manageable ? <button type="button" aria-label={t("重命名 ") + (voice.displayName) + ""} title={t("重命名")} onClick={() => { setEditingVoiceId(voice.id); setEditingDisplayName(voice.displayName); setPendingDeleteVoiceId(null); }}><Pencil /></button> : null}
+                {deletable ? <button type="button" data-danger="true" aria-label={t("删除 ") + (voice.displayName) + ""} title={t("删除")} onClick={() => { setPendingDeleteVoiceId(voice.id); setEditingVoiceId(null); }}><Trash2 /></button> : null}
               </div>
               {editingVoiceId === voice.id ? <div className="voice-clone-inline-manager">
-                <input value={editingDisplayName} maxLength={32} aria-label={`新的音色名称：${voice.displayName}`} autoFocus onChange={(event) => setEditingDisplayName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameVoice(voice); if (event.key === "Escape") setEditingVoiceId(null); }} />
-                <button type="button" disabled={!editingDisplayName.trim() || managingVoiceId === voice.id} onClick={() => void renameVoice(voice)}>保存</button>
-                <button type="button" onClick={() => setEditingVoiceId(null)}>取消</button>
+                <input value={editingDisplayName} maxLength={32} aria-label={t("新的音色名称：") + (voice.displayName) + ""} autoFocus onChange={(event) => setEditingDisplayName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameVoice(voice); if (event.key === "Escape") setEditingVoiceId(null); }} />
+                <button type="button" disabled={!editingDisplayName.trim() || managingVoiceId === voice.id} onClick={() => void renameVoice(voice)}>{t("保存")}</button>
+                <button type="button" onClick={() => setEditingVoiceId(null)}>{t("取消")}</button>
               </div> : null}
             </div>;
           })}
         </div>
       ) : (
-        <div className="empty-cloned-voices"><CircleAlert /><span><strong>豆包 TTS 克隆暂未支持</strong><small>该能力按量收费，当前仅开放阿里云百炼克隆</small></span></div>
+        <div className="empty-cloned-voices"><CircleAlert /><span><strong>{t("豆包 TTS 克隆暂未支持")}</strong><small>{t("该能力按量收费，当前仅开放阿里云百炼克隆")}</small></span></div>
       )}
 
       {catalogNotice ? <p className="voice-clone-notice" role="status">{catalogNotice}</p> : null}
-      {provider === "bailian" && catalogLoaded && !canCreate ? <p className="voice-clone-notice">新建克隆音色需要个人百炼 TTS 配置；平台 Key 不可用于克隆。</p> : null}
+      {provider === "bailian" && catalogLoaded && !canCreate ? <p className="voice-clone-notice">{t("新建克隆音色需要个人百炼 TTS 配置；平台 Key 不可用于克隆。")}</p> : null}
 
       {composerOpen && provider === "bailian" && canCreate ? (
         <ModalPortal enabled={embedded}>
         <div className={embedded ? "voice-clone-modal-backdrop" : undefined} onMouseDown={(event) => { if (embedded && event.target === event.currentTarget && !submitting) { if (recording) stopRecording(); updateComposerOpen(false); } }}>
-        <div ref={composerDialogRef} className="voice-clone-composer" role={embedded ? "dialog" : undefined} aria-modal={embedded || undefined} aria-label={embedded ? "新建克隆音色" : undefined} tabIndex={embedded ? -1 : undefined}>
-          {embedded ? <div className="voice-clone-composer-heading"><span><strong>新建克隆音色</strong></span><button type="button" aria-label="关闭新建克隆音色" disabled={submitting} onClick={() => { if (recording) stopRecording(); updateComposerOpen(false); }}><X /></button></div> : null}
-          <div className="voice-clone-source-switch" role="tablist" aria-label="音色样本来源">
-            <button type="button" role="tab" aria-selected={sourceKind === "recording"} data-active={sourceKind === "recording"} onClick={() => { setSourceKind("recording"); resetSample(); }}><Mic />直接录音</button>
-            <button type="button" role="tab" aria-selected={sourceKind === "upload"} data-active={sourceKind === "upload"} onClick={() => { setSourceKind("upload"); resetSample(); }}><Upload />上传文件</button>
+        <div ref={composerDialogRef} className="voice-clone-composer" role={embedded ? "dialog" : undefined} aria-modal={embedded || undefined} aria-label={embedded ? t("新建克隆音色") : undefined} tabIndex={embedded ? -1 : undefined}>
+          {embedded ? <div className="voice-clone-composer-heading"><span><strong>{t("新建克隆音色")}</strong></span><button type="button" aria-label={t("关闭新建克隆音色")} disabled={submitting} onClick={() => { if (recording) stopRecording(); updateComposerOpen(false); }}><X /></button></div> : null}
+          <div className="voice-clone-source-switch" role="tablist" aria-label={t("音色样本来源")}>
+            <button type="button" role="tab" aria-selected={sourceKind === "recording"} data-active={sourceKind === "recording"} onClick={() => { setSourceKind("recording"); resetSample(); }}><Mic />{t("直接录音")}</button>
+            <button type="button" role="tab" aria-selected={sourceKind === "upload"} data-active={sourceKind === "upload"} onClick={() => { setSourceKind("upload"); resetSample(); }}><Upload />{t("上传文件")}</button>
           </div>
 
-          <label className="voice-clone-name"><span>音色名称</span><input data-clone-initial-focus value={displayName} maxLength={32} placeholder="例如：我的自然声线" onChange={(event) => setDisplayName(event.target.value)} /></label>
+          <label className="voice-clone-name"><span>{t("音色名称")}</span><input data-clone-initial-focus value={displayName} maxLength={32} placeholder={t("例如：我的自然声线")} onChange={(event) => setDisplayName(event.target.value)} /></label>
 
-          <div className="voice-clone-script"><small>朗读参考</small><p>你好，这是我的音色样本。我会保持自然、稳定的语速，清晰地读完这段文字，让系统准确学习我的声音特点。</p></div>
+          <div className="voice-clone-script"><small>{t("朗读参考")}</small><p>{t("你好，这是我的音色样本。我会保持自然、稳定的语速，清晰地读完这段文字，让系统准确学习我的声音特点。")}</p></div>
 
           {sourceKind === "recording" ? (
             <div className="voice-recording-studio" data-recording={recording}>
               <div className="voice-recording-meter" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
-              <strong>{recording ? "正在录制" : audioFile ? "录音已准备" : "录制 10–20 秒清晰语音"}</strong>
-              <p>请在安静环境中使用正常语速，录制 10–20 秒清晰语音。</p>
+              <strong>{recording ? t("正在录制") : audioFile ? t("录音已准备") : t("录制 10–20 秒清晰语音")}</strong>
+              <p>{t("请在安静环境中使用正常语速，录制 10–20 秒清晰语音。")}</p>
               <div className="voice-recording-actions">
-                {!recording && !audioFile ? <button type="button" onClick={() => void startRecording()}><Mic />开始录音</button> : null}
-                {recording ? <button type="button" data-danger="true" onClick={stopRecording}><Pause />停止 · {formatSeconds(recordingSeconds)}</button> : null}
+                {!recording && !audioFile ? <button type="button" onClick={() => void startRecording()}><Mic />{t("开始录音")}</button> : null}
+                {recording ? <button type="button" data-danger="true" onClick={stopRecording}><Pause />{t("停止 · ")}{formatSeconds(recordingSeconds)}</button> : null}
                 {!recording && audioFile ? <span><FileAudio />{formatSeconds(recordingSeconds)} · {formatBytes(audioFile.size)}</span> : null}
-                {!recording && audioFile ? <button type="button" onClick={resetSample}><RotateCcw />重新录制</button> : null}
+                {!recording && audioFile ? <button type="button" onClick={resetSample}><RotateCcw />{t("重新录制")}</button> : null}
               </div>
             </div>
           ) : (
             <label className="voice-clone-upload" data-ready={Boolean(audioFile)}>
               <Upload />
-              <span><strong>{audioFile ? audioFile.name : "选择音频文件"}</strong><small>{audioFile ? formatBytes(audioFile.size) : "WAV / MP3 / M4A / WebM / OGG · 10MB 内"}</small></span>
+              <span><strong>{audioFile ? audioFile.name : t("选择音频文件")}</strong><small>{audioFile ? formatBytes(audioFile.size) : t("WAV / MP3 / M4A / WebM / OGG · 10MB 内")}</small></span>
               <input type="file" accept="audio/wav,audio/mpeg,audio/mp4,audio/webm,audio/ogg,.m4a" onChange={(event) => { setAudioFile(event.target.files?.[0] || null); setSubmitNotice(""); }} />
             </label>
           )}
 
-          <label className="voice-clone-rights"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><span>我确认已获得该声音的克隆和使用授权，且样本中不包含其他人的声音。</span></label>
+          <label className="voice-clone-rights"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} /><span>{t("我确认已获得该声音的克隆和使用授权，且样本中不包含其他人的声音。")}</span></label>
 
           {submitNotice ? <p className="voice-clone-submit-notice" role="status"><CircleAlert />{submitNotice}</p> : null}
-          {!configured ? <p className="voice-clone-submit-notice"><CircleAlert />服务端克隆凭据或公网样本存储尚未配置完整。</p> : null}
+          {!configured ? <p className="voice-clone-submit-notice"><CircleAlert />{t("服务端克隆凭据或公网样本存储尚未配置完整。")}</p> : null}
           <button type="button" className="voice-clone-submit" disabled={!configured || !canCreate || !audioFile || !displayName.trim() || !rightsConfirmed || submitting || (sourceKind === "recording" && recordingSeconds < 5)} onClick={() => void submitClone()}>
-            {submitting ? <span className="preview-spinner" /> : <Plus />}{submitting ? "正在创建…" : "创建克隆音色"}
+            {submitting ? <span className="preview-spinner" /> : <Plus />}{submitting ? t("正在创建…") : t("创建克隆音色")}
           </button>
         </div>
         </div>
@@ -497,11 +500,11 @@ export function VoiceClonePanel({
       }}>
         <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="voice-clone-delete-title" aria-describedby="voice-clone-delete-description">
           <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
-          <div><h3 id="voice-clone-delete-title">确认删除这个克隆音色？</h3></div>
-          <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>删除后会同步从阿里云百炼音色目录移除，且无法恢复。{pendingDeleteVoice.id === activeVoiceId ? "该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。" : "当前配置中的引用将失效。"}</p>
+          <div><h3 id="voice-clone-delete-title">{t("确认删除这个克隆音色？")}</h3></div>
+          <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>{t("删除后会同步从阿里云百炼音色目录移除，且无法恢复。")}{pendingDeleteVoice.id === activeVoiceId ? t("该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。") : t("当前配置中的引用将失效。")}</p>
           <div className="avatar-asset-delete-dialog-actions">
-            <button type="button" autoFocus disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => setPendingDeleteVoiceId(null)}>取消</button>
-            <button type="button" data-danger="true" disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => void deleteVoice(pendingDeleteVoice)}><Trash2 />{managingVoiceId === pendingDeleteVoice.id ? "正在删除…" : "确认删除"}</button>
+            <button type="button" autoFocus disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => setPendingDeleteVoiceId(null)}>{t("取消")}</button>
+            <button type="button" data-danger="true" disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => void deleteVoice(pendingDeleteVoice)}><Trash2 />{managingVoiceId === pendingDeleteVoice.id ? t("正在删除…") : t("确认删除")}</button>
           </div>
         </section>
       </div></ModalPortal> : null}

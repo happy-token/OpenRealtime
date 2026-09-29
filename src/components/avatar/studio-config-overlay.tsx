@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
@@ -17,6 +19,7 @@ interface StudioConfigOverlayProps {
 }
 
 export function StudioConfigOverlay({ open, onOpenChange, label, icon, children }: StudioConfigOverlayProps) {
+  const { t } = useLanguage();
   const [isNarrow, setIsNarrow] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -49,7 +52,7 @@ export function StudioConfigOverlay({ open, onOpenChange, label, icon, children 
       <button
         className={styles.backdrop}
         type="button"
-        aria-label={`关闭${label}`}
+        aria-label={t("关闭") + (label) + ""}
         data-open={isOpen}
         onClick={() => onOpenChange(false)}
       />
@@ -66,11 +69,11 @@ export function StudioConfigOverlay({ open, onOpenChange, label, icon, children 
           <>
             <header className={styles.panelHeader}>
               <span className={styles.panelHeaderIcon}>{icon}</span>
-              <strong>{label}</strong>
+              <strong>{t(label)}</strong>
               <button
                 ref={toggleRef}
                 type="button"
-                aria-label={`收起${label}`}
+                aria-label={t("收起") + (label) + ""}
                 aria-expanded={true}
                 aria-controls={dialogId}
                 onClick={() => onOpenChange(false)}

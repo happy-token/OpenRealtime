@@ -20,6 +20,28 @@ function ownedAvatar(
 }
 
 describe("Avatar library catalog", () => {
+  it("reuses the page's asset requests without fetching the catalogs again", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const avatar = ownedAvatar("avatar-shared-request", "共享请求", "2026-09-01T01:00:00.000Z");
+    const catalog = await loadCurrentAvatarCatalog(undefined, {
+      includeHostedAvatars: false,
+      ownedAvatars: Promise.resolve([avatar]),
+      personalAvatars: Promise.resolve([]),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(catalog.some((item) => item.avatarId === avatar.avatar_id)).toBe(true);
+  });
+
+  it("keeps successful assets when one shared catalog request fails", async () => {
+    const avatar = ownedAvatar("avatar-partial-request", "可用资产", "2026-09-01T01:00:00.000Z");
+    const catalog = await loadCurrentAvatarCatalog(undefined, {
+      includeHostedAvatars: false,
+      ownedAvatars: Promise.resolve([avatar]),
+      personalAvatars: Promise.reject(new Error("temporarily unavailable")),
+    });
+    expect(catalog.some((item) => item.avatarId === avatar.avatar_id)).toBe(true);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

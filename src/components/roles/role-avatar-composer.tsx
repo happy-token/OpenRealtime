@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import Link from "next/link";
@@ -18,6 +20,7 @@ type QualitySignal = { label: string; detail: string; tone: "good" | "warn" };
 const MAX_IMAGE_BYTES = 4_500_000;
 
 export function RoleAvatarComposer({ presentation }: { presentation: "window" | "page" }) {
+  const { t } = useLanguage();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sourceMode, setSourceMode] = useState<SourceMode>("upload");
@@ -152,55 +155,55 @@ export function RoleAvatarComposer({ presentation }: { presentation: "window" | 
     aria-labelledby="role-avatar-composer-title"
   >
     <header className={styles.titlebar}>
-      <button type="button" onClick={close} aria-label="返回创建任务"><ArrowLeft /></button>
-      <div><strong id="role-avatar-composer-title">新建数字人形象</strong></div>
-      <span>形象任务</span>
-      {presentation === "window" ? <button type="button" onClick={() => setMaximized((value) => !value)} aria-label={maximized ? "还原窗口" : "最大化窗口"}>{maximized ? <Minimize2 /> : <Maximize2 />}</button> : null}
-      <button type="button" onClick={close} disabled={Boolean(busy)} aria-label="关闭制作窗口"><X /></button>
+      <button type="button" onClick={close} aria-label={t("返回创建任务")}><ArrowLeft /></button>
+      <div><strong id="role-avatar-composer-title">{t("新建数字人形象")}</strong></div>
+      <span>{t("形象任务")}</span>
+      {presentation === "window" ? <button type="button" onClick={() => setMaximized((value) => !value)} aria-label={maximized ? t("还原窗口") : t("最大化窗口")}>{maximized ? <Minimize2 /> : <Maximize2 />}</button> : null}
+      <button type="button" onClick={close} disabled={Boolean(busy)} aria-label={t("关闭制作窗口")}><X /></button>
     </header>
 
     <div className={styles.body}>
-      <section className={styles.stage} aria-label="数字人形象预览">
+      <section className={styles.stage} aria-label={t("数字人形象预览")}>
         {previewUrl ? <>
           <Image className={styles.stageBackdrop} src={previewUrl} alt="" fill sizes="70vw" unoptimized aria-hidden="true" />
-          <Image className={styles.stageImage} src={previewUrl} alt={`${name || "新形象"}预览`} fill sizes="70vw" unoptimized priority />
+          <Image className={styles.stageImage} src={previewUrl} alt={"" + (name || "新形象") + t("预览")} fill sizes="70vw" unoptimized priority />
         </> : <button className={styles.emptyStage} type="button" onClick={() => fileInputRef.current?.click()}>
-          <span><ImagePlus /></span><strong>添加一张角色形象</strong><small>建议使用光线均匀、人物正面、背景简洁的图片</small><em><Upload />选择图片</em>
+          <span><ImagePlus /></span><strong>{t("添加一张角色形象")}</strong><small>{t("建议使用光线均匀、人物正面、背景简洁的图片")}</small><em><Upload />{t("选择图片")}</em>
         </button>}
         <div className={styles.stageShade} />
-        <div className={styles.stageCaption}><span>{modes.length ? modes.map((mode) => ROLE_MODE_LABELS[mode]).join(" · ") : "数字人模式"}</span><h1>{name.trim() || "未命名形象"}</h1><p>图片将保持原始比例完整展示，不会裁切或拉伸。</p></div>
+        <div className={styles.stageCaption}><span>{modes.length ? modes.map((mode) => ROLE_MODE_LABELS[mode]).join(" · ") : t("数字人模式")}</span><h1>{name.trim() || t("未命名形象")}</h1><p>{t("图片将保持原始比例完整展示，不会裁切或拉伸。")}</p></div>
       </section>
 
-      <aside className={styles.config} aria-label="形象创建配置">
-        <header><h2>准备角色形象</h2><p>创建后会自动回填到当前角色草稿，不会进入旧资产管理页面。</p></header>
+      <aside className={styles.config} aria-label={t("形象创建配置")}>
+        <header><h2>{t("准备角色形象")}</h2><p>{t("创建后会自动回填到当前角色草稿，不会进入旧资产管理页面。")}</p></header>
 
         <section className={styles.module} data-open="true">
-          <div className={styles.moduleHeading}><span>01</span><div><strong>形象来源</strong><small>{file ? "已准备图片" : "选择上传或 AI 生成"}</small></div>{file ? <Check /> : null}</div>
+          <div className={styles.moduleHeading}><span>01</span><div><strong>{t("形象来源")}</strong><small>{file ? t("已准备图片") : t("选择上传或 AI 生成")}</small></div>{file ? <Check /> : null}</div>
           <div className={styles.sourceOptions}>
-            <button type="button" data-selected={sourceMode === "upload"} onClick={() => setSourceMode("upload")}><Upload /><span><strong>上传图片</strong><small>JPEG、PNG、WebP，最大 4.5MB</small></span></button>
-            <button type="button" data-selected={sourceMode === "generate"} onClick={() => setSourceMode("generate")}><WandSparkles /><span><strong>AI 生成</strong><small>描述人物外观与画面风格</small></span></button>
+            <button type="button" data-selected={sourceMode === "upload"} onClick={() => setSourceMode("upload")}><Upload /><span><strong>{t("上传图片")}</strong><small>{t("JPEG、PNG、WebP，最大 4.5MB")}</small></span></button>
+            <button type="button" data-selected={sourceMode === "generate"} onClick={() => setSourceMode("generate")}><WandSparkles /><span><strong>{t("AI 生成")}</strong><small>{t("描述人物外观与画面风格")}</small></span></button>
           </div>
           {sourceMode === "upload" ? <div className={styles.uploadRow}>
-            <button type="button" onClick={() => fileInputRef.current?.click()}><ImagePlus />{file ? "更换图片" : "选择图片"}</button>
-            <span>{file?.name ?? "尚未选择文件"}</span>
+            <button type="button" onClick={() => fileInputRef.current?.click()}><ImagePlus />{file ? t("更换图片") : t("选择图片")}</button>
+            <span>{file?.name ?? t("尚未选择文件")}</span>
           </div> : <div className={styles.promptBox}>
-            <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：短发女性产品顾问，正面半身，简洁灰色背景，自然光…" />
-            <button type="button" disabled={!prompt.trim() || Boolean(busy)} onClick={() => void generateImage()}>{busy === "generate" ? <LoaderCircle /> : <Sparkles />}{busy === "generate" ? "正在生成…" : "生成形象"}</button>
+            <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("例如：短发女性产品顾问，正面半身，简洁灰色背景，自然光…")} />
+            <button type="button" disabled={!prompt.trim() || Boolean(busy)} onClick={() => void generateImage()}>{busy === "generate" ? <LoaderCircle /> : <Sparkles />}{busy === "generate" ? t("正在生成…") : t("生成形象")}</button>
           </div>}
           <input ref={fileInputRef} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={(event: ChangeEvent<HTMLInputElement>) => { const selected = event.target.files?.[0]; if (selected) void selectImageFile(selected); event.target.value = ""; }} />
         </section>
 
         <section className={styles.module} data-ready={Boolean(file)}>
-          <div className={styles.moduleHeading}><span>02</span><div><strong>名称与质量检查</strong><small>{file ? `${dimensions.width} × ${dimensions.height}` : "添加图片后自动检查"}</small></div>{file ? <Check /> : null}</div>
-          <label className={styles.nameField}><span>形象名称</span><input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} placeholder="例如：产品顾问形象" /></label>
+          <div className={styles.moduleHeading}><span>02</span><div><strong>{t("名称与质量检查")}</strong><small>{file ? `${dimensions.width} × ${dimensions.height}` : t("添加图片后自动检查")}</small></div>{file ? <Check /> : null}</div>
+          <label className={styles.nameField}><span>{t("形象名称")}</span><input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} placeholder={t("例如：产品顾问形象")} /></label>
           {file ? <div className={styles.qualityList}>{qualitySignals.map((signal) => <div key={signal.label} data-tone={signal.tone}><i>{signal.tone === "good" ? <Check /> : "!"}</i><span><strong>{signal.label}</strong><small>{signal.detail}</small></span></div>)}</div> : null}
         </section>
 
         <section className={styles.module} data-ready={Boolean(file && name.trim())}>
-          <div className={styles.moduleHeading}><span>03</span><div><strong>保存并继续</strong><small>{nextSteps}</small></div></div>
-          <div className={styles.compatibility}><span>后续任务</span><p>{nextSteps}</p></div>
-          {error ? <p className={styles.error} role="alert">{error}{error.includes("登录") ? <Link href="/api/user/login?next=%2Froles%2Fnew%2Favatar">前往登录</Link> : null}</p> : null}
-          <button className={styles.primary} type="button" disabled={!file || !name.trim() || Boolean(busy)} onClick={() => void createAvatar()}>{busy === "create" ? <LoaderCircle /> : <Check />}{busy === "create" ? "正在创建形象…" : "创建形象并返回任务"}</button>
+          <div className={styles.moduleHeading}><span>03</span><div><strong>{t("保存并继续")}</strong><small>{nextSteps}</small></div></div>
+          <div className={styles.compatibility}><span>{t("后续任务")}</span><p>{nextSteps}</p></div>
+          {error ? <p className={styles.error} role="alert">{t(error)}{error.includes("登录") ? <Link href="/api/user/login?next=%2Froles%2Fnew%2Favatar">{t("前往登录")}</Link> : null}</p> : null}
+          <button className={styles.primary} type="button" disabled={!file || !name.trim() || Boolean(busy)} onClick={() => void createAvatar()}>{busy === "create" ? <LoaderCircle /> : <Check />}{busy === "create" ? t("正在创建形象…") : t("创建形象并返回任务")}</button>
         </section>
       </aside>
     </div>

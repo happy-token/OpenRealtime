@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { AudioLines, CircleHelp, Video } from "lucide-react";
 import type { KeyboardEvent } from "react";
@@ -29,6 +31,7 @@ export function ExperienceModeSwitch({
   descriptionsAsTooltip = false,
   ariaLabel = "展示模式",
 }: ExperienceModeSwitchProps) {
+  const { t } = useLanguage();
   function moveSelection(event: KeyboardEvent<HTMLButtonElement>) {
     const direction = event.key === "ArrowRight" || event.key === "ArrowDown"
       ? 1
@@ -78,7 +81,7 @@ export function ExperienceModeSwitch({
           >
             <span className="experience-mode-icon" aria-hidden="true"><Icon /></span>
             <span>
-              <strong>{option.label}</strong>
+              <strong>{t(option.label)}</strong>
               {descriptionsAsTooltip ? (
                 <span
                   className="experience-mode-help"
@@ -88,7 +91,7 @@ export function ExperienceModeSwitch({
                 >
                   <CircleHelp aria-hidden="true" />
                 </span>
-              ) : <small>{option.description}</small>}
+              ) : <small>{t(option.description)}</small>}
             </span>
           </button>
         );

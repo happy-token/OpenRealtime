@@ -1,3 +1,5 @@
+
+import { LocalizedText } from "@/components/language/language-provider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import type { TranscriptEntry } from "@/hooks/use-voice-session";
@@ -71,10 +73,10 @@ export function Transcript({ entries, active = true }: TranscriptProps) {
                 entry.text
               )}
               {entry.role === "assistant" && entry.status === "interrupted" && (
-                <span className="bubble-status">回复已中断</span>
+                <span className="bubble-status">{<LocalizedText text={"回复已中断"} />}</span>
               )}
               {entry.role === "assistant" && entry.status === "failed" && (
-                <span className="bubble-status bubble-status--error">回复失败</span>
+                <span className="bubble-status bubble-status--error">{<LocalizedText text={"回复失败"} />}</span>
               )}
             </div>
           ))}
@@ -93,8 +95,7 @@ export function Transcript({ entries, active = true }: TranscriptProps) {
           aria-label="回到最新消息"
         >
           <ArrowDown aria-hidden="true" />
-          最新消息
-        </button>
+          {<LocalizedText text={"最新消息"} />}</button>
       )}
     </div>
   );

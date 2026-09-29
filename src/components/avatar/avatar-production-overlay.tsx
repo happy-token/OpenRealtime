@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { MoveDiagonal2, X } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -30,6 +32,7 @@ export function AvatarProductionOverlay({
   onComplete?: (result: { avatarId: string; actionId?: string; variantId?: string }) => void;
   onPreviewChange?: (preview: { url: string; name: string; kind?: "talking" } | null) => void;
 }) {
+  const { t } = useLanguage();
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -104,7 +107,7 @@ export function AvatarProductionOverlay({
   } as CSSProperties : undefined;
   return createPortal(<div className={styles.backdrop} data-task={task} role="dialog" aria-modal={movable ? undefined : true} aria-label={title}>
     <section ref={panelRef} className={styles.panel} data-task={task} data-dragging={dragging || undefined} data-resizing={resizing || undefined} style={panelStyle}>
-      <header title={movable ? "拖动窗口" : undefined} onPointerDown={startDrag} onPointerMove={moveDialog} onPointerUp={stopDrag} onPointerCancel={stopDrag}><div><small>{task === "talking" ? "LIP SYNC COMPOSER" : movable ? "MOTION GENERATOR" : "DIGITAL HUMAN STUDIO"}</small><strong>{title}</strong></div><button type="button" aria-label="关闭制作窗口" onClick={onClose}><X aria-hidden="true" /></button></header>
+      <header title={movable ? t("拖动窗口") : undefined} onPointerDown={startDrag} onPointerMove={moveDialog} onPointerUp={stopDrag} onPointerCancel={stopDrag}><div><strong>{t(title)}</strong></div><button type="button" aria-label={t("关闭制作窗口")} onClick={onClose}><X aria-hidden="true" /></button></header>
       <div className={styles.content}>
         {task === "motion" ? avatarId ? <AvatarActionStudio
           avatarId={avatarId}
@@ -112,13 +115,13 @@ export function AvatarProductionOverlay({
           focusedCreation
           onPreviewChange={onPreviewChange}
           onSaved={(action) => onComplete?.({ avatarId, actionId: action.avatar_action_id })}
-        /> : <p className={styles.missingAvatar}>请先选择一个数字人形象。</p> : task === "talking" ? avatarId ? <TalkingProductionComposer
+        /> : <p className={styles.missingAvatar}>{t("请先选择一个数字人形象。")}</p> : task === "talking" ? avatarId ? <TalkingProductionComposer
           avatarId={avatarId}
           actionId={actionId}
           method={method}
           onPreviewChange={onPreviewChange}
           onComplete={onComplete}
-        /> : <p className={styles.missingAvatar}>请先选择一个数字人形象。</p> : <AvatarStudio
+        /> : <p className={styles.missingAvatar}>{t("请先选择一个数字人形象。")}</p> : <AvatarStudio
           initialTask="realtime"
           initialAvatarId={avatarId}
           initialActionId={actionId}
@@ -128,7 +131,7 @@ export function AvatarProductionOverlay({
           singleTask
         />}
       </div>
-      {movable ? <div className={styles.resizeHandle} role="separator" aria-label={task === "talking" ? "调整动作编排窗口大小" : "调整生成动作窗口大小"} tabIndex={0} onPointerDown={startResize} onPointerMove={resizeDialog} onPointerUp={stopResize} onPointerCancel={stopResize}><MoveDiagonal2 aria-hidden="true" /></div> : null}
+      {movable ? <div className={styles.resizeHandle} role="separator" aria-label={task === "talking" ? t("调整动作编排窗口大小") : t("调整生成动作窗口大小")} tabIndex={0} onPointerDown={startResize} onPointerMove={resizeDialog} onPointerUp={stopResize} onPointerCancel={stopResize}><MoveDiagonal2 aria-hidden="true" /></div> : null}
     </section>
   </div>, document.body);
 }
@@ -140,6 +143,7 @@ function TalkingProductionComposer({ avatarId, actionId, method, onPreviewChange
   onPreviewChange?: (preview: { url: string; name: string; kind?: "talking" } | null) => void;
   onComplete?: (result: { avatarId: string; actionId?: string; variantId?: string }) => void;
 }) {
+  const { t } = useLanguage();
   const [avatar, setAvatar] = useState<OwnedAvatarRecord | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -154,8 +158,8 @@ function TalkingProductionComposer({ avatarId, actionId, method, onPreviewChange
     });
     return () => controller.abort();
   }, [avatarId]);
-  if (error) return <p className={styles.missingAvatar} role="alert">{error}</p>;
-  if (!avatar) return <p className={styles.missingAvatar}>正在读取动作编排选项…</p>;
+  if (error) return <p className={styles.missingAvatar} role="alert">{t(error)}</p>;
+  if (!avatar) return <p className={styles.missingAvatar}>{t("正在读取动作编排选项…")}</p>;
   return <AvatarLightweightConfig
     avatar={avatar}
     header={null}

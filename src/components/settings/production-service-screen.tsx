@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -67,6 +69,7 @@ export function ProductionServiceScreen({
   returnToRoleCreate?: boolean;
   onComplete?: (result: { avatarId: string; actionId?: string }) => void;
 }) {
+  const { t } = useLanguage();
   const [avatars, setAvatars] = useState<AvatarAsset[] | null>(null);
   const [ownedAvatars, setOwnedAvatars] = useState<OwnedAvatarRecord[]>([]);
   const [assetAccess, setAssetAccess] = useState<boolean | null>(null);
@@ -141,44 +144,44 @@ export function ProductionServiceScreen({
     <BackLink className={styles.back} href={returnHref} label={returnLabel} />
     <header className={styles.header}>
       <span className={styles.icon}><Icon /></span>
-      <div><h1>{view.title}</h1><p>{kind === "motion" && assetAccess === false ? "上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。" : view.description}</p></div>
+      <div><h1>{view.title}</h1><p>{kind === "motion" && assetAccess === false ? t("上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。") : view.description}</p></div>
     </header>
-    <div className={styles.switch} aria-label="制作服务">
-      <Link href={serviceHref("/services/motion")} aria-current={kind === "motion" ? "page" : undefined}>动作生成</Link>
-      <Link href={serviceHref("/services/talking")} aria-current={kind === "talking" ? "page" : undefined}>口型对齐</Link>
+    <div className={styles.switch} aria-label={t("制作服务")}>
+      <Link href={serviceHref("/services/motion")} aria-current={kind === "motion" ? "page" : undefined}>{t("动作生成")}</Link>
+      <Link href={serviceHref("/services/talking")} aria-current={kind === "talking" ? "page" : undefined}>{t("口型对齐")}</Link>
     </div>
-    {assetAccess !== false ? <section className={styles.status} aria-label="服务状态">
-      <div><span data-ready={status.label === "可用"}>{status.label}</span><p>{status.detail}</p></div>
-      <button type="button" onClick={refresh} aria-label="重新检测服务"><RefreshCw /></button>
+    {assetAccess !== false ? <section className={styles.status} aria-label={t("服务状态")}>
+      <div><span data-ready={status.label === "可用"}>{t(status.label)}</span><p>{t(status.detail)}</p></div>
+      <button type="button" onClick={refresh} aria-label={t("重新检测服务")}><RefreshCw /></button>
     </section> : null}
-    {assetAccess === false && kind === "talking" ? <p className={styles.empty}>当前账户尚未开放数字人素材工作台。</p> : null}
+    {assetAccess === false && kind === "talking" ? <p className={styles.empty}>{t("当前账户尚未开放数字人素材工作台。")}</p> : null}
     {assetAccess !== false ? <section className={styles.work}>
-      <div className={styles.sectionHeading}><span>01 / 选择形象</span><h2>从已有数字人开始</h2><p>动作与口型对齐保存在所选形象下，可供多个角色复用。</p></div>
-      {avatars === null ? <p className={styles.empty}>正在读取数字人形象…</p> : availableAvatars.length === 0
-        ? <div className={styles.empty}>暂无可用形象。<Link href={productionServiceHref("/avatars/create", undefined, undefined, returnTo)}>创建数字人 <ArrowRight /></Link></div>
-        : <div className={styles.avatarList} role="group" aria-label="选择数字人形象">
+      <div className={styles.sectionHeading}><span>{t("01 / 选择形象")}</span><h2>{t("从已有数字人开始")}</h2><p>{t("动作与口型对齐保存在所选形象下，可供多个角色复用。")}</p></div>
+      {avatars === null ? <p className={styles.empty}>{t("正在读取数字人形象…")}</p> : availableAvatars.length === 0
+        ? <div className={styles.empty}>{t("暂无可用形象。")}<Link href={productionServiceHref("/avatars/create", undefined, undefined, returnTo)}>{t("创建数字人 ")}<ArrowRight /></Link></div>
+        : <div className={styles.avatarList} role="group" aria-label={t("选择数字人形象")}>
           {availableAvatars.map((avatar) => <button type="button" key={avatar.avatarId}
             data-selected={selected?.avatarId === avatar.avatarId}
             aria-pressed={selected?.avatarId === avatar.avatarId}
             onClick={() => { setSelectedAvatarId(avatar.avatarId); setWorkspaceOpen(false); setOwnedAvatar(null); }}>
-            <strong>{avatar.displayName}</strong><small>{ownedAvatars.find((item) => item.avatar_id === avatar.avatarId)?.actions.filter((action) => !action.deleted_at && action.video_url).length ?? 0} 个动作底片</small>
+            <strong>{avatar.displayName}</strong><small>{ownedAvatars.find((item) => item.avatar_id === avatar.avatarId)?.actions.filter((action) => !action.deleted_at && action.video_url).length ?? 0}{t(" 个动作底片")}</small>
           </button>)}
         </div>}
     </section> : null}
     {assetAccess !== false && selected ? <section className={styles.work}>
-      <div className={styles.sectionHeading}><span>02 / 开始制作</span><h2>{kind === "motion" ? `为 ${selected.displayName} 创建动作` : `为 ${selected.displayName} 选择底片`}</h2>
-        <p>{kind === "motion" ? "进入动作工作台后选择模板、上传参考或使用视频生成。" : "口型对齐会与所选动作配对，生成后可在形象详情中管理。"}</p></div>
-      {kind === "motion" ? <button className={styles.primary} type="button" onClick={() => setWorkspaceOpen(true)}>打开动作工作台 <ArrowRight /></button>
+      <div className={styles.sectionHeading}><span>{t("02 / 开始制作")}</span><h2>{kind === "motion" ? t("为 ") + (selected.displayName) + t(" 创建动作") : t("为 ") + (selected.displayName) + t(" 选择底片")}</h2>
+        <p>{kind === "motion" ? t("进入动作工作台后选择模板、上传参考或使用视频生成。") : t("口型对齐会与所选动作配对，生成后可在形象详情中管理。")}</p></div>
+      {kind === "motion" ? <button className={styles.primary} type="button" onClick={() => setWorkspaceOpen(true)}>{t("打开动作工作台 ")}<ArrowRight /></button>
         : actions.length ? <div className={styles.actionList}>{actions.map((action) => <button type="button" key={action.avatar_action_id}
           onClick={() => { setSelectedActionId(action.avatar_action_id); setWorkspaceOpen(true); }}>
-          <Film /><span><strong>{action.display_name}</strong><small>使用此底片生成讲话版</small></span><ArrowRight />
+          <Film /><span><strong>{action.display_name}</strong><small>{t("使用此底片生成讲话版")}</small></span><ArrowRight />
         </button>)}</div>
-          : <div className={styles.empty}>此形象还没有可用的动作底片。<Link href={serviceHref("/services/motion")}>先创建动作 <ArrowRight /></Link></div>}
+          : <div className={styles.empty}>{t("此形象还没有可用的动作底片。")}<Link href={serviceHref("/services/motion")}>{t("先创建动作 ")}<ArrowRight /></Link></div>}
     </section> : null}
-    {workspaceOpen && selected ? <section className={styles.work} aria-label={kind === "motion" ? "动作生成工作台" : "口型对齐工作台"}>
+    {workspaceOpen && selected ? <section className={styles.work} aria-label={kind === "motion" ? t("动作生成工作台") : t("口型对齐工作台")}>
       {kind === "motion" ? <AvatarActionStudio key={selected.avatarId} avatarId={selected.avatarId} embedded onChangeAvatar={() => setWorkspaceOpen(false)} mobileConfigOpen={mobileConfigOpen} onMobileConfigOpenChange={setMobileConfigOpen} onSaved={(action) => onComplete?.({ avatarId: selected.avatarId, actionId: action.avatar_action_id })} />
-        : ownedAvatar ? <AvatarLightweightConfig key={ownedAvatar.avatar_id} avatar={ownedAvatar} active open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} initialActionId={selectedActionId} initialMethod={initialTalkingMethod} previewBeforeSave header={<h2>动作编排 · 生成口型素材</h2>} onCreateAction={() => window.location.assign(serviceHref("/services/motion"))} onSaved={() => onComplete?.({ avatarId: ownedAvatar.avatar_id, actionId: selectedActionId || undefined })} />
-          : <p className={styles.empty}>正在读取所选数字人…</p>}
+        : ownedAvatar ? <AvatarLightweightConfig key={ownedAvatar.avatar_id} avatar={ownedAvatar} active open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} initialActionId={selectedActionId} initialMethod={initialTalkingMethod} previewBeforeSave header={<h2>{t("动作编排 · 生成口型素材")}</h2>} onCreateAction={() => window.location.assign(serviceHref("/services/motion"))} onSaved={() => onComplete?.({ avatarId: ownedAvatar.avatar_id, actionId: selectedActionId || undefined })} />
+          : <p className={styles.empty}>{t("正在读取所选数字人…")}</p>}
     </section> : null}
     {kind === "motion" ? <PersonalVideoGeneration initialAvatarId={initialAvatarId} returnToRoleId={returnToRoleId} onActionSaved={(action) => onComplete?.({ avatarId: selected?.avatarId ?? initialAvatarId ?? "", actionId: action.avatar_action_id })} /> : null}
   </main>;

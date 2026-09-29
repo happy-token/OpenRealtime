@@ -1,3 +1,4 @@
+import { LanguageProvider } from "@/components/language/language-provider";
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 import { AppThemeProvider } from "@/components/theme/app-theme-provider";
@@ -17,7 +18,7 @@ export default function RootLayout({ children, modal }: { children: React.ReactN
   return (
     <html lang="zh-CN">
       <body data-theme={DEFAULT_APP_THEME} data-color-scheme="dark">
-        <AppThemeProvider><WorkbenchGlassProvider /><Suspense fallback={null}><NavigationFeedback /></Suspense><ProviderKeyGate><HomeBackdrop />{children}{modal}</ProviderKeyGate></AppThemeProvider>
+        <LanguageProvider><AppThemeProvider><WorkbenchGlassProvider /><Suspense fallback={null}><NavigationFeedback /></Suspense><ProviderKeyGate><HomeBackdrop />{children}{modal}</ProviderKeyGate></AppThemeProvider></LanguageProvider>
       </body>
     </html>
   );

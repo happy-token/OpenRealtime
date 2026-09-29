@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import Link from "next/link";
@@ -371,6 +373,7 @@ export function ActionMaterialFolder({
 }
 
 function MainAvatarMotionPreview({ choice }: { choice: HomeAvatarChoice }) {
+  const { t } = useLanguage();
   const foregroundRef = useRef<HTMLVideoElement>(null);
   const [fit, setFit] = useState<"cover" | "contain">("cover");
   const motion = choice.motion ?? "";
@@ -393,7 +396,7 @@ function MainAvatarMotionPreview({ choice }: { choice: HomeAvatarChoice }) {
       window.removeEventListener("focus", ensurePlayback);
     };
   }, [ensurePlayback, motion]);
-  return <video key={motion} ref={foregroundRef} className={styles.avatarPreviewForeground} data-fit={fit} src={motion} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={`${choice.avatarName ?? choice.name} 动作预览`} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensurePlayback} />;
+  return <video key={motion} ref={foregroundRef} className={styles.avatarPreviewForeground} data-fit={fit} src={motion} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={"" + (choice.avatarName ?? choice.name) + t(" 动作预览")} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensurePlayback} />;
 }
 
 export function resolveAvatarStagePreviewSource({
@@ -459,7 +462,7 @@ function OfflineMotionPreview({
       window.removeEventListener("focus", ensureActivePlayback);
     };
   }, [activeUrl, ensureActivePlayback]);
-  return <video key={activeUrl} ref={activeRef} className={styles.avatarPreviewForeground} data-fit={fit} src={activeUrl} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={`${choice.avatarName ?? choice.name} ${playingTalking ? "口型对齐预览" : "当前动作"}`} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensureActivePlayback} onError={() => setMotionFailed(true)} />;
+  return <video key={activeUrl} ref={activeRef} className={styles.avatarPreviewForeground} data-fit={fit} src={activeUrl} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={"" + (choice.avatarName ?? choice.name) + " " + (playingTalking ? "口型对齐预览" : "当前动作") + ""} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensureActivePlayback} onError={() => setMotionFailed(true)} />;
 }
 
 export function HomePreviewWorkspace({
@@ -487,6 +490,7 @@ export function HomePreviewWorkspace({
   stagePreview = null,
   collapseResourceRails = false,
 }: HomePreviewWorkspaceProps) {
+  const { t } = useLanguage();
   const { capabilities, error: capabilityError, retry: retryCapabilities } = useAvatarCapabilities();
   const ensureProviderKey = useProviderKeyGate();
   const [edgePanel, setEdgePanel] = useState<EdgePanel | null>(null);
@@ -556,7 +560,11 @@ export function HomePreviewWorkspace({
     }, 1_800);
     return () => window.clearTimeout(timer);
   }, []);
-  useEffect(() => writeAvatarMemory(avatarDisplayConfig), [avatarDisplayConfig]);
+  useEffect(() => {
+    if (configReady && (avatarDisplayConfig.renderPath === "hosted" || avatarDisplayConfig.segmentedAvatarId)) {
+      writeAvatarMemory(avatarDisplayConfig);
+    }
+  }, [avatarDisplayConfig, configReady]);
   useEffect(() => setExpandedActionId(null), [avatarMode, avatarDisplayConfig.segmentedAvatarId]);
 
   const loadHostedAvatars = useCallback(async (signal?: AbortSignal) => {
@@ -579,10 +587,17 @@ export function HomePreviewWorkspace({
 
   const loadLocalAvatars = useCallback(async (signal?: AbortSignal) => {
     try {
+      const ownedRequest = fetchOwnedAvatars(signal);
+      const personalRequest = fetchPersonalAvatars(signal);
       const [catalog, owned, personal] = await Promise.all([
-        loadCurrentAvatarCatalog(signal, { includeHostedAvatars: false, includeOwnedBuiltinActions: true }).catch(() => null),
-        fetchOwnedAvatars(signal).catch(() => null),
-        fetchPersonalAvatars(signal).catch(() => null),
+        loadCurrentAvatarCatalog(signal, {
+          includeHostedAvatars: false,
+          includeOwnedBuiltinActions: true,
+          ownedAvatars: ownedRequest,
+          personalAvatars: personalRequest,
+        }).catch(() => null),
+        ownedRequest.catch(() => null),
+        personalRequest.catch(() => null),
       ]);
       if (signal?.aborted) return;
       if (catalog) setAvatarCatalog(catalog);
@@ -663,7 +678,7 @@ export function HomePreviewWorkspace({
   };
   const selectedAvatarChoice: HomeAvatarChoice = avatarMode === "realtime" ? currentHostedChoice : {
     id: `local:${avatarDisplayConfig.segmentedAvatarId}:${avatarDisplayConfig.segmentedAvatarActionId}`,
-    name: selectedAction?.displayName ?? avatarDisplayConfig.segmentedDisplayName ?? "当前数字人",
+    name: selectedAction?.displayName ?? (avatarDisplayConfig.segmentedDisplayName || "请选择形象"),
     avatarName: selectedCatalogAvatar?.displayName ?? selectedOwnedAvatar?.display_name ?? avatarDisplayConfig.segmentedDisplayName,
     role: avatarMode === "offline" ? "动作与口型对齐" : "当前动作",
     preview: selectedCatalogAvatar?.source.imageUrl
@@ -674,20 +689,21 @@ export function HomePreviewWorkspace({
     motion: selectedAction?.videoUrl ?? undefined,
     config: avatarDisplayConfig,
   };
-  const selectedAvatarName = selectedAvatarChoice.avatarName ?? selectedAvatarChoice.name;
+  const selectedAvatarName = selectedAvatarChoice.avatarName || selectedAvatarChoice.name;
   const cachedAvatarMatchesRole = Boolean(role?.avatar_id
     && role.avatar_id === (avatarDisplayConfig.renderPath === "hosted"
       ? avatarDisplayConfig.avatarProfileId
       : avatarDisplayConfig.segmentedAvatarId));
-  const showAvatarPreview = libraryMode || configReady || cachedAvatarMatchesRole;
+  const showAvatarPreview = configReady || (!libraryMode && cachedAvatarMatchesRole);
   const selectedOrb = ORB_OPTIONS.find((option) => option.id === visualTheme) ?? ORB_OPTIONS[0];
   useEffect(() => {
+    if (!showAvatarPreview && experienceMode === "avatar") return;
     publishHomeBackdropScene({
       mode: experienceMode,
       image: selectedAvatarChoice.preview,
       theme: visualTheme,
     });
-  }, [experienceMode, selectedAvatarChoice.preview, visualTheme]);
+  }, [experienceMode, selectedAvatarChoice.preview, showAvatarPreview, visualTheme]);
   const currentActions = libraryMode
     ? selectableActions(selectedCatalogAvatar)
     : avatarMode === "offline"
@@ -808,7 +824,7 @@ export function HomePreviewWorkspace({
   const activeMobileSection = edgePanel ? mobileSection : "visual";
 
   return (
-    <div className={styles.workspace} aria-label={libraryMode ? "数字人资产主页" : undefined} data-purpose={purpose} data-resource-rails-collapsed={collapseResourceRails} data-session-active={sessionActive} data-mode={experienceMode === "voice" ? "orb" : "avatar"} data-orb-theme={visualTheme} data-reduced-motion={reducedMotion} style={panelStyle} onPointerDown={closePanelsFromBlankPreview}>
+    <div className={styles.workspace} aria-label={libraryMode ? t("数字人资产主页") : undefined} data-purpose={purpose} data-resource-rails-collapsed={collapseResourceRails} data-session-active={sessionActive} data-mode={experienceMode === "voice" ? "orb" : "avatar"} data-orb-theme={visualTheme} data-reduced-motion={reducedMotion} style={panelStyle} onPointerDown={closePanelsFromBlankPreview}>
       <div className={styles.preview} aria-live="polite">
         <div className={styles.atmosphere} aria-hidden="true"><i /><i /><i /></div>
         <div className={styles.orbPreview} data-visible={experienceMode === "voice"}>
@@ -817,26 +833,26 @@ export function HomePreviewWorkspace({
         </div>
         {showAvatarPreview && <div className={styles.avatarPreview} data-visible={experienceMode === "avatar"}>
           {experienceMode === "avatar" && stagePreview?.url ? (
-            <video key={stagePreview.url} className={styles.avatarPreviewForeground} src={stagePreview.url} autoPlay loop muted playsInline preload="auto" aria-label={`${stagePreview.name} ${stagePreview.kind === "talking" ? "口型动作预览" : "生成动作预览"}`} />
+            <video key={stagePreview.url} className={styles.avatarPreviewForeground} src={stagePreview.url} autoPlay loop muted playsInline preload="auto" aria-label={"" + (stagePreview.name) + " " + (stagePreview.kind === "talking" ? "口型动作预览" : "生成动作预览") + ""} />
           ) : experienceMode === "avatar" && (libraryMode || avatarMode === "offline") && selectedAvatarChoice.motion && selectedVariant?.video_url ? (
             <OfflineMotionPreview choice={selectedAvatarChoice} talkingUrl={selectedVariant.video_url} force={null} libraryMode={libraryMode} avatarMode={avatarMode} />
           ) : experienceMode === "avatar" && selectedAvatarChoice.motion ? (
             <MainAvatarMotionPreview key={selectedAvatarChoice.id} choice={selectedAvatarChoice} />
           ) : selectedAvatarChoice.preview ? <>
             <Image className={styles.avatarPreviewMotionBackdrop} src={selectedAvatarChoice.preview} alt="" aria-hidden="true" fill sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
-            <Image className={styles.avatarPreviewForeground} src={selectedAvatarChoice.preview} alt={`${selectedAvatarName} 数字人预览`} fill priority sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
+            <Image className={styles.avatarPreviewForeground} src={selectedAvatarChoice.preview} alt={"" + (selectedAvatarName) + t(" 数字人预览")} fill priority sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
           </> : <div className={styles.avatarPreviewPlaceholder}><UserRound aria-hidden="true" /></div>}
           <div className={styles.avatarWash} aria-hidden="true" />
         </div>}
         <div className={styles.previewCopy}>
-          <span data-connection={connected || libraryMode ? "ready" : "connecting"} role="status" aria-live="polite"><i />{libraryMode ? "资产预览" : connected ? "预览已就绪" : "语音连接中"}</span>
-          <h1>{stagePreview?.name ?? role?.display_name ?? (experienceMode === "voice" ? selectedOrb.name : selectedAvatarName)}</h1>
+          <span data-connection={connected || libraryMode ? "ready" : "connecting"} role="status" aria-live="polite"><i />{libraryMode ? t("资产预览") : connected ? t("预览已就绪") : t("语音连接中")}</span>
+          <h1>{stagePreview?.name ?? role?.display_name ?? (experienceMode === "voice" ? selectedOrb.name : showAvatarPreview ? selectedAvatarName : t("正在加载形象…"))}</h1>
         </div>
       </div>
 
       {!libraryMode && !role && !officialRealtime && workbenchPersonaAvatarId ? <div
         className={styles.stageQuickControls}
-        aria-label="Persona 快捷配置"
+        aria-label={t("Persona 快捷配置")}
         onPointerDown={() => {
           setEdgePanel(null);
           setExpandedActionId(null);
@@ -846,7 +862,7 @@ export function HomePreviewWorkspace({
       </div> : null}
 
       {!libraryMode ? <>
-        <ConversationStartAction connected={connected} disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel="主页开始对话" label={experienceMode === "voice" ? "开始语音对话" : `与 ${role?.display_name ?? selectedAvatarName} 对话`} hint={configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : ""} onPress={() => onStartSession(experienceMode)}>
+        <ConversationStartAction connected={connected} disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel={t("主页开始对话")} label={experienceMode === "voice" ? t("开始语音对话") : t("与 ") + (role?.display_name ?? selectedAvatarName) + t(" 对话")} hint={configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : ""} onPress={() => onStartSession(experienceMode)}>
           {experienceMode === "avatar" ? <AvatarCapabilityNotice capability={selectedCapability} error={capabilityError} onRetry={retryCapabilities} variant="stage" /> : null}
         </ConversationStartAction>
       </> : null}
@@ -865,25 +881,25 @@ export function HomePreviewWorkspace({
         onStart={onStartSession}
         runtimeLipSyncAvailable={capabilities?.localRenderer.state === "available"}
       /> : <div className={styles.edgeControls} data-hint={edgeHint} data-open-panel={edgePanel ?? "none"} onPointerEnter={cancelEdgeClose} onPointerLeave={scheduleEdgeClose}>
-        <button className={styles.edgeTrigger} data-library={libraryMode} data-edge="right" type="button" aria-label={experienceMode === "voice" ? "打开视觉主题" : "打开数字人形象"} aria-expanded={visualPanelOpen} onPointerEnter={() => openEdge("visual", "visual", !collapseResourceRails)} onFocus={() => openEdge("visual", "visual")} onClick={() => openEdge("visual", "visual")}><span /></button>
-        <button className={styles.edgeTrigger} data-library={libraryMode} data-edge="bottom" type="button" disabled={!libraryMode && experienceMode === "avatar" && avatarMode === "realtime"} aria-label="打开动作列表" aria-expanded={actionPanelOpen} onPointerEnter={() => openEdge("motion", "action", !collapseResourceRails)} onFocus={() => openEdge("motion", "action")} onClick={() => openEdge("motion", "action")}><span /></button>
+        <button className={styles.edgeTrigger} data-library={libraryMode} data-edge="right" type="button" aria-label={experienceMode === "voice" ? t("打开视觉主题") : t("打开数字人形象")} aria-expanded={visualPanelOpen} onPointerEnter={() => openEdge("visual", "visual", !collapseResourceRails)} onFocus={() => openEdge("visual", "visual")} onClick={() => openEdge("visual", "visual")}><span /></button>
+        <button className={styles.edgeTrigger} data-library={libraryMode} data-edge="bottom" type="button" disabled={!libraryMode && experienceMode === "avatar" && avatarMode === "realtime"} aria-label={t("打开动作列表")} aria-expanded={actionPanelOpen} onPointerEnter={() => openEdge("motion", "action", !collapseResourceRails)} onFocus={() => openEdge("motion", "action")} onClick={() => openEdge("motion", "action")}><span /></button>
 
-        <aside className={styles.visualEdgePanel} data-kind={experienceMode === "voice" ? "theme" : "media"} data-open={visualPanelOpen} data-mobile-active={visualPanelOpen && activeMobileSection === "visual"} aria-label={experienceMode === "voice" ? "视觉主题" : "数字人形象"} aria-hidden={collapseResourceRails && !visualPanelOpen} inert={collapseResourceRails && !visualPanelOpen}>
-          <header><div><small>{experienceMode === "voice" ? "VISUAL" : "AVATAR"}</small><strong>{experienceMode === "voice" ? "视觉主题" : "形象"}</strong></div>{experienceMode === "avatar" && !libraryMode ? <Link href="/resources?tab=avatars"><FolderOpen aria-hidden="true" /><span>管理</span></Link> : null}</header>
+        <aside className={styles.visualEdgePanel} data-kind={experienceMode === "voice" ? "theme" : "media"} data-open={visualPanelOpen} data-mobile-active={visualPanelOpen && activeMobileSection === "visual"} aria-label={experienceMode === "voice" ? t("视觉主题") : t("数字人形象")} aria-hidden={collapseResourceRails && !visualPanelOpen} inert={collapseResourceRails && !visualPanelOpen}>
+          <header><div><small>{experienceMode === "voice" ? "VISUAL" : "AVATAR"}</small><strong>{experienceMode === "voice" ? t("视觉主题") : t("形象")}</strong></div>{experienceMode === "avatar" && !libraryMode ? <Link href="/resources?tab=avatars"><FolderOpen aria-hidden="true" /><span>{t("管理")}</span></Link> : null}</header>
           <div className={styles.visualEdgeList}>
-            {experienceMode === "voice" ? ORB_OPTIONS.map((option) => <button className={styles.themeEdgeOption} key={option.id} type="button" data-selected={visualTheme === option.id} aria-pressed={visualTheme === option.id} onClick={() => onVisualThemeChange(option.id)}><VisualThemePreview theme={option.id} colors={option.colors} /><span><strong>{option.name}</strong><small>{option.note}</small></span>{visualTheme === option.id ? <Check aria-hidden="true" /> : null}</button>) : libraryMode ? <>
-              <LibraryCreateCard kind="avatar" title="创建形象" note="上传图片" axis="vertical" onCreate={() => onOpenProduction?.({ task: "avatar" })} />
+            {experienceMode === "voice" ? ORB_OPTIONS.map((option) => <button className={styles.themeEdgeOption} key={option.id} type="button" data-selected={visualTheme === option.id} aria-pressed={visualTheme === option.id} onClick={() => onVisualThemeChange(option.id)}><VisualThemePreview theme={option.id} colors={option.colors} /><span><strong>{t(option.name)}</strong><small>{t(option.note)}</small></span>{visualTheme === option.id ? <Check aria-hidden="true" /> : null}</button>) : libraryMode ? <>
+              <LibraryCreateCard kind="avatar" title={t("创建形象")} note="上传图片" axis="vertical" onCreate={() => onOpenProduction?.({ task: "avatar" })} />
               {libraryAvatars.map((avatar) => <MediaOption key={avatar.avatarId} name={avatar.displayName} eyebrow={avatar.source.kind === "owned" ? "我的形象" : "内置形象"} image={avatar.source.imageUrl} selected={avatarMode !== "realtime" && avatarDisplayConfig.segmentedAvatarId === avatar.avatarId} axis="vertical" onSelect={() => selectLibraryAvatar(avatar)} />)}
+              <LibraryCreateCard kind="avatar" title={t("创建角色")} note="配置角色" axis="vertical" onCreate={() => window.location.assign("/roles/new")} />
             </> : avatarMode === "realtime" ? (visualAvatars as HomeAvatarChoice[]).map((choice) => <MediaOption key={choice.id} name={choice.name} eyebrow="形象" image={choice.preview} selected={avatarDisplayConfig.avatarProfileId === choice.config.avatarProfileId} axis="vertical" onSelect={() => applyAvatarConfig(choice.config)} />) : (visualAvatars as AvatarAsset[]).map((avatar) => <MediaOption key={avatar.avatarId} name={avatar.displayName} eyebrow="形象" image={avatar.source.imageUrl} selected={avatarDisplayConfig.segmentedAvatarId === avatar.avatarId} axis="vertical" onSelect={() => selectLocalAvatar(avatar)} />)}
-            {experienceMode === "avatar" && (libraryMode ? libraryAvatars.length === 0 : visualAvatars.length === 0) ? <div className={styles.edgeEmpty}><UserRound aria-hidden="true" /><strong>暂无可运行形象</strong>{libraryMode ? <button type="button" onClick={() => onOpenProduction?.({ task: "avatar" })}>创建第一个形象</button> : <Link href="/resources?tab=avatars">前往资产管理</Link>}</div> : null}
+            {experienceMode === "avatar" && (libraryMode ? libraryAvatars.length === 0 : visualAvatars.length === 0) ? <div className={styles.edgeEmpty}><UserRound aria-hidden="true" /><strong>{t("暂无可运行形象")}</strong>{libraryMode ? <button type="button" onClick={() => onOpenProduction?.({ task: "avatar" })}>{t("创建第一个形象")}</button> : <Link href="/resources?tab=avatars">{t("前往资产管理")}</Link>}</div> : null}
           </div>
         </aside>
 
-        <aside className={styles.actionEdgePanel} data-open={actionPanelOpen} data-folder-open={Boolean(expandedActionId)} data-mobile-active={actionPanelOpen && activeMobileSection === "action"} aria-label="动作" aria-hidden={collapseResourceRails && !actionPanelOpen} inert={collapseResourceRails && !actionPanelOpen}>
-          <header><div><strong>动作</strong></div><span>{currentActions.length}</span></header>
+        <aside className={styles.actionEdgePanel} data-open={actionPanelOpen} data-folder-open={Boolean(expandedActionId)} data-mobile-active={actionPanelOpen && activeMobileSection === "action"} aria-label={t("动作")} aria-hidden={collapseResourceRails && !actionPanelOpen} inert={collapseResourceRails && !actionPanelOpen}>
+          <header><div><strong>{t("动作")}</strong></div><span>{currentActions.length}</span></header>
           <div className={styles.actionEdgeList}>
             {!libraryMode ? <WorkbenchConversationOption selected={experienceMode === "voice"} onSelect={() => onExperienceModeChange("voice")} /> : null}
-            {libraryMode ? <LibraryCreateCard kind="motion" title="创建动作" note="生成动作" axis="horizontal" onCreate={() => onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId })} /> : null}
             {actionSort.orderedActions.map((action, index) => {
               const allVariants = activeTalkingVariants(selectedOwnedAvatar?.actions.find((candidate) => candidate.avatar_action_id === action.avatarActionId));
               const variants = libraryMode ? allVariants : allVariants.filter((variant) => variant.method === "lipforcing");
@@ -906,14 +922,15 @@ export function HomePreviewWorkspace({
                 onCreateTalking={() => libraryMode ? onOpenProduction?.({ task: "talking", avatarId: avatarDisplayConfig.segmentedAvatarId, actionId: action.avatarActionId }) : window.location.assign(`/resources?tab=avatars&task=talking&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}&action_id=${encodeURIComponent(action.avatarActionId)}`)}
               /></div>;
             })}
+            {avatarDisplayConfig.segmentedAvatarId ? <LibraryCreateCard kind="motion" title={t("创建动作")} note="生成动作" axis="horizontal" onCreate={() => libraryMode ? onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId }) : window.location.assign(`/resources?tab=avatars&task=motion&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}`)} /> : null}
           </div>
         </aside>
 
-        {edgePanel || libraryMode ? <div className={styles.mobileEdgeTabs} role="tablist" aria-label="主页配置"><button type="button" role="tab" aria-selected={visualPanelOpen && activeMobileSection === "visual"} onClick={() => openEdge("visual", "visual")}>形象</button>{libraryMode || avatarMode !== "realtime" || experienceMode === "voice" ? <button type="button" role="tab" aria-selected={actionPanelOpen && activeMobileSection === "action"} onClick={() => openEdge("motion", "action")}>动作</button> : null}</div> : null}
+        {edgePanel || libraryMode ? <div className={styles.mobileEdgeTabs} role="tablist" aria-label={t("主页配置")}><button type="button" role="tab" aria-selected={visualPanelOpen && activeMobileSection === "visual"} onClick={() => openEdge("visual", "visual")}>{t("形象")}</button>{libraryMode || avatarMode !== "realtime" || experienceMode === "voice" ? <button type="button" role="tab" aria-selected={actionPanelOpen && activeMobileSection === "action"} onClick={() => openEdge("motion", "action")}>{t("动作")}</button> : null}</div> : null}
       </div>}
 
-      {hostedCatalogNeedsKey && experienceMode === "avatar" && avatarMode === "realtime" ? <button className={styles.catalogRecovery} type="button" onClick={() => void ensureProviderKey("anam").then((ready) => { if (ready) void loadHostedAvatars(); })}>连接 Anam 并读取形象</button> : null}
-      {hostedCatalogError && experienceMode === "avatar" && avatarMode === "realtime" ? <p className={styles.homeError} role="alert">{hostedCatalogError}</p> : error ? <p className={styles.homeError} role="alert">{error}</p> : null}
+      {hostedCatalogNeedsKey && experienceMode === "avatar" && avatarMode === "realtime" ? <button className={styles.catalogRecovery} type="button" onClick={() => void ensureProviderKey("anam").then((ready) => { if (ready) void loadHostedAvatars(); })}>{t("连接 Anam 并读取形象")}</button> : null}
+      {hostedCatalogError && experienceMode === "avatar" && avatarMode === "realtime" ? <p className={styles.homeError} role="alert">{hostedCatalogError}</p> : error ? <p className={styles.homeError} role="alert">{t(error)}</p> : null}
     </div>
   );
 }

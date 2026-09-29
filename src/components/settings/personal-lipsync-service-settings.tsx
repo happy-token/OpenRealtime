@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -8,6 +10,7 @@ import styles from "./model-services-settings.module.css";
 type ServiceState = { configured: boolean; url: string; tokenConfigured: boolean };
 
 export function PersonalLipsyncServiceSettings() {
+  const { t } = useLanguage();
   const currentUser = useCurrentUser();
   const [service, setService] = useState<ServiceState>({ configured: false, url: "", tokenConfigured: false });
   const [url, setUrl] = useState("");
@@ -44,15 +47,15 @@ export function PersonalLipsyncServiceSettings() {
     finally { setBusy(false); }
   }
 
-  if (currentUser.status !== "signed-in") return <div className={styles.notice}>登录后可配置个人口型对齐服务。<Link href={accountLoginHref("/settings/services")}>登录</Link></div>;
-  return <section className={styles.card} aria-label="个人口型对齐服务">
-    <div className={styles.heading}><div><small>高级模式</small><h3>个人口型对齐服务</h3><p>仅用于你自己的口型生成任务；地址须由站点运营方列入允许来源。</p></div><span>{service.configured ? "已配置" : "未配置"}</span></div>
-    <label className={styles.field}><span>HTTPS 服务地址</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://lipsync.example.com" /></label>
-    <label className={styles.field}><span>访问令牌{service.tokenConfigured ? "（已保存；留空保持）" : "（可选）"}</span><input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} /></label>
+  if (currentUser.status !== "signed-in") return <div className={styles.notice}>{t("登录后可配置个人口型对齐服务。")}<Link href={accountLoginHref("/settings/services")}>{t("登录")}</Link></div>;
+  return <section className={styles.card} aria-label={t("个人口型对齐服务")}>
+    <div className={styles.heading}><div><small>{t("高级模式")}</small><h3>{t("个人口型对齐服务")}</h3><p>{t("仅用于你自己的口型生成任务；地址须由站点运营方列入允许来源。")}</p></div><span>{service.configured ? t("已配置") : t("未配置")}</span></div>
+    <label className={styles.field}><span>{t("HTTPS 服务地址")}</span><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://lipsync.example.com" /></label>
+    <label className={styles.field}><span>{t("访问令牌")}{service.tokenConfigured ? t("（已保存；留空保持）") : t("（可选）")}</span><input type="password" autoComplete="new-password" value={token} onChange={(event) => setToken(event.target.value)} /></label>
     <div className={styles.footer}><div className={styles.actions}>
-      <button type="button" className={styles.save} disabled={busy || !url.trim()} onClick={() => void act("PUT")}>保存</button>
-      <button type="button" className={styles.test} disabled={busy || !service.configured} onClick={() => void act("POST")}>测试连接</button>
-      <button type="button" className={styles.test} disabled={busy || !service.configured} onClick={() => void act("DELETE")}>删除</button>
+      <button type="button" className={styles.save} disabled={busy || !url.trim()} onClick={() => void act("PUT")}>{t("保存")}</button>
+      <button type="button" className={styles.test} disabled={busy || !service.configured} onClick={() => void act("POST")}>{t("测试连接")}</button>
+      <button type="button" className={styles.test} disabled={busy || !service.configured} onClick={() => void act("DELETE")}>{t("删除")}</button>
     </div>{message && <p role="status" className={styles.result}>{message}</p>}</div>
   </section>;
 }

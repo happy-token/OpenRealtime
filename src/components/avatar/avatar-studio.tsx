@@ -1,4 +1,6 @@
 "use client";
+import { useLanguage } from "@/components/language/language-provider";
+
 
 import Image from "next/image";
 import Link from "next/link";
@@ -60,6 +62,7 @@ export function AvatarStudio({
   onActionPreviewChange?: (preview: { url: string; name: string } | null) => void;
   singleTask?: boolean;
 } = {}) {
+  const { t } = useLanguage();
   const returnToRole = () => {
     if (returnToRoleId) window.location.assign(`/roles/${encodeURIComponent(returnToRoleId)}`);
     else if (returnToRoleCreate) window.location.assign("/roles/new");
@@ -350,30 +353,30 @@ export function AvatarStudio({
     || (source && mode !== "library" ? defaultAvatarName : "未命名 Avatar");
   const avatarNameLocked = isAvatarNameLocked(mode);
   return (
-    <section className={styles.studio} aria-label="创建数字人工作区" data-single-task={singleTask || undefined}>
+    <section className={styles.studio} aria-label={t("创建数字人工作区")} data-single-task={singleTask || undefined}>
       {currentStep < 3 ? <div className={styles.creationWorkspace} data-stage={currentStep === 0 ? "select" : "configure"}>
         {currentStep === 0 ? (
-          <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="配置 Avatar" icon={<Sparkles aria-hidden="true" />}>
+          <StudioConfigOverlay open={mobileConfigOpen} onOpenChange={setMobileConfigOpen} label={t("配置 Avatar")} icon={<Sparkles aria-hidden="true" />}>
           <section key="source" className={styles.wizardPanel} aria-labelledby="avatar-source-step-title">
           <div className={styles.sectionHeading}>
-            <h2 id="avatar-source-step-title">选择 Avatar 形象</h2>
-            <p>选择或创建一个 Avatar 形象，确认后再选择下一步要创建的能力。</p>
+            <h2 id="avatar-source-step-title">{t("选择 Avatar 形象")}</h2>
+            <p>{t("选择或创建一个 Avatar 形象，确认后再选择下一步要创建的能力。")}</p>
           </div>
 
-          <div className={styles.modeTabs} role="group" aria-label="形象来源">
+          <div className={styles.modeTabs} role="group" aria-label={t("形象来源")}>
             <button type="button" data-active={mode === "library"} onClick={() => changeSourceMode("library")}>
-              <ImagePlus aria-hidden="true" /><span><strong>从资产库选择</strong><small>使用已有内部预置形象</small></span>
+              <ImagePlus aria-hidden="true" /><span><strong>{t("从资产库选择")}</strong><small>{t("使用已有内部预置形象")}</small></span>
             </button>
             <button type="button" data-active={mode === "upload"} onClick={() => changeSourceMode("upload")}>
-              <Upload aria-hidden="true" /><span><strong>上传图片</strong><small>选择本机正面人物照片</small></span>
+              <Upload aria-hidden="true" /><span><strong>{t("上传图片")}</strong><small>{t("选择本机正面人物照片")}</small></span>
             </button>
           </div>
 
           {mode === "upload" ? (
             <button className={styles.uploadDrop} type="button" onClick={() => fileInput.current?.click()}>
               <Upload aria-hidden="true" />
-              <strong>选择一张清晰正面图片</strong>
-              <span>JPEG、PNG、WebP，最大 8MB</span>
+              <strong>{t("选择一张清晰正面图片")}</strong>
+              <span>{t("JPEG、PNG、WebP，最大 8MB")}</span>
               <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void importUpload(event.target.files?.[0])} />
             </button>
           ) : null}
@@ -381,20 +384,19 @@ export function AvatarStudio({
           {mode === "happyimage" ? (
             <div className={styles.promptBox}>
               <Sparkles aria-hidden="true" />
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="描述人物外观、服装、光线与背景…" />
+              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t("描述人物外观、服装、光线与背景…")} />
               <button type="button" onClick={() => void generateWithHappyImage()} disabled={!prompt.trim() || Boolean(busy)}>
                 {busy === "image" ? <LoaderCircle className={styles.spin} /> : <ImagePlus />}
-                生成形象
-              </button>
-              <small>直接使用当前 OpenRealtime 账户额度，不触发额外授权跳转。</small>
+                {t("生成形象")}</button>
+              <small>{t("直接使用当前 OpenRealtime 账户额度，不触发额外授权跳转。")}</small>
             </div>
           ) : null}
 
-          {error ? <p className={styles.error} role="alert">{error}</p> : null}
+          {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
           <footer className={styles.wizardNavigation} data-has-source={Boolean(source)}>
             {source ? (
               <label className={styles.nameField} data-locked={avatarNameLocked}>
-                <span>数字人名称{avatarNameLocked ? <LockKeyhole aria-hidden="true" /> : null}</span>
+                <span>{t("数字人名称")}{avatarNameLocked ? <LockKeyhole aria-hidden="true" /> : null}</span>
                 <input
                   value={displayName}
                   maxLength={ANAM_AVATAR_NAME_MAX_LENGTH}
@@ -406,24 +408,24 @@ export function AvatarStudio({
                     setDisplayNameOrigin(event.target.value ? "user" : "");
                     setError("");
                   }}
-                  placeholder={`不填写则使用${defaultAvatarName}`}
+                  placeholder={t("不填写则使用") + (defaultAvatarName) + ""}
                 />
                 <small>{avatarNameLocked
-                  ? "名称沿用资产库中的数字人名称，不能修改"
-                  : `请填写数字人名称；留空将自动使用“${defaultAvatarName}”`}</small>
+                  ? t("名称沿用资产库中的数字人名称，不能修改")
+                  : t("请填写数字人名称；留空将自动使用“") + (defaultAvatarName) + "”"}</small>
               </label>
-            ) : <p className={styles.selectionPrompt}>选择一个 Avatar 后继续</p>}
+            ) : <p className={styles.selectionPrompt}>{t("选择一个 Avatar 后继续")}</p>}
             <div className={styles.nextTaskBlock}>
               <div className={styles.nextTaskHeading}>
-                <strong>确认形象并选择下一步</strong>
-                <small>实时托管、多段式合成或轻量动作</small>
+                <strong>{t("确认形象并选择下一步")}</strong>
+                <small>{t("实时托管、多段式合成或轻量动作")}</small>
               </div>
-              <div className={styles.nextTaskChoices} role="group" aria-label="选择下一步操作">
+              <div className={styles.nextTaskChoices} role="group" aria-label={t("选择下一步操作")}>
                 <button className={styles.nextTaskChoice} type="button"
                   disabled={!source || (avatarNameLocked && !displayName.trim()) || Boolean(busy)}
                   onClick={() => void createAvatar(task)}>
                   <span className={styles.nextTaskIcon}>{busy === "save" ? <LoaderCircle className={styles.spin} /> : <Play />}</span>
-                  <span><strong>继续配置驱动方式</strong></span><ArrowRight />
+                  <span><strong>{t("继续配置驱动方式")}</strong></span><ArrowRight />
                 </button>
               </div>
             </div>
@@ -436,24 +438,24 @@ export function AvatarStudio({
           <section
             key={`visual-${mode}`}
             className={styles.visualStage}
-            aria-label="Avatar 视觉工作区"
+            aria-label={t("Avatar 视觉工作区")}
           >
             <div className={styles.visualStageBody}>
               {mode === "library" ? (
                 <div className={styles.libraryDockStage}>
                   <div className={styles.libraryStagePreview}>
                     {source ? (
-                      <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
+                      <button className={styles.stageImage} type="button" aria-label={t("预览 ") + (previewDisplayName) + ""} onClick={() => setPreviewOpen(true)}>
                         <Image className={styles.stageBackdropImage} src={source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
                         <Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} />
                       </button>
                     ) : (
-                      <div className={styles.emptyStage}><LoaderCircle className={styles.spin} aria-hidden="true" /><strong>正在加载 Avatar 形象…</strong></div>
+                      <div className={styles.emptyStage}><LoaderCircle className={styles.spin} aria-hidden="true" /><strong>{t("正在加载 Avatar 形象…")}</strong></div>
                     )}
                     <div
                       className={styles.libraryDock}
                       role="group"
-                      aria-label="内部预制形象"
+                      aria-label={t("内部预制形象")}
                       data-auto-advance={libraryDockPinned || libraryDockHovered || libraryDockFocused ? "paused" : "running"}
                       onPointerEnter={() => setLibraryDockHovered(true)}
                       onPointerLeave={() => setLibraryDockHovered(false)}
@@ -471,7 +473,7 @@ export function AvatarStudio({
                             type="button"
                             data-current={isSelected ? "true" : undefined}
                             aria-current={isSelected ? "true" : undefined}
-                            aria-label={`选择 ${choice.name}`}
+                            aria-label={t("选择 ") + (choice.name) + ""}
                             onClick={() => {
                               setLibraryDockPinned(true);
                               chooseSource(choice);
@@ -480,23 +482,23 @@ export function AvatarStudio({
                             <span className={styles.libraryDockMedia}>
                               <Image src={choice.imageUrl} alt="" fill sizes="88px" unoptimized />
                             </span>
-                            <strong>{choice.name}</strong>
+                            <strong>{t(choice.name)}</strong>
                           </button>
                         );
                       })}
-                      <button className={styles.libraryDockUpload} type="button" aria-label="改为上传图片" onClick={() => changeSourceMode("upload")}>
-                        <Upload aria-hidden="true" /><span>上传图片</span>
+                      <button className={styles.libraryDockUpload} type="button" aria-label={t("改为上传图片")} onClick={() => changeSourceMode("upload")}>
+                        <Upload aria-hidden="true" /><span>{t("上传图片")}</span>
                       </button>
                     </div>
                   </div>
                 </div>
               ) : source ? (
-                <button className={styles.stageImage} type="button" aria-label={`预览 ${previewDisplayName}`} onClick={() => setPreviewOpen(true)}>
+                <button className={styles.stageImage} type="button" aria-label={t("预览 ") + (previewDisplayName) + ""} onClick={() => setPreviewOpen(true)}>
                   <Image className={styles.stageBackdropImage} src={source.imageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized />
                   <Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={source.imageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} />
                 </button>
               ) : (
-                <div className={styles.emptyStage}>{mode === "upload" ? <Upload aria-hidden="true" /> : <Sparkles aria-hidden="true" />}<strong>{mode === "upload" ? "在左侧上传一张图片" : "在左侧描述并创建图片"}</strong><span>图片结果会在这里以大图展示</span></div>
+                <div className={styles.emptyStage}>{mode === "upload" ? <Upload aria-hidden="true" /> : <Sparkles aria-hidden="true" />}<strong>{mode === "upload" ? t("在左侧上传一张图片") : t("在左侧描述并创建图片")}</strong><span>{t("图片结果会在这里以大图展示")}</span></div>
               )}
             </div>
           </section>
@@ -505,27 +507,27 @@ export function AvatarStudio({
         {currentStep === 2 && createdAvatar ? (
           <>
           <div className={styles.driveView} hidden={task !== "realtime"}>
-            <StudioConfigOverlay open={task === "realtime" && mobileConfigOpen} onOpenChange={setMobileConfigOpen} label="实时驱动配置" icon={<Play aria-hidden="true" />}>
+            <StudioConfigOverlay open={task === "realtime" && mobileConfigOpen} onOpenChange={setMobileConfigOpen} label={t("实时驱动配置")} icon={<Play aria-hidden="true" />}>
             <aside className={styles.taskSidebar}>
               <AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} tasks={singleTask ? ["realtime"] : undefined} />
-              <section className={styles.selectedAvatar} aria-label="当前共享 Avatar">
-                <button className={styles.selectedAvatarImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
+              <section className={styles.selectedAvatar} aria-label={t("当前共享 Avatar")}>
+                <button className={styles.selectedAvatarImage} type="button" aria-label={t("预览 ") + (createdAvatar.display_name) + ""} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
                 <div><strong>{createdAvatar.display_name}</strong></div>
-                <button type="button" aria-label="上一步：返回选择 Avatar 形象" onClick={changeAvatar}><ArrowLeft aria-hidden="true" />上一步</button>
+                <button type="button" aria-label={t("上一步：返回选择 Avatar 形象")} onClick={changeAvatar}><ArrowLeft aria-hidden="true" />{t("上一步")}</button>
               </section>
               <section className={styles.capabilityModule} aria-labelledby="realtime-creation-title" data-transition="in-page">
-                <header><h2 id="realtime-creation-title" aria-label="创建实时驱动 Avatar">实时驱动配置</h2><p>完成后需确认效果，确认前不会绑定。</p></header>
+                <header><h2 id="realtime-creation-title" aria-label={t("创建实时驱动 Avatar")}>{t("实时驱动配置")}</h2><p>{t("完成后需确认效果，确认前不会绑定。")}</p></header>
                 {createdAvatar.realtime_binding ? (
-                  <p className={styles.accepted}><Check />实时驱动已确认并绑定</p>
+                  <p className={styles.accepted}><Check />{t("实时驱动已确认并绑定")}</p>
                 ) : anamCandidate ? (
                   <div className={styles.candidate}>
-                    {!anamCandidate.videoUrl ? <p>实时形象正在处理。可稍后在 Anam 目录刷新预览。</p> : null}
-                    <button type="button" onClick={() => void acceptRealtimeCandidate()} disabled={Boolean(busy)}><Play />确认效果并启用</button>
+                    {!anamCandidate.videoUrl ? <p>{t("实时形象正在处理。可稍后在 Anam 目录刷新预览。")}</p> : null}
+                    <button type="button" onClick={() => void acceptRealtimeCandidate()} disabled={Boolean(busy)}><Play />{t("确认效果并启用")}</button>
                   </div>
                 ) : (
                   <div className={styles.realtimeCandidateSetup}>
                     <label>
-                      <span>Anam 形象名称</span>
+                      <span>{t("Anam 形象名称")}</span>
                       <input
                         value={anamDisplayName}
                         minLength={ANAM_AVATAR_NAME_MIN_LENGTH}
@@ -536,34 +538,33 @@ export function AvatarStudio({
                         onChange={(event) => { setAnamDisplayName(event.target.value); setError(""); }}
                       />
                       <small id="anam-create-name-requirement" data-invalid={Boolean(anamDisplayNameLength) && !validAnamDisplayName}>
-                        Anam 新建接口要求 3–50 个字符<em>{anamDisplayNameLength} / {ANAM_AVATAR_NAME_MAX_LENGTH}</em>
+                        {t("Anam 新建接口要求 3–50 个字符")}<em>{anamDisplayNameLength} / {ANAM_AVATAR_NAME_MAX_LENGTH}</em>
                       </small>
                     </label>
                     <button type="button" onClick={() => void createRealtimeCandidate()} disabled={Boolean(busy) || !validAnamDisplayName}>
-                      {busy === "anam" ? <LoaderCircle className={styles.spin} /> : <Play />}创建实时驱动形象
-                    </button>
+                      {busy === "anam" ? <LoaderCircle className={styles.spin} /> : <Play />}{t("创建实时驱动形象")}</button>
                   </div>
                 )}
-                {error ? <p className={styles.error} role="alert">{error}
-                  {error.includes("API Key") && <button className={styles.keyReset} type="button" onClick={() => void ensureProviderKey("anam", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>更换 Anam Key</button>}
+                {error ? <p className={styles.error} role="alert">{t(error)}
+                  {error.includes("API Key") && <button className={styles.keyReset} type="button" onClick={() => void ensureProviderKey("anam", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>{t("更换 Anam Key")}</button>}
                 </p> : null}
                 <footer>
                   {returnToRoleCreate && createdAvatar.realtime_binding
-                    ? <button type="button" onClick={returnToRole} aria-label="返回创建角色" title="返回创建角色"><ArrowLeft aria-hidden="true" />返回</button>
-                    : !singleTask ? <button type="button" onClick={() => changeTask("action")}><Film />继续创建动作</button> : null}
-                  <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
+                    ? <button type="button" onClick={returnToRole} aria-label={t("返回创建角色")} title={t("返回创建角色")}><ArrowLeft aria-hidden="true" />{t("返回")}</button>
+                    : !singleTask ? <button type="button" onClick={() => changeTask("action")}><Film />{t("继续创建动作")}</button> : null}
+                  <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>{t("查看 Avatar")}</Link>
                 </footer>
               </section>
             </aside>
             </StudioConfigOverlay>
-            <section className={`${styles.visualStage} ${styles.floatingPreviewStage}`} aria-label="实时驱动效果预览">
-              <header><strong>{realtimePreviewVideoUrl ? "效果确认" : "当前形象"}</strong></header>
+            <section className={`${styles.visualStage} ${styles.floatingPreviewStage}`} aria-label={t("实时驱动效果预览")}>
+              <header><strong>{realtimePreviewVideoUrl ? t("效果确认") : t("当前形象")}</strong></header>
               <div className={styles.visualStageBody}>
                 {realtimePreviewVideoUrl && task === "realtime"
                   ? <video className={styles.stageVideo} src={realtimePreviewVideoUrl} controls autoPlay muted loop playsInline />
-                  : <button className={styles.stageImage} type="button" aria-label={`预览 ${createdAvatar.display_name}`} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{createdAvatar.display_name}</strong><em>创建后将在这里播放实时驱动效果</em></span><Maximize2 aria-hidden="true" /></button>}
+                  : <button className={styles.stageImage} type="button" aria-label={t("预览 ") + (createdAvatar.display_name) + ""} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{createdAvatar.display_name}</strong><em>{t("创建后将在这里播放实时驱动效果")}</em></span><Maximize2 aria-hidden="true" /></button>}
               </div>
-              <footer><span>{createdAvatar.realtime_binding ? "已确认并启用" : anamCandidate ? "等待效果确认，确认后启用" : "尚未创建实时驱动效果"}</span></footer>
+              <footer><span>{createdAvatar.realtime_binding ? t("已确认并启用") : anamCandidate ? t("等待效果确认，确认后启用") : t("尚未创建实时驱动效果")}</span></footer>
             </section>
           </div>
           {visitedTasks.includes("action") ? <div className={styles.driveView} hidden={task !== "action"}><AvatarActionStudio
@@ -603,24 +604,24 @@ export function AvatarStudio({
       {currentStep === 3 && createdAvatar && task === "realtime" ? (
         <section key="done" className={styles.completionPanel} aria-labelledby="avatar-completion-title">
           <Check aria-hidden="true" />
-          <h2 id="avatar-completion-title">实时驱动已启用</h2>
-          <p>现在可以使用这个 Avatar 开始对话测试。</p>
+          <h2 id="avatar-completion-title">{t("实时驱动已启用")}</h2>
+          <p>{t("现在可以使用这个 Avatar 开始对话测试。")}</p>
           <div>
-            <button type="button" onClick={() => setCurrentStep(2)}><ArrowLeft aria-hidden="true" />上一步</button>
-            {returnToRoleCreate ? <button type="button" onClick={returnToRole} aria-label="返回创建角色" title="返回创建角色"><ArrowLeft aria-hidden="true" />返回</button> : null}
-            <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>查看 Avatar</Link>
-            <button type="button" onClick={() => changeTask("action")}><Film aria-hidden="true" />继续创建动作</button>
+            <button type="button" onClick={() => setCurrentStep(2)}><ArrowLeft aria-hidden="true" />{t("上一步")}</button>
+            {returnToRoleCreate ? <button type="button" onClick={returnToRole} aria-label={t("返回创建角色")} title={t("返回创建角色")}><ArrowLeft aria-hidden="true" />{t("返回")}</button> : null}
+            <Link href={`/avatars/${encodeURIComponent(createdAvatar.avatar_id)}`}>{t("查看 Avatar")}</Link>
+            <button type="button" onClick={() => changeTask("action")}><Film aria-hidden="true" />{t("继续创建动作")}</button>
           </div>
         </section>
       ) : null}
 
       {previewOpen && previewImageUrl ? (
         <div className={styles.previewBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewOpen(false); }}>
-          <section className={styles.previewDialog} role="dialog" aria-modal="true" aria-label={`${previewDisplayName} 大图预览`}>
-            <header><div><strong>{previewDisplayName}</strong></div><button type="button" autoFocus aria-label="关闭 Avatar 预览" onClick={() => setPreviewOpen(false)}><X /></button></header>
+          <section className={styles.previewDialog} role="dialog" aria-modal="true" aria-label={"" + (previewDisplayName) + t(" 大图预览")}>
+            <header><div><strong>{previewDisplayName}</strong></div><button type="button" autoFocus aria-label={t("关闭 Avatar 预览")} onClick={() => setPreviewOpen(false)}><X /></button></header>
             <div>
               <Image className={styles.previewBackdropImage} src={previewImageUrl} alt="" aria-hidden="true" fill sizes="100vw" unoptimized />
-              <Image className={styles.previewPortraitImage} src={previewImageUrl} alt={`${previewDisplayName} 完整预览`} fill sizes="100vw" unoptimized />
+              <Image className={styles.previewPortraitImage} src={previewImageUrl} alt={"" + (previewDisplayName) + t(" 完整预览")} fill sizes="100vw" unoptimized />
             </div>
           </section>
         </div>
