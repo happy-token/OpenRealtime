@@ -20,11 +20,10 @@ describe("digital human asset catalog", () => {
           updatedAt: "2026-08-28T00:00:00.000Z",
         }],
       })],
-      [AVATAR_IDENTITY_DISPLAY_NAMES_STORAGE_KEY, JSON.stringify({ companion: "小陪伴" })],
+      [AVATAR_IDENTITY_DISPLAY_NAMES_STORAGE_KEY, JSON.stringify({ "avatar-qingzhao": "小清照" })],
       [MOTION_ASSET_METADATA_STORAGE_KEY, JSON.stringify({
         version: 1,
         displayNames: {
-          "builtin:opentalking:companion": "陪伴待机",
           "motion-saved-1": "我的问候动作",
         },
         hiddenIds: ["builtin:opentalking:anchor"],
@@ -45,14 +44,14 @@ describe("digital human asset catalog", () => {
       renditions: [],
     }]);
 
-    expect(catalog.identities.some((asset) => asset.id === "anchor")).toBe(false);
+    expect(catalog.identities.filter(asset => asset.origin === "内置形象")).toHaveLength(3);
+    expect(catalog.identities.some((asset) => asset.id === "companion")).toBe(false);
     expect(catalog.identities).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "companion", name: "小陪伴" }),
+      expect.objectContaining({ id: "avatar-qingzhao", name: "小清照" }),
       expect.objectContaining({ id: customIdentityId, name: "我的照片", previewImageUrl: "data:image/png;base64,photo" }),
     ]));
-    expect(catalog.motions.some((asset) => asset.id === "builtin:opentalking:anchor")).toBe(false);
+    expect(catalog.motions.some((asset) => asset.id.startsWith("builtin:opentalking:"))).toBe(false);
     expect(catalog.motions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "builtin:opentalking:companion", name: "陪伴待机" }),
       expect.objectContaining({ id: "motion-saved-1", name: "我的问候动作", videoUrl: "/api/avatar-assets/artifacts/artifact-1" }),
     ]));
   });

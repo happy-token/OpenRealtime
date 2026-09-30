@@ -7,6 +7,8 @@ export interface AvatarAudioChunk {
   isFinal: boolean;
   onStarted: () => void;
   onEnded: () => void;
+  /** Replay accepted audio through the browser if the renderer fails asynchronously. */
+  onFallback?: (isFinal: boolean) => void;
 }
 
 /** Optional renderer sink. Returning false keeps the normal browser audio path. */

@@ -256,26 +256,27 @@ describe("Avatar catalog repository", () => {
 
   it("reuses an internal preset as the canonical Avatar aggregate", async () => {
     const root = await repositoryRoot();
+    const avatarId = "avatar-qingzhao";
     const first = await createOwnedAvatar({
-      displayName: "陪伴",
+      displayName: "清照",
       sourceImageDataUrl: jpeg,
-      avatarId: "companion",
+      avatarId,
     }, root);
     const repeated = await createOwnedAvatar({
-      displayName: "陪伴",
+      displayName: "清照",
       sourceImageDataUrl: jpeg,
-      avatarId: "companion",
+      avatarId,
     }, root);
-    await appendOwnedAvatarAction("companion", {
+    await appendOwnedAvatarAction(avatarId, {
       avatar_action_id: "action-smile",
       display_name: "亲和微笑",
       video_url: "/api/avatar-assets/artifacts/smile",
     }, root);
 
-    expect(first.avatar_id).toBe("companion");
-    expect(repeated.avatar_id).toBe("companion");
+    expect(first.avatar_id).toBe(avatarId);
+    expect(repeated.avatar_id).toBe(avatarId);
     expect(await listOwnedAvatars(root)).toMatchObject([{
-      avatar_id: "companion",
+      avatar_id: avatarId,
       actions: [{ avatar_action_id: "action-smile", display_name: "亲和微笑" }],
     }]);
   });

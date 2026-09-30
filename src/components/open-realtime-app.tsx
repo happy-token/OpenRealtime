@@ -401,7 +401,7 @@ export function OpenRealtimeApp({
         .then((response) => response.ok ? response.json() as Promise<{ documentIds?: string[] }> : { documentIds: [] }),
     ]).then(([tools, settings]) => {
       if (!controller.signal.aborted) configureTools([
-        ...tools.filter((tool) => profile.toolIds.includes(tool.tool_id) && tool.enabled && (tool.builtin || tool.endpoint)).map((tool) => tool.function_name),
+        ...tools.filter((tool) => profile.toolIds.includes(tool.tool_id) && tool.enabled && (tool.builtin || tool.public_enabled)).map((tool) => tool.function_name),
         ...(settings.documentIds?.length ? ["search_knowledge_base"] : []),
       ], hostedAvatarRoleId(officialAvatarId));
     }).catch(() => undefined);

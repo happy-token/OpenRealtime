@@ -7,8 +7,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { UserKeyProvider } from "@/lib/provider-api-key";
 import styles from "./provider-key-gate.module.css";
 
-type PendingRequest = { provider: UserKeyProvider; resolve: (ready: boolean) => void };
-const KeyGateContext = createContext<((provider: UserKeyProvider, replace?: boolean) => Promise<boolean>) | null>(null);
+type PendingRequest = { provider: UserKeyProvider; endpoint: string; resolve: (ready: boolean) => void };
+const KeyGateContext = createContext<((provider: UserKeyProvider, replace?: boolean, personalOnly?: boolean) => Promise<boolean>) | null>(null);
 
 export function useProviderKeyGate() {
   const gate = useContext(KeyGateContext);
@@ -39,16 +39,27 @@ export function ProviderKeyGate({ children }: { children: ReactNode }) {
     if (pending && dialog.current && !dialog.current.open) dialog.current.showModal();
   }, [pending]);
 
-  const ensureKey = useCallback(async (provider: UserKeyProvider, replace = false): Promise<boolean> => {
+  const ensureKey = useCallback(async (provider: UserKeyProvider, replace = false, personalOnly = false): Promise<boolean> => {
+    const personalResponse = await fetch("/api/user/provider-keys", { cache: "no-store" });
+    const endpoint = personalResponse.status === 401 ? "/api/provider-key" : "/api/user/provider-keys";
+    if (personalResponse.status !== 401 && !personalResponse.ok) {
+      const payload = await personalResponse.json() as { error?: string };
+      throw new Error(payload.error || "无法检查 API Key");
+    }
     if (!replace) {
-      const response = await fetch(`/api/provider-key?provider=${provider}`, { cache: "no-store" });
-      const status = await response.json() as { configured?: boolean; error?: string };
-      if (!response.ok) throw new Error(status.error || "无法检查 API Key");
-      if (status.configured) return true;
+      if (endpoint === "/api/user/provider-keys") {
+        const status = await personalResponse.json() as { credentials?: { provider: UserKeyProvider; configured: boolean; platformConfigured?: boolean }[] };
+        if (status.credentials?.some((item) => item.provider === provider && (item.configured || (!personalOnly && item.platformConfigured)))) return true;
+      } else {
+        const response = await fetch(`/api/provider-key?provider=${provider}`, { cache: "no-store" });
+        const status = await response.json() as { configured?: boolean; error?: string };
+        if (!response.ok) throw new Error(status.error || "无法检查 API Key");
+        if (status.configured) return true;
+      }
     }
     if (pendingRef.current) return false;
     return new Promise<boolean>((resolve) => {
-      const next = { provider, resolve };
+      const next = { provider, endpoint, resolve };
       pendingRef.current = next;
       setPending(next);
     });
@@ -60,7 +71,7 @@ export function ProviderKeyGate({ children }: { children: ReactNode }) {
     setSaving(true);
     setError("");
     try {
-      const response = await fetch("/api/provider-key", {
+      const response = await fetch(pending.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: pending.provider, apiKey: apiKey.trim() }),

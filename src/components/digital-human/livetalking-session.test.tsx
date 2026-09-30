@@ -1,5 +1,37 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LiveTalkingSession } from "./livetalking-session";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it.each(["disconnected", "failed", "closed"])("reports %s after a successful connection and stops the media", async state => {
+  class Peer extends EventTarget {
+    connectionState = "connected";
+    iceGatheringState = "complete";
+    localDescription: RTCSessionDescriptionInit | null = null;
+    addTransceiver() {}
+    async createOffer() { return { sdp: "offer", type: "offer" as const }; }
+    async setLocalDescription(description: RTCSessionDescriptionInit) { this.localDescription = description; }
+    async setRemoteDescription() {
+      this.dispatchEvent(Object.assign(new Event("track"), { track: { kind: "video" } }));
+    }
+    close = vi.fn(() => { this.connectionState = "closed"; this.dispatchEvent(new Event("connectionstatechange")); });
+  }
+  const peer = new Peer();
+  vi.stubGlobal("RTCPeerConnection", vi.fn(() => peer));
+  vi.stubGlobal("MediaStream", vi.fn(() => ({ addTrack: vi.fn() })));
+  const failed = vi.fn();
+  const video = { play: vi.fn(async () => undefined), srcObject: null } as unknown as HTMLVideoElement;
+  const session = new LiveTalkingSession("http://renderer", async () => new Response(JSON.stringify({ sdp: "answer", sessionid: "1" })), "avatar", failed);
+  await session.connect(video);
+  expect(failed).not.toHaveBeenCalled();
+  peer.connectionState = state;
+  peer.dispatchEvent(new Event("connectionstatechange"));
+  expect(failed).toHaveBeenCalledOnce();
+  expect(peer.close).toHaveBeenCalledOnce();
+  expect(video.srcObject).toBeNull();
+  session.stop();
+  expect(failed).toHaveBeenCalledOnce();
+});
 
 describe("LiveTalkingSession", () => {
   it("sends the prepared avatar binding with the WebRTC offer", async () => {

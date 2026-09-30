@@ -12,8 +12,8 @@ describe("internal Avatar presets", () => {
           ? JSON.stringify({
               version: 1,
               displayNames: {},
-              hiddenIds: ["builtin:opentalking:shuchang"],
-              hiddenIdentityIds: ["companion"],
+              hiddenIds: ["obsolete-motion"],
+              hiddenIdentityIds: ["avatar-qingzhao"],
             })
           : null,
       },
@@ -21,17 +21,15 @@ describe("internal Avatar presets", () => {
 
     const catalog = readInternalAvatarPresetCatalog();
 
-    expect(catalog.identities.map((identity) => identity.id)).toEqual(["shuchang"]);
-    expect(catalog.motions).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "builtin:shuchang-realtime-idle",
-        visualIdentityId: "shuchang",
-        name: "实时待机",
-        videoUrl: "/digital-human/builtin-motion/shuchang-realtime-idle.mp4",
-        phase: "built-in",
-      }),
-    ]));
-    expect(catalog.motions.map((motion) => motion.id)).not.toContain("builtin:opentalking:shuchang");
+    expect(catalog.identities.map((identity) => identity.id)).toEqual([
+      "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+      "avatar-2843741c-815f-4117-b710-941802b0e2ab",
+    ]);
+    expect(catalog.motions.map(motion => motion.visualIdentityId)).toEqual([
+      "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+      "avatar-qingzhao",
+      "avatar-2843741c-815f-4117-b710-941802b0e2ab",
+    ]);
     expect(catalog.identities.some((identity) => identity.id.startsWith("custom-"))).toBe(false);
   });
 });

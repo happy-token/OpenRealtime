@@ -4,6 +4,7 @@ import type {
 } from "@/components/digital-human/types";
 import type { AvatarAsset } from "./avatar-catalog";
 import { getBuiltinAvatarAction } from "./builtin-avatar-actions";
+import { readDigitalHumanAssetCatalog } from "./digital-human-asset-catalog";
 
 export type AvatarSceneBackground = {
   sceneKey: string;
@@ -43,10 +44,16 @@ export function resolveAvatarSceneBackground(
     && candidate.state === "available"
   ));
   const builtinAction = getBuiltinAvatarAction(config.segmentedAvatarActionId);
+  const builtins = readDigitalHumanAssetCatalog([], { includeLocal: false });
+  const curatedIdentity = builtins.identities.find((candidate) => candidate.id === config.segmentedAvatarId);
+  const curatedMotion = builtins.motions.find((candidate) => (
+    candidate.id === config.segmentedAvatarActionId
+    && candidate.visualIdentityId === config.segmentedAvatarId
+  ));
 
   return {
     sceneKey: `segmented:${config.segmentedAvatarId}:${config.segmentedAvatarActionId}`,
-    imageUrl: avatar?.source.imageUrl ?? builtinAction?.previewImageUrl ?? null,
-    videoUrl: action?.videoUrl ?? builtinAction?.videoUrl ?? null,
+    imageUrl: avatar?.source.imageUrl ?? curatedIdentity?.previewImageUrl ?? builtinAction?.previewImageUrl ?? null,
+    videoUrl: action?.videoUrl ?? curatedMotion?.videoUrl ?? builtinAction?.videoUrl ?? null,
   };
 }

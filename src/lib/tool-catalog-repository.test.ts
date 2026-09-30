@@ -19,7 +19,7 @@ async function temporaryRoot() {
 describe("tool catalog repository", () => {
   it("always exposes the runtime built-in tools", async () => {
     const tools = await listTools(await temporaryRoot());
-    expect(tools.map((tool) => tool.tool_id)).toEqual(["tool-current-time", "tool-web-search"]);
+    expect(tools.map((tool) => tool.tool_id)).toEqual(["tool-current-time", "tool-web-search", "tool-calculator", "tool-unit-converter", "tool-text-count"]);
     expect(tools.every((tool) => tool.builtin && tool.enabled)).toBe(true);
   });
 

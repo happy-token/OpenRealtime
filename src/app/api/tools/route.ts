@@ -1,14 +1,17 @@
 import { authorizeAvatarAssetRequest, jsonError } from "@/lib/avatar-assets-server";
 import { createTool, listTools } from "@/lib/tool-catalog-repository";
 import { isToolEffect, isToolKind, isToolRisk } from "@/lib/tool-records";
+import { userFromRequest } from "@/lib/user-session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  if (!authorizeAvatarAssetRequest(request, false)) return jsonError("不允许读取工具目录", 403);
+  const admin = authorizeAvatarAssetRequest(request, false);
+  if (!admin && !await userFromRequest(request)) return jsonError("不允许读取工具目录", 403);
   try {
-    return Response.json({ tools: await listTools() }, { headers: { "Cache-Control": "no-store" } });
+    const tools = await listTools();
+    return Response.json({ tools: admin ? tools : tools.filter((tool) => tool.builtin || tool.public_enabled).map((tool) => ({ ...tool, endpoint: null })), canManage: admin }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Failed to read tool catalog", error);
     return jsonError("工具目录暂时不可用", 503);

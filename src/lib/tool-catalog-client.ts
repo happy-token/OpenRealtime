@@ -1,11 +1,15 @@
 import { readJsonResponse } from "./http-json-response";
 import type { ToolKind, ToolRecord } from "./tool-records";
 
-export async function fetchTools(signal?: AbortSignal) {
+export async function fetchToolCatalog(signal?: AbortSignal) {
   const response = await fetch("/api/tools", { cache: "no-store", signal });
-  const payload = await readJsonResponse<{ tools?: ToolRecord[]; error?: string }>(response, "工具目录读取失败");
+  const payload = await readJsonResponse<{ tools?: ToolRecord[]; canManage?: boolean; error?: string }>(response, "工具目录读取失败");
   if (!response.ok || !payload.tools) throw new Error(payload.error || "工具目录读取失败");
-  return payload.tools;
+  return { tools: payload.tools, canManage: payload.canManage === true };
+}
+
+export async function fetchTools(signal?: AbortSignal) {
+  return (await fetchToolCatalog(signal)).tools;
 }
 
 export async function createTool(input: {

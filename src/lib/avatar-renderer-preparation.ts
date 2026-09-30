@@ -1,6 +1,7 @@
 import type { AvatarDisplayConfig } from "@/components/digital-human/types";
 import { getBuiltinAvatarAction } from "./builtin-avatar-actions";
 import { OPENTALKING_AVATAR_CATALOG } from "./opentalking-avatar-catalog";
+import builtinAvatarCatalog from "@/data/builtin-avatar-catalog.json";
 
 export interface AvatarRendererBinding {
   renderer: "livetalking-wav2lip256" | "livetalking-wav2lip96";
@@ -49,6 +50,9 @@ export function resolveAvatarRendererBinding(
 }
 
 export function resolveBuiltinAvatarSource(binding: AvatarRendererBinding): string | null {
+  const curated = builtinAvatarCatalog.find((avatar) => avatar.avatar_id === binding.avatarId)
+    ?.actions.find((action) => action.avatar_action_id === binding.avatarActionId);
+  if (curated?.video_url.startsWith("/digital-human/")) return `public${curated.video_url}`;
   const builtinAction = getBuiltinAvatarAction(binding.avatarActionId);
   if (builtinAction) return `public${builtinAction.videoUrl}`;
   if (binding.avatarActionId === "builtin:liveportrait-optimized") {

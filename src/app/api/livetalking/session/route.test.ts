@@ -37,13 +37,18 @@ function sameOriginRequest(method: "POST" | "DELETE", body?: object) {
 }
 
 describe("avatar renderer compatibility session route", () => {
-  it("returns the external renderer binding for the default realtime idle action", async () => {
+  it("returns the external renderer binding for the legacy realtime idle action", async () => {
     enableLocalPreview();
     vi.stubEnv("OPENREALTIME_AVATAR_RENDERER_MODE", "external");
     vi.stubEnv("OPENREALTIME_AVATAR_RENDERER_URL", "http://renderer.internal:8010");
     vi.stubEnv("OPENREALTIME_AVATAR_RENDERER_PUBLIC_URL", "https://avatar.example.com");
 
-    const response = await POST(sameOriginRequest("POST"));
+    const response = await POST(sameOriginRequest("POST", {
+      renderPath: "segmented",
+      segmentedAvatarId: "shuchang",
+      segmentedDisplayName: "Shuchang",
+      segmentedAvatarActionId: "builtin:shuchang-realtime-idle",
+    }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({

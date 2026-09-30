@@ -68,12 +68,12 @@ export function ResourceLibraryScreen({
           return group.collapsible ? <details key={group.title} className={styles.realtimeSection} aria-label={group.title}>
             <summary>{group.title}<small>{group.avatars.length}{t(" 个形象")}</small></summary>{cards}
           </details> : <section key={group.title} className={styles.realtimeSection} aria-label={group.title}>
-            <div className={styles.realtimeHeading}><h2>{group.title}</h2><Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link></div>{cards}
+            <div className={styles.realtimeHeading}><h2>{group.title}</h2>{personalAvatars.length === 0 ? <Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link> : null}</div>{cards}
           </section>;
         })}
       </> : <p>{t("配置 Anam 后，才可使用实时数字人。")}</p> : null}
     </section>
-    {tab === "official-realtime" && avatarTask === "realtime" && configured ? <AvatarUploadDialog
+    {tab === "official-realtime" && avatarTask === "realtime" && configured && personalAvatars.length === 0 ? <AvatarUploadDialog
       mode="realtime"
       onClose={() => router.replace("/resources?tab=official-realtime", { scroll: false })}
       onRealtimeCreated={() => { setCatalogRevision((revision) => revision + 1); router.replace("/resources?tab=official-realtime", { scroll: false }); }}

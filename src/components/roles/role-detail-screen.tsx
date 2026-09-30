@@ -704,7 +704,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
               {openModule === "tools" ? <div className={styles.settingDetails}>
                 <div className={styles.moduleToolbar}><span>{t("选择角色可调用的工具")}</span><Link href={`/resources?tab=tools&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div>
                 <div className={styles.capabilityList} aria-label={t("角色工具")}>{tools.map((tool) => {
-                const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint);
+                const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint && !tool.public_enabled);
                 const scope = tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人";
                 return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={role.tool_ids.includes(tool.tool_id)} onChange={(event) => setRole({ ...role, tool_ids: event.target.checked ? [...role.tool_ids, tool.tool_id] : role.tool_ids.filter((item) => item !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{disabled ? t("需要补充服务地址后才能执行") : tool.description}</small></span><em data-scope={scope}>{tool.builtin ? t("内置") : tool.public_enabled ? t("共享") : t("个人")}</em></label>;
                 })}</div>

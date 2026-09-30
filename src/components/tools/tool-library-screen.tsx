@@ -5,7 +5,7 @@ import { SelectMenu } from "@/components/ui/select-menu";
 
 import { Braces, Check, ChevronRight, Cloud, LoaderCircle, Pencil, Plus, Server, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createTool, fetchTools, setToolEnabled, setToolPublicEnabled, updateTool } from "@/lib/tool-catalog-client";
+import { createTool, fetchToolCatalog, setToolEnabled, setToolPublicEnabled, updateTool } from "@/lib/tool-catalog-client";
 import { TOOL_KIND_LABELS, type ToolKind, type ToolRecord } from "@/lib/tool-records";
 import styles from "./tool-library-screen.module.css";
 
@@ -48,6 +48,7 @@ const TEMPLATES: Array<{
 export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}) {
   const { t } = useLanguage();
   const [tools, setTools] = useState<ToolRecord[] | null>(null);
+  const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -64,7 +65,7 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTools(controller.signal).then(setTools).catch((cause) => {
+    void fetchToolCatalog(controller.signal).then((catalog) => { setTools(catalog.tools); setCanManage(catalog.canManage); }).catch((cause) => {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "工具目录读取失败");
     });
     return () => controller.abort();
@@ -177,13 +178,13 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
   }
 
   return <div className={styles.page}>
-    <div className={styles.heading}><div><h2>{t("工具")}</h2><p>{t("Function Calling、HTTP API 与 MCP 统一为角色可绑定的工具。")}</p></div><button type="button" onClick={() => { setEditingId(null); resetDraft(); setCreating(true); }}><Plus />{t("新建工具")}</button></div>
+    <div className={styles.heading}><div><h2>{t("工具")}</h2><p>{t("Function Calling、HTTP API 与 MCP 统一为角色可绑定的工具。")}</p></div>{canManage ? <button type="button" onClick={() => { setEditingId(null); resetDraft(); setCreating(true); }}><Plus />{t("新建工具")}</button> : null}</div>
 
-    <section className={styles.templates} aria-label={t("工具示例")}>
+    {canManage ? <section className={styles.templates} aria-label={t("工具示例")}>
       {TEMPLATES.map((template) => <button key={template.kind} type="button" onClick={() => applyTemplate(template)}>{toolIcon(template.kind)}<span><strong>{template.title}</strong><small>{TOOL_KIND_LABELS[template.kind]}{t(" 示例")}</small></span><ChevronRight /></button>)}
-    </section>
+    </section> : null}
 
-    {creating ? <section className={styles.editor} aria-label={t("新建工具")}>
+    {canManage && creating ? <section className={styles.editor} aria-label={t("新建工具")}>
       <header><div><span>{editingId ? "EDIT TOOL" : "NEW TOOL"}</span><h3>{editingId ? t("编辑工具") : t("新建工具")}</h3></div><button type="button" aria-label={t("关闭")} onClick={() => setCreating(false)}><X /></button></header>
       <div className={styles.kindTabs}>{(["function", "api", "mcp"] as const).map((item) => <button key={item} type="button" data-active={kind === item} onClick={() => setKind(item)}>{TOOL_KIND_LABELS[item]}</button>)}</div>
       <div className={styles.fields}>
@@ -203,7 +204,7 @@ export function ToolLibraryScreen({ onCreated }: { onCreated?: () => void } = {}
 
     {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
     {tools === null && !error ? <div className={styles.loading}><LoaderCircle className={styles.spin} />{t("正在读取工具目录")}</div> : null}
-    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length}{t(" 个")}</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{!tool.builtin ? <button type="button" className={styles.editAction} aria-label={t("编辑工具") + (tool.display_name) + ""} title={t("编辑工具")} onClick={() => edit(tool)}><Pencil /></button> : null}{!tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={"" + (tool.public_enabled ? "关闭" : "允许") + "" + (tool.display_name) + t("公开语音使用")} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? t("公开可用") : t("仅内部")}</button> : null}<button type="button" disabled={tool.builtin} aria-label={"" + (tool.enabled ? "停用" : "启用") + "" + (tool.display_name) + ""} onClick={() => void toggle(tool)}>{tool.builtin ? t("内置") : tool.enabled ? t("已启用") : t("已停用")}</button></span></article>)}</div></section>)}
+    {groups.map((group) => <section className={styles.group} key={group.kind}><header><strong>{TOOL_KIND_LABELS[group.kind]}</strong><span>{group.tools.length}{t(" 个")}</span></header><div>{group.tools.map((tool) => <article key={tool.tool_id} data-enabled={tool.enabled}>{toolIcon(tool.kind)}<div><strong>{tool.display_name}</strong><small>{tool.description}</small><code>{tool.function_name}</code></div><span className={styles.actions}>{canManage && !tool.builtin ? <button type="button" className={styles.editAction} aria-label={t("编辑工具") + (tool.display_name) + ""} title={t("编辑工具")} onClick={() => edit(tool)}><Pencil /></button> : null}{canManage && !tool.builtin ? <button type="button" disabled={!tool.endpoint || !tool.enabled} aria-label={"" + (tool.public_enabled ? "关闭" : "允许") + "" + (tool.display_name) + t("公开语音使用")} onClick={() => void togglePublic(tool)}>{tool.public_enabled ? t("公开可用") : t("仅内部")}</button> : null}{canManage ? <button type="button" disabled={tool.builtin} aria-label={"" + (tool.enabled ? "停用" : "启用") + "" + (tool.display_name) + ""} onClick={() => void toggle(tool)}>{tool.builtin ? t("内置") : tool.enabled ? t("已启用") : t("已停用")}</button> : <span>{tool.builtin ? t("内置") : t("公开可用")}</span>}</span></article>)}</div></section>)}
   </div>;
 }
 

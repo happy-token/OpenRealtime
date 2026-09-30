@@ -2,6 +2,7 @@ import { isSameOriginAvatarMutation } from "@/lib/avatar-test-access";
 import { hasMatchingAudioSignature } from "@/lib/media-signatures";
 import { findPersonalAvatar } from "@/lib/personal-avatar-library";
 import { findPersonalRole } from "@/lib/personal-role-library";
+import { readBuiltInTalkingAudio } from "@/lib/talking-reference-audio";
 import { getLipForcingJob, resumeLipForcingJob, startLipForcingJob } from "@/lib/lipforcing-talking-worker";
 import { userFromRequest } from "@/lib/user-session";
 
@@ -41,6 +42,10 @@ export async function POST(request: Request, context: Context) {
       if (!hasMatchingAudioSignature(mediaType, referenceAudio)) return json({ error: "参考音频内容与格式不匹配" }, 400);
     } else {
       const roleId = form.get("roleId");
+      if (form.get("audioSource") === "builtin" && !roleId) {
+        referenceAudio = await readBuiltInTalkingAudio();
+        return json({ job: await startLipForcingJob(avatarId, avatarActionId, referenceAudio, user) }, 202);
+      }
       if (typeof roleId !== "string") return json({ error: "请选择角色或上传参考音频" }, 400);
       const role = await findPersonalRole(user, roleId);
       if (!role || role.avatar_id !== avatarId) return json({ error: "角色与数字人形象不匹配" }, 400);

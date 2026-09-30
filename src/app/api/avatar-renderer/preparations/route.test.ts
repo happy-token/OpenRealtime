@@ -285,6 +285,8 @@ describe("avatar renderer preparation route", () => {
         ...DEFAULT_AVATAR_DISPLAY_CONFIG,
         renderPath: "segmented",
         segmentedLipSyncId: "wav2lip96",
+        segmentedAvatarId: "shuchang",
+        segmentedDisplayName: "Shuchang",
         segmentedAvatarActionId: "builtin:liveportrait-optimized",
       }),
     }));

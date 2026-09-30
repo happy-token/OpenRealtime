@@ -16,7 +16,7 @@ import {
 import type { AnamHostedAvatar } from "@/lib/anam-avatars";
 import {
   acceptOwnedAvatarRealtimeBinding,
-  createOwnedAvatar,
+  createAccessibleAvatar,
   fetchOwnedAvatar,
 } from "@/lib/avatar-catalog-client";
 import {
@@ -255,7 +255,7 @@ export function AvatarStudio({
         return;
       }
       const sourceImageUrl = await normalizeAvatarSourceImage(source.imageUrl);
-      const avatar = await createOwnedAvatar({
+      const avatar = await createAccessibleAvatar({
         displayName: resolvedDisplayName,
         sourceImageDataUrl: sourceImageUrl,
         ...(isInternalAvatarPresetId(source.id) ? { avatarId: source.id } : {}),
@@ -279,7 +279,7 @@ export function AvatarStudio({
       return;
     }
     try {
-      if (!await ensureProviderKey("anam")) return;
+      if (!await ensureProviderKey("anam", false, true)) return;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "无法检查 Anam API Key");
       return;
@@ -306,6 +306,13 @@ export function AvatarStudio({
     if (!createdAvatar || !anamCandidate || busy) return;
     setBusy("accept");
     try {
+      if (createdAvatar.avatar_id.startsWith("avatar-personal-")) {
+        setAnamCandidate(null);
+        setCurrentStep(3);
+        onComplete?.({ avatarId: createdAvatar.avatar_id });
+        if (returnToRoleCreate) returnToRole();
+        return;
+      }
       const avatar = await acceptOwnedAvatarRealtimeBinding(createdAvatar.avatar_id, {
         provider_avatar_id: anamCandidate.id,
         avatar_model: anamCandidate.activeVersion,

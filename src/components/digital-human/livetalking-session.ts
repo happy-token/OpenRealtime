@@ -16,6 +16,7 @@ export class LiveTalkingSession {
     private readonly baseUrl: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly avatarId?: string,
+    private readonly onDisconnected?: (error: Error) => void,
   ) {}
 
   async connect(video: HTMLVideoElement): Promise<{ sessionId: string }> {
@@ -60,6 +61,14 @@ export class LiveTalkingSession {
     }
     await peer.setRemoteDescription({ type: "answer", sdp: answer.sdp });
     await waitForConnectedVideo(peer, () => receivedVideo);
+    if (this.peer !== peer) throw new Error("LiveTalking 会话已停止");
+    peer.addEventListener("connectionstatechange", () => {
+      if (this.peer !== peer) return;
+      if (["disconnected", "failed", "closed"].includes(peer.connectionState)) {
+        this.stop();
+        this.onDisconnected?.(new Error("数字人视频连接已中断，已切换普通音频，请重连画面。"));
+      }
+    });
     return { sessionId: String(answer.sessionid) };
   }
 

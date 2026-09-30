@@ -10,6 +10,8 @@ describe("avatar display config", () => {
     const parsed = parseAvatarDisplayConfig({
       ...DEFAULT_AVATAR_DISPLAY_CONFIG,
       renderPath: "segmented",
+      segmentedAvatarId: "shuchang",
+      segmentedDisplayName: "Shuchang",
       segmentedLipSyncId: "dh-live-mini-v1",
     });
 

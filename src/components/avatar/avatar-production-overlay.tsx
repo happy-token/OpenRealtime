@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as R
 import { AvatarActionStudio } from "@/components/avatar/avatar-action-studio";
 import { AvatarLightweightConfig } from "@/components/avatar/avatar-lightweight-config";
 import { AvatarStudio } from "@/components/avatar/avatar-studio";
+import { PersonalVideoGeneration } from "@/components/settings/personal-video-generation";
 import { fetchOwnedAvatar } from "@/lib/avatar-catalog-client";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
 import type { AvatarWorkbenchTask } from "@/lib/avatar-workbench-navigation";
@@ -109,7 +110,12 @@ export function AvatarProductionOverlay({
     <section ref={panelRef} className={styles.panel} data-task={task} data-dragging={dragging || undefined} data-resizing={resizing || undefined} style={panelStyle}>
       <header title={movable ? t("拖动窗口") : undefined} onPointerDown={startDrag} onPointerMove={moveDialog} onPointerUp={stopDrag} onPointerCancel={stopDrag}><div><strong>{t(title)}</strong></div><button type="button" aria-label={t("关闭制作窗口")} onClick={onClose}><X aria-hidden="true" /></button></header>
       <div className={styles.content}>
-        {task === "motion" ? avatarId ? <AvatarActionStudio
+        {task === "motion" && avatarId?.startsWith("avatar-personal-") ? <PersonalVideoGeneration
+          initialAvatarId={avatarId}
+          embedded
+          onPreviewChange={(url) => onPreviewChange?.(url ? { url, name: "动作预览" } : null)}
+          onActionSaved={(action) => onComplete?.({ avatarId, actionId: action.avatar_action_id })}
+        /> : task === "motion" ? avatarId ? <AvatarActionStudio
           avatarId={avatarId}
           embedded
           focusedCreation

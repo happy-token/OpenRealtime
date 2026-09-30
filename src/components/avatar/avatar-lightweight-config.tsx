@@ -69,10 +69,11 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
       const selected = initialActionId && avatar.actions.some(item => item.avatar_action_id === initialActionId && !item.deleted_at)
         ? selectIdle(saved, initialActionId)
         : saved;
-      setDraft(initialMethod ? { ...selected, method: initialMethod } : floating && selected.method === "minimax" ? { ...selected, method: "musetalk" } : selected);
+      const method = initialMethod ?? selected.method;
+      setDraft({ ...selected, method: (floating || apiRoot === "/api/user/avatars") && method === "minimax" ? "musetalk" : method });
     } catch { setNotice("无法读取本机草稿，请重新选择素材。"); }
     setLoaded(true);
-  }, [avatar.actions, floating, initialActionId, initialMethod, key]);
+  }, [apiRoot, avatar.actions, floating, initialActionId, initialMethod, key]);
   useEffect(() => {
     if (!loaded) return;
     try { localStorage.setItem(key, JSON.stringify(draft)); }
@@ -402,7 +403,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           <h3>{floating ? t("口型对齐模型") : t("生成口型素材")}</h3>
           <div className={styles.lightweightField}>
             <SelectMenu value={draft.method} ariaLabel={floating ? t("口型对齐模型") : t("配对口型对齐")} compact placement={floating ? "top" : "bottom"} disabled={!loaded || busy}
-              options={(floating ? ["lipforcing", "musetalk", "wav2lip"] as const : ["lipforcing", "musetalk", "minimax", "wav2lip"] as const).map(method => {
+              options={(floating || apiRoot === "/api/user/avatars" ? ["lipforcing", "musetalk", "wav2lip"] as const : ["lipforcing", "musetalk", "minimax", "wav2lip"] as const).map(method => {
                 const saved = idle?.talking_variants?.find(item => item.method === method && !item.deleted_at && item.source_video_url === idle.video_url);
                 const generated = generatedVariant?.method === method;
                 const modelLabel = method === "lipforcing" ? "Lip Forcing" : method === "musetalk" ? "MuseTalk 1.5" : method === "minimax" ? "MiniMax · 视频参考" : "Wav2Lip";

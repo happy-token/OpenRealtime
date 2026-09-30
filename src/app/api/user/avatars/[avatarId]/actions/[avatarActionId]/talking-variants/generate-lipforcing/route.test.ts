@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const dependencies = vi.hoisted(() => ({ origin: vi.fn(), user: vi.fn(), avatar: vi.fn(), role: vi.fn(), job: vi.fn(), start: vi.fn(), resume: vi.fn(), signature: vi.fn() }));
+const dependencies = vi.hoisted(() => ({ origin: vi.fn(), user: vi.fn(), avatar: vi.fn(), role: vi.fn(), job: vi.fn(), start: vi.fn(), resume: vi.fn(), signature: vi.fn(), builtInAudio: vi.fn() }));
 vi.mock("@/lib/avatar-test-access", () => ({ isSameOriginAvatarMutation: dependencies.origin }));
 vi.mock("@/lib/user-session", () => ({ userFromRequest: dependencies.user }));
 vi.mock("@/lib/personal-avatar-library", () => ({ findPersonalAvatar: dependencies.avatar }));
 vi.mock("@/lib/personal-role-library", () => ({ findPersonalRole: dependencies.role }));
 vi.mock("@/lib/lipforcing-talking-worker", () => ({ getLipForcingJob: dependencies.job, startLipForcingJob: dependencies.start, resumeLipForcingJob: dependencies.resume }));
 vi.mock("@/lib/media-signatures", () => ({ hasMatchingAudioSignature: dependencies.signature }));
+vi.mock("@/lib/talking-reference-audio", () => ({ readBuiltInTalkingAudio: dependencies.builtInAudio }));
 
 import { GET, POST } from "./route";
 
@@ -28,9 +29,18 @@ beforeEach(() => {
   dependencies.start.mockResolvedValue({ id: "lipforcing-job", state: "queued" });
   dependencies.resume.mockResolvedValue({ id: "lipforcing-job", state: "processing" });
   dependencies.signature.mockReturnValue(true);
+  dependencies.builtInAudio.mockResolvedValue(Buffer.from("builtin wav"));
 });
 
 describe("personal Lip Forcing generation", () => {
+  it("uses built-in reference audio when the resource library has no role", async () => {
+    const form = new FormData();
+    form.set("audioSource", "builtin");
+    const response = await POST(new Request("http://localhost:3010", { method: "POST", body: form, headers: { origin: "http://localhost:3010" } }), context);
+    expect(response.status).toBe(202);
+    expect(dependencies.start).toHaveBeenCalledWith("avatar-personal-123", "motion-123", Buffer.from("builtin wav"), user);
+    expect(dependencies.role).not.toHaveBeenCalled();
+  });
   it("resumes the current owner's failed GPU job without a new submission", async () => {
     dependencies.job.mockResolvedValue({ id: "lipforcing-job", state: "failed", retryBlocked: true });
     expect((await POST(request(), context)).status).toBe(202);

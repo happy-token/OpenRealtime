@@ -4,6 +4,7 @@ import { useLanguage } from "@/components/language/language-provider";
 
 import { useEffect, useRef, useState, useSyncExternalStore, type SyntheticEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { LoaderCircle, RotateCcw } from "lucide-react";
 import { getPlaybackActive, getServerPlaybackActive, subscribePlaybackActivity } from "@/voice/audio/playback-activity";
 import { fetchOwnedAvatar, fetchOwnedAvatars, fetchPersonalAvatars } from "@/lib/avatar-catalog-client";
@@ -19,6 +20,12 @@ export function shouldShowTalkingMotion(
   degraded = false,
 ): boolean {
   return audioActive && !degraded;
+}
+
+export type MotionPair = { idle: string; talking: string };
+
+export function retainedMotionLoadState(current: MotionPair, next: MotionPair, loaded: number) {
+  return loaded & ((current.idle === next.idle ? 1 : 0) | (current.talking === next.talking ? 2 : 0));
 }
 
 export function resolveMotionPair(avatar: OwnedAvatarRecord | null, config: AvatarDisplayConfig) {
@@ -93,7 +100,9 @@ export function MotionOrchestrationStage({ config, onReady, caption, statusLabel
   const audioActive = useSyncExternalStore(subscribePlaybackActivity, getPlaybackActive, getServerPlaybackActive);
   const [degraded, setDegraded] = useState(false);
   const showingTalking = shouldShowTalkingMotion(audioActive, degraded);
-  const [pair, setPair] = useState<{ idle: string; talking: string } | null>(null);
+  const [pair, setPair] = useState<MotionPair | null>(null);
+  const [sourceImage, setSourceImage] = useState("");
+  const [idleFailed, setIdleFailed] = useState(false);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(0);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
@@ -105,33 +114,47 @@ export function MotionOrchestrationStage({ config, onReady, caption, statusLabel
   const reportedAmbientColor = useRef<string | null>(null);
   readyRef.current = onReady;
   useEffect(() => {
-    if (degraded) return;
     const controller = new AbortController();
     readyReported.current = false;
+    setDegraded(false); setIdleFailed(false); setSourceImage("");
     setPair(null); setError(""); setLoaded(0);
     void fetchOwnedAvatar(config.segmentedAvatarId, controller.signal).then(avatar => {
       if (controller.signal.aborted) return;
+      setSourceImage(avatar?.source_image_url ?? "");
       const next = resolveMotionPair(avatar, config);
       if (!next) throw new Error("动作配对不可用，请返回工作台重新选择素材。");
       setPair(next);
     }).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "素材读取失败"); });
     return () => controller.abort();
-  }, [config, connectionAttempt, degraded]);
+  }, [config, connectionAttempt]);
   useEffect(() => {
-    if (!pair || degraded) return;
+    if (!pair) return;
     let active = true;
+    let refreshing = false;
     const timer = window.setInterval(() => {
+      if (refreshing) return;
+      refreshing = true;
       void fetchOwnedAvatar(config.segmentedAvatarId).then(avatar => {
         if (!active) return;
-        if (resolveMotionPair(avatar, config)) return;
+        const next = resolveMotionPair(avatar, config);
+        if (next) {
+          if (next.idle === pair.idle && next.talking === pair.talking) return;
+          setLoaded(value => retainedMotionLoadState(pair, next, value));
+          setIdleFailed(false);
+          setPair(next);
+          setSourceImage(avatar?.source_image_url ?? "");
+          setError("");
+          return;
+        }
         setPair(null);
+        setLoaded(0);
         setError("口型对齐已从资产管理移除，请重新选择素材。");
       }).catch(() => {
         // A transient catalog failure must not interrupt an already playing session.
-      });
+      }).finally(() => { refreshing = false; });
     }, 10_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [config, degraded, pair]);
+  }, [config, pair]);
   useEffect(() => {
     if (readyReported.current || (!degraded && (loaded !== 3 || error))) return;
     readyReported.current = true;
@@ -153,31 +176,36 @@ export function MotionOrchestrationStage({ config, onReady, caption, statusLabel
     onAmbientColorChange?.(color);
   }
 
-  function handleVideoError() {
+  function handleVideoError(isTalking: boolean) {
+    if (!isTalking) setIdleFailed(true);
     setError("动作视频加载失败，请检查素材后重试。");
   }
 
   useEffect(() => {
+    if (degraded) {
+      if ((loaded & 1) && !idleFailed) void idleRef.current?.play().catch(() => setIdleFailed(true));
+      return;
+    }
     if (loaded !== 3) return;
     const source = showingTalking ? idleRef.current : talkingRef.current;
     const target = showingTalking ? talkingRef.current : idleRef.current;
     if (!source || !target) return;
     if (Number.isFinite(target.duration) && target.duration > 0) target.currentTime = source.currentTime % target.duration;
     void target.play().catch(() => setError("动作播放被浏览器阻止，请重新进入会话。"));
-  }, [showingTalking, loaded]);
+  }, [showingTalking, loaded, degraded, idleFailed]);
   function retryMotion() {
     setDegraded(false);
     setConnectionAttempt((attempt) => attempt + 1);
   }
 
   function continueWithCurrentVisual() {
-    setPair(null);
     setError("");
     setDegraded(true);
   }
 
   return <div className="digital-human-call-stage" data-render-path="orchestrated" data-renderer-state={degraded ? "degraded" : error ? "error" : loaded === 3 ? "ready" : "connecting"}>
-    {pair && ([false, true] as const).map(isTalking => <video key={isTalking ? pair.talking : pair.idle} ref={isTalking ? talkingRef : idleRef} className={`digital-human-live-video${isTalking ? "" : " digital-human-motion-base-video"}`} src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? t("编排讲话画面") : t("编排待机画面")} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={handleVideoError} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
+    {degraded && (!pair || idleFailed) ? <Image className="digital-human-call-image" src={sourceImage || `${config.segmentedAvatarId.startsWith("avatar-personal-") ? "/api/user/avatars" : "/api/avatars"}/${encodeURIComponent(config.segmentedAvatarId)}/image`} alt={t("数字人形象")} fill unoptimized sizes="100vw" /> : null}
+    {pair && ([false, true] as const).filter(isTalking => isTalking ? !degraded : !idleFailed).map(isTalking => <video key={`${isTalking ? "talking" : "idle"}:${isTalking ? pair.talking : pair.idle}`} ref={isTalking ? talkingRef : idleRef} className={`digital-human-live-video${isTalking ? "" : " digital-human-motion-base-video"}`} src={isTalking ? pair.talking : pair.idle} autoPlay loop muted playsInline preload="auto" aria-label={isTalking ? t("编排讲话画面") : t("编排待机画面")} onLoadedData={(event) => handleVideoLoaded(event, isTalking)} onError={() => handleVideoError(isTalking)} style={{ opacity: isTalking === showingTalking ? 1 : 0, pointerEvents: "none" }} />)}
     {!degraded && !error && loaded !== 3 ? <div className="avatar-startup-dialog" role="status" aria-live="polite">
       <LoaderCircle aria-hidden="true" />
       <div>

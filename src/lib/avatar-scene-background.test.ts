@@ -59,16 +59,16 @@ describe("avatar scene background", () => {
     });
   });
 
-  it("uses the packaged motion selected on the main screen", () => {
+  it("uses the curated motion selected on the main screen", () => {
     const background = resolveAvatarSceneBackground({
       ...DEFAULT_AVATAR_DISPLAY_CONFIG,
       renderPath: "segmented",
     }, []);
 
     expect(background).toMatchObject({
-      sceneKey: "segmented:shuchang:builtin:shuchang-realtime-idle",
-      imageUrl: "/digital-human/shuchang-preview.jpg",
-      videoUrl: "/digital-human/builtin-motion/shuchang-realtime-idle.mp4",
+      sceneKey: "segmented:avatar-8657be31-306e-428d-a013-7521e710ab6a:338a867c-0661-4565-af6e-f0f2e0e9b3c7",
+      imageUrl: "/digital-human/builtin-avatars/samantha.webp",
+      videoUrl: "/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4",
     });
   });
 

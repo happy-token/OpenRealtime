@@ -82,7 +82,7 @@ describe("Avatar library catalog", () => {
       requestedUrls.push(url);
       if (url === "/api/avatars") {
         return Response.json({
-          avatars: [ownedAvatar("shuchang", "傻妞", "2026-09-01T03:00:00.000Z")],
+          avatars: [],
         });
       }
       if (url === "/api/avatar-assets/actions") {
@@ -100,15 +100,15 @@ describe("Avatar library catalog", () => {
     }));
 
     const catalog = await loadCurrentAvatarCatalog();
-    const shuchang = catalog.find((avatar) => avatar.avatarId === "shuchang");
-
-    expect(shuchang?.actions.map((action) => action.avatarActionId)).toEqual([
-      "builtin:shuchang-realtime-idle",
+    expect(catalog.map(avatar => avatar.avatarId)).toEqual([
+      "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+      "avatar-qingzhao",
+      "avatar-2843741c-815f-4117-b710-941802b0e2ab",
     ]);
     expect(requestedUrls).not.toContain("/api/avatar-assets/actions");
   });
 
-  it("adds every LivePortrait companion action to Samantha without duplicating a saved action", async () => {
+  it("uses Samantha's curated managed actions without adding old LivePortrait experiments", async () => {
     const samantha = ownedAvatar(
       "avatar-8657be31-306e-428d-a013-7521e710ab6a",
       "萨曼莎",
@@ -137,7 +137,7 @@ describe("Avatar library catalog", () => {
 
     const defaultCatalog = await loadCurrentAvatarCatalog(undefined, { includeHostedAvatars: false });
     expect(defaultCatalog.find((avatar) => avatar.avatarId === samantha.avatar_id)?.actions)
-      .toHaveLength(samantha.actions.length);
+      .toHaveLength(samantha.actions.length + 1);
 
     const catalog = await loadCurrentAvatarCatalog(undefined, {
       includeHostedAvatars: false,
@@ -147,6 +147,7 @@ describe("Avatar library catalog", () => {
     const playableActions = actions.filter((action) => action.state === "available" && Boolean(action.videoUrl));
 
     expect(playableActions.map((action) => action.displayName)).toEqual([
+      "侧头微笑",
       "侧头微笑",
       "柔和回应",
       "忧郁共鸣",
@@ -191,8 +192,8 @@ describe("Avatar library catalog", () => {
     const actions = catalog.find((avatar) => avatar.avatarId === samantha.avatar_id)?.actions ?? [];
     const names = actions.filter((action) => action.displayName.includes("甜美元气")).map((action) => action.avatarActionId);
 
-    expect(actions).toHaveLength(5);
-    expect(names).toHaveLength(1);
+    expect(actions).toHaveLength(3);
+    expect(names).toHaveLength(2);
     expect(names[0]).toBe("saved-sweet-vitality");
   });
 });

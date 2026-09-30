@@ -8,8 +8,7 @@ import {
   mergeWorkbenchIdentityAssets,
   type WorkbenchIdentityAsset,
 } from "./digital-human-identity-catalog";
-import { BUILTIN_AVATAR_ACTIONS } from "./builtin-avatar-actions";
-import { OPENTALKING_AVATAR_CATALOG } from "./opentalking-avatar-catalog";
+import { INTERNAL_AVATAR_PRESET_IDS } from "./internal-avatar-ids";
 
 export type DigitalHumanMotionAsset = {
   id: string;
@@ -28,41 +27,36 @@ export type DigitalHumanAssetCatalog = {
 
 const BUILT_IN_IDENTITIES: readonly WorkbenchIdentityAsset[] = [
   {
-    id: "shuchang",
-    name: "Shuchang",
-    width: 512,
-    height: 512,
-    previewImageUrl: "/digital-human/shuchang-preview.jpg",
-    sourceImageUrl: "/digital-human/shuchang-preview.jpg",
-    origin: "当前资产",
+    id: INTERNAL_AVATAR_PRESET_IDS[0],
+    name: "萨曼莎",
+    previewImageUrl: "/digital-human/builtin-avatars/samantha.webp",
+    sourceImageUrl: "/digital-human/builtin-avatars/samantha.webp",
+    origin: "内置形象",
     category: "saved",
   },
-  ...OPENTALKING_AVATAR_CATALOG.map((asset) => ({
-    ...asset,
-    origin: "OpenTalking",
-    category: "reference" as const,
-  })),
+  {
+    id: INTERNAL_AVATAR_PRESET_IDS[1],
+    name: "清照",
+    previewImageUrl: "/digital-human/builtin-avatars/qingzhao.webp",
+    sourceImageUrl: "/digital-human/builtin-avatars/qingzhao.webp",
+    origin: "内置形象",
+    category: "saved",
+  },
+  {
+    id: INTERNAL_AVATAR_PRESET_IDS[2],
+    name: "若水",
+    previewImageUrl: "/digital-human/builtin-avatars/ruoshui.webp",
+    sourceImageUrl: "/digital-human/builtin-avatars/ruoshui.webp",
+    origin: "内置形象",
+    category: "saved",
+  },
 ];
 
+// Initial previews for the curated identities; the managed records supply the full action and talking catalog.
 const BUILT_IN_MOTIONS: readonly DigitalHumanMotionAsset[] = [
-  ...BUILTIN_AVATAR_ACTIONS.map((action) => ({
-    id: action.id,
-    visualIdentityId: action.avatarId,
-    name: action.name,
-    previewImageUrl: action.previewImageUrl,
-    videoUrl: action.videoUrl,
-    phase: "built-in" as const,
-  })),
-  ...OPENTALKING_AVATAR_CATALOG
-    .filter((asset) => asset.motionVideoUrl)
-    .map((asset) => ({
-      id: `builtin:opentalking:${asset.id}`,
-      visualIdentityId: asset.id,
-      name: `${asset.name} · 内置动作`,
-      previewImageUrl: asset.previewImageUrl,
-      videoUrl: asset.motionVideoUrl!,
-      phase: "built-in" as const,
-    })),
+  { id: "338a867c-0661-4565-af6e-f0f2e0e9b3c7", visualIdentityId: INTERNAL_AVATAR_PRESET_IDS[0], name: "侧头微笑", videoUrl: "/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4", phase: "built-in" },
+  { id: "a30afa92-5213-428c-889b-0b0a4df05082", visualIdentityId: INTERNAL_AVATAR_PRESET_IDS[1], name: "冷艳夜色", videoUrl: "/digital-human/motion-bases/a30afa92-5213-428c-889b-0b0a4df05082-recovered.mp4", phase: "built-in" },
+  { id: "b3a35a5b-67aa-4f83-9d68-338a8bb2c581", visualIdentityId: INTERNAL_AVATAR_PRESET_IDS[2], name: "甜美元气", videoUrl: "/digital-human/motion-bases/c4017965-045c-49bf-9a8a-41a13d4fdbce.mp4", phase: "built-in" },
 ];
 
 export function readDigitalHumanAssetCatalog(

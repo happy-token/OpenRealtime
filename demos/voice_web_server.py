@@ -148,6 +148,7 @@ from server.speech.tts import SilentTtsEngine, StreamingTtsEngine, TtsSessionCon
 from server.tools.clock_source import ClockToolSource, resolve_timezone
 from server.tools.confirmation import BoundToolConfirmationHandler
 from server.tools.control import DefaultToolControlHandler
+from server.tools.everyday_source import EverydayToolSource
 from server.tools.fast_loop import FastToolLoop
 from server.tools.knowledge_base_source import KnowledgeBaseToolSource
 from server.tools.local_catalog_source import LocalCatalogToolSource
@@ -809,7 +810,7 @@ def _build_tool_registry(
     include_builtins: bool = True,
 ) -> ToolRegistry:
     return ToolRegistry(
-        ([ClockToolSource(), WebSearchToolSource(_build_web_search(telemetry))] if include_builtins else [])
+        ([ClockToolSource(), EverydayToolSource(), WebSearchToolSource(_build_web_search(telemetry))] if include_builtins else [])
         + ([KnowledgeBaseToolSource(knowledge_base)] if knowledge_base else [])
         + ([custom_tools] if custom_tools else [])
     )
@@ -1099,7 +1100,7 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
     knowledge_base = LocalCatalogKnowledgeBase(identity.user_id) if os.environ.get(_DEMO_TOOLS_ENV_VAR) or binding is not None else None
     custom_tools = LocalCatalogToolSource(public_only=binding is not None, user_id=identity.user_id) if os.environ.get(_DEMO_TOOLS_ENV_VAR) or binding is not None else None
     tool_registry = (
-        _build_tool_registry(telemetry, knowledge_base, custom_tools, include_builtins=binding is None)
+        _build_tool_registry(telemetry, knowledge_base, custom_tools)
         if (os.environ.get(_DEMO_TOOLS_ENV_VAR) and binding is None) or binding is not None
         else None
     )
@@ -1417,8 +1418,11 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
                     allowed_custom = custom_tools.select_role(frame.role_id) if custom_tools is not None else set()
                     tool_registry.select_tools([
                         name for name in frame.tool_names
-                        if (binding is None and name == "get_current_datetime" and "tool-current-time" in allowed_tool_ids)
-                        or (binding is None and name == "search_web" and "tool-web-search" in allowed_tool_ids)
+                        if (name == "get_current_datetime" and "tool-current-time" in allowed_tool_ids)
+                        or (name == "search_web" and "tool-web-search" in allowed_tool_ids)
+                        or (name == "calculate" and "tool-calculator" in allowed_tool_ids)
+                        or (name == "convert_units" and "tool-unit-converter" in allowed_tool_ids)
+                        or (name == "count_text" and "tool-text-count" in allowed_tool_ids)
                         or (name == "search_knowledge_base" and knowledge_base is not None and frame.role_id is not None)
                         or name in allowed_custom
                     ])

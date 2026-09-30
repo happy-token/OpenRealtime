@@ -39,6 +39,7 @@ import type { AvatarDisplayConfig, ExperienceMode } from "@/components/digital-h
 import { HostedAvatarCatalog } from "@/components/digital-human/hosted-avatar-catalog";
 import type { AnamHostedAvatar } from "@/lib/anam-avatars";
 import { getBuiltinAvatarAction } from "@/lib/builtin-avatar-actions";
+import { INTERNAL_AVATAR_PRESET_IDS } from "@/lib/internal-avatar-ids";
 import { readJsonResponse } from "@/lib/http-json-response";
 import type { TtsConfigFrame } from "@/lib/frames";
 import { getBuiltinMotionPreviewUrl } from "@/lib/builtin-motion-catalog";
@@ -151,7 +152,9 @@ const MOTION_ASSET_LABELS: Record<string, string> = {
   "liveportrait-optimized": "自然交互动作",
 };
 const OPENTALKING_MOTION_ASSETS = OPENTALKING_AVATAR_CATALOG.filter(
-  (asset): asset is OpenTalkingAvatarAsset & { motionVideoUrl: string } => Boolean(asset.motionVideoUrl),
+  (asset): asset is OpenTalkingAvatarAsset & { motionVideoUrl: string } => Boolean(
+    asset.motionVideoUrl && INTERNAL_AVATAR_PRESET_IDS.some(id => id === asset.id),
+  ),
 );
 const MODEL_PROVIDER_MENU_OPTIONS = MODEL_PROVIDER_OPTIONS.map(({ value, label }) => ({ value, label }));
 interface ConfigDrawerProps {
@@ -749,10 +752,7 @@ export function ConfigDrawer({
     switchNotice,
     switchPersona,
   } = usePersonaLink(open ? personaManageAvatarId : null, personaManageAvatarName, open);
-  const selectedPersonaLabel = linkedPersona?.personaName
-    ?? (isAvatarMode && avatarDisplayConfig.renderPath === "segmented" && avatarDisplayConfig.segmentedAvatarId !== "shuchang"
-      ? "未关联"
-      : "Shuchang");
+  const selectedPersonaLabel = linkedPersona?.personaName ?? "未关联";
   const workbenchTokens = workbenchSurfaceTokens(workbenchVisualPreferences);
   const sessionWorkbenchStyle = sessionWorkbench ? {
     "--panel-surface-alpha": workbenchTokens.surfaceAlpha,
@@ -1145,8 +1145,9 @@ export function ConfigDrawer({
                   </div>
                   <section className="config-card">
                     <div className="config-card-heading"><span className="config-step"><Wrench /></span><div><h4>{t("内置工具")}</h4></div><InfoHint text={t("这些能力来自当前服务端 Tool Registry。")} /></div>
-                    <div className="builtin-tool-row"><span><Clock3 /></span><span><strong>{t("时间查询")}</strong><small>{t("ClockTool · 已接入")}</small></span><i>{t("启用")}</i></div>
-                    <div className="builtin-tool-row"><span><Globe2 /></span><span><strong>{t("网页搜索 / 天气")}</strong><small>{t("WebSearchTool · 凭据配置后使用")}</small></span><i>{t("启用")}</i></div>
+                    <div className="builtin-tool-row"><span><Clock3 /></span><span><strong>{t("时间查询")}</strong><small>{t("ClockTool · 已接入")}</small></span><i>{t("可选")}</i></div>
+                    <div className="builtin-tool-row"><span><Globe2 /></span><span><strong>{t("网页搜索")}</strong><small>{t("WebSearchTool · 凭据配置后使用")}</small></span><i>{t("可选")}</i></div>
+                    <div className="builtin-tool-row"><span><Wrench /></span><span><strong>{t("计算器 / 单位换算 / 文本统计")}</strong><small>{t("内置工具 · 在角色工具设置中选择")}</small></span><i>{t("可选")}</i></div>
                   </section>
                   <details className="config-card config-card-disclosure">
                     <summary className="config-card-heading"><span className="config-step"><Plus /></span><div><h4>{t("自定义工具")}</h4><p>{customTools.length ? "" + (customTools.length) + t(" 个草稿") : "HTTP / MCP / OpenAPI"}</p></div><ChevronDown className="config-disclosure-chevron" /></summary>

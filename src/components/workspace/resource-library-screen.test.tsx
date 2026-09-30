@@ -92,8 +92,8 @@ describe("ResourceLibraryScreen", () => {
     expect(html.indexOf("我的数字人形象")).toBeLessThan(html.indexOf("官方配置的数字人形象"));
     expect(html).toContain('<details class="');
     expect(html).not.toContain("<details open");
-    expect(html).toContain("创建数字人");
-    expect(html).toContain("/resources?tab=official-realtime&amp;task=realtime");
+    expect(html).not.toContain("创建数字人");
+    expect(html).not.toContain("/resources?tab=official-realtime&amp;task=realtime");
     expect(html).toContain("/resources/realtime/personal-one");
     expect(html).toContain("/resources/realtime/official-one");
   });

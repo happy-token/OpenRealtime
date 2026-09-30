@@ -6,6 +6,7 @@ import type { AvatarRealtimeBindingRecord } from "./avatar-catalog";
 import type { AvatarTalkingVariant, OwnedAvatarActionRecord, OwnedAvatarRecord } from "./avatar-records";
 import { isInternalAvatarPresetId } from "./internal-avatar-ids";
 import { hasMatchingImageSignature } from "./media-signatures";
+import builtinAvatarCatalog from "@/data/builtin-avatar-catalog.json";
 
 type StoredAvatar = Omit<OwnedAvatarRecord, "source_image_url"> & {
   source_image_media_type: string;
@@ -323,7 +324,12 @@ export async function readOwnedAvatarImage(avatarId: string, root = repositoryRo
     const record = (await readCatalog(root)).find((avatar) => avatar.avatar_id === avatarId);
     if (!record) return null;
     return {
-      bytes: await readFile(storedImagePath(root, record)),
+      bytes: await readFile(storedImagePath(root, record)).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || !isDefaultCatalogRoot(root)) throw error;
+        const image = builtinImagePath(avatarId);
+        if (!image) throw error;
+        return readFile(image);
+      }),
       mediaType: record.source_image_media_type,
       version: sourceImageVersion(record),
     };
@@ -351,6 +357,21 @@ function repositoryRoot() {
   return path.resolve(process.env.AVATAR_CATALOG_DIR?.trim() || path.join(process.cwd(), ".openrealtime", "avatar-catalog"));
 }
 
+function isDefaultCatalogRoot(root: string) {
+  return path.resolve(root) === path.resolve(process.cwd(), ".openrealtime", "avatar-catalog");
+}
+
+function builtinImagePath(avatarId: string) {
+  const filename: Record<string, string> = {
+    "avatar-8657be31-306e-428d-a013-7521e710ab6a": "samantha.webp",
+    "avatar-qingzhao": "qingzhao.webp",
+    "avatar-2843741c-815f-4117-b710-941802b0e2ab": "ruoshui.webp",
+  };
+  return filename[avatarId]
+    ? path.join(process.cwd(), "public", "digital-human", "builtin-avatars", filename[avatarId])
+    : null;
+}
+
 function catalogPath(root: string) { return path.join(root, "catalog.json"); }
 function imagesDir(root: string) { return path.join(root, "images"); }
 function legacyImagePath(root: string, avatarId: string) { return path.join(imagesDir(root), `${avatarId}.image`); }
@@ -369,7 +390,9 @@ async function readCatalog(root: string): Promise<StoredAvatar[]> {
     }
     return value;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return isDefaultCatalogRoot(root) ? builtinAvatarCatalog as StoredAvatar[] : [];
+    }
     throw error;
   }
 }

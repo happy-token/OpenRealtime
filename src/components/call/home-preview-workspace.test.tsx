@@ -45,15 +45,15 @@ describe("home action preview", () => {
   it("does not show a library action before the saved selection is restored", () => {
     const html = renderAvatarLibraryHome(false, false);
     expect(html).toContain("正在加载形象…");
-    expect(html).not.toMatch(/<video[^>]*aria-label="陪伴 动作预览"/);
-    expect(renderAvatarLibraryHome()).toMatch(/<video[^>]*aria-label="陪伴 动作预览"/);
+    expect(html).not.toMatch(/<video[^>]*aria-label="萨曼莎 动作预览"/);
+    expect(renderAvatarLibraryHome()).toMatch(/<video[^>]*aria-label="侧头微笑 动作预览"/);
   });
   it("offers an expandable create-talking card for a library action with zero talking variants", () => {
     const html = renderAvatarLibraryHome();
 
     expect(html).not.toContain('aria-label="选择对话"');
-    expect(html).toContain('aria-label="展开陪伴 · 内置动作的口型素材，共 0 个"');
-    expect(html).toContain('aria-label="新建口型动作"');
+    expect(html).toContain('aria-label="选择萨曼莎"');
+    expect(html).toContain('aria-label="展开侧头微笑的口型素材，共 0 个"');
     expect(html).not.toContain("当前动作还没有口型素材");
   });
 
@@ -126,20 +126,19 @@ describe("home action preview", () => {
     expect(component).not.toMatch(/setTimeout\([^)]*setTalking|setTalking\(\(value\) => !value\)/s);
   });
 
-  it("renders the selected action video instead of falling back to the static Avatar image", () => {
+  it("shows the curated action preview before the managed catalog has loaded", () => {
     const html = renderHome("avatar");
 
     expect(html).toContain('data-reduced-motion="true"');
-    expect(html).toContain('aria-label="陪伴 动作预览"');
-    expect(html).not.toContain('alt="陪伴 数字人预览"');
+    expect(html).toContain('aria-label="萨曼莎 动作预览"');
+    expect(html).not.toContain('alt="萨曼莎 数字人预览"');
   });
 
-  it("autoplays the selected base-motion card and the main stage in the library", () => {
+  it("keeps the curated action preview visible before the managed catalog loads", () => {
     const html = renderAvatarLibraryHome();
 
-    expect(html).toMatch(/<video[^>]*aria-label="陪伴 · 内置动作 动作预览"[^>]*autoPlay=""/);
-    expect(html).toMatch(/<video[^>]*autoPlay=""[^>]*aria-label="陪伴 动作预览"/);
-    expect(html).not.toContain('alt="陪伴 数字人预览"');
+    expect(html).toContain('aria-label="萨曼莎 动作预览"');
+    expect(html).not.toContain('aria-label="陪伴 · 内置动作 动作预览"');
   });
 
   it("shows the selected talking variant on the library stage", () => {
@@ -242,8 +241,8 @@ function renderHome(
     ...DEFAULT_AVATAR_DISPLAY_CONFIG,
     renderPath: "segmented" as const,
     segmentedPresetId: "custom-upload",
-    segmentedAvatarId: "companion",
-    segmentedAvatarActionId: "builtin:opentalking:companion",
+    segmentedAvatarId: "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+    segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
   } : DEFAULT_AVATAR_DISPLAY_CONFIG,
 ) {
   return renderToStaticMarkup(
@@ -277,9 +276,9 @@ function renderAvatarLibraryHome(collapseResourceRails = false, configReady = tr
         avatarDisplayConfig={{
           ...DEFAULT_AVATAR_DISPLAY_CONFIG,
           renderPath: "segmented",
-          segmentedAvatarId: "companion",
-          segmentedDisplayName: "陪伴",
-          segmentedAvatarActionId: "builtin:opentalking:companion",
+          segmentedAvatarId: "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+          segmentedDisplayName: "萨曼莎",
+          segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
         }}
         reducedMotion
         onVisualThemeChange={noop}
@@ -354,10 +353,10 @@ describe("HomePreviewWorkspace", () => {
 
     expect(html).toMatch(/data-open="true"[^>]*aria-label="数字人形象"/);
     expect(html).toMatch(/data-open="true"[^>]*aria-label="动作"/);
-    expect(html.indexOf("创建形象")).toBeLessThan(html.indexOf("选择Shuchang"));
+    expect(html.indexOf("创建形象")).toBeLessThan(html.indexOf("选择萨曼莎"));
     expect(html).toContain('aria-label="创建角色"');
-    expect(html.indexOf("创建角色")).toBeGreaterThan(html.indexOf("选择Shuchang"));
-    expect(html.indexOf("创建动作")).toBeGreaterThan(html.indexOf("展开陪伴 · 内置动作的口型素材"));
+    expect(html.indexOf("创建角色")).toBeGreaterThan(html.indexOf("选择萨曼莎"));
+    expect(html).not.toContain("展开陪伴 · 内置动作的口型素材");
     expect(component).not.toContain('eyebrow="实时形象"');
     expect(css).not.toContain("width: 216px");
     expect(css).toMatch(/\.workspace\[data-purpose="library"\] \.actionEdgePanel\s*\{[^}]*left:\s*calc\(var\(--workspace-sidebar-width,0px\) \+ 22px\)/s);
@@ -393,8 +392,8 @@ describe("HomePreviewWorkspace", () => {
       segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
     });
 
-    expect(html).toContain('alt="数字人1 数字人预览"');
-    expect(html).toContain("与 数字人1 对话");
+    expect(html).toContain('aria-label="萨曼莎 动作预览"');
+    expect(html).toContain("与 萨曼莎 对话");
     expect(html).not.toContain("与 陪伴 对话");
   });
 
@@ -473,17 +472,17 @@ describe("HomePreviewWorkspace", () => {
   it("previews the selected runnable avatar before starting services", () => {
     const html = renderHome("avatar");
 
-    expect(html).toContain("陪伴");
+    expect(html).toContain("萨曼莎");
     expect(html).not.toContain('aria-label="主页呈现模式"');
     expect(html).toContain('aria-label="打开数字人形象"');
     expect(html).toContain('aria-label="打开动作列表"');
     expect(html).not.toContain('aria-label="打开口型对齐"');
     expect(html).not.toContain("LIP ALIGNMENT");
-    expect(html).toContain('aria-label="选择陪伴"');
-    expect(html).toContain('aria-label="陪伴 · 内置动作 动作预览"');
+    expect(html).toContain('aria-label="选择萨曼莎"');
+    expect(html).toContain('aria-label="萨曼莎 动作预览"');
     expect(html).not.toContain("口型模型选择");
     expect(html).not.toContain("Wav2Lip 256");
-    expect(html).toContain("与 陪伴 对话");
+    expect(html).toContain("与 萨曼莎 对话");
   });
 
   it("separates the independent avatar rail from the action rail", () => {
@@ -495,14 +494,17 @@ describe("HomePreviewWorkspace", () => {
     expect(html).not.toContain('aria-label="口型对齐"');
   });
 
-  it("shows only the two actual built-in Avatars before personal assets load", () => {
+  it("shows only the three retained built-in Avatars before personal assets load", () => {
     const html = renderHome("avatar");
     const component = readFileSync(new URL("./home-preview-workspace.tsx", import.meta.url), "utf8");
 
-    expect(html).toContain('aria-label="选择Shuchang"');
-    expect(html).toContain('aria-label="选择陪伴"');
+    expect(html).toContain('aria-label="选择萨曼莎"');
+    expect(html).toContain('aria-label="选择清照"');
+    expect(html).toContain('aria-label="选择若水"');
+    expect(html).not.toContain('aria-label="选择Shuchang"');
+    expect(html).not.toContain('aria-label="选择陪伴"');
     expect(html).not.toContain('aria-label="选择职场女"');
-    expect(html.match(/aria-label="选择(?:Shuchang|陪伴)"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="选择(?:萨曼莎|清照|若水)"/g)).toHaveLength(3);
     expect(component).toContain("loadInternalPresetAvatars({ includeLocal: false })");
   });
 
@@ -520,10 +522,10 @@ describe("HomePreviewWorkspace", () => {
           updatedAt: "2026-08-28T00:00:00.000Z",
         }],
       })],
-      [AVATAR_IDENTITY_DISPLAY_NAMES_STORAGE_KEY, JSON.stringify({ companion: "小陪伴" })],
+      [AVATAR_IDENTITY_DISPLAY_NAMES_STORAGE_KEY, JSON.stringify({ "avatar-qingzhao": "小清照" })],
       [MOTION_ASSET_METADATA_STORAGE_KEY, JSON.stringify({
         version: 1,
-        displayNames: { "builtin:opentalking:companion": "陪伴待机" },
+        displayNames: {},
         hiddenIds: ["builtin:opentalking:anchor"],
         hiddenIdentityIds: ["anchor"],
       })],
@@ -539,16 +541,10 @@ describe("HomePreviewWorkspace", () => {
 
     expect(identities).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "我的客服形象" }),
-      expect.objectContaining({ name: "小陪伴" }),
+      expect.objectContaining({ name: "小清照" }),
     ]));
-    expect(motions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "陪伴待机" }),
-      expect.objectContaining({
-        id: "segmented-motion:builtin:shuchang-realtime-idle",
-        name: "实时待机",
-        motion: "/digital-human/builtin-motion/shuchang-realtime-idle.mp4",
-      }),
-    ]));
+    expect(motions).toHaveLength(3);
+    expect(motions.map(motion => motion.name)).toEqual(["侧头微笑", "冷艳夜色", "甜美元气"]);
     expect([...identities, ...motions].some((choice) => choice.preview?.includes("/anchor/"))).toBe(false);
   });
 

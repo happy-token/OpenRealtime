@@ -4893,6 +4893,14 @@ button.avatar-motion-preview-label:focus-visible { outline: 2px solid rgba(190,1
 .call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="orchestrated"] .digital-human-live-video {
   object-fit: cover;
 }
+/* Orchestration owns both clips, including the listening motion base. */
+.call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="orchestrated"] .digital-human-motion-base-video {
+  display: block;
+}
+.call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="orchestrated"][data-renderer-state="degraded"] .digital-human-call-image {
+  display: block;
+  z-index: 2;
+}
 .call-view.avatar-runtime-only .digital-human-call-stage[data-render-path="segmented"] .digital-human-wav2lip-video {
   -webkit-mask-image: none;
   mask-image: none;

@@ -6,6 +6,10 @@ const provider = vi.hoisted(() => ({
   create: vi.fn(),
   updateName: vi.fn(),
 }));
+const account = vi.hoisted(() => ({ user: vi.fn(), personalKey: vi.fn() }));
+
+vi.mock("@/lib/user-session", () => ({ userFromRequest: account.user }));
+vi.mock("@/lib/user-provider-credentials", () => ({ loadPersonalKey: account.personalKey }));
 
 vi.mock("@/lib/anam-avatars", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/anam-avatars")>();
@@ -22,6 +26,7 @@ import { GET, POST, PUT } from "./route";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  account.user.mockResolvedValue(null);
 });
 
 function enableLocalTestMode() {
@@ -42,6 +47,33 @@ function requestHeaders(extra: Record<string, string> = {}) {
 }
 
 describe("Anam hosted avatar catalog route", () => {
+  it("reads the catalog with the signed-in user's configured Anam key", async () => {
+    account.user.mockResolvedValue({ issuer: "test", subject: "alice" });
+    account.personalKey.mockResolvedValue("alice-anam-key");
+    provider.list.mockResolvedValue({ avatars: [{ id: "alice-avatar", origin: "personal" }], total: 1 });
+    const response = await GET(new NextRequest("http://127.0.0.1:3010/api/anam/avatars", {
+      headers: requestHeaders(),
+    }));
+    expect(response.status).toBe(200);
+    expect(provider.list).toHaveBeenCalledWith({ ANAM_API_KEY: "alice-anam-key" });
+    await expect(response.json()).resolves.toMatchObject({ configured: true, avatars: [{ id: "alice-avatar" }] });
+  });
+  it("uses a signed-in user's own key and avoids a second Anam registration", async () => {
+    account.user.mockResolvedValue({ issuer: "test", subject: "alice" });
+    account.personalKey.mockResolvedValue("alice-anam-key");
+    provider.list.mockResolvedValue({ avatars: [{ id: "already-created", origin: "personal" }], total: 1 });
+    const form = new FormData();
+    form.set("displayName", "New Avatar");
+    form.set("image", new File([Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])], "portrait.jpg", { type: "image/jpeg" }));
+    const response = await POST(new NextRequest("http://127.0.0.1:3010/api/anam/avatars", {
+      method: "POST",
+      headers: requestHeaders({ "content-length": "1024" }),
+      body: form,
+    }));
+    expect(response.status).toBe(409);
+    expect(provider.list).toHaveBeenCalledWith({ ANAM_API_KEY: "alice-anam-key" });
+    expect(provider.create).not.toHaveBeenCalled();
+  });
   it("rejects unauthenticated catalog reads", async () => {
     const response = await GET(new NextRequest("http://127.0.0.1:3010/api/anam/avatars"));
     expect(response.status).toBe(403);

@@ -120,7 +120,9 @@ export async function loadCurrentAvatarCatalog(
         video_url: motion.videoUrl,
         pending_model_count: 0,
       })),
-      ...owned.flatMap((avatar) => avatar.actions.map((action) => ({
+      ...owned.flatMap((avatar) => avatar.actions.filter((action) => !internalCatalog.motions.some((motion) => (
+        motion.visualIdentityId === avatar.avatar_id && motion.id === action.avatar_action_id
+      ))).map((action) => ({
         avatar_action_id: action.avatar_action_id,
         avatar_id: avatar.avatar_id,
         display_name: action.display_name,

@@ -1,6 +1,71 @@
 import { describe, expect, it, vi } from "vitest";
 import { LiveTalkingAudioBridge } from "./livetalking-audio-bridge";
 
+describe("renderer failure recovery", () => {
+  function chunk(sequence: number, onFallback = vi.fn()) {
+    return { pcm16Base64: pcm16Base64([1, 2]), sampleRateHz: 16_000, generation: 21,
+      speechId: "recovery", sequence, isFinal: false, onStarted: vi.fn(), onEnded: vi.fn(), onFallback };
+  }
+
+  it("replays buffered chunks in order after upload failure and rejects subsequent renderer audio", async () => {
+    const order: string[] = [];
+    const first = chunk(0, vi.fn(final => order.push(`first:${final}`)));
+    const last = chunk(1, vi.fn(final => order.push(`last:${final}`)));
+    const failed = vi.fn(() => order.push("degraded"));
+    const bridge = new LiveTalkingAudioBridge(async () => new Response(JSON.stringify({ code: 1 }), { status: 503 }));
+    bridge.connect("http://renderer", "session", undefined, failed);
+    expect(bridge.enqueue(first)).toBe(true);
+    expect(bridge.enqueue(last)).toBe(true);
+    bridge.completeGeneration(21);
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+    expect(order).toEqual(["degraded", "first:false", "last:true"]);
+    expect(first.onEnded).not.toHaveBeenCalled();
+    expect(last.onEnded).not.toHaveBeenCalled();
+    expect(bridge.isActive(21)).toBe(false);
+    expect(bridge.enqueue({ ...first, generation: 22 })).toBe(false);
+  });
+
+  it("recovers from a playback status failure without waiting for another audio upload", async () => {
+    vi.useFakeTimers();
+    const fallback = vi.fn();
+    const failed = vi.fn();
+    const bridge = new LiveTalkingAudioBridge(async url => new Response(JSON.stringify({ code: String(url).includes("audio_status") ? 1 : 0 })));
+    try {
+      bridge.connect("http://renderer", "session", undefined, failed);
+      bridge.enqueue(chunk(0, fallback));
+      bridge.completeGeneration(21);
+      await vi.advanceTimersByTimeAsync(150);
+      expect(failed).toHaveBeenCalledOnce();
+      expect(fallback).toHaveBeenCalledExactlyOnceWith(true);
+    } finally {
+      bridge.disconnect();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not replay a generation cancelled by interruption", () => {
+    const fallback = vi.fn();
+    const bridge = new LiveTalkingAudioBridge(async () => new Response(JSON.stringify({ code: 0 })));
+    bridge.connect("http://renderer", "session");
+    bridge.enqueue(chunk(0, fallback));
+    bridge.cancelGeneration(21);
+    bridge.fail(new Error("disconnected"));
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("replays pending audio only once on connection loss", () => {
+    const fallback = vi.fn();
+    const failure = vi.fn();
+    const bridge = new LiveTalkingAudioBridge(async () => new Response(JSON.stringify({ code: 0 })));
+    bridge.connect("http://renderer", "session", undefined, failure);
+    bridge.enqueue(chunk(0, fallback));
+    bridge.fail(new Error("disconnected"));
+    bridge.fail(new Error("closed"));
+    expect(failure).toHaveBeenCalledOnce();
+    expect(fallback).toHaveBeenCalledExactlyOnceWith(false);
+  });
+});
+
 function pcm16Base64(samples: number[]): string {
   const bytes = new Uint8Array(samples.length * 2);
   const view = new DataView(bytes.buffer);

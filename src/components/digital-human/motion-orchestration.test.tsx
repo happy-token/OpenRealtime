@@ -1,7 +1,15 @@
 import { expect, it } from "vitest";
-import { buildTalkingMaterialCatalog, filterPairedMotionCatalog, resolveMotionPair, shouldShowTalkingMotion } from "./motion-orchestration";
+import { buildTalkingMaterialCatalog, filterPairedMotionCatalog, retainedMotionLoadState, resolveMotionPair, shouldShowTalkingMotion } from "./motion-orchestration";
 import { DEFAULT_AVATAR_DISPLAY_CONFIG, parseAvatarDisplayConfig } from "./types";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
+
+it("requires newly replaced clips to load while retaining unchanged clip readiness", () => {
+  const pair = { idle: "/idle.mp4", talking: "/talk.mp4" };
+  expect(retainedMotionLoadState(pair, { idle: "/new-idle.mp4", talking: "/new-talk.mp4" }, 3)).toBe(0);
+  expect(retainedMotionLoadState(pair, { ...pair, talking: "/new-talk.mp4" }, 3)).toBe(1);
+  expect(retainedMotionLoadState(pair, { ...pair, idle: "/new-idle.mp4" }, 3)).toBe(2);
+  expect(retainedMotionLoadState(pair, pair, 1)).toBe(1);
+});
 it("persists orchestration and only resolves a variant attached to the selected live source", () => {
   const config = parseAvatarDisplayConfig({ ...DEFAULT_AVATAR_DISPLAY_CONFIG, renderPath: "orchestrated", segmentedAvatarId: "avatar-test", segmentedAvatarActionId: "action-test", motionTalkingVariantId: "talk-test" });
   expect(config.renderPath).toBe("orchestrated");

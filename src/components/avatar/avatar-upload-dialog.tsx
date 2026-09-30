@@ -7,7 +7,7 @@ import { ImagePlus, LoaderCircle, Play, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import type { AvatarDisplayConfig } from "@/components/digital-human/types";
-import { createOwnedAvatar } from "@/lib/avatar-catalog-client";
+import { createAccessibleAvatar } from "@/lib/avatar-catalog-client";
 import { acceptOwnedAvatarRealtimeBinding } from "@/lib/avatar-catalog-client";
 import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import { isValidAnamAvatarName, suggestAnamAvatarName, ANAM_AVATAR_NAME_REQUIREMENT } from "@/lib/anam-avatar-name";
@@ -122,7 +122,7 @@ export function AvatarUploadDialog({
       const sourceUrl = URL.createObjectURL(file);
       try {
         const sourceImageDataUrl = await normalizeAvatarSourceImage(sourceUrl);
-        const avatar = await createOwnedAvatar({ displayName: name.slice(0, 50), sourceImageDataUrl });
+        const avatar = await createAccessibleAvatar({ displayName: name.slice(0, 50), sourceImageDataUrl });
         onCreated?.(avatar);
       } finally {
         URL.revokeObjectURL(sourceUrl);
@@ -139,14 +139,20 @@ export function AvatarUploadDialog({
     if (!displayName.trim()) { setError("请填写形象名称"); return; }
     if (!isValidAnamAvatarName(anamName)) { setError(ANAM_AVATAR_NAME_REQUIREMENT); return; }
     try {
-      if (!await ensureProviderKey("anam")) return;
+      if (!await ensureProviderKey("anam", false, true)) return;
       setBusy(true);
       setError("");
+      const catalogResponse = await fetch("/api/anam/avatars", { cache: "no-store" });
+      const catalog = await readJsonResponse<{ avatars?: AnamHostedAvatar[]; error?: string }>(catalogResponse, "Anam 形象目录读取失败");
+      if (!catalogResponse.ok) throw new Error(catalog.error || "Anam 形象目录读取失败");
+      if (catalog.avatars?.some((avatar) => avatar.origin === "personal")) {
+        throw new Error("当前 Anam 账号已有一个自建形象，请在形象库选择已有形象");
+      }
       let avatar = ownedAvatar;
       if (!avatar && file) {
         const sourceUrl = URL.createObjectURL(file);
         try {
-          avatar = await createOwnedAvatar({ displayName: displayName.trim().slice(0, 50), sourceImageDataUrl: await normalizeAvatarSourceImage(sourceUrl) });
+          avatar = await createAccessibleAvatar({ displayName: displayName.trim().slice(0, 50), sourceImageDataUrl: await normalizeAvatarSourceImage(sourceUrl) });
           setOwnedAvatar(avatar);
         } finally { URL.revokeObjectURL(sourceUrl); }
       }
@@ -172,6 +178,10 @@ export function AvatarUploadDialog({
     try {
       if (sourceAvatar) {
         onRealtimeCreated?.(sourceAvatar, candidate);
+        return;
+      }
+      if (ownedAvatar.avatar_id.startsWith("avatar-personal-")) {
+        onRealtimeCreated?.(ownedAvatar, candidate);
         return;
       }
       const avatar = await acceptOwnedAvatarRealtimeBinding(ownedAvatar.avatar_id, {

@@ -62,8 +62,8 @@ describe("prepareAvatarRendererAsset", () => {
     expect(request).toHaveBeenCalledTimes(3);
     expect(String(request.mock.calls[1]?.[0])).toContain("taskId=task-1");
     expect(String(request.mock.calls[2]?.[0])).toContain("taskId=task-1");
-    expect(String(request.mock.calls[2]?.[0])).toContain("avatarId=shuchang");
-    expect(String(request.mock.calls[2]?.[0])).toContain("avatarActionId=builtin%3Ashuchang-realtime-idle");
+    expect(String(request.mock.calls[2]?.[0])).toContain("avatarId=avatar-8657be31-306e-428d-a013-7521e710ab6a");
+    expect(String(request.mock.calls[2]?.[0])).toContain("avatarActionId=338a867c-0661-4565-af6e-f0f2e0e9b3c7");
     expect(onProgress).toHaveBeenNthCalledWith(1, 35);
     expect(onProgress).toHaveBeenNthCalledWith(2, 100);
   });

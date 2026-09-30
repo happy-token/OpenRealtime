@@ -60,6 +60,25 @@ export async function createOwnedAvatar(input: { displayName: string; sourceImag
   return avatarMutation("/api/avatars", { method: "POST", body: JSON.stringify(input) });
 }
 
+export async function createAccessibleAvatar(input: { displayName: string; sourceImageDataUrl: string; avatarId?: string }) {
+  const sharedResponse = await fetch("/api/avatars", jsonRequest("POST", input));
+  if (sharedResponse.status !== 403) {
+    const payload = await readJsonResponse<{ avatar?: OwnedAvatarRecord; error?: string }>(sharedResponse, "形象创建失败");
+    if (!sharedResponse.ok || !payload.avatar) throw new Error(payload.error || "形象创建失败");
+    return payload.avatar;
+  }
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(input.sourceImageDataUrl);
+  if (!match) throw new Error("形象源图格式无效");
+  const bytes = Uint8Array.from(atob(match[2]), (character) => character.charCodeAt(0));
+  const form = new FormData();
+  form.set("name", input.displayName);
+  form.set("image", new File([bytes], "avatar-image", { type: match[1] }));
+  const response = await fetch("/api/user/avatars", { method: "POST", body: form });
+  const payload = await readJsonResponse<{ avatar?: OwnedAvatarRecord; error?: string }>(response, "个人形象创建失败");
+  if (!response.ok || !payload.avatar) throw new Error(payload.error || "个人形象创建失败");
+  return payload.avatar;
+}
+
 export async function setOwnedAvatarDeletion(avatarId: string, deleted: boolean) {
   return avatarMutation(`/api/avatars/${encodeURIComponent(avatarId)}`, {
     method: "PATCH",

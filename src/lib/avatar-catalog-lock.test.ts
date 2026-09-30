@@ -14,7 +14,8 @@ describe("Avatar catalog process locking", () => {
     const root = await mkdtemp(path.join(tmpdir(), "avatar-process-test-"));
     try {
       for (const name of ["avatar-catalog-lock", "avatar-catalog-repository", "internal-avatar-ids", "media-signatures"]) {
-        const source = await readFile(new URL(`./${name}.ts`, import.meta.url), "utf8");
+        const source = (await readFile(new URL(`./${name}.ts`, import.meta.url), "utf8"))
+          .replace('import builtinAvatarCatalog from "@/data/builtin-avatar-catalog.json";', "const builtinAvatarCatalog = [];");
         await writeFile(path.join(root, `${name}.js`), ts.transpileModule(source, {
           compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
         }).outputText);

@@ -21,7 +21,7 @@ export type { TranscriptEntry, AssistantMessageStatus, AssistantOutputText, User
 import type { AvatarPersonaConfigFrame, ServerToClientFrame, ToolConfigFrame, TtsConfigFrame } from "@/lib/frames";
 import { BrowserAudioInput } from "@/voice/audio/browser-input";
 import { BrowserAudioOutput } from "@/voice/audio/browser-output";
-import type { AvatarAudioSink } from "@/voice/audio/avatar-output";
+import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 import { DeviceAudioInputRuntime } from "@/voice/audio/input-runtime";
 import { DeviceAudioOutputRuntime } from "@/voice/audio/output-runtime";
 import { readConversationPreferences } from "@/lib/conversation-preferences";
@@ -547,6 +547,26 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
       }, playbackInactivityFallbackDelayMs(remainingMs));
     }
 
+    function replayAvatarAudio(chunk: AvatarAudioChunk, isFinal: boolean) {
+      if (!sessionOutputEnabledRef.current
+        || shouldDropAudioFrame(chunk.generation, cancelledGenerationRef.current)
+        || speakingGenerationRef.current !== chunk.generation) return;
+      outputGraph.play({
+        ...chunk,
+        isFinal,
+        onEnded: () => {
+          if (speakingGenerationRef.current !== chunk.generation) return;
+          if (isFinal) {
+            clearPlaybackInactivityFallback();
+            leaveSpeaking();
+            reportPlaybackFinished(chunk.generation);
+          } else {
+            armPlaybackInactivityFallback(chunk.generation);
+          }
+        },
+      });
+    }
+
     function handleFrame(frame: ServerToClientFrame) {
       if (frame.type.startsWith("assistant_") && !sessionOutputEnabledRef.current) {
         return;
@@ -764,13 +784,14 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
           if (speakingGenerationRef.current !== frame.generation) {
             enterSpeaking(frame.generation as number);
           }
-          const audioChunk = {
+          const audioChunk: AvatarAudioChunk = {
             pcm16Base64: frame.pcm16_base64 as string,
             sampleRateHz: frame.sample_rate_hz as number,
             generation: frame.generation as number,
             speechId: `response:${frame.generation}`,
             sequence: 0,
             isFinal: true,
+            onFallback: (isFinal) => replayAvatarAudio(audioChunk, isFinal),
             onStarted: () => reportPlaybackProgress(frame.generation as number, "started"),
             onEnded: () => {
               if (speakingGenerationRef.current !== frame.generation) return;
@@ -796,13 +817,14 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
           if (speakingGenerationRef.current !== frame.generation) {
             enterSpeaking(frame.generation as number);
           }
-          const audioChunk = {
+          const audioChunk: AvatarAudioChunk = {
             pcm16Base64: frame.pcm16_base64 as string,
             sampleRateHz: frame.sample_rate_hz as number,
             generation: frame.generation as number,
             speechId: frame.speech_id ?? `response:${frame.generation}`,
             sequence: frame.sequence as number,
             isFinal: frame.is_final as boolean,
+            onFallback: (isFinal) => replayAvatarAudio(audioChunk, isFinal),
             onStarted: () => {
               if (speakingGenerationRef.current !== frame.generation) {
                 enterSpeaking(frame.generation as number);

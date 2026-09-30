@@ -14,6 +14,7 @@ interface StreamingGeneration {
   pollTimer: ReturnType<typeof setTimeout> | null;
   onStarted: () => void;
   onEnded: () => void;
+  chunks: AvatarAudioChunk[];
 }
 
 interface VolumeTarget { volume: number }
@@ -25,6 +26,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
   private sessionId = "";
   private video: VolumeTarget | null = null;
   private volume = 0.8;
+  private onFailure: ((error: Error) => void) | null = null;
   private readonly active = new Map<number, StreamingGeneration>();
 
   private readonly fetcher: Fetcher;
@@ -34,10 +36,11 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     this.fetcher = (input, init) => fetcher(input, init);
   }
 
-  connect(baseUrl: string, sessionId: string, video?: VolumeTarget): void {
+  connect(baseUrl: string, sessionId: string, video?: VolumeTarget, onFailure?: (error: Error) => void): void {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.sessionId = sessionId;
     this.video = video ?? null;
+    this.onFailure = onFailure ?? null;
     if (this.video) this.video.volume = this.volume;
   }
 
@@ -51,7 +54,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
       current = {
         sampleRateHz: chunk.sampleRateHz, source: new Int16Array(0), sentSamples: 0,
         sequence: 0, final: false, started: false, controller: new AbortController(),
-        request: Promise.resolve(), pollTimer: null, onStarted: chunk.onStarted, onEnded: chunk.onEnded,
+        request: Promise.resolve(), pollTimer: null, onStarted: chunk.onStarted, onEnded: chunk.onEnded, chunks: [],
       };
       this.active.set(chunk.generation, current);
     }
@@ -59,6 +62,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     combined.set(current.source);
     combined.set(incoming, current.source.length);
     current.source = combined;
+    current.chunks.push(chunk);
     current.onEnded = chunk.onEnded;
     // Keep resampling phase continuous; retain the last source sample until its
     // interpolation neighbour arrives, rather than rounding each HTTP chunk.
@@ -101,8 +105,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     }).catch((error: unknown) => {
       if (this.active.get(generation) !== current) return;
       console.error("Avatar streaming failed", error);
-      this.cancelGeneration(generation);
-      current.onEnded();
+      this.fail(error instanceof Error ? error : new Error("Avatar streaming failed"));
     });
   }
 
@@ -130,8 +133,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     } catch (error) {
       if (this.active.get(generation) !== current) return;
       console.error("Avatar playback failed", error);
-      this.cancelGeneration(generation);
-      current.onEnded();
+      this.fail(error instanceof Error ? error : new Error("Avatar playback failed"));
     }
   }
 
@@ -155,6 +157,24 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     this.baseUrl = "";
     this.sessionId = "";
     this.video = null;
+    this.onFailure = null;
+  }
+
+  /** Stop the renderer before replaying buffered audio, so both outputs cannot overlap. */
+  fail(error: Error): void {
+    const pending = [...this.active.values()];
+    const onFailure = this.onFailure;
+    this.disconnect();
+    onFailure?.(error);
+    for (const current of pending) {
+      if (current.chunks.every(chunk => chunk.onFallback)) {
+        current.chunks.forEach((chunk, index) => chunk.onFallback?.(
+          chunk.isFinal || (current.final && index === current.chunks.length - 1),
+        ));
+      } else {
+        current.onEnded();
+      }
+    }
   }
 
   setVolume(volume: number): void {

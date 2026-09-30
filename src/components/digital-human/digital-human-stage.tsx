@@ -22,7 +22,7 @@ import { AnamAudioBridge } from "./anam-audio-bridge";
 import { LiveTalkingAudioBridge } from "./livetalking-audio-bridge";
 import { LiveTalkingSession } from "./livetalking-session";
 import { AVATAR_IDENTITY_CHOICES, LIP_SYNC_CHOICES } from "./segmented-avatar-config";
-import type { AvatarDisplayConfig } from "./types";
+import { DEFAULT_AVATAR_DISPLAY_CONFIG, type AvatarDisplayConfig } from "./types";
 import { sampleMediaAmbientColor } from "@/lib/ambient-color";
 import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
 import type { VoiceAdmission } from "@/lib/voice-admission";
@@ -216,10 +216,17 @@ function RenderedDigitalHumanStage({
               payload.endpoint,
               fetch,
               payload.avatar_id ?? prepared.rendererAssetId ?? segmentedRuntime?.avatarId,
+              (error) => { if (!cancelled) liveTalkingBridge.fail(error); },
             );
             const { sessionId } = await liveTalkingSession.connect(video);
             if (cancelled) return;
-            liveTalkingBridge.connect(payload.endpoint, sessionId, video);
+            liveTalkingBridge.connect(payload.endpoint, sessionId, video, (error) => {
+              if (cancelled) return;
+              liveTalkingSession?.stop();
+              setAvatarAudioSink(null);
+              setRendererState("degraded");
+              setRendererMessage(`实时口型已中断，已切换普通音频 · ${error.message}`);
+            });
             setAvatarAudioSink(liveTalkingBridge);
             setRendererState("ready");
             setRendererMessage(`实时渲染已连接 · ${payload.model ?? "Wav2Lip 256"} · WebRTC`);
@@ -422,8 +429,8 @@ function RenderedDigitalHumanStage({
       ? `/api/user/avatars/${encodeURIComponent(displayConfig.segmentedAvatarId)}/image`
       : selectedOpenTalkingIdentity?.previewImageUrl ?? selectedSegmentedAvatar?.imageUrl
     : displayConfig.hostedAvatarImageUrl;
-  const segmentedAvatarName = (displayConfig.segmentedDisplayName !== "Shuchang"
-    || displayConfig.segmentedAvatarId === "shuchang"
+  const segmentedAvatarName = (displayConfig.segmentedDisplayName !== DEFAULT_AVATAR_DISPLAY_CONFIG.segmentedDisplayName
+    || displayConfig.segmentedAvatarId === DEFAULT_AVATAR_DISPLAY_CONFIG.segmentedAvatarId
     ? displayConfig.segmentedDisplayName
     : "") || selectedOpenTalkingIdentity?.name
     || selectedSegmentedAvatar?.name

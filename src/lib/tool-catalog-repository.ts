@@ -10,6 +10,9 @@ const FUNCTION_NAME = /^[A-Za-z_][A-Za-z0-9_]{1,63}$/;
 const BUILTIN_TOOLS: ToolRecord[] = [
   builtinTool("tool-current-time", "当前时间", "读取当前日期、时间与时区。", "get_current_datetime"),
   builtinTool("tool-web-search", "联网搜索", "搜索公开网页并返回与问题相关的资料。", "search_web"),
+  builtinTool("tool-calculator", "计算器", "计算四则运算和百分比。", "calculate"),
+  builtinTool("tool-unit-converter", "单位换算", "换算常见长度、质量和温度单位。", "convert_units"),
+  builtinTool("tool-text-count", "文本统计", "统计短文本的字符数、词数和行数。", "count_text"),
 ];
 
 export async function listTools(root = repositoryRoot()): Promise<ToolRecord[]> {

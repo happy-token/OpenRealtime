@@ -224,8 +224,8 @@ describe("ConfigDrawer", () => {
     expect(html).toContain("创建 Avatar 动作");
     expect(html).toContain("进入 Avatar 创建页 · 动作任务");
     expect(html).toContain('href="/avatars/create?task=action"');
-    expect(html).toContain("Shuchang");
-    expect(html).toContain("实时待机");
+    expect(html).toContain("萨曼莎");
+    expect(html).toContain("侧头微笑");
     expect(html).toContain("每个 Avatar 包含形象和所属动作");
     expect(html).toContain("左右浏览不会改变配置，点击后才更新");
     expect(html).not.toContain("口型模型");
@@ -234,12 +234,10 @@ describe("ConfigDrawer", () => {
     expect(html).not.toContain("/api/avatar-evaluation/artifacts/dh-live-mini-v1-custom-003");
     expect(html).toContain("MOTION SELECTED");
     expect(html).not.toContain("ACTION ASSET");
-    expect(html).toContain("实时待机 · ACTION PREVIEW");
-    expect(html).toContain('/digital-human/builtin-motion/shuchang-realtime-idle.mp4');
+    expect(html).toContain("ACTION PREVIEW");
+    expect(html).toContain('/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4');
     expect(html).not.toContain("你好，我是 Shuchang");
     expect(html).toContain("分段式合成");
-    expect(html).toContain("<small>Persona</small><strong>Shuchang</strong>");
-    expect(html).toContain("<small>数字人动作</small><strong>实时待机</strong>");
     expect(html).not.toContain("<small>数字人形象</small>");
     expect(html).not.toContain("你好，我是 Shuchang 测试形象");
   });
@@ -249,21 +247,22 @@ describe("ConfigDrawer", () => {
 
     expect(html).toContain("Avatar 资产");
     expect(html).toContain('aria-label="多段式 Avatar 资产"');
-    expect(html).toContain('aria-label="陪伴 形象与动作"');
+    expect(html).toContain('aria-label="清照 形象与动作"');
     expect(html).not.toContain("数字人动作资产库");
     expect(html).not.toContain("数字人形象资产库");
     expect(html).not.toContain('aria-label="数字人动作资产列表"');
     expect(html).not.toContain('aria-label="数字人形象资产列表"');
   });
 
-  it("only exposes the two actual internal presets as canonical cards", () => {
+  it("only exposes the three curated internal presets as canonical cards", () => {
     const html = renderDrawer("avatar", { ...DEFAULT_AVATAR_DISPLAY_CONFIG, renderPath: "segmented" });
 
-    expect(html).toContain('aria-label="Shuchang 形象与动作"');
-    expect(html).toContain('aria-label="陪伴 形象与动作"');
+    expect(html).toContain('aria-label="萨曼莎 形象与动作"');
+    expect(html).toContain('aria-label="清照 形象与动作"');
     expect(html).not.toContain('aria-label="职场女 形象与动作"');
     expect(html).not.toContain('aria-label="新闻主播 形象与动作"');
-    expect(html).toContain("<strong>内置 Avatar</strong><span>2 个形象</span>");
+    expect(html).toContain('<strong>内置 Avatar</strong><span>3 个形象</span>');
+    expect(html).toContain('aria-label="若水 形象与动作"');
   });
 
   it("keeps destructive asset actions out of the session workbench", () => {
@@ -308,9 +307,9 @@ describe("ConfigDrawer", () => {
   it("keeps actions nested behind each Avatar image until the user browses", () => {
     const html = renderDrawer("avatar", { ...DEFAULT_AVATAR_DISPLAY_CONFIG, renderPath: "segmented" });
 
-    expect(html).toContain('aria-label="展开 陪伴 的形象和动作"');
-    expect(html).not.toContain('aria-label="浏览 陪伴 的下一个媒体"');
-    expect(html).not.toContain('aria-label="预览动作：陪伴 · 内置动作"');
+    expect(html).toContain('aria-label="展开 清照 的形象和动作"');
+    expect(html).not.toContain('aria-label="浏览 清照 的下一个媒体"');
+    expect(html).not.toContain('aria-label="预览动作：清照 · 冷艳夜色"');
     expect(html).not.toContain('src="/digital-human/opentalking/companion/motion.mp4"');
   });
 
@@ -344,15 +343,15 @@ describe("ConfigDrawer", () => {
       {
         ...DEFAULT_AVATAR_DISPLAY_CONFIG,
         renderPath: "segmented",
-        segmentedAvatarId: "companion",
-        segmentedAvatarActionId: "builtin:opentalking:companion",
+        segmentedAvatarId: "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+        segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
       },
       false,
       false,
     );
 
     expect(html).toContain("<video");
-    expect(html).toContain("/digital-human/opentalking/companion/motion.mp4");
+    expect(html).toContain("/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4");
     expect(html).not.toContain("/api/avatar-evaluation/artifacts/");
   });
 
@@ -375,8 +374,8 @@ describe("ConfigDrawer", () => {
       {
         ...DEFAULT_AVATAR_DISPLAY_CONFIG,
         renderPath: "segmented",
-        segmentedAvatarId: "newscaster",
-        segmentedAvatarActionId: "builtin:opentalking:newscaster",
+        segmentedAvatarId: "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+        segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
       },
       false,
       true,
@@ -384,7 +383,7 @@ describe("ConfigDrawer", () => {
     );
 
     expect(html).not.toContain("<video");
-    expect(html).toContain("新闻主播 · 配套动作");
+    expect(html).toContain("侧头微笑");
   });
 
   it("keeps hidden lip-sync implementation choices out of asset configuration", () => {
@@ -446,7 +445,7 @@ describe("ConfigDrawer", () => {
       segmentedAvatarActionId: "motion-base:accepted-001",
     });
     expect(parseAvatarDisplayConfig({ segmentedAvatarActionId: "<script>" }))
-      .toMatchObject({ segmentedAvatarActionId: "builtin:shuchang-realtime-idle" });
+      .toMatchObject({ segmentedAvatarActionId: "338a867c-0661-4565-af6e-f0f2e0e9b3c7" });
   });
 
   it("keeps invalid legacy combinations out of the primary page messaging", () => {
