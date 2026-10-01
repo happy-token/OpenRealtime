@@ -75,12 +75,12 @@
   display: grid;
   place-items: center;
   border: 1px solid rgb(255 255 255 / calc(var(--panel-highlight-alpha,.08) + .08));
-  border-radius: 13px;
+  border-radius: var(--button-radius);
   color: var(--text);
-  background: rgb(255 255 255 / calc(var(--panel-soft-alpha,.04) + .04));
+  background: var(--control-surface);
   cursor: pointer;
 }
-.panel > header button:hover { background: rgb(255 255 255 / calc(var(--panel-soft-alpha,.04) + .1)); }
+.panel > header button:hover { background: var(--control-surface-hover); }
 .panel > header svg { width: 17px; height: 17px; }
 .content { min-height: 0; overflow: auto; }
 .panel[data-task="motion"] > header { position: absolute; z-index: 8; top: 0; right: 0; left: 0; min-height: 25px; padding: 4px 8px; display: flex; justify-content: flex-end; border: 0; touch-action: none; cursor: grab; }
@@ -105,3 +105,7 @@
 .panel[data-task="motion"] > header { pointer-events: none; }
 .panel[data-task="motion"] > header button { pointer-events: auto; }
 .panel[data-task="motion"] > header::before { content: ""; position: absolute; top: 0; right: 40px; left: 40px; height: 10px; pointer-events: auto; }
+
+.panel { border-color: var(--border-strong); color: var(--text); }
+.panel > header { border-bottom-color: var(--border); }
+.panel > header button { border-color: var(--border-strong); }

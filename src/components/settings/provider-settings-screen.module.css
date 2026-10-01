@@ -35,9 +35,9 @@
 .instanceHeading p { margin: 0; color: var(--text-dim); font-size: var(--workspace-body-size); line-height: 1.55; }
 .addProviderLabel { display: grid; gap: 5px; flex: 0 0 172px; color: var(--text-dim); font-size: var(--workspace-caption-size); font-weight: 620; }
 .addProviderLabel svg { width: 15px; height: 15px; vertical-align: middle; }
-.addProviderLabel select,.instanceForm select,.instanceForm input:not([type="checkbox"]) { width: 100%; min-height: 38px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 10px; color: var(--text); background: var(--surface-solid); font: inherit; }
+.addProviderLabel select,.instanceForm select,.instanceForm input:not([type="checkbox"]) { width: 100%; min-height: 38px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); padding: 0 10px; color: var(--text); background: var(--surface-solid); font: inherit; }
 .addProviderLabel select:focus-visible,.instanceForm select:focus-visible,.instanceForm input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.addProviderButton { flex: 0 0 auto; min-height: 36px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 12px; color: var(--text); background: var(--control-surface); font: inherit; font-size: var(--workspace-caption-size); cursor: pointer; }
+.addProviderButton { flex: 0 0 auto; min-height: 36px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); padding: 0 12px; color: var(--text); background: var(--control-surface); font: inherit; font-size: var(--workspace-caption-size); cursor: pointer; }
 .addProviderButton svg { width: 15px; height: 15px; }
 .addProviderButton:disabled { opacity: .5; cursor: not-allowed; }
 .scopeGroups { display: grid; gap: 10px; }
@@ -65,7 +65,7 @@
 .emptyInstances { padding: 3px 2px; }
 .instanceCard .instanceActions { justify-content: flex-end; margin-top: 0; }
 .instanceActions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-.instanceActions button { min-height: 34px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 11px; color: var(--text); background: var(--control-surface); font: inherit; font-size: var(--workspace-caption-size); cursor: pointer; }
+.instanceActions button { min-height: 34px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); padding: 0 11px; color: var(--text); background: var(--control-surface); font: inherit; font-size: var(--workspace-caption-size); cursor: pointer; }
 .instanceActions button:hover:not(:disabled) { background: var(--control-surface-hover); }
 .instanceActions button:disabled { opacity: .45; cursor: not-allowed; }
 .instanceActions svg { width: 14px; height: 14px; }
@@ -100,7 +100,7 @@
 .state[data-test="failed"] { color: var(--danger); }
 .credentialLine { margin: 15px 0 10px 48px; color: var(--text-faint); font-size: .72rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-left: 48px; }
-.actions button { min-height: 34px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 10px; color: var(--text); background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 100%),transparent); box-shadow: inset 0 1px rgba(255,255,255,.08); font-size: var(--workspace-caption-size); font-weight: 570; cursor: pointer; }
+.actions button { min-height: 34px; padding: 0 11px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); color: var(--text); background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 100%),transparent); box-shadow: inset 0 1px rgba(255,255,255,.08); font-size: var(--workspace-caption-size); font-weight: 570; cursor: pointer; }
 .actions button:hover:not(:disabled) { background: var(--control-surface-hover); }
 .actions button:disabled { opacity: .5; cursor: not-allowed; }
 .actions svg { width: 14px; height: 14px; }
@@ -108,7 +108,7 @@
 .actions .delete:hover:not(:disabled) { color: var(--danger); }
 .form { margin-top: 15px; margin-left: 48px; display: grid; gap: 8px; }
 .form label { color: var(--text-dim); font-size: .72rem; }
-.form input { width: 100%; height: 38px; min-width: 0; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 10px; outline: 0; color: var(--text); background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 100%),transparent); font: inherit; font-size: var(--workspace-label-size); }
+.form input { width: 100%; height: 38px; min-width: 0; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); outline: 0; color: var(--text); background: color-mix(in srgb,var(--surface-solid) calc(var(--panel-surface-alpha,.3) * 100%),transparent); font: inherit; font-size: var(--workspace-label-size); }
 .form input:focus { border-color: var(--accent); }
 .form .actions { margin: 2px 0 0; }
 .feedback { margin: 12px 0 0 48px; color: var(--danger); font-size: .72rem; }
@@ -127,3 +127,13 @@
 @media (max-width:640px) { .pipelineHeading { align-items: flex-start; flex-direction: column; } .pipelineSteps { grid-template-columns: 1fr; } .pipelineStep { grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: center; } }
 @media (max-width:760px) { .instanceCard { grid-template-columns: 1fr; } .instanceCard .instanceActions { justify-content: flex-start; } .advancedServices summary { align-items: flex-start; flex-direction: column; justify-content: center; } }
 @media (prefers-reduced-motion:reduce) { .spin { animation: none; } }
+
+.selectionActions button, .error button, .authNotice a, .instanceDialog .providerIntro a, .providerIntro a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 12px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); background: var(--control-surface); color: var(--text); font: inherit; font-size: var(--workspace-caption-size); text-decoration: none; cursor: pointer; }
+.selectionActions button:hover:not(:disabled), .error button:hover:not(:disabled), .authNotice a:hover:not(:disabled), .instanceDialog .providerIntro a:hover:not(:disabled), .providerIntro a:hover:not(:disabled) { background: var(--control-surface-hover); border-color: var(--accent-border); }
+.selectionActions button:focus-visible, .error button:focus-visible, .authNotice a:focus-visible, .instanceDialog .providerIntro a:focus-visible, .providerIntro a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.group, .pipeline, .advancedServices, .instanceCard { border-color: var(--settings-panel-border); border-radius: var(--settings-panel-radius); background: var(--settings-panel-bg); backdrop-filter: blur(var(--panel-blur,3px)); -webkit-backdrop-filter: blur(var(--panel-blur,3px)); }
+
+.instanceCard[data-selected="true"] { border-color: var(--accent-border); background: var(--accent-surface); }
+.selectionActions, .actions { flex-wrap: wrap; }
+.providerIntro a { margin-top: 8px; }

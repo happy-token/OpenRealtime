@@ -234,3 +234,10 @@ body[data-theme="nord"] {
   --speaking: #8fbcbb;
   --danger: #bf616a;
 }
+
+/* Shared settings surfaces resolve against the active body's theme. */
+:root, body {
+  --settings-panel-radius: 16px;
+  --settings-panel-bg: color-mix(in srgb, var(--surface-solid) calc(var(--panel-surface-alpha, .3) * 100%), transparent);
+  --settings-panel-border: var(--border);
+}

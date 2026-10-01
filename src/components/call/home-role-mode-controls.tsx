@@ -214,7 +214,7 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
 
     {showRoleSelector ? <aside className={styles.rolePanel} data-open={panel === "roles"} aria-label={t("角色列表")} aria-hidden={panel !== "roles"} inert={panel !== "roles"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
       <div className={styles.roleList}>
-        {roles.map((item) => <div key={item.role_id} className={styles.roleCard} data-selected={item.role_id === currentRole.role_id} data-default={item.role_id === currentRole.role_id && isCurrentSelectionDefault}>
+        {roles.filter((item) => item.role_id !== "default-assistant").map((item) => <div key={item.role_id} className={styles.roleCard} data-selected={item.role_id === currentRole.role_id} data-default={item.role_id === currentRole.role_id && isCurrentSelectionDefault}>
           <button className={styles.roleSelectButton} type="button" aria-label={t("选择角色：") + (item.display_name) + t("，默认") + (ROLE_MODE_LABELS[item.default_mode]) + ""} onClick={() => { if (item.role_id !== currentRole.role_id) { setCurrentRole(item); setPanel(null); onRoleSelect?.(item); } else setPanel(null); }}>
             <span className={styles.roleArtwork}>{item.avatar_image_url ? <Image src={item.avatar_image_url} alt="" fill sizes="(max-width: 760px) 160px, 130px" unoptimized /> : <UserRound />}</span>
             <span className={styles.roleCardCopy}><strong>{item.display_name}</strong><small>{item.persona_name ? `${item.persona_name} · ` : ""}{t("默认：")}{ROLE_MODE_LABELS[item.default_mode]}{item.role_id === currentRole.role_id && item.default_mode === mode && assetModes ? ` · ${selectionLabel}` : ""}</small></span>

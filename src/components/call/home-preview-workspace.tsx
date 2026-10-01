@@ -202,7 +202,7 @@ export function shouldLoadAvatarPreviewDirectly(previewUrl: string) {
 
 export function resolveMainAvatarMotionFit(videoWidth: number, videoHeight: number): "cover" | "contain" {
   if (videoWidth <= 0 || videoHeight <= 0) return "contain";
-  return videoWidth >= videoHeight ? "cover" : "contain";
+  return "cover";
 }
 
 function avatarModeForConfig(config: AvatarDisplayConfig): AvatarMode {

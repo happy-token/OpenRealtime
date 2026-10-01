@@ -114,9 +114,9 @@ describe("home action preview", () => {
 
     expect(html).toMatch(/<video[^>]*aria-label="微笑 动作预览"[^>]*autoPlay=""[^>]*muted=""[^>]*loop=""/);
   });
-  it("fills the stage height for landscape actions and preserves portrait actions", () => {
+  it("fills the page proportionally for landscape and portrait actions", () => {
     expect(resolveMainAvatarMotionFit(1280, 720)).toBe("cover");
-    expect(resolveMainAvatarMotionFit(720, 1280)).toBe("contain");
+    expect(resolveMainAvatarMotionFit(720, 1280)).toBe("cover");
     expect(resolveMainAvatarMotionFit(0, 0)).toBe("contain");
   });
 
@@ -226,7 +226,7 @@ describe("edge configuration affordances", () => {
     expect(roleComponent).toContain('onPointerEnter={() => openPanel("roles", true)}');
     expect(roleComponent).toContain('onPointerEnter={() => openPanel("modes", true)}');
     expect(roleComponent).toContain("onPointerLeave={schedulePanelClose}");
-    expect(css).toMatch(/\.avatarPreviewForeground\s*\{[^}]*object-fit:\s*contain/s);
+    expect(css).toMatch(/\.avatarPreviewForeground\s*\{[^}]*object-fit:\s*cover/s);
     expect(css).toMatch(/\.edgeMediaVisual > img\s*\{[^}]*object-fit:\s*contain/s);
     expect(roleCss).toMatch(/\.roleArtwork img\s*\{[^}]*object-fit:\s*contain/s);
     expect(roleCss).toMatch(/\.materialImage img\s*\{[^}]*object-fit:\s*contain/s);

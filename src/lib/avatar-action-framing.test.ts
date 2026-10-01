@@ -24,7 +24,7 @@ describe("Avatar action preview framing", () => {
     expect(detailCss).toMatch(/\.stageMedia\s*>\s*video\s*{[^}]*object-fit:\s*contain/s);
     expect(coverflowCss).toMatch(/\.media\s*>\s*video\s*{[^}]*object-fit:\s*contain/s);
     expect(libraryCss).toMatch(/\.collapsedActionVideo\s*{[^}]*object-fit:\s*contain/s);
-    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*object-fit:\s*contain/s);
+    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*object-fit:\s*cover/s);
     expect(globalCss).toMatch(/\.segmented-avatar-card-stage\s*>\s*\.segmented-avatar-card-action-video\s*{[^}]*object-fit:\s*contain/s);
     expect(globalCss).toMatch(/\.avatar-motion-card-preview\s*>\s*video,[^{]*\{[^}]*object-fit:\s*contain/s);
     expect(globalCss).toMatch(/\.digital-human-call-image\s*\{[^}]*object-fit:\s*contain/s);
@@ -61,7 +61,7 @@ describe("Avatar action preview framing", () => {
     expect(offlinePreviewSource).toContain("onError={() => setMotionFailed(true)}");
     expect(offlinePreviewSource).toContain("const activeUrl = motionFailed ? talkingUrl");
     expect(workspaceCss).toMatch(/\.workspace\[data-mode="avatar"\]\s+\.preview::before\s*{[^}]*rgba\(5, 7, 13, \.14\)/s);
-    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*contain/s);
+    expect(workspaceCss).toMatch(/\.avatarPreviewForeground\s*{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*object-fit:\s*cover/s);
     expect(workspaceCss).toMatch(/\.avatarPreviewForeground\[data-fit="cover"\]\s*{[^}]*object-fit:\s*cover/s);
   });
 });
