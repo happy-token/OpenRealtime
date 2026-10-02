@@ -3,6 +3,7 @@ import { useLanguage } from "@/components/language/language-provider";
 
 
 import Image from "next/image";
+import { AnamCreateFallback } from "./anam-create-fallback";
 import { ImagePlus, LoaderCircle, Play, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useId, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
@@ -162,7 +163,10 @@ export function AvatarUploadDialog({
       const blob = await response.blob();
       const form = new FormData();
       form.set("displayName", anamName.trim());
-      form.set("image", new File([blob], `${avatar.display_name}.jpg`, { type: blob.type || "image/jpeg" }));
+      const imageType = blob.type || "image/jpeg";
+      const extension = imageType === "image/webp" ? "webp" : imageType === "image/png" ? "png" : "jpg";
+      const originalFile = file && file.size <= 4_500_000 && ["image/jpeg", "image/png", "image/webp"].includes(file.type) ? file : null;
+      form.set("image", originalFile ?? new File([blob], `${avatar.display_name}.${extension}`, { type: imageType }));
       const result = await fetch("/api/anam/avatars", { method: "POST", body: form });
       const payload = await readJsonResponse<{ avatar?: AnamHostedAvatar; error?: string }>(result, "实时形象创建失败");
       if (!result.ok || !payload.avatar) throw new Error(payload.error || "实时形象创建失败");
@@ -236,6 +240,7 @@ export function AvatarUploadDialog({
           {mode === "realtime" ? <label className={styles.nameField}><span>{t("实时形象名称")}</span><input value={anamName} maxLength={50} disabled={busy} onChange={(event) => setAnamName(event.target.value)} /><small>{t("Anam 要求 3–50 个字符")}</small></label> : null}
           </> : null}
           {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
+          {mode === "realtime" && error ? <AnamCreateFallback /> : null}
         </div>
 
         <footer><button type="button" disabled={busy} onClick={requestClose}>{t("取消")}</button><button type="button" disabled={busy || (mode === "realtime" ? !candidate && ((!file && !sourceAvatar) || !displayName.trim() || !isValidAnamAvatarName(anamName)) : !file || !displayName.trim())} onClick={() => void (mode === "realtime" ? candidate ? confirmRealtime() : createRealtime() : createAvatar())}>{busy ? <LoaderCircle aria-hidden="true" /> : mode === "realtime" ? <Play aria-hidden="true" /> : <ImagePlus aria-hidden="true" />}{busy ? t("正在处理") : mode === "realtime" ? candidate ? t("确认效果并启用") : t("生成实时数字人") : t("创建形象")}</button></footer>

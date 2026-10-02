@@ -3,6 +3,7 @@ import { useLanguage } from "@/components/language/language-provider";
 
 
 import Image from "next/image";
+import { AnamCreateFallback } from "./anam-create-fallback";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check, Film, ImagePlus, LoaderCircle, LockKeyhole, Maximize2, Play, Sparkles, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
@@ -555,6 +556,7 @@ export function AvatarStudio({
                 {error ? <p className={styles.error} role="alert">{t(error)}
                   {error.includes("API Key") && <button className={styles.keyReset} type="button" onClick={() => void ensureProviderKey("anam", true).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "无法更换 Anam Key"))}>{t("更换 Anam Key")}</button>}
                 </p> : null}
+                {error ? <AnamCreateFallback /> : null}
                 <footer>
                   {returnToRoleCreate && createdAvatar.realtime_binding
                     ? <button type="button" onClick={returnToRole} aria-label={t("返回创建角色")} title={t("返回创建角色")}><ArrowLeft aria-hidden="true" />{t("返回")}</button>
@@ -654,7 +656,9 @@ async function imageUrlToFile(imageUrl: string, displayName: string) {
   const response = await fetch(imageUrl);
   if (!response.ok) throw new Error("Avatar 源图读取失败");
   const blob = await response.blob();
-  return new File([blob], `${displayName}.jpg`, { type: blob.type || "image/jpeg" });
+  const imageType = blob.type || "image/jpeg";
+  const extension = imageType === "image/webp" ? "webp" : imageType === "image/png" ? "png" : "jpg";
+  return new File([blob], `${displayName}.${extension}`, { type: imageType });
 }
 
 function suggestNextNumberedAvatarName(displayNames: string[]) {

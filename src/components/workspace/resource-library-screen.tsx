@@ -41,7 +41,7 @@ export function ResourceLibraryScreen({
   const { t } = useLanguage();
   const router = useRouter();
   const [catalogRevision, setCatalogRevision] = useState(0);
-  const { avatars: officialAvatars, personalAvatars, configured, loading: realtimeLoading } = useOfficialRealtimeAvatars(tab === "official-realtime", catalogRevision);
+  const { avatars: officialAvatars, personalAvatars, configured, loading: realtimeLoading, error: realtimeError } = useOfficialRealtimeAvatars(tab === "official-realtime", catalogRevision);
   if (tab === "avatars") return <AvatarResourceHome
     task={avatarTask}
     avatarId={initialAvatarId}
@@ -58,6 +58,15 @@ export function ResourceLibraryScreen({
       {tab === "personas" ? <PersonaLibraryScreen embedded onCreated={returnToRole} /> : null}
       {tab === "tools" ? <ToolLibraryScreen onCreated={returnToRole} /> : null}
       {tab === "knowledge" ? <KnowledgeLibraryScreen onCreated={returnToRole} /> : null}
+      {tab === "official-realtime" ? <div className={styles.realtimeHeading}>
+        <h2>{t("实时数字人")}</h2>
+        <button type="button" className={styles.realtimeCreate} disabled={realtimeLoading} onClick={() => setCatalogRevision((revision) => revision + 1)}>{t("刷新形象")}</button>
+      </div> : null}
+      {tab === "official-realtime" && realtimeError ? <div role="alert">
+        <p>{t("同步 Anam 形象失败：")}{realtimeError}</p>
+        <p>{t("请检查本地服务能否连接 Anam，以及个人 API Key 是否属于创建形象的同一账号或组织，然后刷新形象。")}</p>
+        <Link href="/settings/providers" className={styles.realtimeCreate}>{t("检查个人 API Key")}</Link>
+      </div> : null}
       {tab === "official-realtime" ? realtimeLoading ? <p>{t("正在读取实时数字人…")}</p> : configured ? <>
         {([{ title: t("我的数字人形象"), avatars: personalAvatars, collapsible: false }, { title: t("官方配置的数字人形象"), avatars: officialAvatars, collapsible: true }] as const).map((group) => {
           const cards = group.avatars.length ? <div className={styles.officialRealtimeGrid}>{group.avatars.map((avatar) => <Link key={avatar.id} className={styles.officialRealtimeCard}
@@ -71,7 +80,7 @@ export function ResourceLibraryScreen({
             <div className={styles.realtimeHeading}><h2>{group.title}</h2>{personalAvatars.length === 0 ? <Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link> : null}</div>{cards}
           </section>;
         })}
-      </> : <p>{t("配置 Anam 后，才可使用实时数字人。")}</p> : null}
+      </> : realtimeError ? null : <p>{t("配置 Anam 后，才可使用实时数字人。")}</p> : null}
     </section>
     {tab === "official-realtime" && avatarTask === "realtime" && configured && personalAvatars.length === 0 ? <AvatarUploadDialog
       mode="realtime"

@@ -35,7 +35,6 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { RolePresentationMode, RoleRecord } from "@/lib/role-records";
 import { listRecentConversationsCached, type RecentConversation } from "@/lib/recent-conversations-client";
-import { useOfficialRealtimeAvatars } from "@/hooks/use-official-realtime-avatars";
 import { accountIssuerLabel, accountLoginHref, logoutCurrentUser, useCurrentUser } from "@/hooks/use-current-user";
 import styles from "./workspace-shell.module.css";
 
@@ -100,7 +99,6 @@ export function WorkspaceShell({
   }, [homeMode]);
   const settingsMode = pathname === "/settings" || pathname.startsWith("/settings/");
   const resourceMode = Boolean(resourceTab) || isResourceWorkspacePath(pathname);
-  const { configured: realtimeConfigured } = useOfficialRealtimeAvatars(resourceMode);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("collapsed");
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [sidebarReady, setSidebarReady] = useState(false);
@@ -303,7 +301,7 @@ export function WorkspaceShell({
       <NavLink href={resourceHref("voices")} active={currentResourceTab === "voices"} icon={<Mic2 />} label={t("声音")} onClick={() => setMobileOpen(false)} />
       <NavLink href={resourceHref("personas")} active={currentResourceTab === "personas"} icon={<Bot />} label={t("人设")} onClick={() => setMobileOpen(false)} />
       <NavLink href={resourceHref("avatars")} active={currentResourceTab === "avatars"} icon={<Sparkles />} label={t("离线数字人")} onClick={() => setMobileOpen(false)} />
-      {realtimeConfigured ? <NavLink href={resourceHref("official-realtime")} active={currentResourceTab === "official-realtime"} icon={<UserRound />} label={t("实时数字人")} onClick={() => setMobileOpen(false)} /> : null}
+      <NavLink href={resourceHref("official-realtime")} active={currentResourceTab === "official-realtime"} icon={<UserRound />} label={t("实时数字人")} onClick={() => setMobileOpen(false)} />
       <div className={styles.settingsGroupLabel}>{t("对话能力")}</div>
       <NavLink href={resourceHref("tools")} active={currentResourceTab === "tools"} icon={<Wrench />} label={t("工具")} onClick={() => setMobileOpen(false)} />
       <NavLink href={resourceHref("knowledge")} active={currentResourceTab === "knowledge"} icon={<BookOpen />} label={t("知识库")} onClick={() => setMobileOpen(false)} />

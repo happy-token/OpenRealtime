@@ -119,6 +119,7 @@ describe("WorkspaceShell", () => {
     expect(html).toContain(">声音</span>");
     expect(html).toContain(">人设</span>");
     expect(html).toContain(">离线数字人</span>");
+    expect(html).toContain(">实时数字人</span>");
     expect(html).not.toContain(">动作与口型对齐</span>");
     expect(html).toContain(">工具</span>");
     expect(html).toContain(">知识库</span>");

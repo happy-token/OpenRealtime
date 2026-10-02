@@ -10,16 +10,29 @@ import { VoiceLibrary } from "./voice-library";
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
+const realtimeState = vi.hoisted(() => ({ error: null as string | null }));
 vi.mock("@/hooks/use-official-realtime-avatars", () => ({
   useOfficialRealtimeAvatars: () => ({
     avatars: [{ id: "official-one", origin: "official", displayName: "官方形象", imageUrl: "" }],
     personalAvatars: [{ id: "personal-one", origin: "personal", displayName: "我的形象", imageUrl: "" }],
-    configured: true,
+    configured: !realtimeState.error,
+    error: realtimeState.error,
     loading: false,
   }),
 }));
 
 describe("ResourceLibraryScreen", () => {
+  it("shows connection failures with a retry instead of claiming the key is unconfigured", () => {
+    realtimeState.error = "暂时无法连接 Anam";
+    try {
+      const html = renderToStaticMarkup(<ResourceLibraryScreen tab="official-realtime" />);
+      expect(html).toContain("暂时无法连接 Anam");
+      expect(html).toContain("刷新形象");
+      expect(html).not.toContain("配置 Anam 后，才可使用实时数字人。");
+    } finally {
+      realtimeState.error = null;
+    }
+  });
   it("omits the redundant resource-library introduction on category pages", () => {
     const html = renderToStaticMarkup(<ResourceLibraryScreen tab="voices" />);
     expect(html).toContain("声音");
