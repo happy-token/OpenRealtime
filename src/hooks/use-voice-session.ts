@@ -5,6 +5,7 @@
 import { setPlaybackActive } from "@/voice/audio/playback-activity";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  archiveTranscript,
   shouldResetTranscriptForSession,
   mergeAssistantTranscript,
   settleAssistantTranscript,
@@ -21,6 +22,7 @@ export type { TranscriptEntry, AssistantMessageStatus, AssistantOutputText, User
 import type { AvatarPersonaConfigFrame, ServerToClientFrame, ToolConfigFrame, TtsConfigFrame } from "@/lib/frames";
 import { BrowserAudioInput } from "@/voice/audio/browser-input";
 import { BrowserAudioOutput } from "@/voice/audio/browser-output";
+import { PlaybackTextTimeline } from "@/voice/session/playback-text";
 import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 import { DeviceAudioInputRuntime } from "@/voice/audio/input-runtime";
 import { DeviceAudioOutputRuntime } from "@/voice/audio/output-runtime";
@@ -318,6 +320,8 @@ export interface VoiceSessionViewModel {
   stop: () => void;
   terminate: () => void;
   clearConversationDisplay: () => void;
+  prepareNewConversation: () => Promise<void>;
+  getContinuationIdentity: () => { threadId: string; voiceSessionId: string } | null;
   sendText: (text: string) => boolean;
   stopReply: () => boolean;
   setNoiseSuppression: (enabled: boolean) => void;
@@ -335,11 +339,11 @@ export interface VoiceSessionViewModel {
   resolveConfirmation: (approved: boolean) => void;
 }
 
-export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: { publicVoiceEnabled?: boolean; roleProviders?: { asr?: "doubao" | "dashscope" | null; llm?: "deepseek" | "openai" | null } } = {}): VoiceSessionViewModel {
+export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, initialContinuation, initialTranscript = [] }: { initialContinuation?: { threadId: string; voiceSessionId: string }; initialTranscript?: TranscriptEntry[]; publicVoiceEnabled?: boolean; roleProviders?: { asr?: "doubao" | "dashscope" | null; llm?: "deepseek" | "openai" | null } } = {}): VoiceSessionViewModel {
   const [state, setStateValue] = useState<ConversationState>("idle");
   const [level, setLevel] = useState(0);
   const [caption, setCaption] = useState("");
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>(() => archiveTranscript(initialTranscript));
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [micActive, setMicActiveValue] = useState(false);
@@ -391,6 +395,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
       input: inputRuntimeRef.current,
       output: outputRuntimeRef.current,
       providers: roleProviders,
+      continuation: initialContinuation,
     }),
   );
   const browserRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -413,6 +418,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
     display: "",
     spoken: "",
   });
+  const playbackTextRef = useRef(new PlaybackTextTimeline());
   const assistantCaptionRef = useRef<AssistantCaptionState>({
     text: "",
     spokenGeneration: null,
@@ -470,11 +476,21 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
     let hiddenCaptureTimer: ReturnType<typeof setTimeout> | null = null;
     const outputGraph = new BrowserAudioOutput({
       runtime: outputRuntimeRef.current,
+      onProgress: (progress) => {
+        showPlaybackText(progress.generation, playbackTextRef.current.advance(
+          progress.generation, progress.speech_id, outputGraph.playedAudioEndUs,
+        ));
+        if (transportRef.current?.isOpen) transportRef.current.send(progress);
+      },
       onStarted: (generation) => reportPlaybackProgress(generation, "started"),
       onResumed: (generation) => {
         if (speakingGenerationRef.current === generation) setPlaybackActive(true);
       },
     });
+    const avatarProgressTimer = window.setInterval(() => {
+      const generation = speakingGenerationRef.current;
+      if (generation !== null) reportAvatarPlaybackPosition(generation);
+    }, 100);
     unlockAudioOutputRef.current = () => outputGraph.unlock();
     const inputGraph = new BrowserAudioInput({
       runtime: inputRuntimeRef.current,
@@ -506,7 +522,11 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
     function armFallback(generation: number, delayMs = SPEAKING_FALLBACK_MS) {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       fallbackTimerRef.current = setTimeout(() => {
-        if (speakingGenerationRef.current === generation) leaveSpeaking();
+        if (speakingGenerationRef.current === generation) {
+          if (serverTtsRef.current === true && outputGraph.startedPlaybackGeneration !== generation
+            && !avatarAudioSinkRef.current?.isActive(generation)) showUnplayedText(generation);
+          leaveSpeaking();
+        }
       }, delayMs);
     }
 
@@ -573,6 +593,19 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
       }
       switch (frame.type) {
         case "session_ack":
+          if (frame.session_id !== sessionIdRef.current) {
+            cancelledGenerationRef.current = null;
+            speakingGenerationRef.current = null;
+            assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
+            playbackTextRef.current.reset();
+            assistantCaptionRef.current = { text: "", spokenGeneration: null };
+            pendingConfirmationRef.current = null;
+            setPendingConfirmation(null);
+          }
+          if (frame.previous_voice_session_id && frame.session_id !== sessionIdRef.current) {
+            // Generation and turn IDs belong to one runtime session, not the whole thread.
+            setTranscript((entries) => archiveTranscript(entries));
+          }
           if (
             shouldResetTranscriptForSession(
               sessionIdRef.current,
@@ -583,6 +616,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
             setTranscript([]);
             setCaption("");
             assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
+            playbackTextRef.current.reset();
             assistantCaptionRef.current = { text: "", spokenGeneration: null };
             pendingConfirmationRef.current = null;
             setPendingConfirmation(null);
@@ -630,7 +664,10 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
           break;
         case "voice_session_failed":
           setSessionError(frame.safe_message);
-          setCaption(frame.safe_message);
+          // Already-displayed ASR/assistant text (e.g. the user's own
+          // recognized speech) must survive a failure banner — only use
+          // safe_message as the caption when nothing is shown yet.
+          setCaption((current) => current || frame.safe_message);
           if (frame.session_disposition === "continuation_required") {
             voiceControllerRef.current.beginContinuation();
             transportRef.current?.reconnect();
@@ -735,6 +772,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
             frame.generation as number,
             frame.text ?? "",
           );
+          if (serverTtsRef.current !== true) {
           assistantCaptionRef.current = updateAssistantCaption(
             assistantCaptionRef.current,
             {
@@ -751,6 +789,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
               frame.text ?? "",
             ),
           );
+          }
           if (shouldArmTextOnlySpeechFallback(serverTtsRef.current)) {
             armFallback(frame.generation as number);
           }
@@ -766,6 +805,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
             frame.generation as number,
             frame.text ?? "",
           );
+          if (serverTtsRef.current !== true) {
           assistantCaptionRef.current = updateAssistantCaption(
             assistantCaptionRef.current,
             {
@@ -775,6 +815,12 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
             },
           );
           setCaption(assistantCaptionRef.current.text);
+          }
+          break;
+        case "assistant_text_alignment":
+          if (!shouldDropAudioFrame(frame.generation, cancelledGenerationRef.current)) {
+            showPlaybackText(frame.generation, playbackTextRef.current.add(frame));
+          }
           break;
         case "assistant_audio": {
           clearThinkingFallback();
@@ -851,11 +897,13 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
         }
         case "assistant_response_completed": {
           clearThinkingFallback();
+          if (serverTtsRef.current !== true) {
           setTranscript((previous) => settleAssistantTranscript(
             previous,
             frame.generation as number,
             "completed",
           ));
+          }
           const avatarSink = avatarAudioSinkRef.current;
           const avatarPlaybackStarted = avatarSink?.completeGeneration(
             frame.generation as number,
@@ -895,17 +943,35 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
           // never run — this is the only thing that stops audio already
           // scheduled in the Web Audio graph.
           cancelledGenerationRef.current = frame.generation ?? null;
+          const avatarProgress = reportAvatarPlaybackPosition(frame.generation as number);
+          const lastProgress = outputGraph.playbackProgress(frame.generation as number, "stopped");
+          if (!avatarProgress && lastProgress) playbackTextRef.current.advance(lastProgress.generation, lastProgress.speech_id, outputGraph.playedAudioEndUs);
+          const stoppedText = playbackTextRef.current.stop(frame.generation as number);
+          if (stoppedText !== null) {
+            setCaption(stoppedText);
+            setTranscript(previous => stoppedText
+              ? mergeAssistantTranscript(previous, frame.generation as number, stoppedText)
+              : previous.filter(entry => entry.role !== "assistant" || entry.generation !== frame.generation));
+          }
           setTranscript((previous) => settleAssistantTranscript(
             previous,
             frame.generation as number,
             frame.reason === "failed" ? "failed" : "interrupted",
           ));
+          if (frame.reason === "failed" && outputGraph.startedPlaybackGeneration !== frame.generation
+            && !avatarAudioSinkRef.current?.isActive(frame.generation as number)) {
+            showUnplayedText(frame.generation as number);
+          }
           reportPlaybackQuality(frame.generation as number);
           const v2Progress = outputGraph.cancelGeneration(frame.generation as number);
           avatarAudioSinkRef.current?.cancelGeneration(frame.generation as number);
+          if (avatarProgress) transportRef.current?.send({
+            ...playbackProgressPayload(frame.generation as number, "stopped"),
+            played_audio_end_us: avatarProgress.playedAudioEndUs,
+          });
           if (v2Progress) transportRef.current?.send(v2Progress);
           if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          if (!v2Progress) {
+          if (!v2Progress && !avatarProgress) {
             reportPlaybackProgress(frame.generation as number, "stopped");
           }
           // Synchronous, so speakingGenerationRef is null before the `ended`
@@ -919,11 +985,40 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
       }
     }
 
+    function showUnplayedText(generation: number) {
+      const output = assistantOutputTextRef.current;
+      if (output.generation !== generation) return;
+      const text = output.display || output.spoken;
+      if (!text) return;
+      setCaption(text);
+      setTranscript(previous => settleAssistantTranscript(
+        mergeAssistantTranscript(previous, generation, text), generation, "failed",
+      ));
+    }
+
+    function showPlaybackText(generation: number, text: string | null) {
+      if (text === null || !text || assistantOutputTextRef.current.generation !== generation) return;
+      setCaption(text);
+      setTranscript(previous => mergeAssistantTranscript(previous, generation, text));
+    }
+
+    function reportAvatarPlaybackPosition(generation: number) {
+      const position = avatarAudioSinkRef.current?.playbackPosition?.(generation);
+      if (!position) return null;
+      showPlaybackText(generation, playbackTextRef.current.advance(
+        generation, position.speechId, position.playedAudioEndUs,
+      ));
+      transportRef.current?.send({ type: "playback_progress", generation,
+        finished: false, played_audio_end_us: position.playedAudioEndUs });
+      return position;
+    }
+
     function reportPlaybackProgress(
       generation: number,
       phase: PlaybackProgressPhase,
     ) {
       setPlaybackActive(phase === "started");
+      if (phase === "started") reportAvatarPlaybackPosition(generation);
       // Client-observed playback anchors. They are only emitted by genuine
       // start/end events or an explicit server cancellation, never by the
       // fallback timer used for no-audio demo paths.
@@ -941,6 +1036,9 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
 
     function reportPlaybackFinished(generation: number) {
       setPlaybackActive(false);
+      const text = browserSpeechTextForResponse(assistantOutputTextRef.current, generation);
+      showPlaybackText(generation, playbackTextRef.current.finish(generation, text));
+      setTranscript(previous => settleAssistantTranscript(previous, generation, "completed"));
       const transport = transportRef.current;
       if (!transport?.isOpen) return;
       transport.send(
@@ -1097,7 +1195,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
         if (url.protocol !== "ws:" && url.protocol !== "wss:") throw new Error("语音连接地址无效");
         if (location.protocol === "https:" && url.protocol !== "wss:") throw new Error("语音连接需要安全的 WSS 地址");
         url.searchParams.set("admission", result.ticket);
-        voiceControllerRef.current.startNewSession();
+        // Continuation is explicit: retain the authorized thread when renewing admission.
+        voiceControllerRef.current.beginContinuation();
         serverAsrRef.current = null;
         serverTtsRef.current = null;
         transportRef.current?.dispose();
@@ -1161,6 +1260,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
 
     terminateRef.current = () => {
       if (publicVoiceEnabled) {
+        voiceControllerRef.current.beginContinuation();
         transportRef.current?.dispose();
         transportRef.current = null;
         serverAsrRef.current = null;
@@ -1186,6 +1286,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
       setPlaybackActive(false);
       speakingGenerationRef.current = null;
       assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
+            playbackTextRef.current.reset();
       assistantCaptionRef.current = { text: "", spokenGeneration: null };
       setCaption("");
       setSessionError(null);
@@ -1360,6 +1461,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
 
     return () => {
       sessionOutputEnabledRef.current = false;
+      window.clearInterval(avatarProgressTimer);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       if (playbackInactivityTimerRef.current) {
@@ -1383,9 +1485,31 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
   const retryConnection = useCallback(() => retryConnectionRef.current(), []);
   const stop = useCallback(() => stopRef.current(), []);
   const terminate = useCallback(() => terminateRef.current(), []);
+  const getContinuationIdentity = useCallback(() => voiceControllerRef.current.continuationIdentity, []);
+  const prepareNewConversation = useCallback(async () => {
+    if (!voiceControllerRef.current.continuationIdentity) return;
+    voiceControllerRef.current.startNewSession();
+    sessionIdRef.current = null;
+    setSessionId(null);
+    if (publicVoiceEnabled) {
+      terminateRef.current();
+      return;
+    }
+    const transport = transportRef.current;
+    if (!transport) throw new Error("语音连接不可用");
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        publicCapabilitiesReadyRef.current = null;
+        reject(new Error("新会话连接超时，请重试"));
+      }, 8000);
+      publicCapabilitiesReadyRef.current = () => { window.clearTimeout(timeout); resolve(); };
+      transport.retryNow();
+    });
+  }, [publicVoiceEnabled]);
   const clearConversationDisplay = useCallback(() => {
     assistantCaptionRef.current = { text: "", spokenGeneration: null };
     assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
+            playbackTextRef.current.reset();
     setCaption("");
     setTranscript([]);
   }, []);
@@ -1446,6 +1570,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders }: {
     stop,
     terminate,
     clearConversationDisplay,
+    prepareNewConversation,
+    getContinuationIdentity,
     sendText,
     stopReply,
     setNoiseSuppression,

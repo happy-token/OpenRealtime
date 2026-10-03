@@ -73,6 +73,79 @@ def _message(action: str, task_id: str, payload: dict[str, Any]) -> str:
     )
 
 
+def _alignment_chunks(message: dict[str, Any], sample_rate_hz: int):
+    """Yield only real per-word timings from a `result-generated` /
+    `sentence-end` event's `payload.output.sentence.words` array.
+
+    Confirmed against Aliyun's own docs (help.aliyun.com/zh/model-studio/
+    cosyvoice-server-events): `words[].text` is the original character
+    (not a normalized form), `begin_time`/`end_time` are milliseconds.
+    `word_timestamp_enabled` only takes effect in streaming mode for a
+    subset of models/voices — requesting it for an unsupported voice is a
+    silent provider-side no-op (an empty `words` array), not an error.
+
+    Mirrors doubao_tts_direct.py's `_alignment_chunks`: never guesses a
+    whole-sentence fallback here. That decision belongs one layer up, to
+    ResponseCompleted (server/realtime/transport/websocket.py), which only
+    fires once the whole response is known to be done — this function
+    yielding nothing when no real timing arrived must not be treated as
+    "no caption available" by its caller.
+    """
+    output = message.get("payload", {}).get("output", {})
+    if not isinstance(output, dict) or output.get("type") != "sentence-end":
+        return
+    sentence = output.get("sentence", {})
+    words = sentence.get("words", []) if isinstance(sentence, dict) else []
+    if not isinstance(words, list):
+        logger.debug("Bailian TTS sentence-end had non-list words field")
+        return
+    # Confirmed against a real session: `original_text` is always the
+    # exact original text, never a pronunciation rendering — unlike
+    # words[].text, which can diverge (numbers read aloud, currency
+    # symbols expanded, casing changed). Used as the reliable anchor a
+    # consumer maps real elapsed time onto, never matched character by
+    # character against the original text itself.
+    sentence_text = output.get("original_text")
+    if not isinstance(sentence_text, str) or not sentence_text:
+        sentence_text = None
+    valid_words: list[tuple[str, float, float]] = []
+    for word in words:
+        if not isinstance(word, dict):
+            continue
+        text = word.get("text")
+        begin_ms = word.get("begin_time")
+        end_ms = word.get("end_time")
+        if (
+            not isinstance(text, str) or not text
+            or isinstance(begin_ms, bool) or isinstance(end_ms, bool)
+            or not isinstance(begin_ms, (int, float)) or not isinstance(end_ms, (int, float))
+            or begin_ms < 0 or end_ms < begin_ms
+        ):
+            continue
+        valid_words.append((text, begin_ms, end_ms))
+    sentence_duration_us = (
+        round(max(end for _, _, end in valid_words) * 1000) if valid_words else None
+    )
+    timed_words = False
+    for text, begin_ms, end_ms in valid_words:
+        timed_words = True
+        yield SynthesizedAudioChunk(
+            pcm16=b"", sample_rate_hz=sample_rate_hz, is_final=False,
+            spoken_text=text,
+            spoken_start_us=round(begin_ms * 1000),
+            spoken_end_us=round(end_ms * 1000),
+            sentence_text=sentence_text, sentence_duration_us=sentence_duration_us,
+        )
+    if timed_words:
+        logger.debug("Bailian TTS sentence-end resolved per-word timing (words=%d)", len(words))
+    else:
+        logger.debug(
+            "Bailian TTS sentence-end had no word timing (words=%s) — "
+            "deferring to ResponseCompleted's whole-utterance fallback, not guessing here",
+            len(words) if isinstance(words, list) else "?",
+        )
+
+
 class BailianTtsEngine:
     """Reusable Bailian duplex TTS conformer emitting mono 24 kHz PCM16."""
 
@@ -227,6 +300,13 @@ class BailianTtsEngine:
             "rate": 1.0 + self._speech_rate / 100,
             "pitch": 1.0,
             "enable_ssml": False,
+            # Defaults to false; only takes effect in streaming mode and
+            # only for a subset of models/voices (cosyvoice-v3.5-plus,
+            # v3.5-flash, v3-flash, v3-plus, v2 cloned voices, or system
+            # voices documented as supporting it). Requesting it for an
+            # unsupported voice is a provider-side no-op, not an error —
+            # callers must still handle an empty `words` array.
+            "word_timestamp_enabled": True,
         }
         if self._instruction:
             parameters["instruction"] = self._instruction
@@ -245,7 +325,7 @@ class BailianTtsEngine:
             )
         )
         raw = await connection.recv()
-        event = self._parse_event(raw, task_id)
+        event, _ = self._parse_event(raw, task_id)
         if event != "task-started":
             raise BailianTtsError(f"expected task-started, got {event or 'binary audio'}")
 
@@ -272,8 +352,11 @@ class BailianTtsEngine:
             if isinstance(raw, bytes):
                 yield self._audio_chunk(raw)
                 continue
-            event = self._parse_event(raw, task_id)
-            if event == "task-finished":
+            event, message = self._parse_event(raw, task_id)
+            if event == "result-generated":
+                for alignment in _alignment_chunks(message, self._sample_rate_hz):
+                    yield alignment
+            elif event == "task-finished":
                 return
 
     async def _run_duplex_task(
@@ -311,8 +394,11 @@ class BailianTtsEngine:
                 if isinstance(raw, bytes):
                     yield self._audio_chunk(raw)
                 else:
-                    event = self._parse_event(raw, task_id)
-                    if event == "task-finished":
+                    event, message = self._parse_event(raw, task_id)
+                    if event == "result-generated":
+                        for alignment in _alignment_chunks(message, self._sample_rate_hz):
+                            yield alignment
+                    elif event == "task-finished":
                         if not input_finished:
                             raise BailianTtsError("provider finished before text input completed")
                         receive_task = None
@@ -326,9 +412,9 @@ class BailianTtsEngine:
                 await asyncio.gather(*tasks, return_exceptions=True)
             await _close_async_iterator(text_iterator)
 
-    def _parse_event(self, raw: str | bytes, task_id: str) -> str:
+    def _parse_event(self, raw: str | bytes, task_id: str) -> tuple[str, dict[str, Any]]:
         if isinstance(raw, bytes):
-            return ""
+            return "", {}
         try:
             message = json.loads(raw)
         except json.JSONDecodeError as error:
@@ -344,7 +430,7 @@ class BailianTtsEngine:
             if self._api_key:
                 detail = detail.replace(self._api_key, "[redacted]")
             raise BailianTtsError(f"{code}: {detail}")
-        return event
+        return event, message
 
     def _audio_chunk(self, pcm16: bytes) -> SynthesizedAudioChunk:
         return SynthesizedAudioChunk(

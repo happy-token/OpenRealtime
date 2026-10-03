@@ -76,6 +76,7 @@ def _parse_frame(data: bytes) -> dict[str, Any]:
     byte1 = data[1]
     msg_type = (byte1 >> 4) & 0x0F
     flags = byte1 & 0x0F
+    compression = data[2] & 0x0F if len(data) > 2 else 0
     offset = 4
 
     if msg_type == _ERROR_RESPONSE:
@@ -83,7 +84,18 @@ def _parse_frame(data: bytes) -> dict[str, Any]:
         offset += 4
         size = struct.unpack(">I", data[offset : offset + 4])[0]
         offset += 4
-        message = data[offset : offset + size].decode("utf-8", errors="replace")
+        raw_message = data[offset : offset + size]
+        message = raw_message.decode("utf-8", errors="replace")
+        if "�" in message:
+            # Suspected mechanism (unconfirmed, see ADR-0132): a server
+            # response whose actual compression flag doesn't match what we
+            # requested would land this slice mid codepoint. Logged, not
+            # raised — a diagnostic field must never break the session.
+            logger.warning(
+                "Doubao ASR error message failed clean UTF-8 decode "
+                "(compression=%d, size=%d bytes) — see ADR-0132",
+                compression, len(raw_message),
+            )
         return {"error": True, "code": code, "message": message}
 
     if flags in (_FLAGS_POS_SEQ, _FLAGS_LAST_SEQ):

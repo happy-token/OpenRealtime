@@ -17,14 +17,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import logging.handlers
+import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 from server.cli.lifecycle import LifecycleHook, invoke_lifecycle_hook
 from server.control_plane import http as control_plane_http
 from server.control_plane.http import AvatarAssetHandler
 from server.endpoint_session.registry import EndpointSessionRegistry
+from server.observability.log_context import VoiceSessionLogFilter
 from server.observability.telemetry import DiagnosticsQuery
 from server.transport.frames import InboundFrame, OutboundFrame, UserTextFrame
 
@@ -32,8 +36,26 @@ logger = logging.getLogger(__name__)
 
 _MODES = ("console", "dev", "start")
 _DEFAULT_MODE = "start"
-_DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+_DEFAULT_LOG_FORMAT = (
+    "%(asctime)s %(levelname)s %(name)s "
+    "[session=%(voice_session_id)s gen=%(generation)s] %(message)s"
+)
 _DEFAULT_CONTROL_PLANE_PORT = 8766
+_DEFAULT_LOG_DIR = ".openrealtime/logs"
+_LOG_FILE_MAX_BYTES = 20 * 1024 * 1024
+_LOG_FILE_BACKUP_COUNT = 5
+
+
+def _resolve_log_file_path() -> Path | None:
+    """`OPENREALTIME_LOG_FILE=""` opts out of file logging entirely;
+    otherwise defaults under `.openrealtime/logs/` alongside this
+    project's other runtime-data directories (tool-catalog, memory, etc.)."""
+    override = os.environ.get("OPENREALTIME_LOG_FILE")
+    if override == "":
+        return None
+    if override:
+        return Path(override)
+    return Path(_DEFAULT_LOG_DIR) / "voice-session.log"
 
 
 class _SessionRuntime(Protocol):
@@ -200,9 +222,23 @@ def run_app(
     whatever `handle_connection`/`runtime.run()` split the demo uses.
     """
     mode = _parse_mode(sys.argv[1:])
-    logging.basicConfig(
-        level=logging.DEBUG if mode == "dev" else logging.INFO, format=log_format
-    )
+    level = logging.DEBUG if mode == "dev" else logging.INFO
+    log_filter = VoiceSessionLogFilter()
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    log_file_path = _resolve_log_file_path()
+    if log_file_path is not None:
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(
+            logging.handlers.RotatingFileHandler(
+                log_file_path,
+                maxBytes=_LOG_FILE_MAX_BYTES,
+                backupCount=_LOG_FILE_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+        )
+    for handler in handlers:
+        handler.addFilter(log_filter)
+    logging.basicConfig(level=level, format=log_format, handlers=handlers)
     # websockets DEBUG includes complete HTTP upgrade headers. Those headers
     # carry ASR/TTS API credentials and browser cookies, so keep wire logging
     # at INFO even when the application itself runs in dev mode.

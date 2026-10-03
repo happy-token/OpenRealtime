@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import logging
 import os
 import re
@@ -104,6 +105,15 @@ _EVENT_TASK_REQUEST = 200
 _EVENT_TTS_SENTENCE_START = 350
 _EVENT_TTS_SENTENCE_END = 351
 _EVENT_TTS_RESPONSE = 352
+# TTSSubtitle isn't in Volcengine's documented event table (350-352 only).
+# `enable_timestamp` (sent below) only takes effect for TTS1.0/ICL1.0 per
+# Volcengine's own docs; this resource id speaks TTS2.0/ICL2.0, whose word
+# timing instead requires `enable_subtitle` and arrives on a TTSSubtitle
+# event, non-blocking relative to audio (see ADR-0132). This literal is an
+# unconfirmed guess carried over from before this was understood — treat
+# every occurrence as provisional until the diagnostic logging below
+# confirms it against a live session.
+_EVENT_TTS_SUBTITLE = 364
 
 
 def _is_valid_voice_id(voice: str) -> bool:
@@ -132,6 +142,24 @@ def _build_frame(event: int, *, session_id: str | None = None, payload: bytes = 
     return header + body
 
 
+def _decode_text_field(data: bytes, *, compression: int, field: str) -> str:
+    """Decode a length-prefixed text field, logging when the bytes don't
+    round-trip as UTF-8 — the suspected mojibake mechanism (ADR-reasoned,
+    not yet confirmed) is a server response whose actual compression flag
+    doesn't match what we requested, which would land this slice mid
+    codepoint. `errors="replace"` is kept (never raise mid-session over a
+    diagnostic field) but every occurrence is now logged with the frame's
+    own compression flag so a real sample can confirm or rule this out."""
+    decoded = data.decode("utf-8", errors="replace")
+    if "�" in decoded:
+        logger.warning(
+            "Doubao TTS %s field failed clean UTF-8 decode (compression=%d, "
+            "size=%d bytes) — see ADR-0132 for the suspected cause",
+            field, compression, len(data),
+        )
+    return decoded
+
+
 def _parse_frame(data: bytes) -> dict[str, Any]:
     """Decode one Doubao bidirectional-TTS binary-protocol response frame.
     Pure, unit-testable."""
@@ -139,6 +167,7 @@ def _parse_frame(data: bytes) -> dict[str, Any]:
         return {"error": True, "message": "frame too short"}
 
     msg_type = (data[1] >> 4) & 0x0F
+    compression = data[2] & 0x0F
     event = struct.unpack(">i", data[4:8])[0]
     offset = 8
 
@@ -147,14 +176,18 @@ def _parse_frame(data: bytes) -> dict[str, Any]:
         offset += 4
         size = struct.unpack(">I", data[offset : offset + 4])[0]
         offset += 4
-        message = data[offset : offset + size].decode("utf-8", errors="replace")
+        message = _decode_text_field(
+            data[offset : offset + size], compression=compression, field="error message"
+        )
         return {"error": True, "code": code, "message": message}
 
     session_id: str | None = None
     if offset + 4 <= len(data):
         size = struct.unpack(">I", data[offset : offset + 4])[0]
         offset += 4
-        session_id = data[offset : offset + size].decode("utf-8", errors="replace")
+        session_id = _decode_text_field(
+            data[offset : offset + size], compression=compression, field="session_id"
+        )
         offset += size
 
     payload = b""
@@ -168,6 +201,88 @@ def _parse_frame(data: bytes) -> dict[str, Any]:
 
 def _decode_json_payload(payload: bytes) -> Any:
     return json.loads(payload.decode("utf-8")) if payload else {}
+
+
+def _payload_keys(payload: bytes) -> list[str]:
+    """Top-level JSON keys only, for diagnostics — never the text content."""
+    try:
+        decoded = _decode_json_payload(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return ["<undecodable>"]
+    return sorted(decoded.keys()) if isinstance(decoded, dict) else ["<non-object>"]
+
+
+def _alignment_chunks(payload: object, sample_rate_hz: int, *, event: int | None = None):
+    """Yield only real per-word provider timings; never manufacture word
+    durations and never guess a whole-sentence fallback here.
+
+    Confirmed against a real seed-tts-2.0 session (not just static
+    reading): TTSSentenceEnd (351) always arrives first with an empty
+    `words` list, and the real per-word data arrives later on a separate
+    TTSSubtitle (364) event. A whole-sentence chunk emitted eagerly on 351
+    used to race ahead of 364's real data — on the client, that whole-text
+    cue satisfies its 20ms visibility threshold almost immediately and is
+    always the "longest" cue, so it visually overrides the real per-word
+    cues that keep arriving right after it (the user-observed "text and
+    audio aren't in sync" symptom). The correct whole-utterance fallback
+    for "no word timing ever arrived" already exists one layer up, keyed
+    off the whole response finishing (ResponseCompleted in
+    server/realtime/transport/websocket.py), which cannot fire
+    prematurely. This function must not duplicate or race that decision.
+    """
+    if not isinstance(payload, dict):
+        logger.debug("Doubao TTS alignment event=%s payload is not an object", event)
+        return
+    # Confirmed against a real session: this sentence-level `text` field
+    # is always the exact original text, never a pronunciation rendering
+    # — unlike individual words[].word, which can diverge (numbers read
+    # aloud, dropped spaces between Latin words, etc). Used as the
+    # reliable anchor a consumer maps real elapsed time onto, instead of
+    # ever matching word text against original text character by character.
+    sentence_text = payload.get("text")
+    if not isinstance(sentence_text, str) or not sentence_text:
+        sentence_text = None
+    timed_words = False
+    raw_words = payload.get("words", [])
+    word_count = len(raw_words) if isinstance(raw_words, list) else None
+    valid_words: list[tuple[str, float, float]] = []
+    if isinstance(raw_words, list):
+        for word in raw_words:
+            if not isinstance(word, dict):
+                continue
+            text = word.get("word", word.get("text"))
+            start = word.get("startTime", word.get("start_time"))
+            end = word.get("endTime", word.get("end_time"))
+            if not isinstance(text, str) or not text or isinstance(start, bool) or isinstance(end, bool):
+                continue
+            try:
+                start, end = float(start), float(end)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end < start:
+                continue
+            valid_words.append((text, start, end))
+    sentence_duration_us = (
+        round(max(end for _, _, end in valid_words) * 1_000_000) if valid_words else None
+    )
+    for text, start, end in valid_words:
+        timed_words = True
+        yield SynthesizedAudioChunk(
+            pcm16=b"", sample_rate_hz=sample_rate_hz, is_final=False,
+            spoken_text=text, spoken_start_us=round(start * 1_000_000), spoken_end_us=round(end * 1_000_000),
+            sentence_text=sentence_text, sentence_duration_us=sentence_duration_us,
+        )
+    if timed_words:
+        logger.debug(
+            "Doubao TTS alignment event=%s resolved per-word timing (words=%d)",
+            event, word_count,
+        )
+    else:
+        logger.debug(
+            "Doubao TTS alignment event=%s had no word timing (words=%s, keys=%s) "
+            "— deferring to ResponseCompleted's whole-utterance fallback, not guessing here",
+            event, word_count, sorted(payload.keys()),
+        )
 
 
 class DoubaoDirectTtsEngine:
@@ -404,6 +519,13 @@ class DoubaoDirectTtsEngine:
                                 "format": "pcm",
                                 "sample_rate": self._sample_rate_hz,
                                 "speech_rate": self._speech_rate,
+                                # enable_timestamp only takes effect for
+                                # TTS1.0/ICL1.0; enable_subtitle is the
+                                # TTS2.0/ICL2.0 equivalent (see ADR-0132).
+                                # Both are requested since resource_id is
+                                # configurable and may point at either.
+                                "enable_timestamp": True,
+                                "enable_subtitle": True,
                             },
                             **(
                                 {
@@ -496,6 +618,10 @@ class DoubaoDirectTtsEngine:
                         sample_rate_hz=self._sample_rate_hz,
                         is_final=False,
                     )
+                elif event in (_EVENT_TTS_SENTENCE_END, _EVENT_TTS_SUBTITLE):
+                    payload = _decode_json_payload(parsed["payload"])
+                    for alignment in _alignment_chunks(payload, self._sample_rate_hz, event=event):
+                        yield alignment
                 elif event == _EVENT_SESSION_FAILED:
                     raise DoubaoTtsError(self._safe_error(_decode_json_payload(parsed["payload"])))
                 elif event == _EVENT_SESSION_FINISHED:
@@ -503,6 +629,12 @@ class DoubaoDirectTtsEngine:
                         raise DoubaoTtsError("provider finished before text input completed")
                     receive_task = None
                     continue
+                elif event not in (_EVENT_SESSION_STARTED, _EVENT_TTS_SENTENCE_START):
+                    logger.debug(
+                        "Doubao TTS received unrecognized event=%d (payload keys: %s)",
+                        event,
+                        _payload_keys(parsed["payload"]),
+                    )
                 receive_task = asyncio.create_task(connection.recv())
         finally:
             pending = [task for task in (text_task, receive_task) if task is not None]
@@ -562,10 +694,23 @@ class DoubaoDirectTtsEngine:
                 yield SynthesizedAudioChunk(
                     pcm16=parsed["payload"], sample_rate_hz=self._sample_rate_hz, is_final=False
                 )
+            elif event in (_EVENT_TTS_SENTENCE_END, _EVENT_TTS_SUBTITLE):
+                payload = _decode_json_payload(parsed["payload"])
+                for alignment in _alignment_chunks(payload, self._sample_rate_hz, event=event):
+                    yield alignment
             elif event == _EVENT_SESSION_FAILED:
                 raise DoubaoTtsError(self._safe_error(_decode_json_payload(parsed["payload"])))
             elif event == _EVENT_SESSION_FINISHED:
                 return
+            elif event not in (
+                _EVENT_SESSION_STARTED,
+                _EVENT_TTS_SENTENCE_START,
+            ):
+                logger.debug(
+                    "Doubao TTS received unrecognized event=%d (payload keys: %s)",
+                    event,
+                    _payload_keys(parsed["payload"]),
+                )
 
 
 async def _close_async_iterator(iterator: AsyncIterator[object]) -> None:

@@ -11,6 +11,7 @@ from typing import Protocol
 
 from server.conversation_journal import ConversationJournal, JournalScope
 from server.core.interaction_context import InteractionContext
+from server.observability.log_context import bind_voice_session_log_context
 from server.realtime.protocol import RealtimeCommand, RealtimeConversation, RealtimeEvent
 from server.realtime.protocol.events import RealtimeCapabilityFailed
 from server.realtime.registry import ActiveRealtimeConversations
@@ -328,6 +329,10 @@ class VoiceSessionWebSocketSession:
         self._closed = False
 
     async def run(self) -> None:
+        with bind_voice_session_log_context(self._identity.voice_session_id):
+            await self._run()
+
+    async def _run(self) -> None:
         conversations = _ConversationFactory(
             context=self._context,
             runtime_factory=self._runtime_factory,

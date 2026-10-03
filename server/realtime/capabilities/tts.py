@@ -72,6 +72,15 @@ class TtsAudioFrame:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class TtsTextAlignment:
+    context: InteractionContext
+    speech_id: str
+    audio_end_us: int
+    text_end: int
+    audio_start_us: int | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TtsCompleted:
     context: InteractionContext
     speech_id: str
@@ -101,7 +110,7 @@ class TtsFailed:
 
 
 TtsCommand = StartTts | AppendTtsText | CommitTts | CancelTts
-TtsEvent = TtsAudioFrame | TtsCompleted | TtsCancelled | TtsFailed
+TtsEvent = TtsTextAlignment | TtsAudioFrame | TtsCompleted | TtsCancelled | TtsFailed
 
 
 class TtsCapabilitySession(Protocol):
@@ -345,7 +354,59 @@ class LegacyTtsCapabilitySession:
     async def _emit_audio(self, speech_id: str, chunks) -> None:
         sequence = 0
         timestamp_us = 0
+        aligned_text_end = 0
+        seen_timings: set[tuple[str, int, int]] = set()
+        # (sentence_text, its start offset within the accumulated accepted
+        # text) — re-anchored whenever a chunk's sentence_text changes.
+        sentence_anchor: tuple[str, int] | None = None
         async for chunk in chunks:
+            aligned = None
+            if chunk.spoken_text:
+                has_timing = chunk.spoken_start_us is not None and chunk.spoken_end_us is not None
+                if has_timing:
+                    timing = (chunk.spoken_text, chunk.spoken_start_us, chunk.spoken_end_us)
+                    if timing in seen_timings:
+                        continue
+                    seen_timings.add(timing)
+                accepted = "".join(self._text_parts)
+                if (
+                    has_timing
+                    and chunk.sentence_text
+                    and chunk.sentence_duration_us is not None
+                    and chunk.sentence_duration_us > 0
+                ):
+                    # Real timing plus a reliable sentence-level anchor
+                    # (confirmed against real Doubao/Bailian sessions to
+                    # always equal the real original text — see
+                    # ADR-0132/0133). Map elapsed time within the sentence
+                    # to a proportional position in that original text,
+                    # instead of matching the provider's pronunciation
+                    # rendering of this word (e.g. "123" -> "一百二十三")
+                    # against original text character by character — that
+                    # match fails permanently the moment a number,
+                    # currency symbol, or casing/spacing change appears,
+                    # stalling every caption update after it.
+                    if sentence_anchor is None or sentence_anchor[0] != chunk.sentence_text:
+                        found = accepted.find(chunk.sentence_text, aligned_text_end)
+                        sentence_anchor = (chunk.sentence_text, found) if found >= 0 else None
+                    if sentence_anchor is not None:
+                        _, sentence_start = sentence_anchor
+                        ratio = min(1.0, chunk.spoken_end_us / chunk.sentence_duration_us)
+                        candidate = min(
+                            sentence_start + round(ratio * len(chunk.sentence_text)),
+                            len(accepted),
+                        )
+                        if candidate > aligned_text_end:
+                            aligned = candidate
+                elif accepted[aligned_text_end:].startswith(chunk.spoken_text):
+                    aligned = aligned_text_end + len(chunk.spoken_text)
+            if aligned is not None:
+                aligned_text_end = aligned
+                await self._events.put(TtsTextAlignment(
+                    context=self._speech_context, speech_id=speech_id,
+                    audio_end_us=chunk.spoken_end_us if chunk.spoken_end_us is not None else timestamp_us,
+                    audio_start_us=chunk.spoken_start_us, text_end=aligned,
+                ))
             if not chunk.pcm16:
                 continue
             duration_us = max(
@@ -363,7 +424,8 @@ class LegacyTtsCapabilitySession:
                 data=chunk.pcm16,
             )
             sequence += 1
-            timestamp_us += duration_us
+            if chunk.pcm16:
+                timestamp_us += duration_us
             await self._events.put(
                 TtsAudioFrame(
                     context=self._speech_context,

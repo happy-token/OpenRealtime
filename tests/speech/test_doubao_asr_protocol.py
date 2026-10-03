@@ -60,3 +60,33 @@ def test_parse_frame_error_response_extracts_code_and_message():
 
 def test_parse_frame_too_short_reports_error():
     assert _parse_frame(b"\x01\x02") == {"error": True, "message": "frame too short"}
+
+
+def test_parse_frame_error_message_with_valid_utf8_logs_nothing(caplog):
+    message = "正常的中文错误信息"
+    body = (
+        struct.pack(">I", 400)
+        + struct.pack(">I", len(message.encode("utf-8")))
+        + message.encode("utf-8")
+    )
+    frame = bytes([0x11, (_ERROR_RESPONSE << 4) | 0, 0x00, 0x00]) + body
+
+    with caplog.at_level("WARNING"):
+        result = _parse_frame(frame)
+
+    assert result["message"] == message
+    assert not caplog.records
+
+
+def test_parse_frame_error_message_mid_codepoint_split_logs_warning(caplog):
+    # A length field that lands mid-UTF-8-codepoint is the suspected
+    # mojibake mechanism (ADR-0132): this must be surfaced, not silent.
+    truncated = "中文错误".encode("utf-8")[:-1]
+    body = struct.pack(">I", 400) + struct.pack(">I", len(truncated)) + truncated
+    frame = bytes([0x11, (_ERROR_RESPONSE << 4) | 0, 0x00, 0x00]) + body
+
+    with caplog.at_level("WARNING"):
+        result = _parse_frame(frame)
+
+    assert "�" in result["message"]
+    assert any("failed clean UTF-8 decode" in record.message for record in caplog.records)

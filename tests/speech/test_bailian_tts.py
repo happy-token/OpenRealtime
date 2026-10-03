@@ -14,6 +14,7 @@ from server.speech.plugins.bailian_tts import (
     DEFAULT_VOICE,
     BailianTtsEngine,
     BailianTtsError,
+    _alignment_chunks,
     _resolve_ws_url,
 )
 
@@ -23,6 +24,22 @@ def _event(name: str, task_id: str = "task-1", **header_fields: str) -> str:
         {
             "header": {"task_id": task_id, "event": name, **header_fields},
             "payload": {},
+        }
+    )
+
+
+def _sentence_end_event(words: list[dict], task_id: str = "task-1") -> str:
+    return json.dumps(
+        {
+            "header": {"task_id": task_id, "event": "result-generated"},
+            "payload": {
+                "output": {
+                    "sentence": {"index": 0, "words": words},
+                    "type": "sentence-end",
+                    "original_text": "床前明月光，",
+                },
+                "usage": {"characters": 6},
+            },
         }
     )
 
@@ -165,7 +182,72 @@ async def test_duplex_stream_sends_llm_deltas_and_yields_24khz_pcm(monkeypatch) 
         "rate": 1.0,
         "pitch": 1.0,
         "enable_ssml": False,
+        "word_timestamp_enabled": True,
     }
+
+
+def test_alignment_chunks_resolves_real_per_word_timing_from_sentence_end():
+    # Shape confirmed against help.aliyun.com/zh/model-studio/cosyvoice-server-events:
+    # words[].text is the original character, begin_time/end_time are milliseconds.
+    message = json.loads(_sentence_end_event([
+        {"text": "床", "begin_index": 0, "end_index": 1, "begin_time": 0, "end_time": 263},
+        {"text": "前", "begin_index": 1, "end_index": 2, "begin_time": 263, "end_time": 420},
+    ]))
+    chunks = list(_alignment_chunks(message, DEFAULT_SAMPLE_RATE_HZ))
+    assert [(c.spoken_text, c.spoken_start_us, c.spoken_end_us) for c in chunks] == [
+        ("床", 0, 263_000), ("前", 263_000, 420_000),
+    ]
+
+def test_alignment_chunks_yields_nothing_when_words_empty():
+    # word_timestamp_enabled is a silent no-op for unsupported voices —
+    # must not guess a whole-sentence fallback here (that decision
+    # belongs to ResponseCompleted one layer up).
+    message = json.loads(_sentence_end_event([]))
+    assert list(_alignment_chunks(message, DEFAULT_SAMPLE_RATE_HZ)) == []
+
+def test_alignment_chunks_ignores_non_sentence_end_result_generated_events():
+    sentence_begin = json.loads(json.dumps({
+        "header": {"task_id": "task-1", "event": "result-generated"},
+        "payload": {"output": {"sentence": {"index": 0, "words": []}, "type": "sentence-begin"}},
+    }))
+    assert list(_alignment_chunks(sentence_begin, DEFAULT_SAMPLE_RATE_HZ)) == []
+
+def test_alignment_chunks_rejects_malformed_word_entries():
+    message = json.loads(_sentence_end_event([
+        {"text": "好", "begin_time": 100, "end_time": 50},  # end before begin
+        {"text": "", "begin_time": 0, "end_time": 100},  # empty text
+        {"text": "对", "begin_time": True, "end_time": 100},  # bool, not a real number
+        {"begin_time": 0, "end_time": 100},  # missing text
+    ]))
+    assert list(_alignment_chunks(message, DEFAULT_SAMPLE_RATE_HZ)) == []
+
+
+async def test_duplex_stream_routes_sentence_end_words_as_alignment_chunks(monkeypatch) -> None:
+    connection = FinishAwareFakeTtsConnection(
+        [
+            _event("task-started"),
+            _event("result-generated"),  # sentence-begin-shaped, empty payload — must be ignored
+            b"\x01\x02",
+            _sentence_end_event([
+                {"text": "你", "begin_time": 0, "end_time": 150},
+                {"text": "好", "begin_time": 150, "end_time": 300},
+            ]),
+            _event("task-finished"),
+        ]
+    )
+    captured: dict = {}
+    monkeypatch.setattr(bailian_tts, "connect", _fake_connect(connection, captured))
+    monkeypatch.setattr(bailian_tts.uuid, "uuid4", lambda: "task-1")
+    engine = BailianTtsEngine(api_key="key-1")
+
+    async def text_stream():
+        yield "你好"
+
+    chunks = [chunk async for chunk in engine.synthesize_duplex(text_stream())]
+    alignment_chunks = [chunk for chunk in chunks if chunk.spoken_text]
+    assert [(c.spoken_text, c.spoken_start_us, c.spoken_end_us) for c in alignment_chunks] == [
+        ("你", 0, 150_000), ("好", 150_000, 300_000),
+    ]
 
 
 async def test_successive_synthesis_tasks_reuse_one_websocket(monkeypatch) -> None:

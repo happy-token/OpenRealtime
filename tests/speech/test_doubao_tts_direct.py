@@ -14,6 +14,7 @@ from server.speech.plugins.doubao_tts_direct import (
     DEFAULT_SAMPLE_RATE_HZ,
     DoubaoDirectTtsEngine,
     _build_frame,
+    _decode_text_field,
     _parse_frame,
 )
 from server.speech.tts import TtsSessionConfig
@@ -579,3 +580,119 @@ async def test_reads_credentials_from_env_when_not_passed(monkeypatch):
     assert captured["url"] == "wss://env.example/tts"
     assert captured["headers"]["X-Api-Key"] == "env-key"
     assert captured["headers"]["X-Api-Resource-Id"] == "env-resource"
+
+@pytest.mark.asyncio
+async def test_sentence_end_without_words_yields_no_alignment_chunk():
+    # Confirmed against a real seed-tts-2.0 session: TTSSentenceEnd always
+    # arrives with an empty `words` list; real timing arrives later on a
+    # separate TTSSubtitle event. _alignment_chunks must not guess a
+    # whole-sentence chunk here — that decision belongs to
+    # ResponseCompleted (server/realtime/transport/websocket.py), which
+    # only fires once the whole response is known to be done.
+    engine = DoubaoDirectTtsEngine(api_key="test-key")
+    connection = FakeTtsConnection([
+        _server_frame(doubao_tts_direct._EVENT_TTS_RESPONSE, session_id="s", payload=b"audio"),
+        _server_frame(doubao_tts_direct._EVENT_TTS_SENTENCE_END, session_id="s", payload=json.dumps({"text": "第一句。", "words": []}).encode()),
+        _server_frame(doubao_tts_direct._EVENT_SESSION_FINISHED, session_id="s"),
+    ])
+    chunks = [chunk async for chunk in engine._stream_audio(connection)]
+    assert len(chunks) == 1
+    assert chunks[0].pcm16 == b"audio"
+
+def test_provider_word_timing_normalizes_seconds_and_rejects_invalid_values():
+    chunks = list(doubao_tts_direct._alignment_chunks({"words": [
+        {"word": "你", "startTime": 0.1, "endTime": 0.3},
+        {"word": "好", "start_time": "0.3", "end_time": "0.5"},
+        {"word": "错", "start_time": True, "end_time": 1},
+        {"word": "错", "start_time": 1, "end_time": 0},
+        {"word": "错", "start_time": "nan", "end_time": 2},
+    ]}, 24_000))
+    assert [(c.spoken_text, c.spoken_start_us, c.spoken_end_us) for c in chunks] == [
+        ("你", 100_000, 300_000), ("好", 300_000, 500_000)]
+
+def test_word_alignment_does_not_repeat_the_overlapping_sentence_text():
+    chunks = list(doubao_tts_direct._alignment_chunks({
+        "text": "你好", "words": [{"word": "你好", "startTime": 0, "endTime": .5}],
+    }, 24_000))
+    assert len(chunks) == 1
+    assert chunks[0].spoken_text == "你好"
+    assert chunks[0].spoken_end_us == 500_000
+
+@pytest.mark.asyncio
+async def test_subtitle_event_resolves_to_per_word_alignment():
+    # ADR-0132: TTS2.0 word timing arrives on TTSSubtitle (364), not
+    # TTSSentenceEnd. Must be routed the same as sentence-end alignment.
+    engine = DoubaoDirectTtsEngine(api_key="test-key")
+    connection = FakeTtsConnection([
+        _server_frame(doubao_tts_direct._EVENT_TTS_RESPONSE, session_id="s", payload=b"audio"),
+        _server_frame(
+            doubao_tts_direct._EVENT_TTS_SUBTITLE, session_id="s",
+            payload=json.dumps({"text": "你好", "words": [
+                {"word": "你好", "startTime": 0, "endTime": 0.5},
+            ]}).encode(),
+        ),
+        _server_frame(doubao_tts_direct._EVENT_SESSION_FINISHED, session_id="s"),
+    ])
+    chunks = [chunk async for chunk in engine._stream_audio(connection)]
+    assert chunks[0].pcm16 == b"audio"
+    assert chunks[1].spoken_text == "你好"
+    assert chunks[1].spoken_start_us == 0
+    assert chunks[1].spoken_end_us == 500_000
+
+@pytest.mark.asyncio
+async def test_sentence_end_then_subtitle_never_emits_a_premature_whole_sentence_chunk():
+    # Reproduces the exact ordering confirmed against a real seed-tts-2.0
+    # session: TTSSentenceEnd (351, empty words) arrives before TTSSubtitle
+    # (364, real per-word timing) for the same utterance. Before this fix,
+    # 351 alone eagerly emitted a whole-sentence chunk that raced ahead of
+    # the real per-word data arriving right after it on the client
+    # (the user-observed "text and audio aren't in sync" symptom).
+    engine = DoubaoDirectTtsEngine(api_key="test-key")
+    connection = FakeTtsConnection([
+        _server_frame(doubao_tts_direct._EVENT_TTS_RESPONSE, session_id="s", payload=b"audio"),
+        _server_frame(
+            doubao_tts_direct._EVENT_TTS_SENTENCE_END, session_id="s",
+            payload=json.dumps({"phonemes": [], "text": "你好", "words": []}).encode(),
+        ),
+        _server_frame(
+            doubao_tts_direct._EVENT_TTS_SUBTITLE, session_id="s",
+            payload=json.dumps({"text": "你好", "words": [
+                {"word": "你好", "startTime": 0, "endTime": 0.5},
+            ]}).encode(),
+        ),
+        _server_frame(doubao_tts_direct._EVENT_SESSION_FINISHED, session_id="s"),
+    ])
+    chunks = [chunk async for chunk in engine._stream_audio(connection)]
+    alignment_chunks = [chunk for chunk in chunks if chunk.spoken_text]
+    assert len(alignment_chunks) == 1
+    assert alignment_chunks[0].spoken_start_us == 0
+    assert alignment_chunks[0].spoken_end_us == 500_000
+
+def test_decode_text_field_with_valid_utf8_logs_nothing(caplog):
+    with caplog.at_level("WARNING"):
+        result = _decode_text_field("会话正常".encode("utf-8"), compression=0, field="session_id")
+
+    assert result == "会话正常"
+    assert not caplog.records
+
+def test_decode_text_field_mid_codepoint_split_logs_warning_with_compression_flag(caplog):
+    # The suspected mojibake mechanism (ADR-0132): a length field landing
+    # mid-UTF-8-codepoint. Must surface the frame's compression bits so a
+    # real occurrence can confirm whether they disagree with the request.
+    truncated = "会话标识符".encode("utf-8")[:-1]
+
+    with caplog.at_level("WARNING"):
+        result = _decode_text_field(truncated, compression=1, field="session_id")
+
+    assert "�" in result
+    assert len(caplog.records) == 1
+    message = caplog.records[0].message
+    assert "session_id" in message
+    assert "compression=1" in message
+
+def test_alignment_chunks_yields_nothing_when_words_missing():
+    # The whole-sentence fallback belongs to ResponseCompleted one layer
+    # up (ADR-0132) — this function must stay silent, not guess, so it
+    # can never race ahead of a later event that does carry real timing.
+    chunks = list(doubao_tts_direct._alignment_chunks({"text": "没有时间戳的句子。"}, 24_000))
+    assert chunks == []

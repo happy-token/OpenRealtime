@@ -2383,3 +2383,78 @@ async def test_cascaded_pipeline_exposes_capability_pump_failure() -> None:
     assert failed.error == "VAD provider disconnected"
 
     await pipeline.close()
+
+async def test_tts_sentence_metadata_becomes_a_separate_text_alignment_event():
+    from server.realtime.capabilities.tts import TtsTextAlignment
+    from server.speech.tts import SynthesizedAudioChunk
+
+    class AlignedTts:
+        async def synthesize_stream(self, value):
+            yield SynthesizedAudioChunk(pcm16=b"\x00\x00" * 100, sample_rate_hz=1000, is_final=False)
+            yield SynthesizedAudioChunk(pcm16=b"", sample_rate_hz=1000, is_final=False, spoken_text=value)
+
+    session = await LegacyTtsCapabilityAdapter(AlignedTts()).open(context=context())
+    try:
+        await session.send(StartTts(speech_id="aligned"))
+        await session.send(AppendTtsText(speech_id="aligned", text_sequence=1, delta="第一句。"))
+        await session.send(CommitTts(speech_id="aligned"))
+        events = session.events()
+        assert isinstance(await asyncio.wait_for(anext(events), .2), TtsAudioFrame)
+        alignment = await asyncio.wait_for(anext(events), .2)
+        assert isinstance(alignment, TtsTextAlignment)
+        assert alignment.audio_end_us == 100_000
+        assert alignment.text_end == 4
+        assert isinstance(await asyncio.wait_for(anext(events), .2), TtsCompleted)
+    finally:
+        await session.close()
+
+async def test_tts_alignment_survives_pronunciation_mismatch_via_time_ratio():
+    # Regression for a real bug: provider word text is a pronunciation
+    # rendering ("123" -> "一百二十三", confirmed against real Doubao and
+    # Bailian sessions), which never literally appears in the original
+    # text. Character-by-character matching stalls permanently the first
+    # time this happens — every caption update after it silently stops,
+    # until playback finishes and the whole accumulated text appears at
+    # once (the user-observed "stuck, then everything pops out" symptom).
+    # The sentence-level anchor plus real timing must recover instead.
+    from server.realtime.capabilities.tts import TtsTextAlignment
+    from server.speech.tts import SynthesizedAudioChunk
+
+    original = "第1句有数字。"
+    sentence_duration_us = 2_000_000
+
+    class MismatchedTts:
+        async def synthesize_stream(self, value):
+            # Pronunciation-rendered words: "第" "一"(for "1") "句" "有" "数" "字"
+            # None of "一" after "第" literally matches original[1:] ("1句...").
+            rendered = [("第", 0, 200_000), ("一", 200_000, 400_000), ("句", 400_000, 700_000),
+                        ("有", 700_000, 1_200_000), ("数", 1_200_000, 1_700_000), ("字", 1_700_000, 2_000_000)]
+            for text, start, end in rendered:
+                yield SynthesizedAudioChunk(
+                    pcm16=b"", sample_rate_hz=1000, is_final=False,
+                    spoken_text=text, spoken_start_us=start, spoken_end_us=end,
+                    sentence_text=original, sentence_duration_us=sentence_duration_us,
+                )
+            yield SynthesizedAudioChunk(pcm16=b"\x00\x00" * 100, sample_rate_hz=1000, is_final=True)
+
+    session = await LegacyTtsCapabilityAdapter(MismatchedTts()).open(context=context())
+    try:
+        await session.send(StartTts(speech_id="mismatched"))
+        await session.send(AppendTtsText(speech_id="mismatched", text_sequence=1, delta=original))
+        await session.send(CommitTts(speech_id="mismatched"))
+        events = session.events()
+        alignments = []
+        while True:
+            event = await asyncio.wait_for(anext(events), .2)
+            if isinstance(event, TtsTextAlignment):
+                alignments.append(event)
+            elif isinstance(event, TtsCompleted):
+                break
+        # Despite "一" never matching original[1:], text_end keeps
+        # advancing via the time ratio instead of stalling at the first
+        # chunk forever.
+        assert [a.text_end for a in alignments] == sorted(a.text_end for a in alignments)
+        assert alignments[-1].text_end == len(original)
+        assert alignments[0].text_end < len(original)
+    finally:
+        await session.close()
