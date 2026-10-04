@@ -71,7 +71,7 @@
 .sectionHeading, .panelHeading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .sectionHeading h2, .panelHeading h2 { margin: 4px 0 0; font-size: 1rem; letter-spacing: -.02em; }
 .sectionHeading p { margin: 0; color: var(--admin-muted); font-size: .65rem; }
-.latencyGrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; margin-top: 13px; }
+.latencyGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; margin-top: 13px; }
 .latencyCard { position: relative; min-height: 120px; padding: 15px; display: flex; align-items: flex-start; gap: 11px; border: 1px solid var(--admin-line); border-radius: 13px; background: color-mix(in srgb,var(--surface-solid) 70%,transparent); }
 .metricIcon { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; color: var(--admin-accent); background: color-mix(in srgb,var(--accent) 9%,transparent); }
 .metricIcon svg { width: 14px; }
@@ -189,7 +189,6 @@
 .formError { margin: 0; color: #ff9497; font-size: .64rem; }
 
 @media (max-width: 1100px) {
-  .latencyGrid { grid-template-columns: repeat(3, 1fr); }
   .twoColumn { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {

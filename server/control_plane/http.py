@@ -33,7 +33,12 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
 from server.endpoint_session.registry import EndpointSessionRegistry
-from server.observability.telemetry import DiagnosticsQuery, DiagnosticsWindow
+from server.observability.telemetry import (
+    DebugLogQuery,
+    DiagnosticsOverview,
+    DiagnosticsQuery,
+    DiagnosticsWindow,
+)
 from server.speech import provider_contract_probe
 
 logger = logging.getLogger(__name__)
@@ -41,6 +46,22 @@ logger = logging.getLogger(__name__)
 _SESSION_CLOSE_PATH = re.compile(r"^/sessions/(?P<session_id>[^/]+)/close$")
 _OBSERVABILITY_SESSION_PATH = re.compile(
     r"^/observability/sessions/(?P<session_id>[^/]+)$"
+)
+_OBSERVABILITY_DEBUG_LOG_PATH = re.compile(
+    r"^/observability/sessions/(?P<session_id>[^/]+)/debug-log$"
+)
+_LATENCY_BREAKDOWN_PREFIXES = (
+    "asr.",
+    "tts.",
+    "barge_in.",
+    "turn.",
+    "engine.",
+    "dialogue.",
+    "client.",
+    "provider.",
+    "realtime.",
+    "voice_session.",
+    "tool.",
 )
 _RPC_TIMEOUT_S = 5.0
 _VOICE_PREVIEW_TIMEOUT_S = 60.0
@@ -189,6 +210,8 @@ def _build_handler(
     session_conversation_reader: SessionConversationReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
+    debug_log_query: DebugLogQuery | None = None,
+    diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -274,6 +297,8 @@ def _build_handler(
             except FutureTimeoutError:
                 logger.warning("control-plane request timed out: path=%s", self.path)
                 self._write_json(504, {"error": "control-plane request timed out"})
+            except ValueError:
+                self._write_json(400, {"error": "invalid diagnostics request or cursor"})
             except Exception as error:  # noqa: BLE001 - HTTP error boundary
                 logger.error(
                     "control-plane request failed: path=%s error_type=%s",
@@ -286,6 +311,12 @@ def _build_handler(
             parsed = urlsplit(self.path)
             if parsed.path.startswith("/avatar-assets/"):
                 self._avatar_asset_request("GET")
+                return
+            if parsed.path == "/observability/health":
+                if diagnostics_health_reader is None:
+                    self._write_json(503, {"error": "collection health is not configured"})
+                else:
+                    self._write_json(200, diagnostics_health_reader())
                 return
             if parsed.path == "/healthz":
                 self._write_json(200, {"status": "ok"})
@@ -362,6 +393,45 @@ def _build_handler(
                 sessions = future.result(timeout=_RPC_TIMEOUT_S)
                 self._write_json(200, [session.to_dict() for session in sessions])
                 return
+            if parsed.path == "/observability/latency/breakdown":
+                if diagnostics is None:
+                    self._write_json(404, {"error": "diagnostics are not configured"})
+                    return
+                try:
+                    window = _diagnostics_window(parsed.query)
+                except ValueError as error:
+                    self._write_json(400, {"error": str(error)})
+                    return
+                future = asyncio.run_coroutine_threadsafe(
+                    diagnostics.overview(window), loop
+                )
+                overview = future.result(timeout=_RPC_TIMEOUT_S)
+                self._write_json(200, _latency_breakdown(overview))
+                return
+            debug_log_match = _OBSERVABILITY_DEBUG_LOG_PATH.match(parsed.path)
+            if debug_log_match is not None:
+                if debug_log_query is None:
+                    self._write_json(404, {"error": "debug log is not configured"})
+                    return
+                session_id = unquote(debug_log_match.group("session_id"))
+                try:
+                    limit = _debug_log_limit(parsed.query)
+                except ValueError as error:
+                    self._write_json(400, {"error": str(error)})
+                    return
+                future = asyncio.run_coroutine_threadsafe(
+                    debug_log_query.session_timeline(session_id, limit=limit, **({"after_event_id": parse_qs(parsed.query)["cursor"][0]} if parse_qs(parsed.query).get("cursor") else {})), loop
+                )
+                entries = future.result(timeout=_RPC_TIMEOUT_S)
+                self._write_json(
+                    200,
+                    {
+                        "voice_session_id": session_id,
+                        "entries": [entry.to_dict() for entry in entries],
+                        "next_cursor": entries[-1].event_id if len(entries) == limit else None,
+                    },
+                )
+                return
             match = _OBSERVABILITY_SESSION_PATH.match(parsed.path)
             if match is not None:
                 if diagnostics is None:
@@ -369,7 +439,7 @@ def _build_handler(
                     return
                 session_id = unquote(match.group("session_id"))
                 future = asyncio.run_coroutine_threadsafe(
-                    diagnostics.session_detail(session_id), loop
+                    diagnostics.session_detail(session_id, **({"after_event_id": parse_qs(parsed.query)["cursor"][0]} if parse_qs(parsed.query).get("cursor") else {})), loop
                 )
                 detail = future.result(timeout=_RPC_TIMEOUT_S)
                 if detail is None:
@@ -570,6 +640,8 @@ def start(
     session_conversation_reader: SessionConversationReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
+    debug_log_query: DebugLogQuery | None = None,
+    diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     host: str = "127.0.0.1",
     port: int = 8766,
 ) -> ControlPlaneServer:
@@ -593,6 +665,8 @@ def start(
             session_conversation_reader,
             session_history_deleter,
             avatar_asset_handler,
+            debug_log_query,
+            diagnostics_health_reader,
         ),
         avatar_requests=avatar_requests,
     )
@@ -626,3 +700,37 @@ def _session_limit(query: str) -> int:
     if not 1 <= limit <= 500:
         raise ValueError("limit must be between 1 and 500")
     return limit
+
+
+def _debug_log_limit(query: str) -> int:
+    parameters = parse_qs(query)
+    raw_limit = parameters.get("limit", ["2000"])[0]
+    try:
+        limit = int(raw_limit)
+    except ValueError as error:
+        raise ValueError("limit must be an integer") from error
+    if not 1 <= limit <= 2000:
+        raise ValueError("limit must be between 1 and 2000")
+    return limit
+
+
+def _latency_breakdown(overview: DiagnosticsOverview) -> dict[str, object]:
+    """Group the existing per-metric p50/p95/p99 aggregates by name prefix.
+
+    Reuses ``DiagnosticsOverview.metrics`` as-is — no new aggregation
+    algorithm, just a different view over numbers already computed.
+    """
+
+    groups: dict[str, list[dict[str, object]]] = {prefix: [] for prefix in _LATENCY_BREAKDOWN_PREFIXES}
+    groups["other"] = []
+    for metric in overview.metrics:
+        matched_prefix = next(
+            (prefix for prefix in _LATENCY_BREAKDOWN_PREFIXES if metric.name.startswith(prefix)),
+            None,
+        )
+        groups[matched_prefix or "other"].append(metric.to_dict())
+    return {
+        "since": overview.since.isoformat(),
+        "until": overview.until.isoformat(),
+        "groups": {name: metrics for name, metrics in groups.items() if metrics},
+    }

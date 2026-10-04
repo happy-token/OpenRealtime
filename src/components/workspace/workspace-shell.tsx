@@ -27,6 +27,8 @@ import {
   Settings,
   Settings2,
   SlidersHorizontal,
+  ScrollText,
+  UserCog,
   UserRound,
   UsersRound,
   Wrench,
@@ -36,6 +38,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import type { RolePresentationMode, RoleRecord } from "@/lib/role-records";
 import { listRecentConversationsCached, type RecentConversation } from "@/lib/recent-conversations-client";
 import { accountIssuerLabel, accountLoginHref, logoutCurrentUser, useCurrentUser } from "@/hooks/use-current-user";
+import { useCurrentAppAdmin } from "@/hooks/use-app-admin";
 import styles from "./workspace-shell.module.css";
 
 const SIDEBAR_STATE_KEY = "openrealtime-workspace-sidebar-collapsed";
@@ -97,7 +100,7 @@ export function WorkspaceShell({
     }).catch(() => { /* Keep the GitHub link available when counts cannot be read. */ });
     return () => controller.abort();
   }, [homeMode]);
-  const settingsMode = pathname === "/settings" || pathname.startsWith("/settings/");
+  const settingsMode = pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/demos/diagnostics";
   const resourceMode = Boolean(resourceTab) || isResourceWorkspacePath(pathname);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("collapsed");
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -108,6 +111,7 @@ export function WorkspaceShell({
   const [query, setQuery] = useState("");
   const [recents, setRecents] = useState<RecentConversation[]>([]);
   const currentUser = useCurrentUser();
+  const currentAppAdmin = useCurrentAppAdmin(settingsMode);
   const [loggingOut, setLoggingOut] = useState(false);
   const [accountError, setAccountError] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -296,6 +300,13 @@ export function WorkspaceShell({
       <NavLink href="/settings/appearance" active={pathname === "/settings/appearance"} icon={<Palette />} label={t("外观")} />
       <NavLink href="/settings/memory" active={pathname === "/settings/memory"} icon={<MemoryStick />} label={t("Memory 与隐私")} />
       <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label={t("高级配置")} />
+      <div className={styles.settingsGroupLabel}>{t("数据管理")}</div>
+      <NavLink href="/admin" active={pathname === "/admin" || pathname.startsWith("/admin/")} icon={<ScrollText />} label={t("数据日志后台")} />
+      {currentAppAdmin.status === "admin" ? <>
+        <div className={styles.settingsGroupLabel}>{t("管理员")}</div>
+        <NavLink href="/settings/diagnostics" active={pathname === "/settings/diagnostics"} icon={<ScrollText />} label={t("决策日志")} />
+        <NavLink href="/settings/admin-accounts" active={pathname === "/settings/admin-accounts"} icon={<UserCog />} label={t("管理员账号")} />
+      </> : null}
     </nav> : <nav className={styles.settingsNav} aria-label={t("资源分类")}>
       <div className={styles.settingsGroupLabel}>{t("角色素材")}</div>
       <NavLink href={resourceHref("voices")} active={currentResourceTab === "voices"} icon={<Mic2 />} label={t("声音")} onClick={() => setMobileOpen(false)} />

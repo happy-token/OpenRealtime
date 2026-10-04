@@ -159,6 +159,15 @@ class PostgresTelemetryStore:
                 window.since,
                 window.until,
             )
+            failure_rows = await connection.fetch(
+                f"""SELECT substring(name from 21) AS capability,
+                    count(*) FILTER (WHERE outcome = 'error') AS error_count,
+                    count(*) FILTER (WHERE outcome = 'timeout') AS timeout_count
+                FROM {self._records}
+                WHERE occurred_at >= $1 AND ($2::timestamptz IS NULL OR occurred_at <= $2)
+                    AND name LIKE 'realtime.capability.%' AND outcome IN ('error','timeout')
+                GROUP BY name ORDER BY name""", window.since, window.until,
+            )
         resolved_summary = summary or {}
         return DiagnosticsOverview(
             since=window.since,
@@ -175,6 +184,7 @@ class PostgresTelemetryStore:
             interrupted_count=int(resolved_summary.get("interrupted_count") or 0),
             degraded_count=int(resolved_summary.get("degraded_count") or 0),
             metrics=tuple(_metric(row) for row in metric_rows),
+            capability_failures=tuple({"capability": str(row["capability"]), "error_count": int(row["error_count"]), "timeout_count": int(row["timeout_count"])} for row in failure_rows),
         )
 
     async def list_sessions(
@@ -212,40 +222,33 @@ class PostgresTelemetryStore:
             )
         return tuple(_session_summary(row) for row in rows)
 
-    async def session_detail(self, voice_session_id: str) -> SessionDetail | None:
+    async def session_detail(self, voice_session_id: str, *, after_event_id: str | None = None) -> SessionDetail | None:
         if not voice_session_id:
             raise ValueError("voice_session_id must be non-empty")
         async with connection_scope(self._executor) as connection:
-            rows = await connection.fetch(
-                f"""
-                SELECT * FROM {self._records}
-                WHERE voice_session_id = $1
-                ORDER BY occurred_at, monotonic_ns, sequence, event_id
-                LIMIT $2
-                """,
-                voice_session_id,
-                _SESSION_EVENT_LIMIT,
-            )
-        if not rows:
+            cursor_clause = ""
+            args = [voice_session_id, _SESSION_EVENT_LIMIT + 1]
+            if after_event_id is not None:
+                anchor = await connection.fetchrow(f"SELECT event_id FROM {self._records} WHERE voice_session_id = $1 AND event_id = $2", voice_session_id, after_event_id)
+                if anchor is None:
+                    raise ValueError("unknown telemetry cursor")
+                cursor_clause = f"AND (occurred_at, monotonic_ns, sequence, event_id) > (SELECT occurred_at, monotonic_ns, sequence, event_id FROM {self._records} WHERE voice_session_id = $1 AND event_id = $3)"
+                args.append(after_event_id)
+            rows = await connection.fetch(f"SELECT * FROM {self._records} WHERE voice_session_id = $1 {cursor_clause} ORDER BY occurred_at, monotonic_ns, sequence, event_id LIMIT $2", *args)
+            if not rows and after_event_id is None:
+                return None
+            records = tuple(_record(row) for row in rows[:_SESSION_EVENT_LIMIT])
+            # Summary covers the whole session, independently of the displayed page.
+            summary_row = await connection.fetchrow(f"""SELECT voice_session_id,
+                min(occurred_at) AS first_event_at, max(occurred_at) AS last_event_at,
+                count(*) FILTER (WHERE kind = 'terminal') AS turn_count,
+                count(*) FILTER (WHERE outcome = 'timeout') AS timeout_count,
+                count(*) FILTER (WHERE outcome = 'error') AS error_count,
+                count(*) FILTER (WHERE kind = 'terminal' AND outcome = 'no_response') AS no_response_count,
+                count(*) AS event_count FROM {self._records} WHERE voice_session_id = $1 GROUP BY voice_session_id""", voice_session_id)
+        if summary_row is None:
             return None
-        records = tuple(_record(row) for row in rows)
-        summary = SessionSummary(
-            voice_session_id=voice_session_id,
-            first_event_at=min(record.occurred_at for record in records),
-            last_event_at=max(record.occurred_at for record in records),
-            turn_count=sum(record.kind is TelemetryKind.TERMINAL for record in records),
-            timeout_count=sum(
-                record.outcome is TelemetryOutcome.TIMEOUT for record in records
-            ),
-            error_count=sum(record.outcome is TelemetryOutcome.ERROR for record in records),
-            no_response_count=sum(
-                record.kind is TelemetryKind.TERMINAL
-                and record.outcome is TelemetryOutcome.NO_RESPONSE
-                for record in records
-            ),
-            event_count=len(records),
-        )
-        return SessionDetail(summary=summary, events=records)
+        return SessionDetail(summary=_session_summary(summary_row), events=records, next_cursor=records[-1].event_id if len(rows) > _SESSION_EVENT_LIMIT else None)
 
     async def delete_sessions(self, voice_session_ids: Sequence[str]) -> int:
         selected = tuple(dict.fromkeys(voice_session_ids))

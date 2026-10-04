@@ -5,6 +5,7 @@ from server.persistence.postgres.agent_task_store import PostgresAgentTaskStore
 from server.persistence.postgres.artifact_store import PostgresArtifactStore
 from server.persistence.postgres.avatar_asset_registry import PostgresMotionBaseRegistry
 from server.persistence.postgres.conversation_journal import PostgresConversationJournal
+from server.persistence.postgres.debug_log import PostgresDebugLogStore
 from server.persistence.postgres.outbox import PostgresOutboxStore
 from server.persistence.postgres.runtime_telemetry import PostgresTelemetryStore
 from server.persistence.postgres.schema import (
@@ -21,6 +22,7 @@ __all__ = [
     "PostgresAgentTaskStore",
     "PostgresArtifactStore",
     "PostgresConversationJournal",
+    "PostgresDebugLogStore",
     "PostgresMotionBaseRegistry",
     "PostgresOutboxStore",
     "PostgresPersistence",

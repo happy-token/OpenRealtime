@@ -493,6 +493,8 @@ class CascadedRealtimeConversation:
             played_audio_end_us=command.played_audio_end_us,
             precision=command.precision,
             completed=command.completed,
+            started=command.started,
+            stopped=command.stopped,
         )
 
     async def _start_external_speech(self, command: StartSpeech) -> None:

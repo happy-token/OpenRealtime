@@ -292,9 +292,13 @@ class SpeechPlaybackProgress:
     played_audio_end_us: int
     precision: PlaybackPrecision
     completed: bool
+    started: bool = False
+    stopped: bool = False
     schema_version: int = 1
 
     def __post_init__(self) -> None:
+        if sum((self.started, self.stopped, self.completed)) > 1:
+            raise ValueError("playback phase flags are mutually exclusive")
         if not self.event_id or not self.speech_id:
             raise ValueError("playback progress identity must be non-empty")
         if min(self.conversation_sequence, self.schema_version) < 1:

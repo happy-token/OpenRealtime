@@ -5,6 +5,8 @@ import { clampSidebarWidth, conversationHref, formatGithubStars, isResourceWorks
 import type { RoleRecord } from "@/lib/role-records";
 
 const navigation = vi.hoisted(() => ({ pathname: "/conversation", push: vi.fn() }));
+const adminState = vi.hoisted(() => ({ status: "admin" }));
+vi.mock("@/hooks/use-app-admin", () => ({ useCurrentAppAdmin: () => adminState }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
@@ -14,7 +16,28 @@ vi.mock("next/navigation", () => ({
 describe("WorkspaceShell", () => {
   beforeEach(() => {
     navigation.pathname = "/conversation";
+    adminState.status = "admin";
     navigation.push.mockClear();
+  });
+
+  it.each(["/settings", "/settings/appearance"])("provides direct backend access in settings for the logged-in administrator on %s", (pathname) => {
+    navigation.pathname = pathname;
+    const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
+    expect(html).toContain('href="/admin"');
+    expect(html).toContain("数据日志后台");
+  });
+
+  it("keeps the backend entry out of the home sidebar even for administrators", () => {
+    navigation.pathname = "/conversation";
+    const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
+    expect(html).not.toContain('href="/admin"');
+  });
+
+  it.each(["loading", "not-admin", "unavailable"])("keeps the settings entry discoverable when admin status is %s", (status) => {
+    adminState.status = status;
+    navigation.pathname = "/settings/appearance";
+    const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
+    expect(html).toContain('href="/admin"');
   });
 
   it("opens a configured realtime avatar through the resource-library conversation entry", () => {
@@ -89,6 +112,14 @@ describe("WorkspaceShell", () => {
     expect(html).not.toContain('title="在 GitHub 为 OpenRealtime 点 Star"');
     expect(html).not.toContain('href="https://github.com/happy-token/OpenRealtime"');
     expect(html).not.toContain('data-compact="true"');
+  });
+
+  it.each(["/admin", "/admin/sessions/session-123", "/demos/diagnostics"])("keeps diagnostics in the settings sidebar on %s", pathname => {
+    navigation.pathname = pathname;
+    const html = renderToStaticMarkup(<WorkspaceShell><div>诊断</div></WorkspaceShell>);
+    expect(html).toContain('aria-label="设置导航"');
+    expect(html).toContain('href="/admin"');
+    expect(html).toContain('>数据日志后台</span>');
   });
 
   it("keeps the resource library beside roles in primary navigation", () => {

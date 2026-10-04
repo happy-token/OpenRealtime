@@ -1,352 +1,89 @@
 "use client";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { useLanguage } from "@/components/language/language-provider";
+import { buildReplayTurns } from "@/lib/admin-diagnostics";
+import { METRIC_DESCRIPTIONS, formatClock, formatDuration, metricLabel } from "@/lib/observability";
+import { exactDuration, measuredSpans, type SessionDiagnosticsReport } from "@/lib/session-diagnostics-report";
+import styles from "./diagnostics-workspace.module.css";
 
-
-import { BackLink } from "@/components/workspace/back-link";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  AlertTriangle,
-  AudioLines,
-  AudioWaveform,
-  Bot,
-  BrainCircuit,
-  Bug,
-  ChevronDown,
-  ChevronRight,
-  CircleDot,
-  Clock3,
-  FileWarning,
-  Flag,
-  Headphones,
-  LocateFixed,
-  Mic2,
-  Play,
-  Radio,
-  ScanSearch,
-  ScrollText,
-  TriangleAlert,
-  UserRound,
-  Wifi,
-  Workflow,
-} from "lucide-react";
-import adminStyles from "@/app/admin/admin.module.css";
-import styles from "@/app/admin/sessions/[sessionId]/session-replay.module.css";
-import {
-  buildDiagnosticLogs,
-  buildReplayTurns,
-  buildSessionMetricAggregates,
-  buildSessionPipelineStages,
-  type ConversationReplayItem,
-  type ReplayEventStage,
-  type ReplayTimelineEvent,
-  type ReplayTurn,
-  type SessionPipelineStage,
-} from "@/lib/admin-diagnostics";
-import { formatClock, formatDuration, metricLabel, type SessionDetail } from "@/lib/observability";
-
-export function SessionDiagnostics({ sessionId }: { sessionId: string }) {
+export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; preview?: SessionDiagnosticsReport }) {
   const { t } = useLanguage();
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
-  const [conversation, setConversation] = useState<ConversationReplayItem[]>([]);
+  const [report, setReport] = useState<SessionDiagnosticsReport | null>(preview ?? null);
   const [error, setError] = useState("");
-  const [logMode, setLogMode] = useState<"errors" | "all">("errors");
-  const [showLogs, setShowLogs] = useState(false);
-  const turnRefs = useRef(new Map<number, HTMLElement>());
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      getJson<SessionDetail>(`/api/observability/sessions/${encodeURIComponent(sessionId)}`),
-      getJson<ConversationReplayItem[]>(`/api/observability/sessions/${encodeURIComponent(sessionId)}/conversation`),
-    ])
-      .then(([nextDetail, nextConversation]) => {
-        if (!active) return;
-        setDetail(nextDetail);
-        setConversation(nextConversation);
-      })
-      .catch((cause) => active && setError(cause instanceof Error ? cause.message : "会话加载失败"));
-    return () => { active = false; };
-  }, [sessionId]);
-
-  const turns = useMemo(
-    () => detail ? buildReplayTurns(detail, conversation) : [],
-    [conversation, detail],
-  );
-  const abnormalTurns = turns.filter((turn) => turn.abnormal);
-  const logs = detail ? buildDiagnosticLogs(detail) : [];
-  const events = logMode === "errors" ? logs : [...(detail?.events ?? [])].reverse();
-  const playbackTurns = turns.filter((turn) => (turn.latency?.playback_underruns ?? 0) > 0);
-  const averageJitter = average(turns.map((turn) => turn.latency?.network_jitter_ms ?? null));
-  const sessionMetrics = useMemo(
-    () => detail ? buildSessionMetricAggregates(detail) : [],
-    [detail],
-  );
-  const pipelineStages = useMemo(
-    () => buildSessionPipelineStages(sessionMetrics),
-    [sessionMetrics],
-  );
-  const performanceMetrics = useMemo(
-    () => [...sessionMetrics].sort((left, right) => right.p95_ms - left.p95_ms),
-    [sessionMetrics],
-  );
-
-  function jumpToTurn(generation: number) {
-    turnRefs.current.get(generation)?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
-  return (
-    <main className={adminStyles.shell}>
-      <header className={adminStyles.detailHeader}>
-        <div><BackLink href="/admin" label={t("返回看板")} /><h1>{sessionId.slice(0, 24)}</h1><p>{detail ? `${fullTimestamp(detail.summary.first_event_at)} — ${fullTimestamp(detail.summary.last_event_at)}` : t("正在读取会话数据")}</p></div>
-        <div className={adminStyles.headerBadges}><i>{detail?.summary.turn_count ?? 0} turns</i><i data-alert={(detail?.summary.timeout_count ?? 0) > 0}>{detail?.summary.timeout_count ?? 0} timeout</i><i data-alert={(detail?.summary.error_count ?? 0) > 0}>{detail?.summary.error_count ?? 0} error</i></div>
-      </header>
-      {error ? <div className={adminStyles.errorBanner}><TriangleAlert />{t(error)}</div> : null}
-
-      <section className={adminStyles.summaryGrid}>
-        <Summary icon={Clock3} label={t("端到端 P95")} value={formatDuration(percentile(turns.map((turn) => turn.latency?.first_audio_ms ?? null), 0.95))} />
-        <Summary icon={Wifi} label={t("平均网络抖动")} value={formatDuration(averageJitter)} />
-        <Summary icon={Bug} label={t("播放不稳定轮次")} value={`${playbackTurns.length} / ${turns.length}`} alert={playbackTurns.length > 0} />
-        <Summary icon={FileWarning} label={t("异常轮次")} value={`${abnormalTurns.length} / ${turns.length}`} alert={abnormalTurns.length > 0} />
-      </section>
-
-      <section className={styles.performanceSection} aria-label={t("本会话链路耗时")}>
-        <div className={styles.performanceHeading}>
-          <div><h2>{t("本会话链路耗时")}</h2></div>
-          <p>{t("按本会话全部轮次聚合 · P50 / P95 / P99")}</p>
-        </div>
-        <div className={styles.pipelineChain}>
-          {pipelineStages.map((stage, index) => (
-            <PipelineStageCard key={stage.id} stage={stage} index={index} />
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.performancePanel} aria-label={t("本会话性能明细")}>
-        <header><div><h2>{t("性能明细")}</h2></div><span>{performanceMetrics.length}{t(" 项指标")}</span></header>
-        <div className={styles.performanceTable}>
-          <table>
-            <thead><tr><th>{t("指标")}</th><th>{t("样本")}</th><th>P50</th><th>P95</th><th>P99</th><th>{t("最大")}</th><th>{t("超时")}</th><th>{t("错误")}</th></tr></thead>
-            <tbody>{performanceMetrics.map((metric) => <tr key={metric.name}><td><strong>{metricLabel(metric.name)}</strong><small>{metric.name}</small></td><td>{metric.sample_count}</td><td>{formatDuration(metric.p50_ms)}</td><td>{formatDuration(metric.p95_ms)}</td><td>{formatDuration(metric.p99_ms)}</td><td>{formatDuration(metric.max_ms)}</td><td data-alert={metric.timeout_count > 0}>{metric.timeout_count}</td><td data-alert={metric.error_count > 0}>{metric.error_count}</td></tr>)}</tbody>
-          </table>
-          {!performanceMetrics.length ? <p className={styles.emptyPerformance}>{t("本会话还没有可聚合的耗时样本。")}</p> : null}
-        </div>
-      </section>
-
-      <section className={styles.recordingBar} aria-label={t("会话录音")}>
-        <span><Headphones /></span>
-        <div><strong>{t("会话录音")}</strong><p>{t("当前会话未保存原始录音；启用录音保留策略后可在此播放并与消息时间点联动。")}</p></div>
-        <button disabled><AudioLines />{t("暂无录音")}</button>
-      </section>
-
-      {abnormalTurns.length ? (
-        <nav className={styles.issueNavigator} aria-label={t("异常轮次定位")}>
-          <div><AlertTriangle /><span><strong>{t("发现 ")}{abnormalTurns.length}{t(" 个异常轮次")}</strong><small>{t("点击可直接定位到对应对话")}</small></span></div>
-          <div>{abnormalTurns.map((turn) => <button key={turn.generation} onClick={() => jumpToTurn(turn.generation)}><LocateFixed />{t("轮次 ")}{turn.generation}<i>{turn.issues[0]?.label}</i></button>)}</div>
-        </nav>
-      ) : null}
-
-      <section className={styles.replayPanel}>
-        <header className={styles.replayHeading}><div><span><Radio /></span><div><h2>{t("对话复盘")}</h2></div></div><p>{t("普通状态已压缩，异常事件保持展开")}</p></header>
-        <div className={styles.turnTimeline}>
-          {turns.map((turn) => (
-            <TurnReplay
-              key={turn.generation}
-              turn={turn}
-              register={(element) => {
-                if (element) turnRefs.current.set(turn.generation, element);
-                else turnRefs.current.delete(turn.generation);
-              }}
-            />
-          ))}
-          {!turns.length ? <p className={styles.emptyReplay}>{t("该会话没有可复盘的对话轮次。旧会话可能早于对话记录功能启用时间。")}</p> : null}
-        </div>
-      </section>
-
-      <section className={adminStyles.panel}>
-        <button className={styles.logsToggle} onClick={() => setShowLogs((value) => !value)} aria-expanded={showLogs}>
-          <span><ScrollText /><b>{t("底层诊断日志")}</b><small>{logs.length}{t(" 条异常 / ")}{detail?.events.length ?? 0}{t(" 条全部")}</small></span><ChevronDown data-open={showLogs} />
-        </button>
-        {showLogs ? <><div className={styles.logControls}><button data-active={logMode === "errors"} onClick={() => setLogMode("errors")}><FileWarning />{t("异常 ")}{logs.length}</button><button data-active={logMode === "all"} onClick={() => setLogMode("all")}><ScrollText />{t("全部 ")}{detail?.events.length ?? 0}</button></div><div className={adminStyles.logList}>{events.map((event) => <LogEvent key={event.event_id} event={event} />)}{!events.length ? <p className={adminStyles.empty}>{t("没有符合条件的日志")}</p> : null}</div></> : null}
-      </section>
-    </main>
-  );
-}
-
-function PipelineStageCard({ stage, index }: { stage: SessionPipelineStage; index: number }) {
-  const { t } = useLanguage();
-  const Icon = [Mic2, ScanSearch, BrainCircuit, Radio, AudioWaveform, Play][index] ?? Activity;
-  const alert = stage.timeout_count > 0 || stage.error_count > 0;
-  return (
-    <article className={styles.pipelineStage} data-empty={!stage.metric_name} data-alert={alert}>
-      <header><span><Icon /></span><i>{String(index + 1).padStart(2, "0")}</i></header>
-      <div><strong>{stage.label}</strong><small>{stage.description}</small></div>
-      <dl><div><dt>P50</dt><dd>{formatDuration(stage.p50_ms)}</dd></div><div><dt>P95</dt><dd>{formatDuration(stage.p95_ms)}</dd></div><div><dt>P99</dt><dd>{formatDuration(stage.p99_ms)}</dd></div></dl>
-      <footer><span>{stage.sample_count}{t(" 个样本")}</span>{alert ? <b>{stage.timeout_count + stage.error_count}{t(" 个异常")}</b> : <small>{stage.metric_name ? t("采样正常") : t("暂无采样")}</small>}</footer>
-      {index < 5 ? <ChevronRight className={styles.pipelineArrow} /> : null}
-    </article>
-  );
-}
-
-function TurnReplay({ turn, register }: { turn: ReplayTurn; register: (element: HTMLElement | null) => void }) {
-  const { t } = useLanguage();
-  const userMessages = turn.messages.filter((message) => message.role === "user");
-  const assistantMessages = turn.messages.filter((message) => message.role === "assistant");
-  return (
-    <article ref={register} className={styles.turn} data-abnormal={turn.abnormal}>
-      <div className={styles.turnBoundary} aria-label={t("轮次 ") + (turn.generation - 1) + t(" 到 ") + (turn.generation) + ""}>
-        <span>{turn.generation - 1}</span><i /><span>{turn.generation}</span>
-      </div>
-      <div className={styles.turnBody}>
-        <header><div><strong>{t("轮次 ")}{turn.generation}</strong><i data-abnormal={turn.abnormal}>{turn.abnormal ? t("需要关注") : t("正常")}</i></div><span>{turn.latency?.total_ms !== null && turn.latency ? t("总耗时 ") + (formatDuration(turn.latency.total_ms)) + "" : t("耗时样本不足")}</span></header>
-        <div className={styles.conversationAxis}>
-          {userMessages.map((message) => <ReplayMessage key={message.item_id} message={message} abnormal={turn.abnormal} />)}
-          <TurnEventHub turn={turn} />
-          {assistantMessages.map((message) => <ReplayMessage key={message.item_id} message={message} abnormal={turn.abnormal} />)}
-        </div>
-        {!turn.messages.length ? <p className={styles.missingConversation}>{t("本轮仅有运行事件，没有已提交的对话文本。")}</p> : null}
-        {turn.issues.map((issue) => <div className={styles.issueCard} key={issue.event_id}><AlertTriangle /><div><strong>{issue.label}</strong><p>{issue.detail}</p></div><time>{timeWithMilliseconds(issue.occurred_at)}</time></div>)}
-        {turn.latency ? <div className={styles.turnMetrics}><span>ASR<strong>{formatDuration(turn.latency.asr_ms)}</strong></span><span>{t("模型")}<strong>{formatDuration(turn.latency.llm_ms)}</strong></span><span>TTS<strong>{formatDuration(turn.latency.tts_ms)}</strong></span><span>{t("首播")}<strong>{formatDuration(turn.latency.first_audio_ms)}</strong></span><span>{t("抖动")}<strong>{formatDuration(turn.latency.network_jitter_ms)}</strong></span><span>{t("卡顿")}<strong>{turn.latency.playback_underruns ? "" + (turn.latency.playback_underruns) + t(" 次") : t("稳定")}</strong></span></div> : null}
-      </div>
-    </article>
-  );
-}
-
-function TurnEventHub({ turn }: { turn: ReplayTurn }) {
-  const { t } = useLanguage();
-  const boundary = turn.timeline_events.find((event) => event.turn_boundary);
-  const promotedIds = new Set(turn.timeline_events.map((event) => event.event_id));
-  const otherEvents = turn.events.filter((event) => !promotedIds.has(event.event_id));
-  return (
-    <details className={styles.eventHub}>
-      <summary>
-        <span className={styles.eventHubIcon}><Workflow /></span>
-        <span className={styles.eventHubCopy}><strong>{turn.timeline_events.length}{t(" 个关键时间点")}</strong><small>{turn.state_summary}</small></span>
-        <span className={styles.eventHubBoundary}>
-          <small>{boundary ? t("表达完成 / 轮次确认") : t("本轮起点")}</small>
-          <time>{timeWithMilliseconds(boundary?.occurred_at ?? turn.occurred_at)}</time>
-          <i>{formatElapsed(boundary?.elapsed_ms ?? 0)}</i>
-        </span>
-        <ChevronDown />
-      </summary>
-      <div className={styles.eventTimeline}>
-        {turn.timeline_events.map((event) => <TimelineEvent key={event.event_id} timelineEvent={event} />)}
-        {!turn.timeline_events.length ? <p className={styles.noTimelineEvents}>{t("本轮没有可投影的关键过程事件。")}</p> : null}
-      </div>
-      {otherEvents.length ? (
-        <details className={styles.rawEvents}>
-          <summary><CircleDot />{t("其他 ")}{otherEvents.length}{t(" 个底层事件")}<ChevronDown /></summary>
-          <div>{otherEvents.map((event) => <RawEvent key={event.event_id} event={event} turnStartedAt={turn.occurred_at} />)}</div>
-        </details>
-      ) : null}
-    </details>
-  );
-}
-
-function TimelineEvent({ timelineEvent }: { timelineEvent: ReplayTimelineEvent }) {
-  const Icon = eventStageIcon(timelineEvent.stage, timelineEvent.turn_boundary);
-  return (
-    <details className={styles.timelineEvent} data-stage={timelineEvent.stage} data-boundary={timelineEvent.turn_boundary}>
-      <summary>
-        <span className={styles.eventIdentity}><small>{stageLabel(timelineEvent.stage)}</small><strong>{timelineEvent.label}</strong>{timelineEvent.state_change ? <i>{timelineEvent.state_change}</i> : null}</span>
-        <span className={styles.eventNode}><Icon /></span>
-        <span className={styles.eventTimestamp}><time>{timeWithMilliseconds(timelineEvent.occurred_at)}</time><small>{formatElapsed(timelineEvent.elapsed_ms)}</small></span>
-      </summary>
-      <EventPayload event={timelineEvent.event} />
-    </details>
-  );
-}
-
-function RawEvent({ event, turnStartedAt }: { event: SessionDetail["events"][number]; turnStartedAt: string }) {
-  return (
-    <details>
-      <summary><time>{timeWithMilliseconds(event.occurred_at)}</time><span>{metricLabel(event.name)}</span><i>{formatElapsed(Math.max(0, Date.parse(event.occurred_at) - Date.parse(turnStartedAt)))}</i><ChevronDown /></summary>
-      <EventPayload event={event} />
-    </details>
-  );
-}
-
-function EventPayload({ event }: { event: SessionDetail["events"][number] }) {
-  const { t } = useLanguage();
-  return (
-    <div className={styles.eventPayload}>
-      <div><span>{t("事件")}</span><code>{event.name}</code></div>
-      <div><span>{t("结果")}</span><b data-outcome={event.outcome}>{event.outcome}</b></div>
-      <div><span>{t("耗时")}</span><b>{formatDuration(event.duration_ms)}</b></div>
-      {event.error_message ? <p>{event.error_message}</p> : null}
-      {Object.keys(event.attributes).length ? <pre>{JSON.stringify(event.attributes, null, 2)}</pre> : null}
-    </div>
-  );
-}
-
-function ReplayMessage({ message, abnormal }: { message: ConversationReplayItem; abnormal: boolean }) {
-  const { t } = useLanguage();
-  const user = message.role === "user";
-  return <div className={styles.message} data-role={message.role}><span>{user ? <UserRound /> : <Bot />}</span><div><header><strong>{user ? t("用户") : "OpenRealtime"}</strong><time>{timeWithMilliseconds(message.occurred_at)}</time>{abnormal ? <i>{t("异常轮次")}</i> : null}</header><p>{message.text}</p><small>{messageStatus(message.status)}</small></div></div>;
-}
-
-function LogEvent({ event }: { event: ReturnType<typeof buildDiagnosticLogs>[number] | SessionDetail["events"][number] }) {
-  const name = event.name;
-  const severity = event.severity;
-  const message = "message" in event ? event.message : event.error_message ?? event.outcome;
-  return <article data-severity={severity}><time>{formatClock(event.occurred_at)}</time><span>{severity}</span><div><strong>{metricLabel(name)}</strong><small>{name}</small>{message ? <p>{String(message)}</p> : null}</div>{"duration_ms" in event && event.duration_ms !== null ? <b>{formatDuration(event.duration_ms)}</b> : null}</article>;
-}
-
-function Summary({ icon: Icon, label, value, alert = false }: { icon: typeof Clock3; label: string; value: string; alert?: boolean }) {
-  const { t } = useLanguage();
-  return <article className={adminStyles.summaryCard} data-alert={alert}><Icon /><span>{t(label)}</span><strong>{value}</strong></article>;
-}
-
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
-  const payload = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-  return payload;
-}
-
-function messageStatus(status: string): string {
-  const labels: Record<string, string> = {
-    committed: "已提交",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已取消",
-    interrupted: "被打断",
-    in_progress: "生成中",
+  const [loading, setLoading] = useState(!preview);
+  const [generation, setGeneration] = useState<number | null>(null);
+  const [tab, setTab] = useState("chain");
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
+  const [paging, setPaging] = useState(false);
+  const loadMore = async () => {
+    if (!report || paging) return;
+    const params = new URLSearchParams();
+    if (report.telemetry?.next_cursor) params.set("telemetry_cursor", report.telemetry.next_cursor);
+    if (report.debug_log?.next_cursor) params.set("debug_cursor", report.debug_log.next_cursor);
+    if (!params.size) return;
+    setPaging(true); setError("");
+    try {
+      const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/diagnostics?${params}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      const next: SessionDiagnosticsReport = await response.json();
+      if (!response.ok || (params.has("telemetry_cursor") && !next.telemetry) || (params.has("debug_cursor") && !next.debug_log)) throw new Error("日志续页读取失败，请重试");
+      setReport(previous => {
+        if (!previous || previous.session_id !== next.session_id) return previous;
+        const merge = <T extends { event_id: string },>(before: T[], after: T[]) => [...new Map([...before, ...after].map(item => [item.event_id, item])).values()];
+        return { ...previous, collection_health: next.collection_health, sources: { ...previous.sources, ...(params.has("telemetry_cursor") ? { telemetry: next.sources.telemetry } : {}), ...(params.has("debug_cursor") ? { debug_log: next.sources.debug_log } : {}) }, telemetry: params.has("telemetry_cursor") && next.telemetry ? { ...next.telemetry, events: merge(previous.telemetry?.events ?? [], next.telemetry.events) } : previous.telemetry, debug_log: params.has("debug_cursor") && next.debug_log ? { ...next.debug_log, entries: merge(previous.debug_log?.entries ?? [], next.debug_log.entries) } : previous.debug_log };
+      });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "日志续页读取失败"); } finally { setPaging(false); }
   };
-  return labels[status] ?? status;
-}
-
-function eventStageIcon(stage: ReplayEventStage, boundary: boolean) {
-  if (boundary) return Flag;
-  return { input: Mic2, endpoint: ScanSearch, model: BrainCircuit, tts: AudioWaveform, playback: Play, state: Activity, system: CircleDot }[stage];
-}
-
-function stageLabel(stage: ReplayEventStage): string {
-  return { input: "用户输入", endpoint: "轮次判断", model: "模型处理", tts: "语音合成", playback: "终端播放", state: "对话状态", system: "系统事件" }[stage];
-}
-
-function formatElapsed(value: number): string {
-  if (value < 1000) return `+${Math.round(value)}ms`;
-  return `+${(value / 1000).toFixed(value < 10_000 ? 2 : 1)}s`;
-}
-
-function timeWithMilliseconds(value: string): string {
-  const date = new Date(value);
-  return `${date.toLocaleTimeString("zh-CN", { hour12: false })}.${String(date.getMilliseconds()).padStart(3, "0")}`;
-}
-
-function fullTimestamp(value: string): string {
-  const date = new Date(value);
-  return `${date.toLocaleDateString("zh-CN")} ${timeWithMilliseconds(value)}`;
-}
-
-function average(values: Array<number | null>): number | null {
-  const present = values.filter((value): value is number => value !== null);
-  return present.length ? present.reduce((sum, value) => sum + value, 0) / present.length : null;
-}
-
-function percentile(values: Array<number | null>, ratio: number): number | null {
-  const present = values.filter((value): value is number => value !== null).sort((a, b) => a - b);
-  return present.length ? present[Math.min(present.length - 1, Math.floor(present.length * ratio))] : null;
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    if (preview) return;
+    const controller = new AbortController(); setLoading(true); setReport(null); setError(""); setGeneration(null); setSelectedEvent(null);
+    void fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/diagnostics`, { cache: "no-store", signal: controller.signal }).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? (response.status === 404 ? "未找到该会话" : "诊断数据暂时不可用"));
+      if (!controller.signal.aborted) setReport(data);
+    }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "诊断读取失败"); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [sessionId, revision, preview]);
+  const turns = useMemo(() => {
+    if (!report) return [];
+    const existing = report.telemetry ? buildReplayTurns(report.telemetry, report.conversation) : [];
+    const ids = new Set([...existing.map(turn => turn.generation), ...report.conversation.map(item => item.generation), ...(report.debug_log?.entries.flatMap(entry => entry.generation === null ? [] : [entry.generation]) ?? [])]);
+    return [...ids].sort((a, b) => a - b).map(id => ({ generation: id, messages: report.conversation.filter(item => item.generation === id), events: report.telemetry?.events.filter(event => event.generation === id) ?? [] }));
+  }, [report]);
+  const selected = turns.find(turn => turn.generation === generation) ?? turns[0];
+  const spans = measuredSpans(selected?.events ?? []);
+  const extent = Math.max(1, ...spans.map(span => span.start + span.duration));
+  const event = selected?.events.find(item => item.event_id === selectedEvent);
+  const logs = report?.debug_log?.entries.filter(entry => selected ? entry.generation === selected.generation || entry.generation === null : true) ?? [];
+  const unassociatedEvents = report?.telemetry?.events.filter(item => item.generation === null) ?? [];
+  const interruptions = selected?.events.filter(item => item.name.startsWith("barge_in.") || item.name.includes("interrupt")) ?? [];
+  const exportReport = () => {
+    if (!report) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${sessionId}-diagnostics.json`; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return <WorkspaceShell><div className={styles.page}>
+    {preview ? <p className={styles.muted}>主题预览 · 示例数据 · 复用真实后台组件</p> : null}
+    <Link className={styles.button} href={preview ? "/demos/diagnostics" : "/admin"}>← {t("返回运行总览")}</Link>
+    <header className={styles.heading} style={{ marginTop: 20 }}><div><h1>{t("会话详情")}</h1><span className={styles.muted}>{sessionId}</span></div><div className={styles.toolbar} style={{ margin: 0 }}><button onClick={() => setRevision(value => value + 1)} disabled={loading || Boolean(preview)}>{t("刷新")}</button><button onClick={exportReport} disabled={!report}>{t("导出诊断 JSON")}</button></div></header>
+    {loading ? <p className={styles.busy}>{t("正在读取会话数据…")}</p> : null}
+    {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
+    {report ? <>
+      <div className={styles.metadata}><span>{turns.length} {t("轮对话")}</span><span>{t("开始时间")} {formatClock(report.telemetry?.summary.first_event_at ?? "")}</span><span>{t("事件")} {report.telemetry?.events.length ?? "—"}</span><span>{t("决策日志")} {report.debug_log?.entries.length ?? "—"}</span></div>
+      {!preview && report.collection_health?.status !== "ok" ? <div className={styles.error} role="status">{report.collection_health ? "日志采集存在丢弃或写入异常，当前会话记录可能不完整。" : "采集健康状态不可用，无法确认日志完整性。"}</div> : null}
+      {Object.entries(report.sources).filter(([, source]) => source.status !== "available" || source.truncated).map(([name, source]) => <div className={styles.error} role="status" key={name}>{name}: {source.status !== "available" ? t("没有记录或数据源不可用") : t("已达到查询上限，当前内容可能不完整")}</div>)}
+      {!preview && (report.telemetry?.next_cursor || report.debug_log?.next_cursor) ? <button className={styles.button} disabled={paging} onClick={loadMore}>{paging ? "正在加载…" : "加载更多日志"}</button> : null}
+      <div className={styles.detailgrid}><section className={styles.panel}><div className={styles.panelhead}><h2>{t("对话与音频")}</h2><span className={styles.muted}>{turns.length} turns</span></div><div className={styles.audio}>{t("双向音频尚未接入录制存储，当前无法回放。")}<br />{t("已确认的录音策略：所有会话默认录音，保留 7 天，标记会话可长期保留。该策略尚未启用。")}</div><div className={styles.turnlist}>{turns.map(turn => <button className={styles.turn} key={turn.generation} aria-pressed={selected?.generation === turn.generation} onClick={() => { setGeneration(turn.generation); setSelectedEvent(null); }}><small>{t("轮次")} {turn.generation} · {turn.events.length} {t("事件")}</small>{turn.messages.map(message => <p key={message.item_id}><small>{message.role === "user" ? t("用户") : t("助手")}</small><br />{message.text}</p>)}{!turn.messages.length ? <p>{t("该轮没有已提交的对话文本。")}</p> : null}</button>)}{!turns.length ? <p className={styles.empty}>{t("没有可关联的轮次。")}</p> : null}</div></section>
+        <div><section className={styles.panel}><div className={styles.panelhead}><h2>{selected ? `${t("轮次")} ${selected.generation} · ${t("诊断详情")}` : t("会话事件")}</h2><span className={styles.muted}>{selected?.events.length ?? 0} {t("事件")}</span></div><div className={styles.tabs} role="tablist" aria-label={t("诊断视图")}>{[["chain", "模块链路"], ["stop", "打断过程"], ["logs", "原始日志"]].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => setTab(id)}>{t(label)}</button>)}</div>
+          <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+          {tab === "chain" ? <div className={styles.spans}><div className={styles.muted}>{t("根据真实事件结束时间和已记录 duration 重建；起点为本轮最早可测阶段。")}</div><div className={styles.axis}><span>0</span><span>{formatDuration(extent / 2)}</span><span>{formatDuration(extent)}</span></div>{spans.map(span => <div className={styles.spanrow} key={span.event.event_id}><span>{metricLabel(span.event.name)}<br /><small>{formatDuration(span.duration)}</small></span><div className={styles.track}><button className={styles.spanbar} aria-label={`${t("查看")} ${span.event.name}`} title={`${span.start.toFixed(1)}–${(span.start + span.duration).toFixed(1)} ms`} onClick={() => setSelectedEvent(span.event.event_id)} style={{ left: `${span.start / extent * 100}%`, width: `${Math.min(100 - span.start / extent * 100, span.duration / extent * 100)}%` }} /></div></div>)}{!spans.length ? <p className={styles.empty}>{t("该轮尚无可测量的模块耗时。")}</p> : null}{event ? <div className={styles.selected}><strong>{metricLabel(event.name)}</strong><p>{METRIC_DESCRIPTIONS[event.name] ?? event.name}</p><p>{formatDuration(event.duration_ms)} · {event.outcome} · {event.event_id}</p><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(event.attributes, null, 2)}</pre></div> : null}<div className={styles.note}>{t("并行阶段不相加作为整体延迟。缺失指标不会以近似指标替代。")}</div></div> : null}
+          {tab === "stop" ? <><div className={styles.spans}><div className={styles.kpis}><div className={styles.kpi}><small>{t("有效开口 → 客户端停播")}</small><strong>{formatDuration(exactDuration(selected?.events ?? [], "barge_in.speech_start_to_client_stop"))}</strong></div><div className={styles.kpi}><small>{t("确认打断 → 停播回执（代理值）")}</small><strong>{formatDuration(exactDuration(selected?.events ?? [], "barge_in.time_to_client_stop"))}</strong></div></div></div>{interruptions.map(item => <div className={styles.event} key={item.event_id}><strong>{item.name}</strong><small>{formatClock(item.occurred_at)} · {formatDuration(item.duration_ms)} · {item.outcome}</small><details><summary>{t("查看事件")}</summary><pre>{JSON.stringify(item, null, 2)}</pre></details></div>)}{!interruptions.length ? <p className={styles.empty}>{t("该轮没有记录到打断事件；不能据此判定没有发生打断。")}</p> : null}</> : null}
+          {tab === "logs" ? <><div className={styles.note}>{t("决策日志与运行事件分别保留原始标识和采集时间。")}</div>{logs.map(entry => <div className={styles.event} key={entry.event_id}><strong>{entry.stage} · {entry.event}</strong><p>{entry.summary}</p><small>{formatClock(entry.occurred_at)} · {entry.event_id}</small><details><summary>{t("查看详情")}</summary><pre>{JSON.stringify(entry.detail, null, 2)}</pre></details></div>)}{(selected?.events ?? report.telemetry?.events ?? []).map(item => <div className={styles.event} key={item.event_id}><strong>{item.name}</strong><small>{formatClock(item.occurred_at)} · {item.outcome} · {formatDuration(item.duration_ms)}</small>{item.error_message ? <p>{item.error_message}</p> : null}<details><summary>{t("查看原始事件")}</summary><pre>{JSON.stringify(item, null, 2)}</pre></details></div>)}</> : null}
+          </div></section>{unassociatedEvents.length ? <section className={styles.panel}><div className={styles.panelhead}><h2>{t("未关联轮次事件")}</h2><span>{unassociatedEvents.length}</span></div>{unassociatedEvents.map(item => <div className={styles.event} key={item.event_id}><strong>{metricLabel(item.name)}</strong><small>{formatClock(item.occurred_at)} · {item.outcome} · {formatDuration(item.duration_ms)}</small><details><summary>{t("查看原始事件")}</summary><pre>{JSON.stringify(item, null, 2)}</pre></details></div>)}</section> : null}<section className={styles.panel}><div className={styles.panelhead}><h2>{t("交给 Agent 排查")}</h2></div><div className={styles.note}><code>GET /api/observability/sessions/{sessionId}/diagnostics</code><p>{t("统一返回对话、模块指标、决策日志及数据源完整度。当前使用应用管理员会话认证。")}</p></div></section></div>
+      </div>
+    </> : null}
+  </div></WorkspaceShell>;
 }

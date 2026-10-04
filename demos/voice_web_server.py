@@ -1085,6 +1085,7 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             thread_id=identity.thread_id,
         )
     )
+    debug_log = _application_runtime.debug_log.bind(identity.voice_session_id)
     ledger = EventLedger()
     ledger.subscribe(functools.partial(_log_ledger_event, session.session_id))
     ledger.subscribe(telemetry.observe_ledger)
@@ -1304,7 +1305,7 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
         speech_deliveries=_application_runtime.speech_deliveries,
         active_conversations=_application_runtime.active_realtime_conversations,
         tool_control_handler_factory=tool_control_handler_factory,
-        observer=RealtimeTelemetryObserver(telemetry),
+        observer=RealtimeTelemetryObserver(telemetry, debug_log=debug_log),
     )
 
     async def handle_auxiliary_frame(frame) -> None:
@@ -1704,6 +1705,8 @@ if __name__ == "__main__":
             if isinstance(state, ApplicationRuntime)
             else None
         ),
+        debug_log_query_factory=lambda state: state.debug_log_query if isinstance(state, ApplicationRuntime) else None,
+        diagnostics_health_reader=lambda: _application_runtime.diagnostics_health() if _application_runtime is not None else {"status": "unavailable"},
         voice_previewer=_preview_voice,
         session_conversation_reader=_read_session_conversation,
         session_history_deleter=_delete_session_history,

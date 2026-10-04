@@ -1,0 +1,38 @@
+.page { width: min(880px,calc(100% - 48px)); margin: 0 auto; padding: 54px 0 90px; color: var(--text); font-size: var(--workspace-body-size); }
+.page h1 { display: flex; align-items: center; gap: 12px; font-size: var(--workspace-page-title-size); line-height: 1.2; letter-spacing: -.04em; margin: 0 0 7px; }
+.page h1 svg { color: var(--accent); }
+.intro, .note { color: var(--text-dim); line-height: 1.7; }
+.section { margin-top: 18px; padding: 22px; border: 1px solid var(--settings-panel-border); border-radius: var(--settings-panel-radius); background: var(--settings-panel-bg); backdrop-filter: blur(var(--panel-blur,3px)); }
+.section h2 { margin: 0 0 10px; font-size: var(--workspace-section-title-size); }
+.note { font-size: var(--workspace-caption-size); margin: 0 0 10px; }
+.status { min-height: 24px; color: var(--accent); }
+.error { color: var(--danger, #e98b91); }
+.error button { margin-left: 12px; }
+
+.grantForm { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.grantForm label { flex: 1; min-width: 220px; display: grid; gap: 8px; }
+.grantForm input { height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--button-radius); background: var(--control-surface); color: var(--text); font: inherit; }
+.grantForm input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grantForm button { height: 38px; padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--button-radius); background: var(--accent); color: var(--accent-contrast); font: inherit; font-weight: 580; cursor: pointer; }
+.grantForm button:disabled { opacity: .5; cursor: not-allowed; }
+
+.list { display: grid; gap: 8px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb,var(--surface-solid) 32%,transparent); }
+.row span { display: grid; gap: 3px; min-width: 0; }
+.row strong { font-size: var(--workspace-label-size); overflow-wrap: anywhere; }
+.row small { color: var(--text-faint); font-size: var(--workspace-caption-size); }
+.row button { flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.row button svg { width: 15px; }
+.row button:hover:not(:disabled) { color: var(--danger, #e98b91); border-color: var(--danger, #e98b91); }
+.row button:disabled { opacity: .4; cursor: not-allowed; }
+
+.error button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 12px; border: 1px solid var(--border-strong); border-radius: var(--button-radius); background: var(--control-surface); color: var(--text); font: inherit; font-size: var(--workspace-caption-size); text-decoration: none; cursor: pointer; }
+.error button:hover:not(:disabled) { background: var(--control-surface-hover); border-color: var(--accent-border); }
+.error button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .page { width: calc(100% - 30px); padding: 76px 0 60px; }
+  .section { padding: 16px; }
+  .grantForm { flex-direction: column; align-items: stretch; }
+  .grantForm button { width: 100%; }
+}

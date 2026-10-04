@@ -175,11 +175,17 @@ async def test_runtime_deletes_session_telemetry_and_conversation_history() -> N
     )
     telemetry.record("turn.total", duration_ms=100)
 
+    runtime.debug_log.bind("voice-delete").log("turn", "decision", "delete me")
+    runtime.debug_log.bind("voice-keep").log("turn", "decision", "keep me")
+
+    await runtime.debug_log.flush()
     result = await runtime.delete_session_history(
         ["voice-delete"], tenant_id="local", user_id="user"
     )
 
     assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1}
+    assert not await runtime.debug_log_query.session_timeline("voice-delete")
+    assert len(await runtime.debug_log_query.session_timeline("voice-keep")) == 1
     assert await runtime.diagnostics.session_detail("voice-delete") is None
     assert await runtime.journal.read(
         JournalScope(tenant_id="local", user_id="user", thread_id="voice-delete")

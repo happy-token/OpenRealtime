@@ -131,8 +131,12 @@ class ReportPlaybackProgress:
     played_audio_end_us: int
     precision: PlaybackPrecision = PlaybackPrecision.SEGMENT
     completed: bool = False
+    started: bool = False
+    stopped: bool = False
 
     def __post_init__(self) -> None:
+        if sum((self.started, self.stopped, self.completed)) > 1:
+            raise ValueError("playback phase flags are mutually exclusive")
         if not self.command_id or not self.idempotency_key or not self.speech_id:
             raise ValueError("playback progress identity must be non-empty")
         if self.delivered_text_end < 0 or self.played_audio_end_us < 0:

@@ -578,3 +578,35 @@ async def test_historical_timeout_stored_as_error_is_reclassified_in_summary() -
     assert detail.summary.error_count == 0
 
     await telemetry.close()
+
+
+async def test_capability_failures_without_duration_remain_visible_in_overview() -> None:
+    runtime = RuntimeTelemetry(InMemoryTelemetryStore())
+    await runtime.start()
+    try:
+        telemetry = runtime.bind(TelemetryIdentity("t", "u", "d", "s", "th"))
+        telemetry.record("tts.first_text_to_first_audio", duration_ms=100)
+        telemetry.record("realtime.capability.tts", outcome=TelemetryOutcome.ERROR)
+        await runtime.flush()
+        overview = await runtime.diagnostics.overview(DiagnosticsWindow.last(timedelta(minutes=1)))
+        assert overview.to_dict()["capability_failures"] == [{"capability": "tts", "error_count": 1, "timeout_count": 0}]
+    finally:
+        await runtime.close()
+
+
+async def test_collection_health_reports_queue_loss_and_pending_writes() -> None:
+    runtime = RuntimeTelemetry(InMemoryTelemetryStore(), max_queue_size=1)
+    await runtime.start()
+    try:
+        telemetry = runtime.bind(TelemetryIdentity("t", "u", "d", "s", "th"))
+        telemetry.record("accepted")
+        telemetry.record("dropped")
+        health = runtime.collection_health()
+        assert health["status"] == "degraded"
+        assert health["dropped_events"] == 1
+        assert health["pending_events"] == 1
+        await runtime.flush()
+        assert runtime.collection_health()["pending_events"] == 0
+        assert runtime.collection_health()["last_successful_write_at"]
+    finally:
+        await runtime.close()

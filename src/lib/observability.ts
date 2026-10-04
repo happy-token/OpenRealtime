@@ -26,6 +26,7 @@ export type DiagnosticsOverview = {
   interrupted_count: number;
   degraded_count: number;
   metrics: MetricAggregate[];
+  capability_failures?: { capability: string; error_count: number; timeout_count: number }[];
 };
 
 export type SessionSummary = {
@@ -68,9 +69,42 @@ export type TelemetryEvent = {
 };
 
 export type SessionDetail = {
+  next_cursor?: string | null;
   summary: SessionSummary;
   events: TelemetryEvent[];
 };
+
+export type DebugLogStage = "eot" | "interruption" | "turn" | "playback";
+
+export type DebugLogEntry = {
+  event_id: string;
+  voice_session_id: string;
+  sequence: number;
+  stage: DebugLogStage | string;
+  event: string;
+  summary: string;
+  occurred_at: string;
+  generation: number | null;
+  turn_id: string | null;
+  detail: Record<string, unknown>;
+};
+
+export type DebugLogTimeline = {
+  next_cursor?: string | null;
+  voice_session_id: string;
+  entries: DebugLogEntry[];
+};
+
+export const STAGE_LABELS: Record<string, string> = {
+  eot: "语义完整度判断",
+  interruption: "语义打断判断",
+  turn: "轮次终态",
+  playback: "播放",
+};
+
+export function stageLabel(stage: string): string {
+  return STAGE_LABELS[stage] ?? stage;
+}
 
 export function formatDuration(value: number | null): string {
   if (value === null) return "—";
@@ -83,6 +117,7 @@ export function formatRate(value: number | null): string {
 }
 
 export function formatClock(value: string): string {
+  if (!Number.isFinite(Date.parse(value))) return "—";
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -93,10 +128,10 @@ export function formatClock(value: string): string {
 
 export const METRIC_LABELS: Record<string, string> = {
   "coordinator.queue_wait": "Turn 队列等待",
-  "turn_policy.eot_classify": "语义完整度判断",
+  "turn_policy.eot_classify": "语义判停判断耗时",
   "engine.time_to_first_text": "Engine 首文本",
   "engine.time_to_first_speakable": "首个可朗读文本",
-  "tts.time_to_first_audio": "TTS 首音频",
+  "tts.time_to_first_audio": "回复启动 → 首音频（含生成）",
   "tts.connection_setup": "TTS 建连",
   "engine.time_to_first_audio": "Engine 首音频",
   "turn.time_to_first_text_sent": "服务端首文本发送",
@@ -112,14 +147,19 @@ export const METRIC_LABELS: Record<string, string> = {
   "router.plan": "路由规划",
   "conversation.respond": "对话生成与交付",
   "response.deliver": "响应交付",
-  "semantic_interruption.classify": "语义打断判断",
+  "semantic_interruption.classify": "语义打断判断耗时",
   "tool.policy.evaluate": "工具策略判断",
   "tool.execute": "工具执行",
   "provider.deepseek.chat.stream": "DeepSeek 流式生成",
   "provider.deepseek.tool_chat.complete": "DeepSeek 工具编排",
   "provider.doubao.tts.synthesize_stream": "豆包 TTS 流式合成",
   "provider.byte.web_search": "联网搜索",
-  "barge_in.time_to_client_stop": "打断到客户端停播",
+  "barge_in.time_to_client_stop": "确认打断到停播回执",
+  "barge_in.speech_start_to_client_stop": "有效打断开口到旧输出停播",
+  "turn.speech_end_to_client_playback": "用户停说到客户端首播",
+  "brain.time_to_first_text": "回复请求 → 首文本（含编排）",
+  "memory.retrieve": "记忆检索",
+  "knowledge.retrieve": "知识库检索",
   "client.network_jitter": "客户端网络抖动",
   "client.playback_underrun": "TTS 播放欠载",
   "client.transport_disconnect": "客户端断连恢复",
@@ -130,3 +170,43 @@ export const METRIC_LABELS: Record<string, string> = {
 export function metricLabel(name: string): string {
   return METRIC_LABELS[name] ?? name;
 }
+
+
+export const CORE_LATENCY_METRICS = [
+  "asr.speech_start_to_first_text", "asr.last_frame_to_final_text",
+  "llm.request_to_first_text", "tts.first_text_to_first_audio",
+  "turn_policy.eot_classify", "semantic_interruption.classify",
+] as const;
+export const METRIC_DESCRIPTIONS: Record<string, string> = {
+  "turn_policy.eot_classify": "语义判停判断开始 → 结果返回，含规则或分类器处理，不含判停前静音等待。",
+  "semantic_interruption.classify": "语义打断判断开始 → 结果返回，含规则或分类器处理，不等于客户端实际停播延迟。",
+  "asr.speech_start_to_first_text": "VAD 检测到开口 → 首次非空识别文本；含识别所需音频积累与 VAD 检测误差，不含开口前静音。",
+  "asr.last_frame_to_final_text": "最近一帧音频交给 ASR → 最终文本交付；不是用户停说到回复的整体延迟。",
+  "asr.input_to_first_text": "该轮第一帧音频 → 首文本，可能包含长时间静音与说话；仅作链路诊断，不代表模型处理耗时。",
+  "llm.request_to_first_text": "实际模型请求 → 首个非空文本增量（TTFT），不包含工具编排；当前未采集逐 Token 间隔。",
+  "tts.first_text_to_first_audio": "首段非空文本交给 TTS → 首个非空音频包，包含传输与合成，不含前置 LLM 生成。",
+  "provider.eot_classifier.classify": "语义判停分类器开始调用 → 判断返回，包含模型调用；规则直通不产生该模型样本。",
+  "provider.interruption_classifier.classify": "语义打断分类器开始调用 → 判断返回；规则直通不产生该模型样本，不等于停播延迟。",
+  "tts.time_to_first_audio": "回复启动 → 首音频事件，包含上游文本生成，不能视为纯 TTS 首包。",
+  "brain.time_to_first_text": "回复请求 → 首文本事件，包含路由、检索与编排，不能视为纯 LLM TTFT。",
+  "provider.deepseek.responses.stream": "DeepSeek 整次 Responses 流式请求耗时，不是首 Token 延迟。",
+  "provider.deepseek.chat.stream": "DeepSeek 整次 Chat 流式请求耗时，不是首 Token 延迟。",
+  "turn.endpoint_to_client_playback": "端点确认 → 客户端播放回执；不含端点确认前的判停等待。",
+};
+Object.assign(METRIC_LABELS, {
+  "asr.speech_start_to_first_text": "ASR 开口 → 首次识别文本",
+  "asr.input_to_first_text": "音频输入 → 首文本（含静音等待）",
+  "asr.last_frame_to_final_text": "ASR 最终文本交付等待",
+  "llm.request_to_first_text": "LLM 首文本响应（TTFT）",
+  "tts.first_text_to_first_audio": "TTS 首音频包响应",
+  "provider.eot_classifier.classify": "语义判停模型响应",
+  "provider.interruption_classifier.classify": "语义打断模型响应",
+  "brain.response_started": "回复请求 → 编排启动",
+  "provider.deepseek.responses.stream": "DeepSeek Responses 流式总耗时",
+});
+export function dashboardLatencyMetrics(metrics: MetricAggregate[]) {
+  const names = [...CORE_LATENCY_METRICS, ...metrics.map(metric => metric.name).filter(name => !(CORE_LATENCY_METRICS as readonly string[]).includes(name))];
+  return names.map(name => ({ name, metric: metrics.find(metric => metric.name === name) ?? null, description: METRIC_DESCRIPTIONS[name] ?? "已记录的事件或调用耗时；具体起止点请查看会话原始事件。" }));
+}
+
+export type CollectionHealth = { status: "ok" | "degraded" | "unavailable"; telemetry: { dropped_events: number; pending_events: number; write_error: boolean; storage_backend: string }; debug_log: { dropped_events: number; pending_events: number; write_error: boolean; storage_backend: string } };

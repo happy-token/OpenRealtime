@@ -191,3 +191,48 @@ def test_timing_spans_include_selected_instance_revision_without_content(monkeyp
     attributes = telemetry.record.call_args.kwargs["attributes"]
     assert attributes == {"instance_id": "instance-id", "config_version": "config-version"}
     assert "private transcript" not in str(telemetry.record.call_args)
+
+
+def test_speech_anchored_asr_latency_excludes_twenty_seconds_of_idle(monkeypatch) -> None:
+    telemetry = MagicMock()
+    timing = ProviderLatencyObserver(telemetry)
+    context = _context()
+    ticks = iter((1_000_000_000, 21_000_000_000, 21_180_000_000))
+    monkeypatch.setattr("server.realtime.provider_latency.time.monotonic_ns", lambda: next(ticks))
+    timing.asr_frame(context)
+    timing.asr_speech_started(context)
+    timing.asr_partial(context, "你好")
+    durations = {call.args[0]: call.kwargs["duration_ms"] for call in telemetry.record.call_args_list}
+    assert durations["asr.input_to_first_text"] == 20180
+    assert durations["asr.speech_start_to_first_text"] == 180
+
+
+def test_asr_without_vad_anchor_does_not_invent_speech_latency(monkeypatch) -> None:
+    telemetry = MagicMock()
+    timing = ProviderLatencyObserver(telemetry)
+    ticks = iter((1_000_000_000, 21_000_000_000))
+    monkeypatch.setattr("server.realtime.provider_latency.time.monotonic_ns", lambda: next(ticks))
+    timing.asr_frame(_context())
+    timing.asr_partial(_context(), "你好")
+    assert [call.args[0] for call in telemetry.record.call_args_list] == ["asr.input_to_first_text"]
+
+
+@pytest.mark.asyncio
+async def test_real_input_pipeline_routes_vad_onset_to_provider_timing() -> None:
+    import asyncio
+    from server.realtime.capabilities.input_pipeline import CascadedInputPipeline
+    from server.realtime.capabilities.vad import VadSpeechStarted
+
+    observed = asyncio.Event()
+    timing = MagicMock()
+    timing.asr_speech_started.side_effect = lambda _: observed.set()
+    pipeline = CascadedInputPipeline(
+        vad=_FakeSession([VadSpeechStarted(context=_context(), audio_timestamp_us=1000)]),
+        asr=_FakeSession([]), turn_manager=_FakeSession([]), context=_context(),
+        event_queue_size=8, provider_timing=timing,
+    )
+    try:
+        await asyncio.wait_for(observed.wait(), 1)
+        timing.asr_speech_started.assert_called_once_with(_context())
+    finally:
+        await pipeline.close()

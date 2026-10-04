@@ -5,13 +5,16 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
+from server.core.interaction_context import InteractionContext
 from server.observability.telemetry import (
+    SessionDebugLog,
     SessionTelemetry,
     TelemetryKind,
     TelemetryOutcome,
 )
 from server.realtime.protocol.commands import RealtimeCommand, RequestResponse
 from server.realtime.protocol.events import (
+    AssistantYieldRequested,
     AudioDelta,
     DialogueStateChanged,
     DisplayContentDelta,
@@ -36,14 +39,22 @@ class RealtimeObserver(Protocol):
 class RealtimeTelemetryObserver:
     """Keep telemetry mapping and timing anchors behind one small interface."""
 
-    def __init__(self, telemetry: SessionTelemetry) -> None:
+    def __init__(
+        self,
+        telemetry: SessionTelemetry,
+        *,
+        debug_log: SessionDebugLog | None = None,
+    ) -> None:
         self._telemetry = telemetry
+        self._debug_log = debug_log
         self._requested_ns: dict[str, int] = {}
         self._started_ns: dict[str, int] = {}
         self._first_text: set[str] = set()
         self._first_audio: set[str] = set()
         self._endpoint_committed_ns: dict[int, int] = {}
         self._playback_started: set[str] = set()
+        self._yield_requested_ns: dict[str, tuple[int, InteractionContext]] = {}
+        self._speech_response_ids: dict[str, str] = {}
 
     def observe_command(self, command: RealtimeCommand) -> None:
         if not isinstance(command, RequestResponse):
@@ -133,6 +144,7 @@ class RealtimeTelemetryObserver:
             )
             return
         if isinstance(event, AudioDelta):
+            self._speech_response_ids[event.speech_id or f"response:{event.response_id}"] = event.response_id
             if event.response_id in self._first_audio:
                 return
             self._first_audio.add(event.response_id)
@@ -158,6 +170,26 @@ class RealtimeTelemetryObserver:
             outcome = _failure_outcome(event.error)
             self._record_terminal(event, outcome, error=event.error)
             return
+        if isinstance(event, AssistantYieldRequested):
+            self._yield_requested_ns[context.response_id or f"generation:{context.generation}"] = (now, context)
+            self._telemetry.record(
+                "barge_in.detected",
+                generation=context.generation,
+                kind=TelemetryKind.MILESTONE,
+                turn_id=context.turn_id,
+                monotonic_ns=now,
+                occurred_at=event.occurred_at,
+                attributes={"reason": event.reason},
+            )
+            if self._debug_log is not None:
+                self._debug_log.log(
+                    "playback",
+                    "barge_in_detected",
+                    f"barge-in detected (reason={event.reason})",
+                    generation=context.generation,
+                    turn_id=context.turn_id,
+                )
+            return
         if isinstance(event, RealtimeCapabilityFailed):
             self._telemetry.record(
                 f"realtime.capability.{event.capability}",
@@ -174,7 +206,7 @@ class RealtimeTelemetryObserver:
             )
             return
         if isinstance(event, SpeechPlaybackProgress):
-            if event.speech_id not in self._playback_started:
+            if event.started and event.speech_id not in self._playback_started:
                 self._playback_started.add(event.speech_id)
                 endpoint_ns = self._endpoint_committed_ns.pop(
                     context.generation,
@@ -191,6 +223,33 @@ class RealtimeTelemetryObserver:
                         monotonic_ns=now,
                         occurred_at=event.occurred_at,
                     )
+            if event.stopped:
+                target = self._speech_response_ids.get(event.speech_id) or context.response_id or f"generation:{context.generation}"
+                pending_yield = self._yield_requested_ns.pop(target, None)
+                if pending_yield is not None and now >= pending_yield[0]:
+                    yield_ns, yield_context = pending_yield
+                    duration_ms = (now - yield_ns) / 1_000_000
+                    self._telemetry.record(
+                        "barge_in.time_to_client_stop",
+                        generation=yield_context.generation,
+                        kind=TelemetryKind.SPAN,
+                        duration_ms=duration_ms,
+                        turn_id=yield_context.turn_id,
+                        response_id=yield_context.response_id,
+                        monotonic_ns=now,
+                        occurred_at=event.occurred_at,
+                    )
+                    if self._debug_log is not None:
+                        self._debug_log.log(
+                            "playback",
+                            "barge_in_client_stopped",
+                            f"client confirmed stop {duration_ms:.0f}ms after barge-in detected",
+                            generation=yield_context.generation,
+                            turn_id=yield_context.turn_id,
+                        )
+            if event.completed or event.stopped:
+                self._playback_started.discard(event.speech_id)
+                self._speech_response_ids.pop(event.speech_id, None)
             self._telemetry.record(
                 "client.playback_progress",
                 generation=context.generation,
@@ -204,6 +263,8 @@ class RealtimeTelemetryObserver:
                     "played_audio_end_us": event.played_audio_end_us,
                     "precision": event.precision.value,
                     "completed": event.completed,
+                    "started": event.started,
+                    "stopped": event.stopped,
                 },
             )
 
@@ -256,6 +317,14 @@ class RealtimeTelemetryObserver:
             error=error,
             attributes={"realtime_event": type(event).__name__},
         )
+        if self._debug_log is not None:
+            self._debug_log.log(
+                "turn",
+                "terminal",
+                f"outcome={outcome.value}",
+                generation=event.context.generation,
+                turn_id=event.context.turn_id,
+            )
 
 
 def _failure_outcome(error: str) -> TelemetryOutcome:

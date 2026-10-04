@@ -17,18 +17,23 @@ from server.conversation_journal import (
     JournalScope,
 )
 from server.observability.telemetry import (
+    DebugLogQuery,
     DiagnosticsQuery,
+    InMemoryDebugLogStore,
     InMemoryTelemetryStore,
+    RuntimeDebugLog,
     RuntimeTelemetry,
     TelemetryIdentity,
     TelemetryOutcome,
 )
 from server.persistence.in_memory import InMemoryPersistence
 from server.persistence.postgres import (
+    PostgresDebugLogStore,
     PostgresPersistence,
     PostgresSpeechDeliveryStore,
     PostgresTelemetryStore,
 )
+from server.persistence.postgres.conversation_journal import PostgresConversationJournal
 from server.persistence.postgres.schema import validate_schema_name
 from server.persistence.unit_of_work import AgentPersistence
 from server.realtime.registry import ActiveRealtimeConversations
@@ -170,12 +175,15 @@ class ApplicationRuntime:
         persistence: AgentPersistence,
         telemetry: RuntimeTelemetry,
         *,
+        debug_log: RuntimeDebugLog | None = None,
         speech_deliveries: SpeechDeliveryStore | None = None,
         voice_session_admission: LocalVoiceSessionAdmissionController | None = None,
         pool: Any | None = None,
+        postgres_schema: str = "voiceagent",
     ) -> None:
         self.persistence = persistence
         self.telemetry = telemetry
+        self.debug_log = debug_log or RuntimeDebugLog(InMemoryDebugLogStore())
         self.speech_deliveries = speech_deliveries or InMemorySpeechDeliveryStore()
         self.voice_session_admission = (
             voice_session_admission or LocalVoiceSessionAdmissionController()
@@ -192,6 +200,7 @@ class ApplicationRuntime:
         self._agent_result_delivery_stop = asyncio.Event()
         self._agent_result_delivery_task: asyncio.Task[None] | None = None
         self._pool = pool
+        self._postgres_schema = validate_schema_name(postgres_schema)
         self._closed = False
 
     async def start(self) -> None:
@@ -234,6 +243,15 @@ class ApplicationRuntime:
     def diagnostics(self) -> DiagnosticsQuery:
         return self.telemetry.diagnostics
 
+    @property
+    def debug_log_query(self) -> DebugLogQuery:
+        return self.debug_log.query
+
+    def diagnostics_health(self) -> dict[str, Any]:
+        telemetry = self.telemetry.collection_health()
+        debug_log = self.debug_log.collection_health()
+        return {"status": "degraded" if telemetry["status"] != "ok" or debug_log["status"] != "ok" else "ok", "telemetry": telemetry, "debug_log": debug_log}
+
     async def delete_session_history(
         self,
         voice_session_ids: Sequence[str],
@@ -246,12 +264,25 @@ class ApplicationRuntime:
             raise TypeError("configured conversation journal does not support deletion")
         if not self.telemetry.supports_session_deletion:
             raise TypeError("configured telemetry store does not support deletion")
+        if not self.debug_log.supports_session_deletion:
+            raise TypeError("configured debug log store does not support deletion")
         selected = tuple(dict.fromkeys(voice_session_ids))
         scopes = tuple(
             JournalScope(tenant_id=tenant_id, user_id=user_id, thread_id=session_id)
             for session_id in selected
         )
         await self.telemetry.flush()
+        if self._pool is not None:
+            await self.debug_log.flush()
+            async with (
+                self._pool.acquire() as connection,
+                connection.transaction(),
+            ):
+                await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
+                deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(scopes)
+                deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
+            return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads}
+        await self.debug_log.delete_sessions(selected)
         deleted_threads = await journal.delete_threads(scopes)
         deleted_sessions = await self.telemetry.delete_sessions(selected)
         return {
@@ -275,8 +306,11 @@ class ApplicationRuntime:
         try:
             await self.telemetry.close()
         finally:
-            if self._pool is not None:
-                await self._pool.close()
+            try:
+                await self.debug_log.close()
+            finally:
+                if self._pool is not None:
+                    await self._pool.close()
 
 
 async def build_application_runtime(
@@ -288,9 +322,12 @@ async def build_application_runtime(
     if resolved.state_backend == "memory":
         telemetry = RuntimeTelemetry(InMemoryTelemetryStore())
         await telemetry.start()
+        debug_log = RuntimeDebugLog(InMemoryDebugLogStore())
+        await debug_log.start()
         runtime = ApplicationRuntime(
             InMemoryPersistence(),
             telemetry,
+            debug_log=debug_log,
             voice_session_admission=_voice_session_admission(
                 telemetry,
                 resolved.voice_capacity_limits(),
@@ -320,9 +357,14 @@ async def build_application_runtime(
         PostgresTelemetryStore(pool, schema=resolved.postgres_schema)
     )
     await telemetry.start()
+    debug_log = RuntimeDebugLog(
+        PostgresDebugLogStore(pool, schema=resolved.postgres_schema)
+    )
+    await debug_log.start()
     runtime = ApplicationRuntime(
         PostgresPersistence(pool, schema=resolved.postgres_schema),
         telemetry,
+        debug_log=debug_log,
         speech_deliveries=PostgresSpeechDeliveryStore(
             pool,
             schema=resolved.postgres_schema,
@@ -332,6 +374,7 @@ async def build_application_runtime(
             resolved.voice_capacity_limits(),
         ),
         pool=pool,
+        postgres_schema=resolved.postgres_schema,
     )
     await runtime.start()
     return runtime

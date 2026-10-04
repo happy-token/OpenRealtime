@@ -1,6 +1,6 @@
 import type { MetricAggregate, SessionDetail, TelemetryEvent } from "./observability";
 
-export type LatencyGroupId = "asr" | "llm" | "tts" | "e2e" | "network" | "playback";
+export type LatencyGroupId = "asr" | "llm" | "tts" | "e2e" | "barge_in" | "network" | "playback";
 
 export interface LatencyGroup {
   id: LatencyGroupId;
@@ -113,6 +113,7 @@ const GROUPS: Array<{
   { id: "llm", label: "大模型响应", description: "请求到首段回复文本", candidates: ["engine.time_to_first_text", /^provider\..+\.chat(?:\.stream)?$/] },
   { id: "tts", label: "TTS 首音", description: "首段文本到首个音频包", candidates: ["tts.time_to_first_audio", "tts.connection_setup", /^provider\..+\.tts\./] },
   { id: "e2e", label: "端到端首音", description: "端点确认到终端开始播放", candidates: ["turn.endpoint_to_client_playback", "turn.endpoint_to_first_audio", "turn.time_to_first_audio_sent"] },
+  { id: "barge_in", label: "打断响应", description: "检测到打断到客户端确认停播", candidates: ["barge_in.time_to_client_stop"] },
   { id: "network", label: "网络抖动", description: "TTS 音频块到达间隔波动", candidates: ["client.network_jitter"] },
   { id: "playback", label: "播放卡顿", description: "终端播放欠载累计时长", candidates: ["client.playback_underrun"] },
 ];

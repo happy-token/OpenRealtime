@@ -29,7 +29,7 @@ from server.control_plane import http as control_plane_http
 from server.control_plane.http import AvatarAssetHandler
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.log_context import VoiceSessionLogFilter
-from server.observability.telemetry import DiagnosticsQuery
+from server.observability.telemetry import DebugLogQuery, DiagnosticsQuery
 from server.transport.frames import InboundFrame, OutboundFrame, UserTextFrame
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,7 @@ class _SessionRuntime(Protocol):
 BuildSessionRuntime = Callable[[Any], _SessionRuntime]
 ServeFn = Callable[..., Awaitable[None]]
 DiagnosticsQueryFactory = Callable[[object], DiagnosticsQuery | None]
+DebugLogQueryFactory = Callable[[object], DebugLogQuery | None]
 VoicePreviewer = Callable[[str, str, int, str], Awaitable[tuple[bytes, str]]]
 SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
 SessionHistoryDeleter = Callable[[list[str]], Awaitable[dict[str, int]]]
@@ -126,6 +127,8 @@ async def _run(
     on_startup: LifecycleHook | None,
     on_shutdown: LifecycleHook | None,
     diagnostics_query_factory: DiagnosticsQueryFactory | None = None,
+    debug_log_query_factory: DebugLogQueryFactory | None = None,
+    diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     voice_previewer: VoicePreviewer | None = None,
     session_conversation_reader: SessionConversationReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
@@ -144,6 +147,11 @@ async def _run(
                 if diagnostics_query_factory is not None
                 else None
             )
+            debug_log_query = (
+                debug_log_query_factory(startup_state)
+                if debug_log_query_factory is not None
+                else None
+            )
             control_plane_server = control_plane_http.start(
                 session_registry,
                 diagnostics=diagnostics,
@@ -151,6 +159,8 @@ async def _run(
                 session_conversation_reader=session_conversation_reader,
                 session_history_deleter=session_history_deleter,
                 avatar_asset_handler=avatar_asset_handler,
+                debug_log_query=debug_log_query,
+                diagnostics_health_reader=diagnostics_health_reader,
                 port=control_plane_port,
             )
 
@@ -207,6 +217,8 @@ def run_app(
     on_startup: LifecycleHook | None = None,
     on_shutdown: LifecycleHook | None = None,
     diagnostics_query_factory: DiagnosticsQueryFactory | None = None,
+    debug_log_query_factory: DebugLogQueryFactory | None = None,
+    diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     voice_previewer: VoicePreviewer | None = None,
     session_conversation_reader: SessionConversationReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
@@ -263,6 +275,8 @@ def run_app(
                 on_startup=on_startup,
                 on_shutdown=on_shutdown,
                 diagnostics_query_factory=diagnostics_query_factory,
+                debug_log_query_factory=debug_log_query_factory,
+                diagnostics_health_reader=diagnostics_health_reader,
                 voice_previewer=voice_previewer,
                 session_conversation_reader=session_conversation_reader,
                 session_history_deleter=session_history_deleter,

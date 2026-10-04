@@ -4,13 +4,16 @@ from datetime import UTC, datetime
 
 from server.core.interaction_context import InteractionContext
 from server.observability.telemetry import (
+    InMemoryDebugLogStore,
     InMemoryTelemetryStore,
+    RuntimeDebugLog,
     RuntimeTelemetry,
     TelemetryIdentity,
     TelemetryOutcome,
 )
 from server.realtime.observability import RealtimeTelemetryObserver
 from server.realtime.protocol import (
+    AssistantYieldRequested,
     AudioDelta,
     AudioEncoding,
     AudioFrame,
@@ -207,6 +210,113 @@ async def test_realtime_observer_records_partial_asr_progress_without_raw_text()
     await runtime.close()
 
 
+async def test_realtime_observer_measures_barge_in_time_to_client_stop() -> None:
+    store = InMemoryTelemetryStore()
+    runtime = RuntimeTelemetry(store, flush_interval_s=0.01)
+    await runtime.start()
+    telemetry = runtime.bind(
+        TelemetryIdentity(
+            tenant_id="tenant-1",
+            user_id="user-1",
+            device_id="device-1",
+            voice_session_id="voice-1",
+            thread_id="thread-1",
+        )
+    )
+    debug_runtime = RuntimeDebugLog(InMemoryDebugLogStore())
+    await debug_runtime.start()
+    debug_log = debug_runtime.bind("voice-1")
+    observer = RealtimeTelemetryObserver(telemetry, debug_log=debug_log)
+
+    observer.observe_event(
+        AssistantYieldRequested(
+            event_id="yield-1",
+            context=context(),
+            conversation_sequence=1,
+            occurred_at=datetime.now(UTC),
+            reason="barge_in_floor_claim",
+        )
+    )
+    observer.observe_event(
+        SpeechPlaybackProgress(
+            event_id="progress-1",
+            context=context(),
+            conversation_sequence=2,
+            occurred_at=datetime.now(UTC),
+            speech_id="speech-1",
+            delivered_text_end=2,
+            delivered_speech_transcript="你好",
+            played_audio_end_us=12_000,
+            precision=PlaybackPrecision.SEGMENT,
+            completed=False,
+            stopped=True,
+        )
+    )
+
+    await runtime.flush()
+    detail = await runtime.diagnostics.session_detail("voice-1")
+    assert detail is not None
+    names = [record.name for record in detail.events]
+    assert "barge_in.detected" in names
+    assert "barge_in.time_to_client_stop" in names
+    stop_span = next(
+        record for record in detail.events if record.name == "barge_in.time_to_client_stop"
+    )
+    assert stop_span.duration_ms is not None
+    assert stop_span.duration_ms >= 0
+
+    await debug_runtime.flush()
+    timeline = await debug_runtime.query.session_timeline("voice-1")
+    assert [entry.event for entry in timeline] == [
+        "barge_in_detected",
+        "barge_in_client_stopped",
+    ]
+
+    await runtime.close()
+    await debug_runtime.close()
+
+
+async def test_realtime_observer_does_not_measure_stop_for_normal_playback_progress() -> None:
+    """A non-final progress report with no preceding yield must not fabricate
+    a barge-in span — only a real AssistantYieldRequested starts the clock."""
+
+    store = InMemoryTelemetryStore()
+    runtime = RuntimeTelemetry(store, flush_interval_s=0.01)
+    await runtime.start()
+    telemetry = runtime.bind(
+        TelemetryIdentity(
+            tenant_id="tenant-1",
+            user_id="user-1",
+            device_id="device-1",
+            voice_session_id="voice-1",
+            thread_id="thread-1",
+        )
+    )
+    observer = RealtimeTelemetryObserver(telemetry)
+
+    observer.observe_event(
+        SpeechPlaybackProgress(
+            event_id="progress-1",
+            context=context(),
+            conversation_sequence=1,
+            occurred_at=datetime.now(UTC),
+            speech_id="speech-1",
+            delivered_text_end=0,
+            delivered_speech_transcript="",
+            played_audio_end_us=0,
+            precision=PlaybackPrecision.SEGMENT,
+            completed=False,
+        )
+    )
+
+    await runtime.flush()
+    detail = await runtime.diagnostics.session_detail("voice-1")
+    assert detail is not None
+    names = [record.name for record in detail.events]
+    assert "barge_in.time_to_client_stop" not in names
+    await runtime.close()
+
+
 async def test_realtime_observer_records_endpoint_to_first_client_playback(
     monkeypatch,
 ) -> None:
@@ -253,6 +363,7 @@ async def test_realtime_observer_records_endpoint_to_first_client_playback(
             played_audio_end_us=0,
             precision=PlaybackPrecision.EXACT,
             completed=False,
+            started=True,
         )
     )
 
@@ -266,3 +377,65 @@ async def test_realtime_observer_records_endpoint_to_first_client_playback(
     )
     assert metric.duration_ms == 700.0
     await runtime.close()
+
+
+async def test_stop_ack_is_explicit_and_survives_response_cancellation() -> None:
+    from dataclasses import replace
+    from server.realtime.protocol import ResponseCancelled
+    store = InMemoryTelemetryStore()
+    runtime = RuntimeTelemetry(store)
+    await runtime.start()
+    try:
+        telemetry = runtime.bind(TelemetryIdentity("t", "u", "d", "voice-1", "thread"))
+        observer = RealtimeTelemetryObserver(telemetry)
+        now = datetime.now(UTC)
+        base = dict(context=context(), conversation_sequence=1, occurred_at=now)
+        observer.observe_event(AssistantYieldRequested(event_id="yield", reason="barge_in_floor_claim", **base))
+        progress = SpeechPlaybackProgress(event_id="progress", speech_id="speech", delivered_text_end=0, delivered_speech_transcript="", played_audio_end_us=0, precision=PlaybackPrecision.SEGMENT, completed=False, **base)
+        observer.observe_event(progress)
+        await runtime.flush()
+        detail = await runtime.diagnostics.session_detail("voice-1")
+        assert not any(e.name == "barge_in.time_to_client_stop" for e in detail.events)
+        observer.observe_event(ResponseCancelled(event_id="cancel", response_id="response-1", response_sequence=1, reason="barge_in_floor_claim", **base))
+        observer.observe_event(replace(progress, event_id="stopped", stopped=True))
+        await runtime.flush()
+        detail = await runtime.diagnostics.session_detail("voice-1")
+        assert len([e for e in detail.events if e.name == "barge_in.time_to_client_stop"]) == 1
+    finally:
+        await runtime.close()
+
+
+async def test_direct_metric_records_inherit_task_local_generation() -> None:
+    from server.observability.telemetry import telemetry_generation_scope
+    runtime = RuntimeTelemetry(InMemoryTelemetryStore())
+    await runtime.start()
+    try:
+        telemetry = runtime.bind(TelemetryIdentity("t", "u", "d", "voice-1", "thread"))
+        with telemetry_generation_scope(7):
+            record = telemetry.record("llm.request_to_first_text", duration_ms=100)
+        assert record.generation == 7
+        assert telemetry.record("unscoped").generation is None
+    finally:
+        await runtime.close()
+
+
+async def test_stop_for_another_response_does_not_consume_pending_yield() -> None:
+    from dataclasses import replace
+    runtime = RuntimeTelemetry(InMemoryTelemetryStore())
+    await runtime.start()
+    try:
+        observer = RealtimeTelemetryObserver(runtime.bind(TelemetryIdentity("t", "u", "d", "voice-1", "thread")))
+        now = datetime.now(UTC)
+        observer.observe_event(AssistantYieldRequested(event_id="yield", context=context(), conversation_sequence=1, occurred_at=now, reason="barge_in_floor_claim"))
+        progress = SpeechPlaybackProgress(event_id="wrong-stop", context=replace(context(), response_id="response-2", generation=2), conversation_sequence=2, occurred_at=now, speech_id="response:response-2", delivered_text_end=0, delivered_speech_transcript="", played_audio_end_us=0, precision=PlaybackPrecision.SEGMENT, completed=False, stopped=True)
+        observer.observe_event(progress)
+        await runtime.flush()
+        assert not any(event.name == "barge_in.time_to_client_stop" for event in (await runtime.diagnostics.session_detail("voice-1")).events)
+        observer.observe_event(replace(progress, event_id="correct-stop", context=context(), speech_id="response:response-1"))
+        await runtime.flush()
+        metrics = [event for event in (await runtime.diagnostics.session_detail("voice-1")).events if event.name == "barge_in.time_to_client_stop"]
+        assert len(metrics) == 1
+        assert metrics[0].generation == 1
+        assert metrics[0].response_id == "response-1"
+    finally:
+        await runtime.close()

@@ -204,6 +204,7 @@ class DiagnosticsOverview:
     interrupted_count: int
     degraded_count: int
     metrics: tuple[MetricAggregate, ...]
+    capability_failures: tuple[dict[str, Any], ...] = ()
 
     @property
     def success_rate(self) -> float | None:
@@ -235,6 +236,7 @@ class DiagnosticsOverview:
             "interrupted_count": self.interrupted_count,
             "degraded_count": self.degraded_count,
             "metrics": [metric.to_dict() for metric in self.metrics],
+            "capability_failures": list(self.capability_failures),
         }
 
 
@@ -260,9 +262,11 @@ class SessionSummary:
 class SessionDetail:
     summary: SessionSummary
     events: tuple[TelemetryRecord, ...]
+    next_cursor: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "next_cursor": self.next_cursor,
             "summary": self.summary.to_dict(),
             "events": [event.to_dict() for event in self.events],
         }
@@ -283,7 +287,7 @@ class DiagnosticsQuery(Protocol):
         limit: int = 50,
     ) -> tuple[SessionSummary, ...]: ...
 
-    async def session_detail(self, voice_session_id: str) -> SessionDetail | None: ...
+    async def session_detail(self, voice_session_id: str, *, after_event_id: str | None = None) -> SessionDetail | None: ...
 
 
 @runtime_checkable
@@ -325,7 +329,7 @@ class InMemoryTelemetryStore(TelemetryWriter, DiagnosticsQuery):
         )
         return tuple(summaries[:limit])
 
-    async def session_detail(self, voice_session_id: str) -> SessionDetail | None:
+    async def session_detail(self, voice_session_id: str, *, after_event_id: str | None = None) -> SessionDetail | None:
         if not voice_session_id:
             raise ValueError("voice_session_id must be non-empty")
         async with self._lock:
@@ -347,7 +351,14 @@ class InMemoryTelemetryStore(TelemetryWriter, DiagnosticsQuery):
                 ),
             )
         )
-        return SessionDetail(summary=_session_summary(ordered), events=ordered)
+        start = 0
+        if after_event_id is not None:
+            matches = [index for index, record in enumerate(ordered) if record.event_id == after_event_id]
+            if not matches:
+                raise ValueError("unknown telemetry cursor")
+            start = matches[0] + 1
+        page = ordered[start:start + 5000]
+        return SessionDetail(summary=_session_summary(ordered), events=page, next_cursor=page[-1].event_id if page and start + len(page) < len(ordered) else None)
 
     async def delete_sessions(self, voice_session_ids: Sequence[str]) -> int:
         selected = frozenset(voice_session_ids)
@@ -409,7 +420,19 @@ class RuntimeTelemetry:
         self._writer_task: asyncio.Task[None] | None = None
         self._closed = False
         self._last_error: str | None = None
+        self._pending_events = 0
+        self._last_successful_write_at: str | None = None
         self._dropped_records = 0
+
+    def collection_health(self) -> dict[str, Any]:
+        return {
+            "status": "degraded" if self._last_error or self._dropped_records else "ok",
+            "storage_backend": "postgres" if type(self._store).__name__.startswith("Postgres") else "memory",
+            "write_error": self._last_error is not None,
+            "pending_events": self._pending_events,
+            "dropped_events": self._dropped_records,
+            "last_successful_write_at": self._last_successful_write_at,
+        }
 
     @property
     def diagnostics(self) -> DiagnosticsQuery:
@@ -454,6 +477,7 @@ class RuntimeTelemetry:
             raise RuntimeError("runtime telemetry must be started before recording")
         try:
             self._queue.put_nowait(record)
+            self._pending_events += 1
         except asyncio.QueueFull:
             self._dropped_records += 1
             if self._dropped_records == 1 or not (
@@ -513,6 +537,8 @@ class RuntimeTelemetry:
                 raise
             else:
                 self._last_error = None
+                self._pending_events -= len(pending)
+                self._last_successful_write_at = datetime.now(UTC).isoformat()
                 batch.clear()
 
         while True:
@@ -590,6 +616,8 @@ class SessionTelemetry:
     ) -> TelemetryRecord:
         if not name:
             raise ValueError("telemetry record name must be non-empty")
+        if generation is None:
+            generation = _TELEMETRY_GENERATION.get()
         if generation is not None and generation < 0:
             raise ValueError("telemetry generation must be non-negative")
         if generation is not None:
@@ -927,6 +955,355 @@ class SessionTelemetry:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class DebugLogEntry:
+    """One human-readable troubleshooting fact for a voice session.
+
+    Separate from :class:`TelemetryRecord`: this is a narrative ("EOT=complete
+    via llm_eot_classifier") for an operator or an AI diagnosing one session,
+    not a numeric sample destined for percentile aggregation. The two stores
+    fail independently — a debug-log write failure must never affect latency
+    telemetry, and vice versa.
+    """
+
+    event_id: str
+    voice_session_id: str
+    sequence: int
+    stage: str
+    event: str
+    summary: str
+    occurred_at: datetime
+    generation: int | None = None
+    turn_id: str | None = None
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.voice_session_id or not self.stage or not self.event or not self.summary:
+            raise ValueError("debug log entry identity and summary must be non-empty")
+        if self.sequence < 1:
+            raise ValueError("debug log sequence must be positive")
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("debug log occurred_at must be timezone-aware")
+        if self.generation is not None and self.generation < 0:
+            raise ValueError("debug log generation must be non-negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "voice_session_id": self.voice_session_id,
+            "sequence": self.sequence,
+            "stage": self.stage,
+            "event": self.event,
+            "summary": self.summary,
+            "occurred_at": self.occurred_at.isoformat(),
+            "generation": self.generation,
+            "turn_id": self.turn_id,
+            "detail": dict(self.detail),
+        }
+
+
+class DebugLogWriter(Protocol):
+    async def append_batch(self, entries: Sequence[DebugLogEntry]) -> None: ...
+
+
+@runtime_checkable
+class DebugLogQuery(Protocol):
+    async def session_timeline(
+        self, voice_session_id: str, *, limit: int = 2000, after_event_id: str | None = None
+    ) -> tuple[DebugLogEntry, ...]: ...
+
+
+@runtime_checkable
+class DebugLogRetention(Protocol):
+    async def delete_sessions(self, voice_session_ids: Sequence[str]) -> int: ...
+
+
+class InMemoryDebugLogStore(DebugLogWriter, DebugLogQuery):
+    """Deterministic adapter for local development and interface tests."""
+
+    def __init__(self) -> None:
+        self._entries: list[DebugLogEntry] = []
+        self._lock = asyncio.Lock()
+
+    async def append_batch(self, entries: Sequence[DebugLogEntry]) -> None:
+        async with self._lock:
+            self._entries.extend(entries)
+
+    async def delete_sessions(self, voice_session_ids: Sequence[str]) -> int:
+        selected = set(voice_session_ids)
+        async with self._lock:
+            deleted = {entry.voice_session_id for entry in self._entries if entry.voice_session_id in selected}
+            self._entries = [entry for entry in self._entries if entry.voice_session_id not in selected]
+        return len(deleted)
+
+    async def session_timeline(
+        self, voice_session_id: str, *, limit: int = 2000, after_event_id: str | None = None
+    ) -> tuple[DebugLogEntry, ...]:
+        if not voice_session_id:
+            raise ValueError("voice_session_id must be non-empty")
+        if limit < 1:
+            raise ValueError("debug log limit must be positive")
+        async with self._lock:
+            matched = tuple(
+                entry
+                for entry in self._entries
+                if entry.voice_session_id == voice_session_id
+            )
+        ordered = sorted(matched, key=lambda entry: (entry.sequence, entry.event_id))
+        if after_event_id is not None:
+            matches = [index for index, entry in enumerate(ordered) if entry.event_id == after_event_id]
+            if not matches:
+                raise ValueError("unknown debug log cursor")
+            ordered = ordered[matches[0] + 1:]
+        return ordered[:limit]
+
+
+class _DebugLogFlush:
+    def __init__(self, future: asyncio.Future[None]) -> None:
+        self.future = future
+
+
+class _DebugLogStop:
+    pass
+
+
+_DebugLogQueueItem = DebugLogEntry | _DebugLogFlush | _DebugLogStop
+
+
+class RuntimeDebugLog:
+    """Non-blocking write interface with its own ordered background writer.
+
+    Deliberately does not share a queue, batch size, or writer task with
+    :class:`RuntimeTelemetry` — the two subsystems answer different
+    questions (what happened vs. how long did it take) and must not be able
+    to back-pressure or fail each other.
+    """
+
+    def __init__(
+        self,
+        store: DebugLogWriter,
+        *,
+        batch_size: int = 64,
+        flush_interval_s: float = 0.25,
+        max_queue_size: int = 10_000,
+    ) -> None:
+        if batch_size < 1:
+            raise ValueError("debug log batch_size must be positive")
+        if flush_interval_s <= 0:
+            raise ValueError("debug log flush_interval_s must be positive")
+        if max_queue_size < 1:
+            raise ValueError("debug log max_queue_size must be positive")
+        self._store = store
+        self._batch_size = batch_size
+        self._flush_interval_s = flush_interval_s
+        self._queue: asyncio.Queue[_DebugLogQueueItem] = asyncio.Queue(
+            maxsize=max_queue_size
+        )
+        self._writer_task: asyncio.Task[None] | None = None
+        self._closed = False
+        self._last_error: str | None = None
+        self._pending_events = 0
+        self._last_successful_write_at: str | None = None
+        self._dropped_entries = 0
+
+    def collection_health(self) -> dict[str, Any]:
+        return {
+            "status": "degraded" if self._last_error or self._dropped_entries else "ok",
+            "storage_backend": "postgres" if type(self._store).__name__.startswith("Postgres") else "memory",
+            "write_error": self._last_error is not None,
+            "pending_events": self._pending_events,
+            "dropped_events": self._dropped_entries,
+            "last_successful_write_at": self._last_successful_write_at,
+        }
+
+    @property
+    def query(self) -> DebugLogQuery:
+        if not isinstance(self._store, DebugLogQuery):
+            raise TypeError("configured debug log store does not support queries")
+        return self._store
+
+    @property
+    def supports_session_deletion(self) -> bool:
+        return isinstance(self._store, DebugLogRetention)
+
+    async def delete_sessions(self, voice_session_ids: Sequence[str]) -> int:
+        if not isinstance(self._store, DebugLogRetention):
+            raise TypeError("configured debug log store does not support deletion")
+        await self.flush()
+        return await self._store.delete_sessions(voice_session_ids)
+
+    @property
+    def pending_entries(self) -> int:
+        return self._queue.qsize()
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    @property
+    def dropped_entries(self) -> int:
+        return self._dropped_entries
+
+    async def start(self) -> None:
+        if self._closed:
+            raise RuntimeError("runtime debug log is closed")
+        if self._writer_task is None:
+            self._writer_task = asyncio.create_task(
+                self._run_writer(),
+                name="runtime-debug-log-writer",
+            )
+
+    def bind(self, voice_session_id: str) -> SessionDebugLog:
+        if self._closed:
+            raise RuntimeError("runtime debug log is closed")
+        return SessionDebugLog(self, voice_session_id)
+
+    def _enqueue(self, entry: DebugLogEntry) -> None:
+        if self._closed:
+            return
+        if self._writer_task is None:
+            raise RuntimeError("runtime debug log must be started before logging")
+        try:
+            self._queue.put_nowait(entry)
+            self._pending_events += 1
+        except asyncio.QueueFull:
+            self._dropped_entries += 1
+            if self._dropped_entries == 1 or not (
+                self._dropped_entries & (self._dropped_entries - 1)
+            ):
+                logger.error(
+                    "runtime debug log queue full; dropped_entries=%d",
+                    self._dropped_entries,
+                )
+
+    async def flush(self) -> None:
+        if self._writer_task is None:
+            return
+        future = asyncio.get_running_loop().create_future()
+        await self._queue.put(_DebugLogFlush(future))
+        await future
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        task, self._writer_task = self._writer_task, None
+        if task is None:
+            return
+        try:
+            await asyncio.wait_for(self._queue.put(_DebugLogStop()), timeout=2.0)
+        except TimeoutError:
+            logger.error("runtime debug log queue did not accept shutdown within 2 seconds")
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            return
+        try:
+            await asyncio.wait_for(task, timeout=2.0)
+        except TimeoutError:
+            logger.error("runtime debug log writer did not stop within 2 seconds")
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _run_writer(self) -> None:
+        batch: list[DebugLogEntry] = []
+
+        async def persist() -> None:
+            if not batch:
+                return
+            pending = tuple(batch)
+            try:
+                await self._store.append_batch(pending)
+            except Exception as error:
+                self._last_error = f"{type(error).__name__}: {error}"
+                logger.exception("runtime debug log batch write failed")
+                raise
+            else:
+                self._last_error = None
+                self._pending_events -= len(pending)
+                self._last_successful_write_at = datetime.now(UTC).isoformat()
+                batch.clear()
+
+        while True:
+            if len(batch) >= self._batch_size:
+                try:
+                    await persist()
+                except Exception:  # noqa: BLE001 - retry the isolated writer
+                    await asyncio.sleep(min(self._flush_interval_s, 1.0))
+                    continue
+            try:
+                item = await asyncio.wait_for(
+                    self._queue.get(),
+                    timeout=self._flush_interval_s,
+                )
+            except TimeoutError:
+                try:
+                    await persist()
+                except Exception:  # noqa: BLE001 - retry the isolated writer
+                    await asyncio.sleep(min(self._flush_interval_s, 1.0))
+                continue
+
+            if isinstance(item, DebugLogEntry):
+                batch.append(item)
+                if len(batch) >= self._batch_size:
+                    try:
+                        await persist()
+                    except Exception:  # noqa: BLE001 - retry the isolated writer
+                        await asyncio.sleep(min(self._flush_interval_s, 1.0))
+                continue
+            if isinstance(item, _DebugLogFlush):
+                try:
+                    await persist()
+                except Exception as error:  # noqa: BLE001 - report flush failure to caller
+                    if not item.future.done():
+                        item.future.set_exception(error)
+                else:
+                    if not item.future.done():
+                        item.future.set_result(None)
+                continue
+            try:
+                await persist()
+            except Exception:  # noqa: BLE001 - shutdown cannot fail the voice runtime
+                logger.error("runtime debug log closed with unpersisted entries")
+            return
+
+
+class SessionDebugLog:
+    """Session-bound facade; callers never construct storage entries."""
+
+    def __init__(self, runtime: RuntimeDebugLog, voice_session_id: str) -> None:
+        if not voice_session_id:
+            raise ValueError("voice_session_id must be non-empty")
+        self._runtime = runtime
+        self._voice_session_id = voice_session_id
+        self._sequence = 0
+
+    def log(
+        self,
+        stage: str,
+        event: str,
+        summary: str,
+        *,
+        generation: int | None = None,
+        turn_id: str | None = None,
+        detail: Mapping[str, Any] | None = None,
+    ) -> DebugLogEntry:
+        self._sequence += 1
+        entry = DebugLogEntry(
+            event_id=str(uuid.uuid4()),
+            voice_session_id=self._voice_session_id,
+            sequence=self._sequence,
+            stage=stage,
+            event=event,
+            summary=summary,
+            occurred_at=datetime.now(UTC),
+            generation=generation,
+            turn_id=turn_id,
+            detail=redact_attributes(detail or {}),
+        )
+        self._runtime._enqueue(entry)
+        return entry
+
+
 _SENSITIVE_ATTRIBUTE_MARKERS = (
     "api_key",
     "authorization",
@@ -1117,6 +1494,12 @@ def _overview(
         _metric_aggregate(name, samples)
         for name, samples in sorted(durations.items())
     )
+    failures: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if record.name.startswith("realtime.capability.") and record.outcome in {TelemetryOutcome.ERROR, TelemetryOutcome.TIMEOUT}:
+            capability = record.name.removeprefix("realtime.capability.")
+            row = failures.setdefault(capability, {"capability": capability, "error_count": 0, "timeout_count": 0})
+            row["timeout_count" if record.outcome is TelemetryOutcome.TIMEOUT else "error_count"] += 1
     terminals = [record for record in records if record.kind is TelemetryKind.TERMINAL]
     interrupted = [record for record in terminals if _record_is_expected_interruption(record)]
     now = window.until or datetime.now(UTC)
@@ -1143,6 +1526,7 @@ def _overview(
             record.outcome is TelemetryOutcome.DEGRADED for record in records
         ),
         metrics=metrics,
+        capability_failures=tuple(failures[name] for name in sorted(failures)),
     )
 
 

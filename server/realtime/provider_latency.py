@@ -39,12 +39,14 @@ class ProviderLatencyMetrics:
     asr_final_tail_ms: float | None
     tts_first_audio_ms: float | None
     llm_first_text_ms: float | None
+    asr_speech_to_first_text_ms: float | None = None
 
 
 class ProviderLatencyTrace:
     """Measure the four PRD spans without inventing values for missing events."""
 
     def __init__(self) -> None:
+        self._asr_speech_start: int | None = None
         self._asr_first_frame: int | None = None
         self._asr_last_frame: int | None = None
         self._asr_first_text: int | None = None
@@ -53,6 +55,11 @@ class ProviderLatencyTrace:
         self._tts_first_audio: int | None = None
         self._llm_request: int | None = None
         self._llm_first_text: int | None = None
+
+    def asr_speech_started(self, *, at_ns: int | None = None) -> None:
+        # The first detected onset is stable across pauses in the same input.
+        if self._asr_speech_start is None and self._asr_first_text is None:
+            self._asr_speech_start = _time(at_ns)
 
     def asr_audio_frame(self, *, at_ns: int | None = None) -> None:
         now = _time(at_ns)
@@ -96,6 +103,7 @@ class ProviderLatencyTrace:
 
     def snapshot(self) -> ProviderLatencyMetrics:
         return ProviderLatencyMetrics(
+            asr_speech_to_first_text_ms=_span(self._asr_speech_start, self._asr_first_text),
             asr_first_text_ms=_span(self._asr_first_frame, self._asr_first_text),
             asr_final_tail_ms=_span(self._asr_last_frame, self._asr_final),
             tts_first_audio_ms=_span(self._tts_first_text, self._tts_first_audio),
@@ -125,6 +133,9 @@ class ProviderLatencyObserver:
         self._asr: dict[tuple[str, int], ProviderLatencyTrace] = {}
         self._tts: dict[tuple[str, str], ProviderLatencyTrace] = {}
 
+    def asr_speech_started(self, context: InteractionContext) -> None:
+        self._asr.setdefault(self._asr_key(context), ProviderLatencyTrace()).asr_speech_started()
+
     def asr_frame(self, context: InteractionContext) -> None:
         self._asr.setdefault(self._asr_key(context), ProviderLatencyTrace()).asr_audio_frame()
 
@@ -136,6 +147,7 @@ class ProviderLatencyObserver:
         trace.asr_partial_text(text)
         if before is None:
             self._record("asr.input_to_first_text", context, trace.snapshot().asr_first_text_ms)
+            self._record("asr.speech_start_to_first_text", context, trace.snapshot().asr_speech_to_first_text_ms)
 
     def asr_final(self, context: InteractionContext, text: str) -> None:
         trace = self._asr.pop(self._asr_key(context), None)
@@ -146,6 +158,7 @@ class ProviderLatencyObserver:
         metrics = trace.snapshot()
         if before is None:
             self._record("asr.input_to_first_text", context, metrics.asr_first_text_ms)
+            self._record("asr.speech_start_to_first_text", context, metrics.asr_speech_to_first_text_ms)
         self._record("asr.last_frame_to_final_text", context, metrics.asr_final_tail_ms)
 
     def asr_discard(self, turns: set[tuple[str, int]]) -> None:

@@ -14,7 +14,9 @@ from server.endpoint_session.in_memory_session import InMemoryEndpointSession
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.telemetry import (
     DiagnosticsWindow,
+    InMemoryDebugLogStore,
     InMemoryTelemetryStore,
+    RuntimeDebugLog,
     RuntimeTelemetry,
     TelemetryIdentity,
     TelemetryKind,
@@ -487,6 +489,105 @@ async def test_observability_endpoints_expose_overview_sessions_and_timeline() -
     await telemetry.close()
 
 
+async def test_latency_breakdown_groups_existing_metrics_by_name_prefix() -> None:
+    registry = EndpointSessionRegistry()
+    store = InMemoryTelemetryStore()
+    telemetry = RuntimeTelemetry(store)
+    await telemetry.start()
+    session = telemetry.bind(
+        TelemetryIdentity(
+            tenant_id="local",
+            user_id="user",
+            device_id="browser",
+            voice_session_id="voice-observed",
+            thread_id="voice-observed",
+        )
+    )
+    session.record(
+        "tts.time_to_first_audio",
+        generation=1,
+        kind=TelemetryKind.SPAN,
+        duration_ms=180,
+        outcome=TelemetryOutcome.OK,
+    )
+    session.record(
+        "barge_in.time_to_client_stop",
+        generation=1,
+        kind=TelemetryKind.SPAN,
+        duration_ms=90,
+        outcome=TelemetryOutcome.OK,
+    )
+    await telemetry.flush()
+    server = control_plane_http.start(registry, diagnostics=store, port=0)
+    port = server.server_address[1]
+    try:
+        status, breakdown = await asyncio.to_thread(
+            _get,
+            f"http://127.0.0.1:{port}/observability/latency/breakdown?minutes=60",
+        )
+        assert status == 200
+        assert breakdown["groups"]["tts."][0]["name"] == "tts.time_to_first_audio"
+        assert breakdown["groups"]["barge_in."][0]["name"] == "barge_in.time_to_client_stop"
+    finally:
+        server.shutdown()
+    await telemetry.close()
+
+
+async def test_latency_breakdown_without_diagnostics_returns_404() -> None:
+    server = control_plane_http.start(EndpointSessionRegistry(), port=0)
+    port = server.server_address[1]
+    try:
+        status, body = await asyncio.to_thread(
+            _get,
+            f"http://127.0.0.1:{port}/observability/latency/breakdown",
+        )
+        assert status == 404
+        assert body == {"error": "diagnostics are not configured"}
+    finally:
+        server.shutdown()
+
+
+async def test_debug_log_endpoint_exposes_session_timeline() -> None:
+    runtime = RuntimeDebugLog(InMemoryDebugLogStore())
+    await runtime.start()
+    session = runtime.bind("voice-debug")
+    session.log("eot", "decision", "EOT=complete via llm_eot_classifier", generation=1)
+    session.log("interruption", "decision", "label=stop source=rule", generation=1)
+    await runtime.flush()
+
+    server = control_plane_http.start(
+        EndpointSessionRegistry(),
+        debug_log_query=runtime.query,
+        port=0,
+    )
+    port = server.server_address[1]
+    try:
+        status, body = await asyncio.to_thread(
+            _get,
+            f"http://127.0.0.1:{port}/observability/sessions/voice-debug/debug-log",
+        )
+        assert status == 200
+        assert body["voice_session_id"] == "voice-debug"
+        assert [entry["stage"] for entry in body["entries"]] == ["eot", "interruption"]
+    finally:
+        server.shutdown()
+    await runtime.close()
+
+
+async def test_debug_log_endpoint_without_query_returns_404() -> None:
+    server = control_plane_http.start(EndpointSessionRegistry(), port=0)
+    port = server.server_address[1]
+    try:
+        status, body = await asyncio.to_thread(
+            _get,
+            f"http://127.0.0.1:{port}/observability/sessions/voice-debug/debug-log",
+        )
+        assert status == 404
+        assert body == {"error": "debug log is not configured"}
+    finally:
+        server.shutdown()
+
+
 async def test_session_conversation_endpoint_exposes_admin_replay_items() -> None:
     async def read_conversation(session_id: str) -> list[dict]:
         assert session_id == "voice-replay"
@@ -628,5 +729,16 @@ async def test_observability_failure_returns_generic_json_500() -> None:
         assert status == 500
         assert body == {"error": "control-plane request failed"}
         assert "password" not in str(body)
+    finally:
+        server.shutdown()
+
+
+async def test_diagnostics_health_reports_collection_degradation() -> None:
+    snapshot = {"status": "degraded", "telemetry": {"dropped_events": 3, "write_error": False}, "debug_log": {"dropped_events": 0, "write_error": True}}
+    server = control_plane_http.start(EndpointSessionRegistry(), diagnostics_health_reader=lambda: snapshot, port=0)
+    try:
+        status, body = await asyncio.to_thread(_get, f"http://127.0.0.1:{server.server_address[1]}/observability/health")
+        assert status == 200
+        assert body == snapshot
     finally:
         server.shutdown()

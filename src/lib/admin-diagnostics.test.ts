@@ -18,20 +18,22 @@ function metric(name: string, p50: number, p95: number, sampleCount = 4): Metric
 }
 
 describe("buildLatencyGroups", () => {
-  it("projects provider-specific telemetry into stable ASR, LLM, TTS and end-to-end groups", () => {
+  it("projects provider-specific telemetry into stable ASR, LLM, TTS, end-to-end and barge-in groups", () => {
     const groups = buildLatencyGroups([
       metric("asr.final_tail", 120, 280),
       metric("provider.deepseek.chat.stream", 610, 1_420),
       metric("tts.time_to_first_audio", 230, 540),
       metric("turn.endpoint_to_client_playback", 1_440, 2_360),
+      metric("barge_in.time_to_client_stop", 85, 190),
     ]);
 
-    expect(groups).toHaveLength(6);
+    expect(groups).toHaveLength(7);
     expect(groups).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "asr", p50_ms: 120, p95_ms: 280, sample_count: 4 }),
       expect.objectContaining({ id: "llm", p50_ms: 610, p95_ms: 1_420, sample_count: 4 }),
       expect.objectContaining({ id: "tts", p50_ms: 230, p95_ms: 540, sample_count: 4 }),
       expect.objectContaining({ id: "e2e", p50_ms: 1_440, p95_ms: 2_360, sample_count: 4 }),
+      expect.objectContaining({ id: "barge_in", p50_ms: 85, p95_ms: 190, sample_count: 4 }),
     ]));
   });
 });

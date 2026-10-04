@@ -490,6 +490,7 @@ class RealtimeWebSocketFrameBridge:
                     played_audio_end_us=0,
                     precision=PlaybackPrecision.SEGMENT,
                     completed=False,
+                    started=True,
                 )
             )
             return
@@ -520,9 +521,9 @@ class RealtimeWebSocketFrameBridge:
             )
         await self._conversation.send(
             ReportPlaybackProgress(
-                command_id=f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop'}",
+                command_id=f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop' if frame.stopped else f'progress:{played_audio_end_us}'}",
                 idempotency_key=(
-                    f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop'}"
+                    f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop' if frame.stopped else f'progress:{played_audio_end_us}'}"
                 ),
                 context=self._turn_context(frame.generation),
                 speech_id=playback.speech_id,
@@ -530,6 +531,7 @@ class RealtimeWebSocketFrameBridge:
                 played_audio_end_us=played_audio_end_us,
                 precision=precision,
                 completed=frame.finished,
+                stopped=frame.stopped,
             )
         )
         if frame.finished or frame.stopped:
@@ -572,6 +574,8 @@ class RealtimeWebSocketFrameBridge:
                 played_audio_end_us=played_audio_end_us,
                 precision=PlaybackPrecision.EXACT,
                 completed=frame.phase == "finished",
+                started=frame.phase == "started",
+                stopped=frame.phase == "stopped",
             )
         )
         if frame.phase in {"finished", "stopped"}:

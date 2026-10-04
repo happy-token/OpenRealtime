@@ -41,6 +41,7 @@ from server.realtime.capabilities.vad import (
     AnalyzeVadAudio,
     VadCapabilityProvider,
     VadCapabilitySession,
+    VadSpeechStarted,
 )
 from server.realtime.protocol.audio import AudioFrame
 
@@ -79,6 +80,7 @@ class CascadedInputPipeline:
     ) -> None:
         self._context = context
         self._vad = vad
+        self._provider_timing = provider_timing
         if provider_timing:
             from server.realtime.provider_latency import TimedAsrSession
 
@@ -228,6 +230,8 @@ class CascadedInputPipeline:
 
     async def _route_vad(self) -> None:
         async for event in self._vad.events():
+            if self._provider_timing is not None and isinstance(event, VadSpeechStarted):
+                self._provider_timing.asr_speech_started(event.context)
             await self._turn_manager.send(ObserveVadEvent(event=event))
 
     async def _route_asr(self) -> None:

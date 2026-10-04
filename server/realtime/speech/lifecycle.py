@@ -145,6 +145,8 @@ class SpeechLifecycle:
             played_audio_end_us=command.played_audio_end_us,
             precision=command.precision,
             completed=command.completed,
+            started=command.started,
+            stopped=command.stopped,
         )
 
     async def cancel(

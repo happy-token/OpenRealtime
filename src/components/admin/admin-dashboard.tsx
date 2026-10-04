@@ -1,238 +1,83 @@
 "use client";
-import { useLanguage } from "@/components/language/language-provider";
-
-import { SelectMenu } from "@/components/ui/select-menu";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  ArrowUpRight,
-  AudioLines,
-  Bot,
-  Check,
-  Clock3,
-  LogOut,
-  Mic2,
-  RefreshCw,
-  RadioTower,
-  TriangleAlert,
-  Trash2,
-  Volume2,
-  Wifi,
-  X,
-} from "lucide-react";
-import styles from "@/app/admin/admin.module.css";
-import { buildLatencyGroups } from "@/lib/admin-diagnostics";
-import {
-  formatClock,
-  formatDuration,
-  formatRate,
-  metricLabel,
-  type DiagnosticsOverview,
-  type MetricAggregate,
-  type SessionSummary,
-} from "@/lib/observability";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { WorkspaceShell } from "@/components/workspace/workspace-shell";
+import { useLanguage } from "@/components/language/language-provider";
+import { dashboardLatencyMetrics, formatClock, formatDuration, formatRate, metricLabel, type DiagnosticsOverview, type SessionSummary } from "@/lib/observability";
+import styles from "./diagnostics-workspace.module.css";
 
-const REFRESH_MS = 10_000;
-
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: "no-store" });
-  const payload = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-  return payload;
+async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
+  const response = await fetch(url, { cache: "no-store", signal });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+  return body;
 }
-
-export function AdminDashboard({ username }: { username: string }) {
+export function AdminDashboard({ username, preview }: { username: string; preview?: { overview: DiagnosticsOverview; sessions: SessionSummary[] } }) {
   const { t } = useLanguage();
-  const [minutes, setMinutes] = useState(60);
-  const [overview, setOverview] = useState<DiagnosticsOverview | null>(null);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [error, setError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [minutes, setMinutes] = useState(1440);
+  const [overview, setOverview] = useState<DiagnosticsOverview | null>(preview?.overview ?? null);
+  const [sessions, setSessions] = useState<SessionSummary[]>(preview?.sessions ?? []);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const [nextOverview, nextSessions] = await Promise.all([
-        getJson<DiagnosticsOverview>(`/api/observability/overview?minutes=${minutes}`),
-        getJson<SessionSummary[]>(`/api/observability/sessions?minutes=${minutes}&limit=100`),
-      ]);
-      setOverview(nextOverview);
-      setSessions(nextSessions);
-      const available = new Set(nextSessions.map((session) => session.voice_session_id));
-      setSelectedSessions((current) => new Set([...current].filter((sessionId) => available.has(sessionId))));
-      setUpdatedAt(new Date());
-      setError("");
-    } catch (cause) {
-      if (cause instanceof Error && cause.message === "未登录") window.location.reload();
-      setError(cause instanceof Error ? cause.message : "诊断数据加载失败");
-    } finally {
-      setRefreshing(false);
-    }
-  }, [minutes]);
-
+  const [revision, setRevision] = useState(0);
+  const [busy, setBusy] = useState(!preview);
+  const [health, setHealth] = useState<import("@/lib/observability").CollectionHealth | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
-
-  const groups = useMemo(() => buildLatencyGroups(overview?.metrics ?? []), [overview]);
-  const serviceHealth = useMemo(() => buildServiceHealth(overview?.metrics ?? []), [overview]);
-  const sortedMetrics = useMemo(
-    () => [...(overview?.metrics ?? [])].sort((a, b) => b.p95_ms - a.p95_ms),
-    [overview],
-  );
-  const allSessionsSelected = sessions.length > 0 && sessions.every(
-    (session) => selectedSessions.has(session.voice_session_id),
-  );
-
-  async function logout() {
-    await fetch("/api/admin/logout", { method: "POST" });
-    window.location.reload();
-  }
-
-  function toggleSession(sessionId: string) {
-    setSelectedSessions((current) => {
-      const next = new Set(current);
-      if (next.has(sessionId)) next.delete(sessionId);
-      else next.add(sessionId);
-      return next;
+    if (preview) return;
+    const controller = new AbortController();
+    setBusy(true); setErrors([]); setSelectedIds([]); setOverview(null); setSessions([]);
+    void Promise.allSettled([
+      getJson<DiagnosticsOverview>(`/api/observability/overview?minutes=${minutes}`, controller.signal),
+      getJson<SessionSummary[]>(`/api/observability/sessions?minutes=${minutes}&limit=500`, controller.signal),
+      getJson<import("@/lib/observability").CollectionHealth>("/api/observability/health", controller.signal),
+    ]).then(([aggregate, list, collection]) => {
+      if (controller.signal.aborted) return;
+      const failures: string[] = [];
+      if (aggregate.status === "fulfilled") setOverview(aggregate.value); else failures.push("总览指标暂时不可用");
+      if (list.status === "fulfilled") setSessions(list.value); else failures.push("会话列表暂时不可用");
+      setHealth(collection.status === "fulfilled" && collection.value?.telemetry && collection.value?.debug_log ? collection.value : null);
+      setErrors(failures); setBusy(false);
     });
-  }
-
-  function toggleAllSessions() {
-    setSelectedSessions(
-      allSessionsSelected
-        ? new Set()
-        : new Set(sessions.map((session) => session.voice_session_id)),
-    );
-  }
-
-  async function deleteSelectedSessions() {
-    const sessionIds = [...selectedSessions];
-    if (!sessionIds.length || deleting) return;
+    return () => controller.abort();
+  }, [minutes, revision, preview]);
+  const deleteSelected = async () => {
+    if (preview || !selectedIds.length || deleting) return;
+    if (!window.confirm(`永久删除这 ${selectedIds.length} 个会话的诊断记录？此操作无法撤销。`)) return;
     setDeleting(true);
     try {
-      const response = await fetch("/api/observability/sessions", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_ids: sessionIds }),
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-      setSelectedSessions(new Set());
-      setConfirmDelete(false);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "历史会话删除失败");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <main className={styles.shell}>
-      <header className={styles.header}>
-        <div className={styles.identity}>
-          <span className={styles.logo}><RadioTower /></span>
-          <div><h1>{t("运行诊断")}</h1></div>
-        </div>
-        <div className={styles.headerActions}>
-          <label>{t("观察窗口")}<SelectMenu fullWidth value={String(minutes)} ariaLabel={t("观察窗口")} options={[{ value: String(15), label: t("15 分钟") }, { value: String(60), label: t("1 小时") }, { value: String(360), label: t("6 小时") }, { value: String(1440), label: t("24 小时") }, { value: String(10080), label: t("7 天") }]} onChange={value => setMinutes(Number(value))} /></label>
-          <button type="button" onClick={() => void refresh()} aria-label={t("刷新数据")}><RefreshCw className={refreshing ? styles.spinning : ""} /></button>
-          <button type="button" onClick={() => void logout()} aria-label={t("退出 ") + (username) + ""}><LogOut /></button>
-        </div>
-      </header>
-
-      <section className={styles.statusLine}>
-        <span><i />{t("实时采样中")}</span>
-        <p>{updatedAt ? "" + (updatedAt.toLocaleTimeString("zh-CN", { hour12: false })) + t(" 更新") : t("正在连接诊断服务")}</p>
-      </section>
-      {error ? <div className={styles.errorBanner}><TriangleAlert />{t(error)}</div> : null}
-
-      <section className={styles.summaryGrid} aria-label={t("运行概览")}>
-        <SummaryCard label={t("有效回复成功率")} value={formatRate(overview?.success_rate ?? null)} hint={`${overview?.successful_turn_count ?? 0} / ${Math.max(0, (overview?.turn_count ?? 0) - (overview?.interrupted_count ?? 0))} turns · ${overview?.interrupted_count ?? 0} 次正常打断`} />
-        <SummaryCard label={t("模型服务超时")} value={String(serviceHealth.modelTimeouts)} hint="LLM / TTS / ASR" alert={serviceHealth.modelTimeouts > 0} />
-        <SummaryCard label={t("断连 / 异常")} value={String(serviceHealth.disconnects)} hint={`${overview?.error_count ?? 0} 个错误`} alert={serviceHealth.disconnects > 0 || (overview?.error_count ?? 0) > 0} />
-        <SummaryCard label={t("播放稳定度")} value={serviceHealth.smoothness === null ? "—" : `${serviceHealth.smoothness.toFixed(1)}%`} hint={`${serviceHealth.underruns} 次欠载`} alert={serviceHealth.smoothness !== null && serviceHealth.smoothness < 98} />
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeading}><div><h2>{t("链路耗时")}</h2></div><p>{t("P50 / P95，覆盖 ASR、模型、TTS、网络和终端播放")}</p></div>
-        <div className={styles.latencyGrid}>
-          {groups.map((group, index) => <LatencyCard key={group.id} group={group} icon={[Mic2, Bot, Volume2, Clock3, Wifi, AudioLines][index]} />)}
-        </div>
-      </section>
-
-      <section className={styles.serviceStrip}>
-        <ServiceMetric icon={Mic2} label={t("ASR 连接")} value={formatDuration(serviceHealth.asrConnect?.p95_ms ?? null)} sub="P95 会话建立" />
-        <ServiceMetric icon={Volume2} label={t("TTS 连接 / 首包")} value={formatDuration(serviceHealth.ttsFirstPacket?.p95_ms ?? null)} sub="P95，含连接复用" />
-        <ServiceMetric icon={Bot} label={t("大模型首响")} value={formatDuration(serviceHealth.llm?.p95_ms ?? null)} sub={`${serviceHealth.llm?.timeout_count ?? 0} 次超时`} />
-        <ServiceMetric icon={Activity} label={t("端到端首播")} value={formatDuration(groups.find((group) => group.id === "e2e")?.p95_ms ?? null)} sub="用户停说到听见声音" />
-      </section>
-
-      <section className={styles.twoColumn}>
-        <div className={styles.panel}>
-          <div className={styles.panelHeading}><div><h2>{t("历史会话")}</h2></div><div className={styles.historyActions}><button type="button" onClick={toggleAllSessions} disabled={!sessions.length}>{allSessionsSelected ? t("取消全选") : t("全选")}</button><button type="button" data-danger disabled={!selectedSessions.size} onClick={() => setConfirmDelete(true)}><Trash2 />{t("删除 ")}{selectedSessions.size || ""}</button><b>{sessions.length}</b></div></div>
-          <div className={styles.sessionList}>
-            {sessions.map((session) => (
-              <div className={styles.sessionRow} data-selected={selectedSessions.has(session.voice_session_id)} key={session.voice_session_id}>
-                <label className={styles.sessionSelect} title={t("选择会话")}><input type="checkbox" checked={selectedSessions.has(session.voice_session_id)} onChange={() => toggleSession(session.voice_session_id)} aria-label={t("选择会话 ") + (session.voice_session_id) + ""} /><span><Check /></span></label>
-                <Link href={`/admin/sessions/${encodeURIComponent(session.voice_session_id)}`}>
-                  <span className={styles.sessionPulse} data-alert={session.error_count > 0 || session.timeout_count > 0} />
-                  <span><strong>{session.voice_session_id.slice(0, 16)}</strong><small>{formatClock(session.last_event_at)} · {session.event_count}{t(" 条事件")}</small></span>
-                  <span className={styles.badges}><i>{session.turn_count} turns</i>{session.timeout_count ? <i data-alert>{session.timeout_count} timeout</i> : null}{session.error_count ? <i data-alert>{session.error_count} error</i> : null}</span>
-                  <ArrowUpRight />
-                </Link>
-              </div>
-            ))}
-            {!sessions.length ? <p className={styles.empty}>{t("观察窗口内暂无会话")}</p> : null}
-          </div>
-        </div>
-
-        <div className={styles.panel}>
-          <div className={styles.panelHeading}><div><h2>{t("性能明细")}</h2></div><b>{sortedMetrics.length}</b></div>
-          <div className={styles.metricTable}><table><thead><tr><th>{t("指标")}</th><th>{t("样本")}</th><th>P50</th><th>P95</th><th>{t("超时")}</th><th>{t("错误")}</th></tr></thead><tbody>{sortedMetrics.map((metric) => <tr key={metric.name}><td><strong>{metricLabel(metric.name)}</strong><small>{metric.name}</small></td><td>{metric.sample_count}</td><td>{formatDuration(metric.p50_ms)}</td><td>{formatDuration(metric.p95_ms)}</td><td data-alert={metric.timeout_count > 0}>{metric.timeout_count}</td><td data-alert={metric.error_count > 0}>{metric.error_count}</td></tr>)}</tbody></table>{!sortedMetrics.length ? <p className={styles.empty}>{t("等待指标样本")}</p> : null}</div>
-        </div>
-      </section>
-
-      {confirmDelete ? <div className={styles.confirmBackdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !deleting && setConfirmDelete(false)}><section className={styles.confirmDialog} role="dialog" aria-modal="true" aria-labelledby="delete-session-title"><button className={styles.confirmClose} type="button" onClick={() => setConfirmDelete(false)} disabled={deleting} aria-label={t("关闭")}><X /></button><span className={styles.confirmIcon}><Trash2 /></span><div><h2 id="delete-session-title">{t("删除 ")}{selectedSessions.size}{t(" 个历史会话？")}</h2><p>{t("对应的对话正文、链路耗时、性能指标和诊断日志将被永久删除，操作不可恢复。活动中的会话不会被删除。")}</p></div><div className={styles.confirmActions}><button type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}>{t("取消")}</button><button type="button" data-danger onClick={() => void deleteSelectedSessions()} disabled={deleting}><Trash2 />{deleting ? t("正在删除…") : t("确认永久删除")}</button></div></section></div> : null}
-    </main>
-  );
+      const response = await fetch("/api/observability/sessions", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_ids: selectedIds }) });
+      if (!response.ok) throw new Error("删除失败");
+      setSelectedIds([]); refresh();
+    } catch { setErrors(previous => [...previous, "删除失败，请稍后重试"]); }
+    finally { setDeleting(false); }
+  };
+  const filtered = useMemo(() => sessions.filter(session => session.voice_session_id.toLowerCase().includes(query.trim().toLowerCase()) && (status === "all" || (session.error_count + session.timeout_count + session.no_response_count > 0) === (status === "abnormal"))), [sessions, query, status]);
+  const metric = (name: string) => overview?.metrics.find(value => value.name === name);
+  const response = metric("turn.speech_end_to_client_playback");
+  const responseProxy = metric("turn.endpoint_to_client_playback");
+  const stop = metric("barge_in.speech_start_to_client_stop");
+  const stopProxy = metric("barge_in.time_to_client_stop");
+  const histogram = Array.from({ length: 12 }, (_, index) => {
+    const end = Date.now(), width = minutes * 60_000 / 12;
+    return sessions.filter(session => { const at = Date.parse(session.first_event_at); return at >= end - width * (12 - index) && at < end - width * (11 - index); }).length;
+  });
+  return <WorkspaceShell><div className={styles.page}>
+    {preview ? <p className={styles.muted}>主题预览 · 示例数据 · 复用真实后台组件</p> : null}
+    <header className={styles.heading}><div><h1>{t("运行总览")}</h1><div className={styles.muted}>{t("数据日志后台")} · {username}</div></div><button onClick={refresh} disabled={busy || Boolean(preview)} aria-label={t("刷新数据")}><RefreshCw size={16} /></button></header>
+    <div className={styles.toolbar}><input className={styles.search} value={query} onChange={event => setQuery(event.target.value)} aria-label={t("搜索 Session ID")} placeholder={t("搜索 Session ID")} /><select disabled={Boolean(preview)} aria-label={t("观察窗口")} value={minutes} onChange={event => setMinutes(Number(event.target.value))}><option value={60}>1 小时</option><option value={1440}>24 小时</option><option value={10080}>7 天</option></select><select aria-label={t("状态筛选")} value={status} onChange={event => setStatus(event.target.value)}><option value="all">全部状态</option><option value="abnormal">异常</option><option value="normal">正常</option></select>{/^[A-Za-z0-9._:-]{1,128}$/.test(query.trim()) ? <Link className={styles.button} href={preview ? `/demos/diagnostics?session=${encodeURIComponent(query.trim())}` : `/admin/sessions/${encodeURIComponent(query.trim())}`}>{t("按 ID 查看详情")}</Link> : null}</div>
+    {busy ? <p className={styles.busy}>{t("正在读取诊断数据…")}</p> : null}
+    {errors.map(error => <div role="alert" className={styles.error} key={error}>{t(error)}</div>)}
+    <div className={styles.kpis}><Kpi title={t("会话量")} value={String(overview?.session_count ?? "—")} hint={t("当前时间窗口，全局统计")} /><Kpi title={t("有效回复成功率")} value={formatRate(overview?.success_rate ?? null)} hint={`${overview?.successful_turn_count ?? "—"} / ${overview ? overview.turn_count - overview.interrupted_count : "—"}`} /><Kpi title={t("用户停说 → 客户端首播")} value={formatDuration(response?.p95_ms ?? null)} hint={response ? `P95 · n=${response.sample_count}` : `未采集；端点到播放回执 P95 ${formatDuration(responseProxy?.p95_ms ?? null)}`} /><Kpi title={t("有效打断开口 → 旧输出停播")} value={formatDuration(stop?.p95_ms ?? null)} hint={stop ? `P95 · n=${stop.sample_count}` : `未采集；确认到停播回执 P95 ${formatDuration(stopProxy?.p95_ms ?? null)}`} /></div>
+    <section className={styles.panel}><div className={styles.panelhead}><h2>{t("会话活动趋势")}</h2><span className={styles.muted}>{t("当前窗口内的会话开始数")}</span></div><div className={styles.trend} role="img" aria-label={t("会话开始数分布")}>{histogram.map((count, index) => <div key={index} title={`区间 ${index + 1}: ${count} 个会话`} style={{ height: `${count / Math.max(1, ...histogram) * 100}%` }} />)}</div><div className={styles.note}>{sessions.length >= 500 ? "列表已达 500 条上限，活动趋势可能不完整。" : "趋势基于已加载会话；指标卡统计范围由观察窗口决定，Session ID 与状态筛选仅作用于列表。"}</div></section>
+    {!preview && !busy && health?.status !== "ok" ? <p className={styles.error} role="status">{health ? `日志采集异常：遥测丢弃 ${health.telemetry.dropped_events} 条，决策日志丢弃 ${health.debug_log.dropped_events} 条；写入失败 ${health.telemetry.write_error || health.debug_log.write_error ? "是" : "否"}。这是进程级统计，会话日志完整性需核查。` : "采集健康状态不可用，无法确认日志完整性。"}</p> : null}
+    <section className={styles.panel}><div className={styles.panelhead}><h2>{t("模块响应延迟")}</h2><span className={styles.muted}>P50 / P95 / P99</span></div><div className={styles.note}>分位数基于当前窗口内全部已计时尝试（包括失败与取消），不是仅成功请求；未采集阶段不显示为零。</div><div className={styles.modules}>{dashboardLatencyMetrics(overview?.metrics ?? []).map(({ name, metric: value, description }) => <article className={styles.module} key={name}><div className={styles.modulehead}><span title={name}>{metricLabel(name)}</span><strong>{value?.sample_count ? formatDuration(value.p95_ms) : "未采集"}</strong></div>{value?.sample_count ? <><div className={styles.bar}><i style={{ width: `${Math.min(100, value.p95_ms / Math.max(1, ...(overview?.metrics ?? []).map(item => item.p95_ms)) * 100)}%` }} /></div><small className={styles.muted}>P50 {formatDuration(value.p50_ms)} · P95 {formatDuration(value.p95_ms)} · P99 {formatDuration(value.p99_ms)} · n={value.sample_count}<br />计时样本错误 {value.error_count} · 超时 {value.timeout_count} · 取消 {value.cancelled_count}</small></> : <p className={styles.muted}>当前窗口无耗时样本；不代表零延迟。</p>}<p className={styles.metricdescription}>{description}</p></article>)}</div></section>
+    <section className={styles.panel}><h2>模块失败事件</h2><p className={styles.muted}>包含未产生耗时样本的能力失败；事件数不等于失败请求数。</p>{overview?.capability_failures ? overview.capability_failures.length ? overview.capability_failures.map(item => <p key={item.capability}>{item.capability}：错误 {item.error_count} · 超时 {item.timeout_count}</p>) : <p>当前窗口未记录能力失败事件。</p> : <p>该统计尚不可用。</p>}</section>
+    <section className={styles.panel}><div className={styles.panelhead}><h2>{t("会话日志")}</h2><button disabled={Boolean(preview) || !selectedIds.length || deleting || busy} onClick={deleteSelected}>{deleting ? "正在删除…" : `删除选中 (${selectedIds.length})`}</button><span className={styles.muted}>{filtered.length} / {sessions.length}</span></div><div className={styles.tablewrap}><table><thead><tr><th>选择</th><th>开始时间</th><th>Session ID</th><th>时长</th><th>轮次</th><th>状态</th><th>错误 / 超时</th><th>事件</th><th>操作</th></tr></thead><tbody>{filtered.map(session => <tr key={session.voice_session_id}><td><input type="checkbox" disabled={Boolean(preview) || deleting || busy} aria-label={`选择会话 ${session.voice_session_id}`} checked={selectedIds.includes(session.voice_session_id)} onChange={event => setSelectedIds(previous => event.target.checked ? [...previous, session.voice_session_id].slice(0, 100) : previous.filter(id => id !== session.voice_session_id))} /></td><td>{formatClock(session.first_event_at)}</td><td>{session.voice_session_id}</td><td>{formatDuration(Date.parse(session.last_event_at) - Date.parse(session.first_event_at))}</td><td>{session.turn_count}</td><td>{session.error_count + session.timeout_count + session.no_response_count ? "需关注" : "未发现异常"}</td><td>{session.error_count} / {session.timeout_count}</td><td>{session.event_count}</td><td><Link className={styles.button} aria-label={`查看会话 ${session.voice_session_id}`} href={preview ? `/demos/diagnostics?session=${encodeURIComponent(session.voice_session_id)}` : `/admin/sessions/${encodeURIComponent(session.voice_session_id)}`}>{t("查看详情")} →</Link></td></tr>)}</tbody></table></div>{!busy && !filtered.length ? <p className={styles.empty}>{t("没有匹配会话。可直接输入 Session ID 查询历史详情。")}</p> : null}<div className={styles.note}>{t("用量和费用作为辅助信息，待采集后展示。")}</div></section>
+  </div></WorkspaceShell>;
 }
-
-function SummaryCard({ label, value, hint, alert = false }: { label: string; value: string; hint: string; alert?: boolean }) {
-  const { t } = useLanguage();
-  return <article className={styles.summaryCard} data-alert={alert}><span>{t(label)}</span><strong>{value}</strong><small>{hint}</small></article>;
-}
-
-function LatencyCard({ group, icon: Icon }: { group: ReturnType<typeof buildLatencyGroups>[number]; icon: typeof Mic2 }) {
-  const { t } = useLanguage();
-  return <article className={styles.latencyCard}><span className={styles.metricIcon}><Icon /></span><div><span>{group.label}</span><strong>{formatDuration(group.p95_ms)}</strong><small>P50 {formatDuration(group.p50_ms)} · {group.sample_count} {t("样本")}</small></div>{group.timeout_count || group.error_count ? <i>{group.timeout_count + group.error_count}</i> : null}</article>;
-}
-
-function ServiceMetric({ icon: Icon, label, value, sub }: { icon: typeof Mic2; label: string; value: string; sub: string }) {
-  const { t } = useLanguage();
-  return <article><Icon /><div><span>{t(label)}</span><strong>{value}</strong><small>{sub}</small></div></article>;
-}
-
-function buildServiceHealth(metrics: MetricAggregate[]) {
-  const asrConnect = metrics.find((metric) => metric.name === "asr.start_session") ?? null;
-  const ttsFirstPacket = metrics.find((metric) => metric.name === "tts.connection_setup")
-    ?? metrics.find((metric) => metric.name === "tts.time_to_first_audio")
-    ?? null;
-  const llm = metrics.find((metric) => /^provider\..+\.chat(?:\.stream)?$/.test(metric.name)) ?? null;
-  const providerMetrics = metrics.filter((metric) => metric.name.startsWith("provider.") || metric.name.startsWith("asr."));
-  const modelTimeouts = providerMetrics.reduce((sum, metric) => sum + metric.timeout_count, 0);
-  const disconnects = metrics.filter((metric) => /disconnect|connection_(?:closed|lost)|transport_disconnect|session_restarted/.test(metric.name)).reduce((sum, metric) => sum + metric.sample_count, 0);
-  const playbackSamples = metrics.find((metric) => metric.name === "client.network_jitter")?.sample_count ?? 0;
-  const underruns = metrics.find((metric) => metric.name === "client.playback_underrun")?.sample_count ?? 0;
-  const smoothness = playbackSamples ? Math.max(0, (1 - underruns / playbackSamples) * 100) : null;
-  return { asrConnect, ttsFirstPacket, llm, modelTimeouts, disconnects, underruns, smoothness };
-}
+function Kpi({ title, value, hint }: { title: string; value: string; hint: string }) { return <article className={styles.kpi}><small>{title}</small><strong>{value}</strong><small>{hint}</small></article>; }
