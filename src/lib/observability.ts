@@ -194,11 +194,11 @@ export const METRIC_DESCRIPTIONS: Record<string, string> = {
   "turn.endpoint_to_client_playback": "端点确认 → 客户端播放回执；不含端点确认前的判停等待。",
 };
 Object.assign(METRIC_LABELS, {
-  "asr.speech_start_to_first_text": "ASR 开口 → 首次识别文本",
+  "asr.speech_start_to_first_text": "ASR 首包延迟",
   "asr.input_to_first_text": "音频输入 → 首文本（含静音等待）",
-  "asr.last_frame_to_final_text": "ASR 最终文本交付等待",
+  "asr.last_frame_to_final_text": "ASR 尾包延迟",
   "llm.request_to_first_text": "LLM 首文本响应（TTFT）",
-  "tts.first_text_to_first_audio": "TTS 首音频包响应",
+  "tts.first_text_to_first_audio": "TTS 首包延迟",
   "provider.eot_classifier.classify": "语义判停模型响应",
   "provider.interruption_classifier.classify": "语义打断模型响应",
   "brain.response_started": "回复请求 → 编排启动",
