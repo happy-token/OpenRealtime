@@ -48,3 +48,43 @@ async def test_source_is_marked_as_untrusted(tmp_path):
     assert (await knowledge.search("apples"))[0].startswith(
         '[资料来源: {"title": "Notes", "document_id": "knowledge-one"}]\n<untrusted_knowledge>'
     )
+
+
+@pytest.mark.asyncio
+async def test_shared_updates_and_deletes_are_visible_to_all_bound_roles_without_restarting(tmp_path):
+    document = {"document_id": "knowledge-one", "owner_id": "alice", "role_id": "role-one",
+                "title": "Guide", "content": "old apples", "revision": 1}
+    catalog = {"documents": [document], "bindings": [
+        {"owner_id": "alice", "role_id": "role-one", "document_ids": ["knowledge-one"]},
+        {"owner_id": "alice", "role_id": "role-two", "document_ids": ["knowledge-one"]},
+    ]}
+    file = tmp_path / "catalog.json"
+    file.write_text(json.dumps(catalog), encoding="utf-8")
+    knowledge = LocalCatalogKnowledgeBase("alice", root=tmp_path)
+    knowledge.select_role("role-two")
+    assert "old apples" in (await knowledge.search("apples"))[0]
+    knowledge.select_role("role-three")
+    assert await knowledge.search("apples") == []
+    knowledge.select_role("role-one")
+    assert "old apples" in (await knowledge.search("apples"))[0]
+    document.update(content="new bananas", revision=2)
+    file.write_text(json.dumps(catalog), encoding="utf-8")
+    assert await knowledge.search("apples") == []
+    assert "new bananas" in (await knowledge.search("bananas"))[0]
+    knowledge.select_role("role-two")
+    assert "new bananas" in (await knowledge.search("bananas"))[0]
+    catalog["documents"] = []
+    file.write_text(json.dumps(catalog), encoding="utf-8")
+    assert await knowledge.search("bananas") == []
+
+
+@pytest.mark.asyncio
+async def test_forged_binding_does_not_cross_owner_boundary(tmp_path):
+    (tmp_path / "catalog.json").write_text(json.dumps({
+        "documents": [{"document_id": "knowledge-one", "owner_id": "alice", "role_id": None,
+                       "title": "Private", "content": "secret apples"}],
+        "bindings": [{"owner_id": "bob", "role_id": "role-one", "document_ids": ["knowledge-one"]}],
+    }), encoding="utf-8")
+    knowledge = LocalCatalogKnowledgeBase("bob", root=tmp_path)
+    knowledge.select_role("role-one")
+    assert await knowledge.search("apples") == []

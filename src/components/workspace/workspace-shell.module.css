@@ -82,9 +82,9 @@
 .searchField input { min-width: 0; height: 100%; flex: 1; border: 0; outline: 0; color: var(--text); background: transparent; font-size: .79rem; }
 .searchField button svg { width: 15px; }
 .recentList { height: calc(100% - 34px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb,var(--accent) 68%,var(--text-dim)) color-mix(in srgb,var(--text) 9%,transparent); scrollbar-gutter: stable; }
-.recentList a { height: 34px; margin-inline: 8px; padding: 0 8px; display: flex; align-items: center; overflow: hidden; border-radius: 7px; color: var(--text-dim); font-size: .8rem; text-decoration: none; }
-.recentList a:hover { color: var(--text); background: var(--control-surface-hover); }
-.recentList a span { overflow: hidden; text-overflow: ellipsis; }
+.recentRow > a { height: 34px; margin-inline: 8px; padding: 0 8px; display: flex; align-items: center; overflow: hidden; border-radius: 7px; color: var(--text-dim); font-size: .8rem; text-decoration: none; }
+.recentRow > a:hover { color: var(--text); background: var(--control-surface-hover); }
+.recentRow > a span { overflow: hidden; text-overflow: ellipsis; }
 .recentList p { margin: 8px 16px; color: var(--text-faint); font-size: .73rem; }
 .accountArea { position: relative; flex: 0 0 auto; margin: 10px 8px 0; padding-top: 10px; border-top: 1px solid var(--border); }
 .accountButton { width: 100%; height: 42px; padding: 0 7px; display: flex; align-items: center; gap: 8px; overflow: hidden; border: 0; border-radius: 8px; color: var(--text); background: transparent; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
@@ -232,3 +232,6 @@
 
 .accountLanguage > div > div { flex-basis: 132px; max-width: 132px; }
 .accountLanguage { padding: 6px 4px 10px; }
+
+.recentRow { display: flex; align-items: center; min-width: 0; margin-inline: 8px; gap: 2px; }
+.recentRow > a { flex: 1; min-width: 0; margin-inline: 0; }

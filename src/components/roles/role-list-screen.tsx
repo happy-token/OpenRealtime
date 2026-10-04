@@ -9,7 +9,7 @@ import { Check, MessageCircle, Plus, Search, Settings2, Sparkles, Star, Trash2, 
 import { useEffect, useMemo, useState } from "react";
 import { createRole, deleteRole, fetchRoles, RoleCreationError } from "@/lib/role-catalog-client";
 import { accountLoginHref } from "@/hooks/use-current-user";
-import { ROLE_MODE_LABELS, type RoleRecord } from "@/lib/role-records";
+import { isProtectedBuiltinRole, ROLE_MODE_LABELS, type RoleRecord } from "@/lib/role-records";
 import { conversationHref } from "@/components/workspace/workspace-shell";
 import { BAILIAN_TTS_VOICE_OPTIONS, DEFAULT_TTS_VOICE } from "@/components/drawer/voice-options";
 import { selectedDefaultTtsProvider, type ProviderVoiceCatalog } from "@/lib/default-role-voice";
@@ -134,10 +134,11 @@ export function RoleListScreen() {
 
   const visibleRoles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return needle ? roles.filter((role) => (
+    const availableRoles = roles.filter((role) => role.role_id !== "default-assistant");
+    return needle ? availableRoles.filter((role) => (
       role.display_name.toLocaleLowerCase().includes(needle)
       || role.persona_name?.toLocaleLowerCase().includes(needle)
-    )) : roles;
+    )) : availableRoles;
   }, [query, roles]);
 
   return <div className={styles.page}>
@@ -193,7 +194,7 @@ function RoleCard({ role, isDefault, isSelected, savingDefault, onSelect, onSetD
   onRequestDelete: (role: RoleRecord) => void;
 }) {
   const { t } = useLanguage();
-  const canDelete = role.role_id !== "default-assistant" && !isDefault;
+  const canDelete = !isProtectedBuiltinRole(role.role_id) && !isDefault;
   return <article className={`${styles.roleCard} liquid-glass-surface`} data-selected={isSelected}>
     <span className={styles.portrait}>
       {role.avatar_image_url ? <Image src={role.avatar_image_url} alt="" fill sizes="(max-width: 720px) 50vw, 280px" unoptimized /> : <><i /><Sparkles /></>}

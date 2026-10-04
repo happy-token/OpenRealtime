@@ -4,15 +4,15 @@
 
 当前 Persona：
 
-- `intellectual-warmth`：知性温柔
-- `sweet-sunshine`：甜美元气
-- `fresh-pastoral`：清新田园
-- `romantic-french`：浪漫法式
-- `soft-luminous`：柔光纯欲
-- `cool-urban-night`：冷艳都市
-- `melancholic-mist`：忧郁薄雾
+- `intellectual-warmth`：阅读顾问 · 知性温柔
+- `sweet-sunshine`：生活伙伴 · 活泼元气
+- `fresh-pastoral`：自然向导 · 清新平和
+- `romantic-french`：生活美学 · 浪漫优雅
+- `soft-luminous`：日常陪伴 · 温柔安心
+- `cool-urban-night`：创意顾问 · 理性直接
+- `melancholic-mist`：文字倾听 · 安静共情
 
-Persona 文件不固定人物姓名。同一 Persona 可以同时关联昭宁、Shuchang 或未来创建的其他 Avatar；自我介绍所用姓名来自关联目录中的 `avatarDisplayName`。
+Persona 文件不固定人物姓名。同一 Persona 可以同时关联昭宁、Shuchang 或未来创建的其他 Avatar；人物姓名统一写成 `{{role_name}}`，会话通过服务端角色目录中的 `display_name` 填充；未选择角色的旧形象链路回退到 `avatarDisplayName`。模板标题只表示用途与性格，不是人物姓名。
 
 运行时按 OpenClaw 的相对顺序读取本项目采用的角色文件：
 
@@ -35,4 +35,14 @@ Persona 文件不固定人物姓名。同一 Persona 可以同时关联昭宁、
 
 这些 Markdown 是服务端可信配置。浏览器只提交 `avatar_id`，不能直接提交或覆盖 system prompt。
 
-内置 Avatar 已提供默认关联：托管形象 `default-anam` 和分段式 `shuchang` 使用“知性温柔”，`companion` 使用“柔光纯欲”。
+内置 Avatar 已提供默认关联：托管形象 `default-anam` 和分段式 `shuchang` 使用“阅读顾问 · 知性温柔”，`companion` 使用“日常陪伴 · 温柔安心”。
+
+## 如何设计人设
+
+- 角色名称：具体人物姓名，例如“若水”，在角色设置中修改。
+- 人设名称：用途与性格，例如“阅读顾问 · 知性温柔”，方便多角色复用。
+- IDENTITY：填写 `人物姓名：{{role_name}}`、交流范围和虚构背景；不把模板标题当姓名。
+- SOUL：描述性格、说话方式、情绪表达和边界。职业/用途决定擅长什么，性格决定怎么交流。
+- AGENTS：写清回答长度、事实查询和工具使用等可执行规则；性格不能影响查询事实或履行用户请求。
+
+职业只是交流定位，不能因此虚构专业资质或保证回答正确。风格分类不使用形象审美词作为能力名称；已有模板 ID 保持稳定，角色关联继续有效。

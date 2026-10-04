@@ -131,13 +131,14 @@ describe("WorkspaceShell", () => {
     expect(html).toContain(">资源</span>");
   });
 
-  it("keeps model services under the supplier settings entry", () => {
+  it("keeps service entries inside the collapsed account menu", () => {
     navigation.pathname = "/settings/providers";
     const html = renderToStaticMarkup(<WorkspaceShell><div>供应商设置</div></WorkspaceShell>);
-
-    expect(html).toContain('href="/settings/providers"');
-    expect(html).toContain(">供应商</span>");
-    expect(html).toContain('href="/settings/services"');
+    expect(html).toContain('aria-label="主要导航"');
+    expect(html).toContain('aria-controls="workspace-account-options"');
+    expect(html).not.toContain('href="/settings/providers"');
+    expect(html).not.toContain('href="/settings/services"');
+    expect(html).not.toContain('aria-label="服务导航"');
   });
 
   it("reuses the settings-style secondary sidebar for resource categories", () => {

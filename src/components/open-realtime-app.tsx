@@ -91,6 +91,7 @@ const CAPTIONS_ENABLED_STORAGE_KEY = "voice-agent-captions-enabled";
 
 export function OpenRealtimeApp({
   initialRole = null,
+  initialConversation = null,
   initialRoleMode,
   officialAvatarId,
   initialToolNames = [],
@@ -99,6 +100,7 @@ export function OpenRealtimeApp({
   defaultTtsProvider = "bailian",
 }: {
   initialRole?: RoleRecord | null;
+  initialConversation?: import("@/lib/conversation-history").ConversationHistoryItem | null;
   initialRoleMode?: RolePresentationMode;
   officialAvatarId?: string;
   initialToolNames?: string[];
@@ -108,16 +110,16 @@ export function OpenRealtimeApp({
 }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const engine = useVoiceSession({ publicVoiceEnabled, roleProviders: { asr: initialRole?.asr_provider, llm: initialRole?.llm_provider } });
+  const engine = useVoiceSession({ publicVoiceEnabled, initialTranscript: initialConversation?.entries, initialContinuation: initialConversation?.thread_id && initialConversation.voice_session_id ? { threadId: initialConversation.thread_id, voiceSessionId: initialConversation.voice_session_id } : undefined, roleProviders: { asr: initialRole?.asr_provider, llm: initialRole?.llm_provider } });
   const { unlockAudioOutput } = engine;
   const ensureProviderKey = useProviderKeyGate();
   const { theme: appTheme, setTheme: setAppTheme } = useAppTheme();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerInitialTab, setDrawerInitialTab] = useState<ConfigTab>("display");
-  const [sessionStarted, setSessionStarted] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(Boolean(initialConversation));
   const [sessionPaused, setSessionPaused] = useState(false);
   const [avatarStarting, setAvatarStarting] = useState(false);
-  const [presentationView, setPresentationView] = useState<PresentationSessionView | null>(null);
+  const [presentationView, setPresentationView] = useState<PresentationSessionView | null>(initialConversation ? startPresentationSession(officialAvatarId || (initialRoleMode && initialRoleMode !== "conversation") ? "avatar" : "voice", "sidecar") : null);
   const [micError, setMicError] = useState<string | null>(null);
   const [voiceVisualTheme, setVoiceVisualTheme] = useState<VoiceVisualTheme>("cloud");
   const [experienceMode, setExperienceMode] = useState<ExperienceMode>(
@@ -133,8 +135,10 @@ export function OpenRealtimeApp({
   const [reducedMotion, setReducedMotion] = useState(false);
   const [captionsEnabled, setCaptionsEnabled] = useState(true);
   const [focusComposerRequest, setFocusComposerRequest] = useState(0);
-  const [sessionReview, setSessionReview] = useState<SessionReviewSnapshot | null>(null);
-  const historyId = useRef<string | null>(null);
+  const [sessionReview, setSessionReview] = useState<SessionReviewSnapshot | null>(initialConversation ? { endedAt: Date.parse(initialConversation.ended_at ?? initialConversation.updated_at), entries: initialConversation.entries } : null);
+  const restoredReview = useRef(sessionReview);
+  const historyId = useRef<string | null>(initialConversation?.id ?? null);
+  const [historySaveError, setHistorySaveError] = useState<string | null>(null);
   const historyWrites = useRef<Promise<void>>(Promise.resolve());
   const [ttsVoice, setTtsVoice] = useState<TtsVoice>(() => initialRole?.voice_id ?? (
     defaultTtsProvider === "bailian" ? BAILIAN_CLONED_VOICE_OPTIONS[0].value : DEFAULT_TTS_VOICE
@@ -145,6 +149,7 @@ export function OpenRealtimeApp({
   const configureTts = engine.configureTts;
   const configureAvatarPersona = engine.configureAvatarPersona;
   const configureTools = engine.configureTools;
+  const getContinuationIdentity = engine.getContinuationIdentity;
 
   const connected = engine.connection === "open";
 
@@ -152,9 +157,10 @@ export function OpenRealtimeApp({
     const id = historyId.current;
     if (!id || !entries.some((entry) => entry.text.trim())) return;
     const mode = selectedRoleMode;
+    const runtimeIdentity = getContinuationIdentity();
     historyWrites.current = historyWrites.current.catch(() => undefined).then(async () => {
       const body = JSON.stringify({ id, roleId: officialAvatarId ? hostedAvatarRoleId(officialAvatarId) : initialRole?.role_id ?? null,
-        roleName: initialRole?.display_name ?? avatarDisplayConfig.hostedAvatarDisplayName ?? "默认助手", mode, entries, ended });
+        roleName: initialRole?.display_name ?? avatarDisplayConfig.hostedAvatarDisplayName ?? "默认助手", mode, entries, ended, threadId: runtimeIdentity?.threadId, voiceSessionId: runtimeIdentity?.voiceSessionId });
       const response = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -162,9 +168,10 @@ export function OpenRealtimeApp({
         body,
       });
       if (!response.ok) throw new Error("保存对话记录失败");
+      setHistorySaveError(null);
       window.dispatchEvent(new Event("openrealtime:conversations-updated"));
-    });
-  }, [avatarDisplayConfig.hostedAvatarDisplayName, initialRole, officialAvatarId, selectedRoleMode]);
+    }).catch(() => { setHistorySaveError("对话记录保存失败，请重试"); });
+  }, [avatarDisplayConfig.hostedAvatarDisplayName, initialRole, officialAvatarId, selectedRoleMode, getContinuationIdentity]);
 
   useEffect(() => {
     if (!sessionStarted || sessionReview || !historyId.current || !engine.transcript.length) return;
@@ -173,7 +180,7 @@ export function OpenRealtimeApp({
   }, [engine.transcript, saveHistory, sessionReview, sessionStarted]);
 
   useEffect(() => {
-    if (sessionReview) saveHistory(sessionReview.entries, true);
+    if (sessionReview && sessionReview !== restoredReview.current) saveHistory(sessionReview.entries, true);
   }, [saveHistory, sessionReview]);
 
   const preferredPageForm = useCallback((mode: ExperienceMode): PageForm => (
@@ -420,6 +427,10 @@ export function OpenRealtimeApp({
 
   const beginSession = useCallback(async (mode: ExperienceMode = experienceMode) => {
     if (!connected && !publicVoiceEnabled) return false;
+    try { await engine.prepareNewConversation(); } catch (error) {
+      setMicError(error instanceof Error ? error.message : "新会话连接失败");
+      return false;
+    }
     historyId.current = crypto.randomUUID();
     setSessionReview(null);
     engine.clearConversationDisplay();
@@ -438,7 +449,11 @@ export function OpenRealtimeApp({
     return true;
   }, [engine, connected, experienceMode, preferredPageForm, publicVoiceEnabled, ttsProvider]);
 
-  const startDigitalHumanSession = useCallback((config: AvatarDisplayConfig) => {
+  const startDigitalHumanSession = useCallback(async (config: AvatarDisplayConfig) => {
+    try { await engine.prepareNewConversation(); } catch (error) {
+      setMicError(error instanceof Error ? error.message : "新会话连接失败");
+      return false;
+    }
     historyId.current = crypto.randomUUID();
     setSessionReview(null);
     setAvatarDisplayConfig(config);
@@ -479,7 +494,7 @@ export function OpenRealtimeApp({
         setAvatarDisplayConfig(launchConfig);
         window.localStorage.setItem(AVATAR_DISPLAY_CONFIG_STORAGE_KEY, JSON.stringify(launchConfig));
       }
-      startDigitalHumanSession(launchConfig);
+      await startDigitalHumanSession(launchConfig);
       return;
     }
     await beginSession("voice");
@@ -695,6 +710,7 @@ export function OpenRealtimeApp({
       data-entry-stage={sessionStarted ? "session" : "home"}
       data-session-phase={sessionReview ? "ended" : "active"}
     >
+      {historySaveError ? <div role="alert">{historySaveError}<button onClick={() => saveHistory(freezeSessionTranscript(sessionReview?.entries ?? engine.transcript), Boolean(sessionReview))}>重试保存</button></div> : null}
       <div className="ambient ambient-one" aria-hidden="true" />
       <div className="ambient ambient-two" aria-hidden="true" />
       <header className="topbar">

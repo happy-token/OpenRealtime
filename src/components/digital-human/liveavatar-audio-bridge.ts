@@ -1,3 +1,4 @@
+import { AvatarPlaybackClock, type AvatarMediaClock } from "@/voice/audio/avatar-playback-clock";
 import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 
 export interface LiveAvatarAudioSession {
@@ -5,17 +6,17 @@ export interface LiveAvatarAudioSession {
   interrupt(): void;
 }
 
-interface VolumeTarget {
-  volume: number;
-}
+type VolumeTarget = AvatarMediaClock;
 
 interface BufferedGeneration {
+  clock: AvatarPlaybackClock;
   chunks: string[];
   onStarted: () => void;
   onEnded: () => void;
 }
 
 interface ActivePlayback {
+  clock: AvatarPlaybackClock;
   generation: number;
   onEnded: () => void;
 }
@@ -41,10 +42,12 @@ export class LiveAvatarAudioBridge implements AvatarAudioSink {
   enqueue(chunk: AvatarAudioChunk): boolean {
     if (!this.session || chunk.sampleRateHz !== 24_000) return false;
     const current = this.buffered.get(chunk.generation) ?? {
+      clock: new AvatarPlaybackClock(chunk.generation, chunk.speechId),
       chunks: [],
       onStarted: chunk.onStarted,
       onEnded: chunk.onEnded,
     };
+    current.clock.append(chunk.pcm16Base64, chunk.sampleRateHz);
     if (chunk.pcm16Base64) current.chunks.push(chunk.pcm16Base64);
     current.onEnded = chunk.onEnded;
     this.buffered.set(chunk.generation, current);
@@ -58,7 +61,8 @@ export class LiveAvatarAudioBridge implements AvatarAudioSink {
     if (current.chunks.length === 0) return false;
     try {
       this.session.repeatAudio(concatenateBase64(current.chunks));
-      this.active.push({ generation, onEnded: current.onEnded });
+      this.active.push({ generation, clock: current.clock, onEnded: current.onEnded });
+      current.clock.start(this.video);
       current.onStarted();
       return true;
     } catch {
@@ -82,6 +86,10 @@ export class LiveAvatarAudioBridge implements AvatarAudioSink {
     } catch {
       // The renderer may already have disconnected; cancellation is still local.
     }
+  }
+
+  playbackPosition(generation: number) {
+    return this.active.find(item => item.generation === generation)?.clock.read(this.video) ?? null;
   }
 
   isActive(generation: number): boolean {

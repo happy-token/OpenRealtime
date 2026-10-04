@@ -139,3 +139,15 @@ export function resolveRoleDefaultSelection(
   const variant = variants.find((item) => item.id === preferred?.talking_variant_id) ?? variants[0];
   return variant ? { action_id: action.avatar_action_id, talking_variant_id: variant.id } : null;
 }
+
+/** Stable built-in identities remain protected even when their display names change. */
+export const PROTECTED_BUILTIN_ROLE_IDS = [
+  "default-assistant",
+  "role-8d9cc2be-f56d-45a8-8ef8-0482f84b4df4", // 若水
+  "role-avatar-qingzhao", // 清照
+  "role-avatar-8657be31-306e-428d-a013-7521e710ab6a", // 萨曼莎
+] as const;
+
+export function isProtectedBuiltinRole(roleId: string): boolean {
+  return (PROTECTED_BUILTIN_ROLE_IDS as readonly string[]).includes(roleId);
+}

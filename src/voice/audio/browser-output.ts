@@ -34,6 +34,7 @@ export interface BrowserAudioOutputOptions {
   runtime: DeviceAudioOutputRuntime;
   createContext?: () => AudioContext;
   now?: () => number;
+  onProgress?: (progress: PlaybackProgressV2) => void;
   onStarted?: (generation: number) => void;
   onResumed?: (generation: number) => void;
 }
@@ -43,6 +44,9 @@ export class BrowserAudioOutput {
   private readonly runtime: DeviceAudioOutputRuntime;
   private readonly createContext: () => AudioContext;
   private readonly now: () => number;
+  private readonly onProgress?: (progress: PlaybackProgressV2) => void;
+  private progressTimer: ReturnType<typeof setInterval> | null = null;
+  private playedSegments: { start: number; end: number }[] = [];
   private readonly onStarted?: (generation: number) => void;
   private readonly onResumed?: (generation: number) => void;
   private context: AudioContext | null = null;
@@ -64,8 +68,13 @@ export class BrowserAudioOutput {
     this.runtime = options.runtime;
     this.createContext = options.createContext ?? (() => new AudioContext());
     this.now = options.now ?? (() => performance.now());
+    this.onProgress = options.onProgress;
     this.onStarted = options.onStarted;
     this.onResumed = options.onResumed;
+  }
+
+  get playedAudioEndUs(): number {
+    return Math.round(this.playedPositionSamples() / this.sampleRate * 1_000_000);
   }
 
   get scheduledSourceCount(): number {
@@ -119,6 +128,7 @@ export class BrowserAudioOutput {
       this.stopScheduledSources();
       this.nextPlayTime = context.currentTime;
       this.startedAt = null;
+      this.playedSegments = [];
       this.scheduledEnd = 0;
       this.generation = generation;
       this.quality = createPlaybackQuality(generation);
@@ -163,7 +173,15 @@ export class BrowserAudioOutput {
       this.scheduledSources = this.scheduledSources.filter((item) => item !== source);
       chunk.onEnded?.();
     });
+    this.playedSegments.push({ start: startAt, end: startAt + buffer.duration });
     source.start(startAt);
+    if (this.onProgress && this.progressTimer === null) {
+      this.progressTimer = setInterval(() => {
+        if (this.generation === null || this.startedGeneration !== this.generation) return;
+        const progress = this.playbackProgress(this.generation, "playing");
+        if (progress) this.onProgress?.(progress);
+      }, 100);
+    }
     return true;
   }
 
@@ -191,6 +209,7 @@ export class BrowserAudioOutput {
     this.stopScheduledSources();
     this.nextPlayTime = 0;
     this.generation = null;
+    this.playedSegments = [];
     if (this.startedGeneration === generation) this.startedGeneration = null;
     this.startedAt = null;
     this.scheduledEnd = 0;
@@ -228,6 +247,9 @@ export class BrowserAudioOutput {
   }
 
   reset(): void {
+    if (this.progressTimer !== null) clearInterval(this.progressTimer);
+    this.progressTimer = null;
+    this.playedSegments = [];
     this.stopScheduledSources();
     this.runtime.reset();
     this.generation = null;
@@ -266,9 +288,9 @@ export class BrowserAudioOutput {
 
   private playedPositionSamples(): number {
     if (!this.context || this.startedAt === null) return 0;
-    const playedSeconds = Math.max(
-      0,
-      Math.min(this.context.currentTime, this.scheduledEnd) - this.startedAt,
+    const currentTime = this.context.currentTime;
+    const playedSeconds = this.playedSegments.reduce(
+      (sum, segment) => sum + Math.max(0, Math.min(currentTime, segment.end) - segment.start), 0,
     );
     return Math.round(playedSeconds * this.sampleRate);
   }

@@ -21,7 +21,7 @@ from server.realtime.profile.models import (
     RequirementLevel,
     ResolvedRealtimeProfile,
 )
-from server.realtime.profile.registry import PluginRegistry
+from server.realtime.profile.registry import PluginRegistry, RegisteredPlugin
 from server.realtime.profile.resolver import ProfileResolver
 from server.realtime.protocol.audio import AudioEncoding
 
@@ -43,8 +43,11 @@ def resolve_builtin_profile(
     bindings: BuiltinCascadedBindings,
     *,
     profile_path: str | Path | None = None,
+    plugins: tuple[RegisteredPlugin, ...] = (),
 ) -> ResolvedRealtimeProfile:
     registry = PluginRegistry()
+    for plugin in plugins:
+        registry.register(plugin.manifest, binding=plugin.binding)
     selected: list[PluginSelection] = []
     for kind, binding, capability, latency_budget_ms in (
         (PluginKind.VAD, bindings.vad, "voice_activity_detection", 20),

@@ -25,9 +25,13 @@ import json
 import math
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
+
+from server.core.interaction_context import InteractionContext
+from server.turn_policy.eot_classifier import EotHistoryMessage
+from server.turn_policy.semantic_input import SemanticInputState, TextBoundary
 
 
 class InterruptionBoundary(str, Enum):
@@ -51,9 +55,7 @@ STOP_ACTION_LABELS = frozenset(
         InterruptionLabel.INTERRUPT,
     }
 )
-TURN_CREATING_LABELS = frozenset(
-    {InterruptionLabel.CORRECTION, InterruptionLabel.INTERRUPT}
-)
+TURN_CREATING_LABELS = frozenset({InterruptionLabel.CORRECTION, InterruptionLabel.INTERRUPT})
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +70,16 @@ class InterruptionCandidate:
 class InterruptionClassification:
     label: InterruptionLabel
     confidence: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.label, InterruptionLabel):
+            raise TypeError("semantic interruption label is invalid")
+        if (
+            isinstance(self.confidence, bool)
+            or not math.isfinite(self.confidence)
+            or not 0 <= self.confidence <= 1
+        ):
+            raise ValueError("semantic interruption confidence must be finite and between 0 and 1")
 
 
 VerdictSource = Literal["rule", "model", "fallback"]
@@ -124,6 +136,66 @@ class SemanticInterruptionClassifier(Protocol):
         boundary: InterruptionBoundary,
         generation: int,
     ) -> InterruptionClassification: ...
+
+
+@dataclass(frozen=True, slots=True)
+class InterruptionRequest:
+    transcript: str
+    assistant_text: str
+    generation: int
+    boundary: InterruptionBoundary
+    history: tuple[EotHistoryMessage, ...] = ()
+    input_state: SemanticInputState = field(default_factory=SemanticInputState)
+    interaction: InteractionContext | None = None
+    language: str | None = None
+    contract_version: int = 1
+
+    def __post_init__(self) -> None:
+        if (
+            self.contract_version != 1
+            or isinstance(self.generation, bool)
+            or not isinstance(self.generation, int)
+            or self.generation < 0
+        ):
+            raise ValueError("invalid interruption request version or generation")
+        if not isinstance(self.history, tuple) or not all(
+            isinstance(item, EotHistoryMessage) for item in self.history
+        ):
+            raise ValueError("interruption history must be an immutable tuple of messages")
+        if not isinstance(self.input_state, SemanticInputState):
+            raise TypeError("invalid interruption input state")
+        if not self.transcript.strip() or not isinstance(self.boundary, InterruptionBoundary):
+            raise ValueError("invalid interruption request text or boundary")
+        if self.interaction is not None and self.interaction.generation != self.generation:
+            raise ValueError("interruption request generation does not match interaction")
+
+
+@runtime_checkable
+class RequestInterruptionClassifier(Protocol):
+    async def classify_request(
+        self, request: InterruptionRequest
+    ) -> InterruptionClassification: ...
+
+
+InterruptionClassifierLike = SemanticInterruptionClassifier | RequestInterruptionClassifier
+
+
+async def classify_interruption(
+    classifier: InterruptionClassifierLike,
+    request: InterruptionRequest,
+) -> InterruptionClassification:
+    if isinstance(classifier, RequestInterruptionClassifier):
+        result = await classifier.classify_request(request)
+    else:
+        result = await classifier.classify(
+            assistant_text=request.assistant_text,
+            transcript=request.transcript,
+            boundary=request.boundary,
+            generation=request.generation,
+        )
+    if not isinstance(result, InterruptionClassification):
+        raise TypeError("unsupported interruption classification")
+    return result
 
 
 _IMMEDIATE_STOP_PHRASES = frozenset(
@@ -308,7 +380,7 @@ class SemanticInterruptionGate:
 
     def __init__(
         self,
-        classifier: SemanticInterruptionClassifier | None,
+        classifier: InterruptionClassifierLike | None,
         *,
         observer: VerdictObserver | None = None,
         partial_chars: int = 5,
@@ -330,6 +402,9 @@ class SemanticInterruptionGate:
         self._classifier_timeout_s = classifier_timeout_ms / 1000
         self._generation: int | None = None
         self._assistant_text = ""
+        self._history: tuple[EotHistoryMessage, ...] = ()
+        self._interaction: InteractionContext | None = None
+        self._input_state = SemanticInputState()
         self._latest_candidate: InterruptionCandidate | None = None
         self._latest: InterruptionVerdict | None = None
         self._classification_task: asyncio.Task[None] | None = None
@@ -344,12 +419,23 @@ class SemanticInterruptionGate:
     def latest(self) -> InterruptionVerdict | None:
         return self._latest
 
-    async def begin(self, *, generation: int, assistant_text: str) -> None:
+    async def begin(
+        self,
+        *,
+        generation: int,
+        assistant_text: str,
+        history: tuple[EotHistoryMessage, ...] = (),
+        interaction: InteractionContext | None = None,
+        input_state: SemanticInputState | None = None,
+    ) -> None:
         if self._generation == generation:
             return
         await self.reset()
         self._generation = generation
         self._assistant_text = assistant_text
+        self._history = history
+        self._interaction = interaction
+        self._input_state = input_state or SemanticInputState()
 
     async def observe(
         self,
@@ -360,10 +446,7 @@ class SemanticInterruptionGate:
         previous = self._latest_candidate
         if previous == candidate:
             return self._latest if self._latest and self._latest.candidate == candidate else None
-        if (
-            previous is not None
-            and candidate.transcript_revision < previous.transcript_revision
-        ):
+        if previous is not None and candidate.transcript_revision < previous.transcript_revision:
             return None
 
         # Update the latest token before yielding. An in-flight classification
@@ -425,6 +508,9 @@ class SemanticInterruptionGate:
     async def reset(self) -> None:
         self._generation = None
         self._assistant_text = ""
+        self._history = ()
+        self._interaction = None
+        self._input_state = SemanticInputState()
         self._latest_candidate = None
         self._latest = None
         self._scheduler.reset()
@@ -459,11 +545,21 @@ class SemanticInterruptionGate:
         candidate = scheduled.candidate
         try:
             classification = await asyncio.wait_for(
-                self._classifier.classify(
-                    assistant_text=self._assistant_text,
-                    transcript=candidate.text,
-                    boundary=candidate.boundary,
-                    generation=candidate.generation,
+                classify_interruption(
+                    self._classifier,
+                    InterruptionRequest(
+                        assistant_text=self._assistant_text,
+                        transcript=candidate.text,
+                        boundary=candidate.boundary,
+                        generation=candidate.generation,
+                        history=self._history,
+                        interaction=self._interaction,
+                        input_state=replace(
+                            self._input_state,
+                            transcript_revision=candidate.transcript_revision,
+                            boundary=TextBoundary(candidate.boundary.value),
+                        ),
+                    ),
                 ),
                 timeout=self._classifier_timeout_s,
             )

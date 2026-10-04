@@ -7,11 +7,11 @@ import type { AvatarWorkbenchTask } from "@/lib/avatar-workbench-navigation";
 
 export const metadata: Metadata = { title: "资源库 — OpenRealtime" };
 
-const RESOURCE_TABS = new Set<ResourceTab>(["voices", "personas", "tools", "knowledge", "avatars", "official-realtime"]);
+const RESOURCE_TABS = new Set<ResourceTab>(["voices", "personas", "tools", "knowledge", "memory", "avatars", "official-realtime"]);
 const AVATAR_TASKS = new Set<AvatarWorkbenchTask>(["avatar", "motion", "talking", "realtime"]);
 
 export default async function ResourcesPage({ searchParams }: {
-  searchParams: Promise<{ tab?: string; scope?: string; realtime_scope?: string; return_to?: string; task?: string; avatar_id?: string; action_id?: string; method?: string }>;
+  searchParams: Promise<{ tab?: string; scope?: string; realtime_scope?: string; return_to?: string; role_id?: string; task?: string; avatar_id?: string; action_id?: string; method?: string }>;
 }) {
   const query = await searchParams;
   const requested = query.tab as ResourceTab | undefined;
@@ -31,5 +31,6 @@ export default async function ResourcesPage({ searchParams }: {
     initialTalkingMethod={query.method === "lipforcing" ? "lipforcing" : undefined}
     returnToRoleCreate={returnTo === "role-create"}
     returnToRoleId={isRoleRecordId(returnTo) ? returnTo : undefined}
+    knowledgeRoleId={typeof query.role_id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$/.test(query.role_id) ? query.role_id : undefined}
   /></WorkspaceShell>;
 }

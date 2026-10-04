@@ -35,7 +35,7 @@ describe("role detail configuration workspace", () => {
     expect(component).toContain('<ConfigTaskModule id="action"');
     expect(component).toContain('<ConfigTaskModule id="talking"');
     expect(component).toContain("aria-label={t(\"声音设置\")}");
-    expect(component).toContain("aria-label={t(\"Persona 设置\")}");
+    expect(component).toContain("aria-label={t(\"人设设置\")}");
     expect(component).toContain("aria-label={t(\"工具使用设置\")}");
     expect(component).toContain("aria-label={t(\"知识库设置\")}");
     expect(component).toContain("<VoiceSelector");

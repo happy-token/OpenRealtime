@@ -112,6 +112,15 @@ export interface AssistantSpeechTextFrame {
   generation: number;
 }
 
+export interface AssistantTextAlignmentFrame {
+  type: "assistant_text_alignment";
+  generation: number;
+  speech_id: string;
+  text: string;
+  audio_start_us: number;
+  audio_end_us: number;
+}
+
 export interface AssistantAudioFrame {
   type: "assistant_audio";
   pcm16_base64: string;
@@ -255,6 +264,7 @@ export type ServerToClientFrame =
   | UserTranscriptFrame
   | AssistantTextFrame
   | AssistantSpeechTextFrame
+  | AssistantTextAlignmentFrame
   | AssistantAudioFrame
   | AssistantAudioChunkFrame
   | AssistantResponseCompletedFrame
@@ -461,6 +471,12 @@ export function parseServerFrame(value: unknown): ServerToClientFrame | null {
       return typeof value.text === "string" && isNumber(value.generation)
         ? value as unknown as AssistantSpeechTextFrame
         : null;
+    case "assistant_text_alignment":
+      return typeof value.text === "string" && isNumber(value.generation)
+        && typeof value.speech_id === "string" && value.speech_id.length > 0
+        && isNumber(value.audio_start_us) && value.audio_start_us >= 0
+        && isNumber(value.audio_end_us) && value.audio_end_us >= value.audio_start_us
+        ? value as unknown as AssistantTextAlignmentFrame : null;
     case "assistant_audio":
       return (
         typeof value.pcm16_base64 === "string"

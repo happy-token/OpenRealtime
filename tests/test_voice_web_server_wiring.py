@@ -32,9 +32,9 @@ from server.realtime.observability import RealtimeTelemetryObserver
 from server.realtime.profile import ResolvedRealtimeProfile
 from server.signals.plugins.silero_vad import SileroVad
 from server.speech.asr import PreloadedAsrEngine
+from server.speech.plugins.bailian_asr import BailianAsrEngine
 from server.speech.plugins.bailian_tts import BailianTtsEngine
 from server.speech.plugins.doubao_asr import DoubaoAsrEngine
-from server.speech.plugins.bailian_asr import BailianAsrEngine
 from server.speech.selectable_tts import SelectableTtsEngine
 from server.speech.tts import SilentTtsEngine, SynthesizedAudioChunk
 from server.transport.base import AuthenticatedTransportIdentity
@@ -476,6 +476,30 @@ def test_build_eot_classifier_uses_deepseek_responses_with_strict_schema(monkeyp
     assert classifier._source == "deepseek_responses"
 
 
+def test_jev_can_replace_both_semantic_providers_without_llm_credentials(monkeypatch):
+    from server.turn_policy.plugins.jev_classifier import (
+        JevEotClassifier,
+        JevSemanticInterruptionClassifier,
+    )
+
+    monkeypatch.setenv("JEV_API_KEY", "test")
+    monkeypatch.setenv("VOICEAGENT_EOT_PROVIDER", "jev")
+    monkeypatch.setenv("VOICEAGENT_INTERRUPTION_PROVIDER", "jev")
+    monkeypatch.setenv("VOICEAGENT_EOT_FIRERED_MODEL_DIR", "/unused")
+    assert isinstance(voice_web_server._build_eot_classifier(EchoLlmClient()), JevEotClassifier)
+    assert isinstance(
+        voice_web_server._build_semantic_interruption_classifier(EchoLlmClient()),
+        JevSemanticInterruptionClassifier,
+    )
+
+
+def test_jev_missing_key_fails_explicitly(monkeypatch):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    monkeypatch.setenv("VOICEAGENT_EOT_PROVIDER", "jev")
+    with pytest.raises(ValueError, match="API key"):
+        voice_web_server._build_eot_classifier(EchoLlmClient())
+
+
 def test_build_eot_classifier_uses_conservative_firered_fast_complete(monkeypatch):
     class ProbabilityModel:
         def predict(self, text: str) -> float:
@@ -559,6 +583,7 @@ def test_build_asr_engine_defaults_to_doubao_direct_when_key_set(monkeypatch):
 
 def test_dashscope_asr_instance_uses_its_own_workspace_and_key():
     from types import SimpleNamespace
+
     from server.speech.plugins.bailian_asr import BailianAsrEngine
 
     binding = SimpleNamespace(

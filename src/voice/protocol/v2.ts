@@ -93,7 +93,7 @@ export interface PlaybackProgressV2 {
   output_epoch: string;
   speech_id: string;
   generation: number;
-  phase: "started" | "stopped" | "finished";
+  phase: "started" | "playing" | "stopped" | "finished";
   played_position_samples: number;
 }
 

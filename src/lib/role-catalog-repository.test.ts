@@ -120,6 +120,9 @@ describe("role catalog repository", () => {
     await expect(deleteRole(role.role_id, root)).resolves.toBe(true);
     await expect(findRole(role.role_id, root)).resolves.toBeNull();
     await expect(deleteRole("default-assistant", root)).rejects.toThrow("默认助手不能删除");
+    for (const id of ["role-8d9cc2be-f56d-45a8-8ef8-0482f84b4df4", "role-avatar-qingzhao", "role-avatar-8657be31-306e-428d-a013-7521e710ab6a"]) {
+      await expect(deleteRole(id, root)).rejects.toThrow("内置角色不能删除");
+    }
     const stored = JSON.parse(await readFile(path.join(root, "roles.json"), "utf8")) as Array<Record<string, unknown>>;
     expect(stored[0].deleted_at).toEqual(expect.any(String));
   });

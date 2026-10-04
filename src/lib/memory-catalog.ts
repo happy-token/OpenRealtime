@@ -3,13 +3,13 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { withAvatarCatalogLock } from "./avatar-catalog-lock";
 
-export type MemoryKind = "preference" | "relationship" | "goal" | "correction";
+export type MemoryKind = "preference" | "relationship" | "goal" | "correction" | "fact";
 export type MemoryRecord = {
   id: string; owner_id: string; role_id: string; kind: MemoryKind;
   content: string; source_conversation_id: string | null; created_at: string; updated_at: string;
 };
 const ROLE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,159}$/;
-const MEMORY_KINDS: MemoryKind[] = ["preference", "relationship", "goal", "correction"];
+const MEMORY_KINDS: MemoryKind[] = ["preference", "relationship", "goal", "correction", "fact"];
 
 export function memoryRoot() {
   return path.resolve(process.env.VOICEAGENT_MEMORY_DIR?.trim() || path.join(process.cwd(), ".openrealtime", "memory"));
@@ -96,6 +96,20 @@ export async function removeMemory(ownerId: string, roleId: string, id: string |
 export function extractMemories(text: string): Array<{ kind: MemoryKind; content: string }> {
   const clean = text.trim();
   if (!clean || clean.length > 300 || containsSensitiveContent(clean)) return [];
+  // Normalize punctuation only between a stated month and day, then require
+  // a declarative first-person sentence rather than quoted or guessed dates.
+  const normalized = clean.replace(/(\d{1,2}\s*月)[\s。．.,，、]+(?=\d{1,2}\s*[日号])/g, "$1");
+  const statements = normalized.match(/[^。!?！？]+[。!?！？]?/g) ?? [];
+  const birthdays = statements.map((sentence) => sentence.trim().match(/^(?:请(?:帮我)?记住[，,：:\s]*)?我(?:的)?生日(?:是|在|为)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号][。.!！]?$/)).filter((match) => match !== null);
+  if (birthdays.length === 1 && !/(?:不是|不要|别记|不记|忘掉|删除|不确定|可能|假如|比如|如果|还是|记错|你说)/.test(clean)) {
+    const birthday = birthdays[0];
+    const month = Number(birthday[1]); const day = Number(birthday[2]);
+    const days = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]) {
+      return [{ kind: "fact", content: `我的生日是${month}月${day}日` }];
+    }
+  }
+  if (/我(?:的)?生日|记住.*生日/.test(clean)) return [];
   const patterns: Array<[MemoryKind, RegExp]> = [
     ["preference", /^(?:我(?:很)?喜欢|我不喜欢|我偏好|我习惯)(.{2,100})[。.!！]?$/],
     ["goal", /^(?:我的目标是|我打算长期|我正在努力)(.{2,100})[。.!！]?$/],

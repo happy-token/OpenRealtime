@@ -18,18 +18,20 @@ pipeline wrappers.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
+from server.core.interaction_context import InteractionContext
 from server.turn_policy.eot_classifier import (
-    ContextualEotClassifier,
     EotClassification,
-    EotClassifier,
+    EotClassifierLike,
     EotContext,
     EotDecision,
     EotHistoryMessage,
-    normalize_eot_classification,
+    EotRequest,
+    classify_eot,
 )
+from server.turn_policy.semantic_input import SemanticInputState
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +40,8 @@ class EndpointCandidate:
     generation: int
     transcript_revision: int
     history: tuple[EotHistoryMessage, ...] = ()
+    input_state: SemanticInputState = field(default_factory=SemanticInputState)
+    interaction: InteractionContext | None = None
 
 
 class EndpointResolution(Enum):
@@ -157,7 +161,7 @@ class SemanticEndpointGate:
 
     def __init__(
         self,
-        classifier: EotClassifier | None,
+        classifier: EotClassifierLike | None,
         *,
         classifier_timeout_ms: float = 5000.0,
         uncertain_wait_ms: float = 300.0,
@@ -171,9 +175,7 @@ class SemanticEndpointGate:
         if min_uncertain_wait_ms < 0:
             raise ValueError("min_uncertain_wait_ms must be non-negative")
         if max_uncertain_wait_ms < min_uncertain_wait_ms:
-            raise ValueError(
-                "max_uncertain_wait_ms must be at least min_uncertain_wait_ms"
-            )
+            raise ValueError("max_uncertain_wait_ms must be at least min_uncertain_wait_ms")
         self._classifier = classifier
         self._classifier_timeout_s = classifier_timeout_ms / 1000
         self._uncertain_wait_ms = uncertain_wait_ms
@@ -282,9 +284,7 @@ class SemanticEndpointGate:
             error=error,
         )
 
-    async def _classify(
-        self, candidate: EndpointCandidate
-    ) -> tuple[EotClassification, str | None]:
+    async def _classify(self, candidate: EndpointCandidate) -> tuple[EotClassification, str | None]:
         if self._classifier is None:
             return (
                 EotClassification(
@@ -296,18 +296,17 @@ class SemanticEndpointGate:
             )
         try:
             async with asyncio.timeout(self._classifier_timeout_s):
-                if isinstance(self._classifier, ContextualEotClassifier):
-                    result = await self._classifier.classify_with_context(
+                result = await classify_eot(
+                    self._classifier,
+                    EotRequest(
                         text=candidate.text,
                         generation=candidate.generation,
                         context=EotContext(history=candidate.history),
-                    )
-                else:
-                    result = await self._classifier.classify(
-                        text=candidate.text,
-                        generation=candidate.generation,
-                    )
-            return normalize_eot_classification(result), None
+                        input_state=candidate.input_state,
+                        interaction=candidate.interaction,
+                    ),
+                )
+            return result, None
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - bounded liveness boundary

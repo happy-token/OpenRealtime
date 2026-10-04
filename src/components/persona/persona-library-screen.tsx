@@ -20,7 +20,7 @@ type ActionState = "idle" | "busy" | "done" | "error";
 
 const CREATE_FIELDS = [
   ["SOUL.md", "SOUL", "人格、语气、价值观与关系边界", true],
-  ["IDENTITY.md", "IDENTITY", "身份背景与自我定位", true],
+  ["IDENTITY.md", "IDENTITY", "身份背景与自我定位；用 {{role_name}} 表示人物姓名", true],
   ["AGENTS.md", "AGENTS", "对话操作规则、能力边界与回复约束", false],
 ] as const;
 
@@ -73,7 +73,7 @@ export function PersonaLibraryScreen({
     const controller = new AbortController();
     setListState("loading");
     void fetch("/api/personas", { cache: "no-store", signal: controller.signal })
-      .then((response) => readJsonResponse<{ personas?: PersonaSummary[] }>(response, "Persona 列表读取失败"))
+      .then((response) => readJsonResponse<{ personas?: PersonaSummary[] }>(response, "人设列表读取失败"))
       .then((payload) => {
         setPersonas(payload.personas ?? []);
         setListState("loaded");
@@ -91,9 +91,9 @@ export function PersonaLibraryScreen({
     if (next && !profiles[next] && profileState[next] !== "loading") {
       setProfileState((state) => ({ ...state, [next]: "loading" }));
       void fetch(`/api/personas/${encodeURIComponent(next)}`, { cache: "no-store" })
-        .then((response) => readJsonResponse<{ profile?: PersonaProfile }>(response, "Persona 读取失败"))
+        .then((response) => readJsonResponse<{ profile?: PersonaProfile }>(response, "人设读取失败"))
         .then((payload) => {
-          if (!payload.profile) throw new Error("Persona 不存在");
+          if (!payload.profile) throw new Error("人设不存在");
           setProfiles((current) => ({ ...current, [next]: payload.profile as PersonaProfile }));
           setDrafts((current) => ({ ...current, [next]: personaDraftFromFiles((payload.profile as PersonaProfile).files) }));
           setNameDrafts((current) => ({ ...current, [next]: payload.profile?.personaName ?? "" }));
@@ -126,8 +126,8 @@ export function PersonaLibraryScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ operation: "updateProfile", ...(changedFiles.length ? { files: changedFiles } : {}), ...(introChanged ? { intro } : {}) }),
       });
-      const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "Persona 保存失败");
-      if (!response.ok || !body.profile) throw new Error(body.error || "Persona 保存失败");
+      const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "人设保存失败");
+      if (!response.ok || !body.profile) throw new Error(body.error || "人设保存失败");
       setProfiles((current) => ({ ...current, [personaId]: body.profile as PersonaProfile }));
       setDrafts((current) => ({ ...current, [personaId]: personaDraftFromFiles((body.profile as PersonaProfile).files) }));
       setNameDrafts((current) => ({ ...current, [personaId]: body.profile?.personaName ?? "" }));
@@ -138,7 +138,7 @@ export function PersonaLibraryScreen({
       setSaveNotice((notice) => ({ ...notice, [personaId]: "已保存，下一轮对话生效" }));
     } catch (error) {
       setSaveState((state) => ({ ...state, [personaId]: "error" }));
-      setSaveNotice((notice) => ({ ...notice, [personaId]: error instanceof Error ? error.message : "Persona 保存失败" }));
+      setSaveNotice((notice) => ({ ...notice, [personaId]: error instanceof Error ? error.message : "人设保存失败" }));
     }
   }
 
@@ -178,12 +178,12 @@ export function PersonaLibraryScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildPersonaSwitchPayload(personaId, linkingAvatarDisplayName)),
       });
-      const body = await readJsonResponse<{ profile?: unknown; error?: string }>(response, "Persona 关联失败");
-      if (!response.ok || !body.profile) throw new Error(body.error || "Persona 关联失败");
+      const body = await readJsonResponse<{ profile?: unknown; error?: string }>(response, "人设关联失败");
+      if (!response.ok || !body.profile) throw new Error(body.error || "人设关联失败");
       router.push(`/avatars/${encodeURIComponent(linkingAvatarId)}`);
     } catch (error) {
       setLinkState((state) => ({ ...state, [personaId]: "error" }));
-      setLinkNotice(error instanceof Error ? error.message : "Persona 关联失败");
+      setLinkNotice(error instanceof Error ? error.message : "人设关联失败");
     }
   }
 
@@ -191,7 +191,7 @@ export function PersonaLibraryScreen({
     const personaName = createName.trim();
     if (!personaName) {
       setCreateState("error");
-      setCreateNotice("请填写 Persona 名称");
+      setCreateNotice("请填写人设名称");
       return;
     }
     const missingRequired = CREATE_FIELDS.filter(
@@ -220,8 +220,8 @@ export function PersonaLibraryScreen({
           ...(linkingAvatarId ? { avatarId: linkingAvatarId, avatarDisplayName: linkingAvatarDisplayName } : {}),
         }),
       });
-      const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "Persona 创建失败");
-      if (!response.ok || !body.profile) throw new Error(body.error || "Persona 创建失败");
+      const body = await readJsonResponse<{ profile?: PersonaProfile; error?: string }>(response, "人设创建失败");
+      if (!response.ok || !body.profile) throw new Error(body.error || "人设创建失败");
       if (linkingAvatarId) {
         router.push(`/avatars/${encodeURIComponent(linkingAvatarId)}`);
         return;
@@ -245,14 +245,14 @@ export function PersonaLibraryScreen({
       setCreateNotice("");
     } catch (error) {
       setCreateState("error");
-      setCreateNotice(error instanceof Error ? error.message : "Persona 创建失败");
+      setCreateNotice(error instanceof Error ? error.message : "人设创建失败");
     }
   }
 
   return (
     <section className={styles.screen} data-embedded={embedded}>
       <header className={styles.intro}>
-        <div><h2>{t("人设")}</h2><p>{t("选择已有的人设，或创建新的性格与对话风格，供多个角色使用。")}</p></div>
+        <div><h2>{t("人设")}</h2><p>{t("按用途与性格定义可复用的人设；人物姓名使用角色设置中的名称。")}</p></div>
         <button type="button" className={styles.createButton} aria-expanded={creating} onClick={() => setCreating((value) => !value)}><Plus />{t("创建人设")}</button>
       </header>
 
@@ -264,8 +264,8 @@ export function PersonaLibraryScreen({
         </div>
       ) : null}
 
-      {listState === "loading" ? <p className={styles.notice}>{t("正在加载 Persona 列表…")}</p> : null}
-      {listState === "error" ? <p className={styles.notice} role="alert">{t("Persona 列表读取失败")}</p> : null}
+      {listState === "loading" ? <p className={styles.notice}>{t("正在加载人设列表…")}</p> : null}
+      {listState === "error" ? <p className={styles.notice} role="alert">{t("人设列表读取失败")}</p> : null}
 
       <div className={styles.grid}>
           {(personas ?? []).map((persona) => {
@@ -282,7 +282,7 @@ export function PersonaLibraryScreen({
                 >
                   <span className={styles.cardTitle}>
                     <strong>{persona.personaName}</strong>
-                    <span className={styles.cardIntro}>{persona.intro || t("为这个 Persona 添加一段简介")}</span>
+                    <span className={styles.cardIntro}>{persona.intro || t("为这个人设添加一段简介")}</span>
                     <small>{t("关联 ")}{persona.linkedAvatarIds.length}{t(" 个数字人")}</small>
                   </span>
                   <ChevronDown className={styles.cardChevron} />
@@ -311,7 +311,7 @@ export function PersonaLibraryScreen({
                 {expanded ? (
                   <div className={styles.cardBody}>
                     {profileState[persona.personaId] === "loading" || !profile ? (
-                      <p className={styles.notice}>{t("正在加载 Persona 内容…")}</p>
+                      <p className={styles.notice}>{t("正在加载人设内容…")}</p>
                     ) : (
                       <>
                         <label className={styles.editorField}>
@@ -324,7 +324,7 @@ export function PersonaLibraryScreen({
                             value={introDrafts[persona.personaId] ?? profile.intro ?? ""}
                             maxLength={160}
                             aria-label={"" + (persona.personaName) + t("的卡片简介")}
-                            placeholder={t("用一两句话描述这个 Persona 的性格或定位")}
+                            placeholder={t("用一两句话描述这个人设的性格或定位")}
                             onChange={(event) => setIntroDrafts((current) => ({ ...current, [persona.personaId]: event.target.value }))}
                           />
                         </label>
@@ -393,7 +393,7 @@ export function PersonaLibraryScreen({
                     value={createName}
                     maxLength={80}
                     aria-label={t("人设名称")}
-                    placeholder={t("例如 温柔知性的伙伴")}
+                    placeholder={t("例如 阅读顾问 · 知性温柔")}
                     onChange={(event) => setCreateName(event.target.value)}
                   />
                 </label>

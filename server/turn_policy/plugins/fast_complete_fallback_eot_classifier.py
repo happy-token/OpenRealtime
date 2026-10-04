@@ -66,12 +66,16 @@ class FastCompleteFallbackEotClassifier:
         generation: int,
         context: EotContext,
     ) -> EotClassification:
-        request = EotRequest(
-            text=text,
-            generation=generation,
-            context=context,
-            language="zh-CN",
+        return await self.classify_request(
+            EotRequest(
+                text=text,
+                generation=generation,
+                context=context,
+                language="zh-CN",
+            )
         )
+
+    async def classify_request(self, request: EotRequest) -> EotClassification:
         try:
             fast = await self._fast_provider.evaluate(request)
         except Exception as error:  # noqa: BLE001 - provider degradation boundary
@@ -111,9 +115,7 @@ class FastCompleteFallbackEotClassifier:
                 decision=EotDecision.INCOMPLETE,
                 confidence=fallback.confidence,
                 wait_ms=0,
-                source=(
-                    f"fallback_veto:open_slot;llm={fallback.source}{source_suffix}"
-                ),
+                source=(f"fallback_veto:open_slot;llm={fallback.source}{source_suffix}"),
                 evidence=evidence,
             )
         return EotClassification(
@@ -125,11 +127,7 @@ class FastCompleteFallbackEotClassifier:
         )
 
     def _can_fast_complete(self, text: str, evidence: EotEvidence) -> bool:
-        score = (
-            evidence.probability
-            if evidence.probability is not None
-            else evidence.confidence
-        )
+        score = evidence.probability if evidence.probability is not None else evidence.confidence
         if (
             evidence.decision is not EotDecision.COMPLETE
             or score is None

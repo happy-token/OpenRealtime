@@ -181,12 +181,13 @@ class CascadedInputPipeline:
         response_id: str,
         *,
         context: InteractionContext | None = None,
+        preparing: bool = False,
     ) -> None:
         if self._closed:
             raise RuntimeError("cascaded input pipeline is closed")
         self._latest_assistant_text = ""
         await self._turn_manager.send(
-            ObserveSystemResponseStarted(response_id=response_id, context=context)
+            ObserveSystemResponseStarted(response_id=response_id, context=context, preparing=preparing)
         )
         self._response_active = True
 
@@ -195,17 +196,13 @@ class CascadedInputPipeline:
         text: str,
         *,
         context: InteractionContext,
+        playback_started: bool = True,
     ) -> None:
         if self._closed:
             raise RuntimeError("cascaded input pipeline is closed")
-        if not text:
-            return
-        self._latest_assistant_text += text
+        self._latest_assistant_text = text
         await self._turn_manager.send(
-            ObserveAssistantSpokenText(
-                context=context,
-                text=self._latest_assistant_text,
-            )
+            ObserveAssistantSpokenText(context=context, text=text, playback_started=playback_started)
         )
 
     async def assistant_yielded(self, *, context: InteractionContext) -> None:
@@ -218,14 +215,6 @@ class CascadedInputPipeline:
 
         if self._closed:
             raise RuntimeError("cascaded input pipeline is closed")
-        if item.kind is ConversationItemKind.ASSISTANT_OUTPUT:
-            text = "\n".join(
-                part.text.strip()
-                for part in item.content
-                if isinstance(part, TextContent) and part.text.strip()
-            )
-            if text:
-                self._latest_assistant_text = text
         await self._turn_manager.send(ObserveConversationItem(item=item))
 
     async def _route_vad(self) -> None:

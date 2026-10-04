@@ -23,6 +23,12 @@ export interface TranscriptEntry {
   status?: AssistantMessageStatus;
 }
 
+export function archiveTranscript(entries: TranscriptEntry[]): TranscriptEntry[] {
+  return entries.map((entry) => ({ role: entry.role, text: entry.text,
+    ...(entry.isFinal === undefined ? {} : { isFinal: entry.isFinal }),
+    ...(entry.status === undefined ? {} : { status: entry.status }) }));
+}
+
 export type AssistantMessageStatus = "streaming" | "completed" | "interrupted" | "failed";
 
 export interface AssistantOutputText {

@@ -21,6 +21,21 @@ describe("Memory", () => {
     expect(await listMemories("alice", "role-a", directory)).toEqual([]);
   });
 
+  it("extracts requested birthdays from ASR punctuation without saving questions or negations", async () => {
+    expect(extractMemories("呃。你能不能记住我的生日？我的生日是10月。18号。")).toEqual([{ kind: "fact", content: "我的生日是10月18日" }]);
+    expect(extractMemories("请记住，我的生日是10月18日")).toEqual([{ kind: "fact", content: "我的生日是10月18日" }]);
+    expect(extractMemories("我生日是哪一天呀？")).toEqual([]);
+    expect(extractMemories("我的生日是10月18日还是10月19日？")).toEqual([]);
+    expect(extractMemories("你说我的生日是10月18日，你记错了")).toEqual([]);
+    expect(extractMemories("我的生日是10月18日？")).toEqual([]);
+    expect(extractMemories("我的生日不是10月18日")).toEqual([]);
+    expect(extractMemories("不要记住我的生日是10月18日")).toEqual([]);
+    expect(extractMemories("我的生日是2月30日")).toEqual([]);
+    const directory = await root();
+    const memory = await addMemory("alice", "role-a", "fact", "我的生日是10月18日", "birthday-conversation", directory);
+    expect(memory.source_conversation_id).toBe("birthday-conversation");
+    expect((await addMemory("alice", "role-a", "fact", memory.content, "birthday-conversation", directory)).id).toBe(memory.id);
+  });
   it("extracts only explicit categories and rejects sensitive content", async () => {
     expect(extractMemories("我喜欢简洁回答")).toEqual([{ kind: "preference", content: "我喜欢简洁回答" }]);
     expect(extractMemories("我的目标是学会日语")).toEqual([{ kind: "goal", content: "我的目标是学会日语" }]);

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Literal, Protocol, cast
 
@@ -31,8 +31,8 @@ from server.turn_policy.dual_intent import (
     DualIntent,
     DualIntentClassifier,
 )
-from server.turn_policy.eot_classifier import EotClassifier, EotHistoryMessage
-from server.turn_policy.policy import TurnPolicy
+from server.turn_policy.eot_classifier import EotClassifierLike, EotHistoryMessage
+from server.turn_policy.policy import DialoguePolicy
 from server.turn_policy.semantic_endpoint import (
     EndpointActivity,
     EndpointCandidate,
@@ -41,11 +41,12 @@ from server.turn_policy.semantic_endpoint import (
     SemanticEndpointGate,
     endpoint_stability_wait_ms,
 )
+from server.turn_policy.semantic_input import SemanticInputState, TextBoundary
 from server.turn_policy.semantic_interruption import (
     InterruptionBoundary,
     InterruptionCandidate,
+    InterruptionClassifierLike,
     InterruptionVerdict,
-    SemanticInterruptionClassifier,
     SemanticInterruptionGate,
     completed_interruption_creates_turn,
 )
@@ -86,6 +87,7 @@ class ObserveSystemResponseCompleted:
 class ObserveSystemResponseStarted:
     response_id: str
     context: InteractionContext | None = None
+    preparing: bool = False
 
     def __post_init__(self) -> None:
         if not self.response_id:
@@ -101,10 +103,7 @@ class ObserveAssistantYielded:
 class ObserveAssistantSpokenText:
     context: InteractionContext
     text: str
-
-    def __post_init__(self) -> None:
-        if not self.text:
-            raise ValueError("assistant spoken text must be non-empty")
+    playback_started: bool = True
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -155,6 +154,7 @@ class UserTurnCommitted:
     transcript_revision: int
     provider_endpoint_observed: bool
     committed_at: datetime
+    continuation_of_turn_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.text or self.transcript_revision < 1:
@@ -196,15 +196,15 @@ class TurnManagerCapabilityProvider(Protocol):
 class LegacyTurnManagerCapabilityAdapter:
     def __init__(
         self,
-        policy_factory: Callable[[], TurnPolicy],
+        policy_factory: Callable[[], DialoguePolicy],
         *,
         dual_intent_classifier: DualIntentClassifier | None = None,
-        semantic_interruption_classifier: SemanticInterruptionClassifier | None = None,
+        semantic_interruption_classifier: InterruptionClassifierLike | None = None,
         semantic_interruption_partial_chars: int = 5,
         semantic_interruption_idle_ms: float = 100,
         semantic_interruption_threshold: float = 0.8,
         semantic_interruption_timeout_ms: float = 800,
-        eot_classifier: EotClassifier | None = None,
+        eot_classifier: EotClassifierLike | None = None,
         classifier_timeout_ms: float = 5000,
         asr_idle_stop_ms: float = 1000,
         late_asr_recovery_ms: float = 2000,
@@ -285,9 +285,9 @@ class LegacyTurnManagerCapabilitySession:
         self,
         *,
         context: InteractionContext,
-        policy: TurnPolicy,
+        policy: DialoguePolicy,
         dual_intent_classifier: DualIntentClassifier,
-        semantic_interruption_classifier: SemanticInterruptionClassifier | None,
+        semantic_interruption_classifier: InterruptionClassifierLike | None,
         semantic_interruption_partial_chars: int,
         semantic_interruption_idle_ms: float,
         semantic_interruption_threshold: float,
@@ -368,6 +368,8 @@ class LegacyTurnManagerCapabilitySession:
             )
             return
         if isinstance(command, ObserveSystemResponseStarted):
+            if command.preparing:
+                return
             await self._evaluate(
                 Signal.PROACTIVE_TIMER,
                 context=command.context or self._context,
@@ -408,6 +410,9 @@ class LegacyTurnManagerCapabilitySession:
                     await self._semantic_interruption_gate.begin(
                         generation=event.context.generation,
                         assistant_text=self._latest_assistant_text,
+                        history=tuple(message for _, message in self._history),
+                        interaction=event.context,
+                        input_state=SemanticInputState(dialogue_state=DialogueState.DUAL),
                     )
                 await self._evaluate(Signal.OVERLAP_DETECTED, context=event.context)
             else:
@@ -472,6 +477,7 @@ class LegacyTurnManagerCapabilitySession:
                 context=event.context,
                 text=event.text,
                 revision=event.revision,
+                boundary=TextBoundary.SENTENCE_END,
             )
             self._confirm_pending_acoustic_stop(pending)
             if self._pending_acoustic_stop is None:
@@ -517,6 +523,9 @@ class LegacyTurnManagerCapabilitySession:
                     await self._semantic_interruption_gate.begin(
                         generation=event.context.generation,
                         assistant_text=self._latest_assistant_text,
+                        history=tuple(message for _, message in self._history),
+                        interaction=event.context,
+                        input_state=SemanticInputState(dialogue_state=DialogueState.DUAL),
                     )
                 await self._evaluate(
                     Signal.OVERLAP_DETECTED,
@@ -625,12 +634,20 @@ class LegacyTurnManagerCapabilitySession:
         context: InteractionContext,
         text: str,
         revision: int,
+        boundary: TextBoundary = TextBoundary.PARTIAL,
     ) -> _PendingSemanticEndpoint:
         candidate = EndpointCandidate(
             text=text,
             generation=context.generation,
             transcript_revision=revision,
             history=tuple(message for _, message in self._history),
+            interaction=context,
+            input_state=SemanticInputState(transcript_revision=revision,
+                boundary=boundary, dialogue_state=self._policy.state,
+                speech_active=False if self._pending_acoustic_stop_source == "vad_stop" else None,
+                silence_duration_ms=(self._pending_acoustic_stop.silence_duration_us / 1000
+                    if self._pending_acoustic_stop is not None and self._pending_acoustic_stop_source == "vad_stop" else None),
+                audio_timestamp_us=self._latest_asr_audio_timestamp_us),
         )
         current = self._pending_endpoint
         if current is not None and current.candidate == candidate:
@@ -708,9 +725,10 @@ class LegacyTurnManagerCapabilitySession:
         )
         if not content:
             return
-        if len(content) > self._history_max_chars:
+        truncated = len(content) > self._history_max_chars
+        if truncated:
             content = content[: self._history_max_chars]
-        message = EotHistoryMessage(role=role, content=content)
+        message = EotHistoryMessage(role=role, content=content, truncated=truncated)
         if role == "assistant":
             self._latest_assistant_text = content
         self._history.append((item.item_id, message))
@@ -728,9 +746,25 @@ class LegacyTurnManagerCapabilitySession:
         while len(self._history) > self._history_max_messages:
             _, removed = self._history.pop(0)
             self._history_chars -= len(removed.content)
-        while self._history_chars > self._history_max_chars and len(self._history) > 1:
+        minimum_messages = min(2, self._history_max_messages, self._history_max_chars)
+        while self._history_chars > self._history_max_chars and len(self._history) > minimum_messages:
             _, removed = self._history.pop(0)
             self._history_chars -= len(removed.content)
+        if self._history_chars > self._history_max_chars and len(self._history) == 2:
+            # Preserve both sides of the latest exchange instead of letting a
+            # long assistant answer evict the preceding user message.
+            first_id, first = self._history[0]
+            second_id, second = self._history[1]
+            first_budget = min(len(first.content), max(1, self._history_max_chars // 2))
+            second_budget = min(len(second.content), self._history_max_chars - first_budget)
+            first_budget = min(len(first.content), self._history_max_chars - second_budget)
+            self._history = [
+                (first_id, replace(first, content=first.content[:first_budget],
+                    truncated=first.truncated or len(first.content) > first_budget)),
+                (second_id, replace(second, content=second.content[:second_budget],
+                    truncated=second.truncated or len(second.content) > second_budget)),
+            ]
+            self._history_chars = first_budget + second_budget
 
     async def _confirm_semantic_endpoint(self, event: VadSpeechStopped) -> bool:
         self._pending_acoustic_stop = event

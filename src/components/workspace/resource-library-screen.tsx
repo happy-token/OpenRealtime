@@ -13,13 +13,14 @@ import { AvatarResourceHome } from "@/components/avatar/avatar-resource-home";
 import { AvatarUploadDialog } from "@/components/avatar/avatar-upload-dialog";
 import { PersonaLibraryScreen } from "@/components/persona/persona-library-screen";
 import { ToolLibraryScreen } from "@/components/tools/tool-library-screen";
+import { MemorySettingsScreen } from "@/components/settings/memory-settings-screen";
 import { KnowledgeLibraryScreen } from "./knowledge-library-screen";
 import { VoiceLibrary } from "./voice-library";
 import { useOfficialRealtimeAvatars } from "@/hooks/use-official-realtime-avatars";
 import type { AvatarWorkbenchTask } from "@/lib/avatar-workbench-navigation";
 import styles from "./resource-library-screen.module.css";
 
-export type ResourceTab = "voices" | "personas" | "tools" | "knowledge" | "avatars" | "official-realtime";
+export type ResourceTab = "voices" | "personas" | "tools" | "knowledge" | "memory" | "avatars" | "official-realtime";
 
 export function ResourceLibraryScreen({
   tab,
@@ -29,6 +30,7 @@ export function ResourceLibraryScreen({
   initialTalkingMethod,
   returnToRoleCreate = false,
   returnToRoleId,
+  knowledgeRoleId,
 }: {
   tab: ResourceTab;
   avatarTask?: AvatarWorkbenchTask;
@@ -37,6 +39,7 @@ export function ResourceLibraryScreen({
   initialTalkingMethod?: "lipforcing";
   returnToRoleCreate?: boolean;
   returnToRoleId?: string;
+  knowledgeRoleId?: string;
 }) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -57,6 +60,7 @@ export function ResourceLibraryScreen({
       {tab === "voices" ? <VoiceLibrary /> : null}
       {tab === "personas" ? <PersonaLibraryScreen embedded onCreated={returnToRole} /> : null}
       {tab === "tools" ? <ToolLibraryScreen onCreated={returnToRole} /> : null}
+      {tab === "memory" ? <MemorySettingsScreen initialRoleId={knowledgeRoleId ?? returnToRoleId} /> : null}
       {tab === "knowledge" ? <KnowledgeLibraryScreen onCreated={returnToRole} /> : null}
       {tab === "official-realtime" ? <div className={styles.realtimeHeading}>
         <h2>{t("实时数字人")}</h2>

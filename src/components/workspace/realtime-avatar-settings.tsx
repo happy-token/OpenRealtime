@@ -17,6 +17,7 @@ import { readHostedAvatarProfile, saveHostedAvatarProfile, type HostedAvatarProf
 import { fetchTools } from "@/lib/tool-catalog-client";
 import type { ToolRecord } from "@/lib/tool-records";
 import type { KnowledgeDocument } from "@/lib/knowledge-catalog-repository";
+import { hostedAvatarRoleId } from "@/lib/hosted-avatar-role-id";
 import { readJsonResponse } from "@/lib/http-json-response";
 import styles from "./realtime-avatar-settings.module.css";
 
@@ -56,7 +57,7 @@ export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
     void Promise.all([
       fetch("/api/personas", { cache: "no-store", signal: controller.signal }).then((response) => response.ok ? response.json() as Promise<{ personas?: PersonaSummary[] }> : { personas: [] }),
       fetchTools(controller.signal).catch(() => []),
-      fetch("/api/knowledge", { cache: "no-store", signal: controller.signal }).then((response) => response.ok ? response.json() as Promise<{ documents?: KnowledgeDocument[] }> : { documents: [] }),
+      fetch(`/api/knowledge?roleId=${encodeURIComponent(hostedAvatarRoleId(avatarId))}`, { cache: "no-store", signal: controller.signal }).then((response) => response.ok ? response.json() as Promise<{ documents?: KnowledgeDocument[] }> : { documents: [] }),
       fetch(`/api/hosted-avatar-settings/${encodeURIComponent(avatarId)}`, { cache: "no-store", signal: controller.signal }).then((response) => response.ok ? response.json() as Promise<{ documentIds?: string[]; memoryEnabled?: boolean }> : { documentIds: [], memoryEnabled: false }),
     ]).then(([payload, records, knowledge, settings]) => {
       if (!controller.signal.aborted) { setPersonas(payload.personas ?? []); setTools(records); setKnowledgeDocuments(knowledge.documents ?? []); setKnowledgeIds(settings.documentIds ?? []); setMemoryEnabled(settings.memoryEnabled ?? false); }
@@ -168,7 +169,7 @@ export function RealtimeAvatarSettings({ avatarId }: { avatarId: string }) {
           const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint);
           return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={profile.toolIds.includes(tool.tool_id)} onChange={(event) => setProfile({ ...profile, toolIds: event.target.checked ? [...profile.toolIds, tool.tool_id] : profile.toolIds.filter((id) => id !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{disabled ? t("需要补充服务地址后才能执行") : tool.description}</small></span><em>{tool.builtin ? t("内置") : tool.public_enabled ? t("共享") : t("个人")}</em></label>;
         })}</div></SettingsModule>
-        <SettingsModule title={t("知识库")} detail={knowledgeIds.length ? `已选择 ${knowledgeIds.length} 份` : "暂未选择"} icon={<BookOpen />} open={openModule === "knowledge"} onToggle={() => toggleModule("knowledge")}><div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料")}</span><Link href="/resources?tab=knowledge"><Plus />{t("新建")}</Link></div><div className={styles.toolList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((document) => <label key={document.document_id}><input type="checkbox" checked={knowledgeIds.includes(document.document_id)} onChange={(event) => setKnowledgeIds((ids) => event.target.checked ? [...ids, document.document_id] : ids.filter((id) => id !== document.document_id))} /><span><strong>{document.title}</strong><small>{document.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{document.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>{knowledgeDocuments.length === 0 ? <p>{t("暂无可用资料，请先到资源库创建知识库内容。")}</p> : null}</SettingsModule>
+        <SettingsModule title={t("知识库")} detail={knowledgeIds.length ? `已选择 ${knowledgeIds.length} 份` : "暂未选择"} icon={<BookOpen />} open={openModule === "knowledge"} onToggle={() => toggleModule("knowledge")}><div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料")}</span><Link href={`/resources?tab=knowledge&role_id=${encodeURIComponent(hostedAvatarRoleId(avatarId))}`}><Plus />{t("新建")}</Link></div><div className={styles.toolList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((document) => <label key={document.document_id}><input type="checkbox" checked={knowledgeIds.includes(document.document_id)} onChange={(event) => setKnowledgeIds((ids) => event.target.checked ? [...ids, document.document_id] : ids.filter((id) => id !== document.document_id))} /><span><strong>{document.title}</strong><small>{document.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{document.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>{knowledgeDocuments.length === 0 ? <p>{t("暂无可用资料，请先到资源库创建知识库内容。")}</p> : null}</SettingsModule>
         <label className={styles.memorySwitch}><MemoryStick aria-hidden="true" /><span><strong>{t("长期记忆")}</strong><small>{t("仅用于这个实时数字人的对话")}</small></span><input type="checkbox" checked={memoryEnabled} onChange={(event) => setMemoryEnabled(event.target.checked)} aria-label={t("启用长期记忆")} /></label>
         {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
         {notice ? <p role="status" className={styles.notice}>{t(notice)}</p> : null}

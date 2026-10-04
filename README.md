@@ -458,6 +458,13 @@ browser suite. The default voice regression never calls external AI services.
 Use `pnpm test:voice:live` only when `DOUBAO_API_KEY` and/or
 `DEEPSEEK_API_KEY` are configured and real provider smoke coverage is wanted.
 
+## 知识、记忆与数据管理
+
+- [数据管理指南](docs/DATA-MANAGEMENT-GUIDE.md)：知识增删改、记忆增加与归零、历史区别、API 和备份恢复。
+- [知识库指南](docs/KNOWLEDGE-BASE-GUIDE.md)：文件和网页导入、检索、角色绑定。
+- [Memory 与续聊](docs/MEMORY-AND-HISTORY-GUIDE.md)：验证多轮上下文与跨会话记忆。
+- [项目完善清单](docs/PROJECT-IMPROVEMENT-AUDIT.md)：当前缺口、优先级、验收标准和文档导航。
+
 ## Package layout
 
 The repo splits four ways: `server/` is the framework itself, `demos/` holds runnable

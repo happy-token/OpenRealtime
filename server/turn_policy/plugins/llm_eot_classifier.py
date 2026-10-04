@@ -8,11 +8,12 @@ provider receives the same liveness policy.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from typing import Any
 
 from server.brain.llm_clients import ChatMessage, LlmClient
-from server.turn_policy.eot_classifier import EotClassification, EotContext, EotDecision
+from server.turn_policy.eot_classifier import EotClassification, EotContext, EotDecision, EotRequest
+from server.turn_policy.semantic_input import SemanticInputState
 
 DEFAULT_SYSTEM_PROMPT = """You judge whether the latest spoken transcript is a complete user turn.
 
@@ -68,13 +69,19 @@ class LlmEotClassifier:
         self._system_prompt = system_prompt
         self._source = source
 
-    async def classify(
-        self, *, text: str, generation: int
-    ) -> EotClassification:
+    async def classify(self, *, text: str, generation: int) -> EotClassification:
         return await self.classify_with_context(
             text=text,
             generation=generation,
             context=EotContext(),
+        )
+
+    async def classify_request(self, request: EotRequest) -> EotClassification:
+        return await self.classify_with_context(
+            text=request.text,
+            generation=request.generation,
+            context=request.context,
+            input_state=request.input_state,
         )
 
     async def classify_with_context(
@@ -83,12 +90,17 @@ class LlmEotClassifier:
         text: str,
         generation: int,
         context: EotContext,
+        input_state: SemanticInputState | None = None,
     ) -> EotClassification:
         del generation  # cancellation/staleness is owned by the endpoint gate
         user_text = json.dumps(
-            {"transcript": text},
+            {
+                "transcript": text,
+                **({"input_state": asdict(input_state)} if input_state is not None else {}),
+            },
             ensure_ascii=False,
             separators=(",", ":"),
+            default=lambda value: value.value,
         )
         messages = (
             ChatMessage(role="system", content=self._system_prompt),
@@ -119,7 +131,7 @@ class LlmEotClassifier:
             )
             return replace(_parse_classification(reply), source=self._source)
 
-        fragments: list[str] = []
+        fragments = []
         async for delta in stream(
             system_prompt=self._system_prompt,
             user_text=_fallback_user_text(context, user_text),
@@ -146,8 +158,7 @@ def _fallback_user_text(context: EotContext, current_user_text: str) -> str:
     return json.dumps(
         {
             "history": [
-                {"role": message.role, "content": message.content}
-                for message in context.history
+                {"role": message.role, "content": message.content} for message in context.history
             ],
             "current": json.loads(current_user_text),
         },

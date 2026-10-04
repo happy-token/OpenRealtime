@@ -28,7 +28,6 @@ export async function POST(request: Request) {
   try {
     const scoped = await scope(request, true);
     if (scoped instanceof Response) return scoped;
-    if (!scoped.role.memory_enabled) return jsonError("当前角色已关闭 Memory", 409);
     const input = await readLimitedJson(request, 2_000) as { kind?: MemoryKind; content?: string };
     const memory = await addMemory(scoped.owner, scoped.role.role_id, input.kind as MemoryKind, input.content as string);
     return Response.json({ memory }, { status: 201 });

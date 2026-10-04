@@ -10,6 +10,7 @@ from server.core.interaction_context import InteractionContext
 from server.persistence.postgres._connection import connection_scope
 from server.persistence.postgres.schema import validate_schema_name
 from server.tools.canonical import IdempotencyClass, RiskLevel
+from server.tools.permission_settings import ToolPermissionMode
 from server.tools.policy_gateway import (
     Allow,
     ConfirmationChannel,
@@ -326,6 +327,7 @@ def _encode_policy_context(context: ToolPolicyContext) -> dict[str, Any]:
     return {
         "authenticated_scopes": sorted(context.authenticated_scopes),
         "policy_version": context.policy_version,
+        "permission_mode": context.permission_mode.value if context.permission_mode is not None else None,
     }
 
 
@@ -333,6 +335,7 @@ def _decode_policy_context(payload: dict[str, Any]) -> ToolPolicyContext:
     return ToolPolicyContext(
         authenticated_scopes=frozenset(payload["authenticated_scopes"]),
         policy_version=payload["policy_version"],
+        permission_mode=ToolPermissionMode(payload["permission_mode"]) if payload.get("permission_mode") is not None else None,
     )
 
 

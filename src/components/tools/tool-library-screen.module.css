@@ -57,3 +57,14 @@
 @media (max-width: 760px) { .templates,.group > div { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .heading { align-items: flex-start; flex-direction: column; } .fields { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+.filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.filters input { flex: 1; min-width: 180px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-solid); color: var(--text); }
+.filters .permissionButton { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-dim); background: transparent; font-size: .8rem; text-decoration: none; }
+.permissionButton:hover { background: var(--control-surface-hover); color: var(--text); }
+.permissionButton:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.fields { border: 0; padding: 0; min-width: 0; }
+.group .preview { font-size: .75rem; min-width: 0; }
+.preview summary { cursor: pointer; color: var(--accent); }
+.preview p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }

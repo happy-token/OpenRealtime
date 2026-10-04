@@ -8,9 +8,13 @@ before the Conversation Kernel commits USER_EOT_CONFIRMED to Turn Policy.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal, Protocol, runtime_checkable
+
+from server.core.interaction_context import InteractionContext
+from server.turn_policy.semantic_input import SemanticInputState
 
 
 class EotDecision(Enum):
@@ -36,9 +40,11 @@ class EotClassification:
     evidence: tuple[EotEvidence, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.decision, EotDecision):
+            raise TypeError("EOT decision is invalid")
         if self.confidence is not None and not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
-        if self.wait_ms < 0:
+        if not math.isfinite(self.wait_ms) or self.wait_ms < 0:
             raise ValueError("wait_ms must be non-negative")
 
 
@@ -48,6 +54,7 @@ class EotHistoryMessage:
 
     role: Literal["user", "assistant"]
     content: str
+    truncated: bool = False
 
     def __post_init__(self) -> None:
         if self.role not in {"user", "assistant"}:
@@ -62,6 +69,12 @@ class EotContext:
 
     history: tuple[EotHistoryMessage, ...] = ()
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.history, tuple) or not all(
+            isinstance(item, EotHistoryMessage) for item in self.history
+        ):
+            raise ValueError("EOT history must be an immutable tuple of messages")
+
 
 @dataclass(frozen=True, slots=True)
 class EotRequest:
@@ -71,11 +84,26 @@ class EotRequest:
     generation: int
     context: EotContext = EotContext()
     language: str | None = None
+    input_state: SemanticInputState = field(default_factory=SemanticInputState)
+    interaction: InteractionContext | None = None
+    contract_version: int = 1
 
     def __post_init__(self) -> None:
+        if self.contract_version != 1:
+            raise ValueError("unsupported EOT request contract version")
+        if not isinstance(self.context, EotContext) or not isinstance(
+            self.input_state, SemanticInputState
+        ):
+            raise TypeError("invalid EOT request context or input state")
+        if self.interaction is not None and self.interaction.generation != self.generation:
+            raise ValueError("EOT request generation does not match interaction")
         if not self.text.strip():
             raise ValueError("EOT request text must be non-empty")
-        if self.generation < 0:
+        if (
+            isinstance(self.generation, bool)
+            or not isinstance(self.generation, int)
+            or self.generation < 0
+        ):
             raise ValueError("EOT request generation must be non-negative")
         if self.language == "":
             raise ValueError("EOT request language must be non-empty when provided")
@@ -103,7 +131,9 @@ class EotEvidence:
                 raise ValueError(f"{name} must be between 0 and 1")
         if not self.source:
             raise ValueError("EOT evidence source must be non-empty")
-        if self.wait_ms < 0 or self.inference_ms < 0:
+        if not all(
+            math.isfinite(value) and value >= 0 for value in (self.wait_ms, self.inference_ms)
+        ):
             raise ValueError("EOT evidence durations must be non-negative")
 
 
@@ -126,9 +156,7 @@ def normalize_eot_classification(
 
 
 class EotClassifier(Protocol):
-    async def classify(
-        self, *, text: str, generation: int
-    ) -> EotClassification | EotDecision: ...
+    async def classify(self, *, text: str, generation: int) -> EotClassification | EotDecision: ...
 
 
 @runtime_checkable
@@ -146,6 +174,30 @@ class ContextualEotClassifier(Protocol):
         generation: int,
         context: EotContext,
     ) -> EotClassification | EotDecision: ...
+
+
+@runtime_checkable
+class RequestEotClassifier(Protocol):
+    """Preferred plugin contract; text-only implementations may ignore context."""
+
+    async def classify_request(self, request: EotRequest) -> EotClassification | EotDecision: ...
+
+
+EotClassifierLike = EotClassifier | RequestEotClassifier
+
+
+async def classify_eot(classifier: EotClassifierLike, request: EotRequest) -> EotClassification:
+    if isinstance(classifier, RequestEotClassifier):
+        result = await classifier.classify_request(request)
+    elif isinstance(classifier, ContextualEotClassifier):
+        result = await classifier.classify_with_context(
+            text=request.text,
+            generation=request.generation,
+            context=request.context,
+        )
+    else:
+        result = await classifier.classify(text=request.text, generation=request.generation)
+    return normalize_eot_classification(result)
 
 
 class FastEotScorer(Protocol):

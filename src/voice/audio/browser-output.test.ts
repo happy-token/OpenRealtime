@@ -217,3 +217,33 @@ describe("BrowserAudioOutput", () => {
     expect(output.scheduledSourceCount).toBe(0);
   });
 });
+
+it("reports ongoing playback and excludes weak-network gaps from sample position", () => {
+  vi.useFakeTimers();
+  const fake = fakeContext();
+  fake.context.state = "running";
+  const onProgress = vi.fn();
+  const output = new BrowserAudioOutput({
+    runtime: new DeviceAudioOutputRuntime(),
+    createContext: () => fake.context as unknown as AudioContext,
+    onProgress,
+  });
+  try {
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: "AAAAAA==", sampleRateHz: 16_000, generation: 1, speechId: "s", sequence: 0, isFinal: false };
+    output.play(chunk);
+    fake.context.currentTime = 2; // one second network gap, two samples actually played
+    fake.sources[0].ended?.();
+    output.play({ ...chunk, sequence: 1 });
+    fake.context.currentTime = 2.000125;
+    vi.advanceTimersByTime(100);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ phase: "playing", played_position_samples: 4 }));
+    output.reset();
+    onProgress.mockClear();
+    vi.advanceTimersByTime(200);
+    expect(onProgress).not.toHaveBeenCalled();
+  } finally {
+    output.close();
+    vi.useRealTimers();
+  }
+});

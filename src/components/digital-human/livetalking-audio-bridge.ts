@@ -1,8 +1,10 @@
+import { AvatarPlaybackClock, type AvatarMediaClock } from "@/voice/audio/avatar-playback-clock";
 import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 
 type Fetcher = typeof fetch;
 
 interface StreamingGeneration {
+  clock: AvatarPlaybackClock;
   sampleRateHz: number;
   source: Int16Array;
   sentSamples: number;
@@ -17,7 +19,7 @@ interface StreamingGeneration {
   chunks: AvatarAudioChunk[];
 }
 
-interface VolumeTarget { volume: number }
+type VolumeTarget = AvatarMediaClock;
 const UPLOAD_SAMPLES = 4_800; // 300 ms, so a 320 ms source chunk can retain its resampling neighbour.
 
 /** Streams one continuous PCM timeline per TTS generation to our renderer. */
@@ -52,6 +54,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     if ((current?.source.length ?? 0) + incoming.length > chunk.sampleRateHz * 120) return false;
     if (!current) {
       current = {
+        clock: new AvatarPlaybackClock(chunk.generation, chunk.speechId),
         sampleRateHz: chunk.sampleRateHz, source: new Int16Array(0), sentSamples: 0,
         sequence: 0, final: false, started: false, controller: new AbortController(),
         request: Promise.resolve(), pollTimer: null, onStarted: chunk.onStarted, onEnded: chunk.onEnded, chunks: [],
@@ -62,6 +65,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
     combined.set(current.source);
     combined.set(incoming, current.source.length);
     current.source = combined;
+    current.clock.append(chunk.pcm16Base64, chunk.sampleRateHz);
     current.chunks.push(chunk);
     current.onEnded = chunk.onEnded;
     // Keep resampling phase continuous; retain the last source sample until its
@@ -122,6 +126,7 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
       if (this.active.get(generation) !== current) return;
       if (!current.started && (status.state === "playing" || status.state === "completed")) {
         current.started = true;
+        current.clock.start(this.video);
         current.onStarted();
       }
       if (status.state === "completed" || status.state === "cancelled") {
@@ -144,6 +149,10 @@ export class LiveTalkingAudioBridge implements AvatarAudioSink {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionid: this.sessionId, generation }),
     }).catch(() => undefined);
+  }
+
+  playbackPosition(generation: number) {
+    return this.active.get(generation)?.clock.read(this.video) ?? null;
   }
 
   isActive(generation: number): boolean { return this.active.has(generation); }

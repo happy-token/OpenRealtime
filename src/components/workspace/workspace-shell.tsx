@@ -2,6 +2,7 @@
 import { useLanguage } from "@/components/language/language-provider";
 
 
+import { RecentConversationActions } from "./recent-conversation-actions";
 import { LanguageSelect } from "@/components/language/language-select";
 import { BackLink } from "@/components/workspace/back-link";
 
@@ -22,12 +23,13 @@ import {
   PanelLeft,
   Palette,
   PlugZap,
+  ScrollText,
   Search,
   Sparkles,
   Settings,
   Settings2,
   SlidersHorizontal,
-  ScrollText,
+  ShieldCheck,
   UserCog,
   UserRound,
   UsersRound,
@@ -57,7 +59,7 @@ export function formatGithubStars(count: number | null): string {
 
 export type SidebarMode = "collapsed" | "preview" | "pinned";
 export type SidebarEvent = "hover-enter" | "hover-leave" | "pin" | "collapse";
-export type ResourceNavigationTab = "voices" | "personas" | "tools" | "knowledge" | "avatars" | "official-realtime";
+export type ResourceNavigationTab = "voices" | "personas" | "tools" | "knowledge" | "memory" | "avatars" | "official-realtime";
 
 export function isResourceWorkspacePath(pathname: string) {
   return pathname.startsWith("/resources")
@@ -100,7 +102,8 @@ export function WorkspaceShell({
     }).catch(() => { /* Keep the GitHub link available when counts cannot be read. */ });
     return () => controller.abort();
   }, [homeMode]);
-  const settingsMode = pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/demos/diagnostics";
+  const serviceMode = pathname === "/settings/providers" || pathname === "/settings/services";
+  const settingsMode = !serviceMode && (pathname === "/settings" || pathname.startsWith("/settings/") || pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/demos/diagnostics");
   const resourceMode = Boolean(resourceTab) || isResourceWorkspacePath(pathname);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("collapsed");
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -294,11 +297,9 @@ export function WorkspaceShell({
       <NavLink href="/settings" active={pathname === "/settings"} icon={<Settings />} label={t("总览")} />
       <div className={styles.settingsGroupLabel}>{t("账户")}</div>
       <NavLink href="/settings/profile" active={pathname === "/settings/profile"} icon={<UserRound />} label={t("个人资料")} />
-      <NavLink href="/settings/providers" active={pathname === "/settings/providers"} icon={<SlidersHorizontal />} label={t("供应商")} />
-      <NavLink href="/settings/services" active={pathname === "/settings/services"} icon={<PlugZap />} label={t("模型服务")} />
       <div className={styles.settingsGroupLabel}>{t("偏好")}</div>
       <NavLink href="/settings/appearance" active={pathname === "/settings/appearance"} icon={<Palette />} label={t("外观")} />
-      <NavLink href="/settings/memory" active={pathname === "/settings/memory"} icon={<MemoryStick />} label={t("Memory 与隐私")} />
+      <NavLink href="/settings/permissions" active={pathname === "/settings/permissions"} icon={<ShieldCheck />} label={t("工具权限")} />
       <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label={t("高级配置")} />
       <div className={styles.settingsGroupLabel}>{t("数据管理")}</div>
       <NavLink href="/admin" active={pathname === "/admin" || pathname.startsWith("/admin/")} icon={<ScrollText />} label={t("数据日志后台")} />
@@ -316,6 +317,7 @@ export function WorkspaceShell({
       <div className={styles.settingsGroupLabel}>{t("对话能力")}</div>
       <NavLink href={resourceHref("tools")} active={currentResourceTab === "tools"} icon={<Wrench />} label={t("工具")} onClick={() => setMobileOpen(false)} />
       <NavLink href={resourceHref("knowledge")} active={currentResourceTab === "knowledge"} icon={<BookOpen />} label={t("知识库")} onClick={() => setMobileOpen(false)} />
+      <NavLink href={resourceHref("memory")} active={currentResourceTab === "memory"} icon={<MemoryStick />} label={t("记忆管理")} onClick={() => setMobileOpen(false)} />
     </nav>}
     {sidebarResizeHandle}
   </aside> : <aside
@@ -358,7 +360,7 @@ export function WorkspaceShell({
 
     <section className={styles.recentSection} aria-label={t("最近对话")}>
       <div className={styles.recentHeading}>
-        <Link className={styles.sidebarCopy} href="/conversations"><History />{t("最近对话")}</Link>
+        <Link className={styles.sidebarCopy} href="/conversations" title={t("查看全部对话记录")}><History />{t("对话记录")}</Link>
         <button type="button" aria-label={t("搜索最近对话")} onClick={() => setSearchOpen(true)}><Search /></button>
       </div>
       <div className={styles.searchField} data-open={searchOpen}>
@@ -380,9 +382,9 @@ export function WorkspaceShell({
       </div>
       <div className={styles.recentList}>
         {filteredRecents.map((item) => (
-          <Link key={item.id} href={`/conversations/${encodeURIComponent(item.id)}`} title={item.title}>
+          <div key={item.id} className={styles.recentRow} data-conversation-row><Link href={`/conversations/${encodeURIComponent(item.id)}`} title={item.title}>
             <span className={styles.sidebarCopy}>{item.title}</span>
-          </Link>
+          </Link><RecentConversationActions item={item} /></div>
         ))}
         {!filteredRecents.length ? <p className={styles.sidebarCopy}>{query ? t("没有匹配的对话") : t("还没有对话记录")}</p> : null}
       </div>
@@ -405,8 +407,10 @@ export function WorkspaceShell({
         <div className={styles.accountLanguage}><LanguageSelect /></div>
         <Link href="/settings/appearance"><Palette />{t("外观")}</Link>
         <div className={styles.accountDivider} />
+        <Link href="/settings/providers" aria-current={pathname === "/settings/providers" ? "page" : undefined}><SlidersHorizontal />{t("供应商")}</Link>
+        <Link href="/settings/services" aria-current={pathname === "/settings/services" ? "page" : undefined}><PlugZap />{t("模型服务")}</Link>
+        <Link href="/settings"><Settings />{t("设置")}</Link>
         {currentUser.status === "signed-in" ? <>
-          <Link href="/settings"><Settings />{t("设置")}</Link>
           <button type="button" disabled={loggingOut} onClick={() => void logout()}><LogOut />{loggingOut ? t("正在退出…") : t("退出登录")}</button>
           {accountError ? <p className={styles.accountError} role="alert">{t(accountError)}</p> : null}
         </> : <>

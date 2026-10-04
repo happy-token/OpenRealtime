@@ -6,6 +6,7 @@ import { listOwnedAvatars } from "./avatar-catalog-repository";
 import { withAvatarCatalogLock } from "./avatar-catalog-lock";
 import { listPersonas } from "./avatar-persona-server";
 import {
+  isProtectedBuiltinRole,
   isRolePresentationMode,
   isRoleVoiceDialect,
   isRoleDefaultSelections,
@@ -153,6 +154,7 @@ export async function updateRole(
 export async function deleteRole(roleId: string, root = repositoryRoot()) {
   validateRoleId(roleId);
   if (roleId === DEFAULT_ROLE_ID) throw new Error("默认助手不能删除");
+  if (isProtectedBuiltinRole(roleId)) throw new Error("内置角色不能删除");
   return withAvatarCatalogLock(root, async () => {
     const records = await readCatalog(root);
     const current = records.find((role) => role.role_id === roleId)

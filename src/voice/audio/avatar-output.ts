@@ -1,3 +1,5 @@
+import type { AvatarPlaybackPosition } from "./avatar-playback-clock";
+
 export interface AvatarAudioChunk {
   pcm16Base64: string;
   sampleRateHz: number;
@@ -17,6 +19,7 @@ export interface AvatarAudioSink {
   completeGeneration(generation: number): boolean;
   cancelGeneration(generation: number): void;
   isActive(generation: number): boolean;
+  playbackPosition?(generation: number): AvatarPlaybackPosition | null;
   reset(): void;
   setVolume(volume: number): void;
 }

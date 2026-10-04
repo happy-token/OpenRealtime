@@ -98,7 +98,7 @@ export function SelectMenu<T extends string>({
       if (!rootRef.current?.contains(event.target as Node) && !popoverRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false); }
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -242,7 +242,7 @@ export function SelectMenu<T extends string>({
           <path d="m6 8 4 4 4-4" />
         </svg>
       </button>
-      {fullWidth && open ? createPortal(popover, document.body) : popover}
+      {fullWidth && open ? createPortal(popover, rootRef.current?.closest("dialog") ?? document.body) : popover}
     </div>
   );
 }

@@ -162,16 +162,16 @@ def test_link_with_missing_persona_files_keeps_the_default_brain_prompt(tmp_path
 @pytest.mark.parametrize(
     ("avatar_id", "avatar_name", "persona_name"),
     [
-        ("default-anam", "Shuchang", "知性温柔"),
-        ("shuchang", "Shuchang", "知性温柔"),
-        ("companion", "陪伴", "柔光纯欲"),
-        ("avatar-zhaoning", "昭宁", "知性温柔"),
-        ("avatar-meichuqing", "梅初晴", "甜美元气"),
-        ("avatar-qingyun", "清韫", "忧郁薄雾"),
-        ("avatar-selin", "瑟琳", "浪漫法式"),
-        ("avatar-shiruoshui", "施若水", "柔光纯欲"),
-        ("avatar-zhaoyue", "曌月", "冷艳都市"),
-        ("avatar-qingzhao", "清照", "忧郁薄雾"),
+        ("default-anam", "Shuchang", "阅读顾问 · 知性温柔"),
+        ("shuchang", "Shuchang", "阅读顾问 · 知性温柔"),
+        ("companion", "陪伴", "日常陪伴 · 温柔安心"),
+        ("avatar-zhaoning", "昭宁", "阅读顾问 · 知性温柔"),
+        ("avatar-meichuqing", "梅初晴", "生活伙伴 · 活泼元气"),
+        ("avatar-qingyun", "清韫", "文字倾听 · 安静共情"),
+        ("avatar-selin", "瑟琳", "生活美学 · 浪漫优雅"),
+        ("avatar-shiruoshui", "施若水", "日常陪伴 · 温柔安心"),
+        ("avatar-zhaoyue", "曌月", "创意顾问 · 理性直接"),
+        ("avatar-qingzhao", "清照", "文字倾听 · 安静共情"),
     ],
 )
 def test_project_avatar_personas_are_complete(avatar_id, avatar_name, persona_name):
@@ -243,3 +243,26 @@ def test_agents_file_is_optional_but_identity_and_soul_are_required(tmp_path):
     (persona_dir / "SOUL.md").unlink()
     with pytest.raises(ValueError, match="missing required files"):
         catalog.system_prompt_for_avatar("avatar-zhaoning", "BASE")
+
+
+@pytest.mark.parametrize('name_first', [True, False])
+def test_role_name_placeholder_is_independent_of_persona_frame_order(tmp_path, name_first):
+    root = tmp_path / 'personas'
+    folder = root / 'shared-style'
+    folder.mkdir(parents=True)
+    (folder / 'IDENTITY.md').write_text('# 文字倾听\n人物姓名：{{role_name}}', encoding='utf-8')
+    (folder / 'SOUL.md').write_text('你是{{role_name}}，安静共情。', encoding='utf-8')
+    session = SessionAvatarPersona(AvatarPersonaPromptCatalog(persona_root=root, links_path=tmp_path / 'links.json'))
+    if name_first:
+        session.select_role_name('若水')
+    session.select(persona_id='shared-style')
+    if not name_first:
+        session.select_role_name('若水')
+    prompt = session.apply('BASE')
+    assert '人物姓名：若水' in prompt
+    assert '你是若水' in prompt
+    assert '{{role_name}}' not in prompt
+    session.select_role_name('清照')
+    assert '人物姓名：清照' in session.apply('BASE')
+    assert '若水' not in session.apply('BASE')
+    assert '{{role_name}}' in (folder / 'IDENTITY.md').read_text(encoding='utf-8')

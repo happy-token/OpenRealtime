@@ -6,6 +6,18 @@ import { ClientVoiceSessionController } from "./controller";
 
 
 describe("ClientVoiceSessionController", () => {
+  it("restores a historical thread without persisting or replaying resume credentials", () => {
+    const controller = new ClientVoiceSessionController({ input: new DeviceAudioInputRuntime(), output: new DeviceAudioOutputRuntime(),
+      continuation: { threadId: "thread-history", voiceSessionId: "voice-history" } });
+    expect(controller.createHello()).toMatchObject({ previous_voice_session_id: "voice-history", requested_thread_id: "thread-history", resume_token: null, resume_session_id: null });
+    controller.acceptSession({ type: "session_ack", session_id: "voice-next", thread_id: "thread-history", protocol_version: 2, resumed: false, resume_token: "new-secret" });
+    expect(controller.continuationIdentity).toEqual({ threadId: "thread-history", voiceSessionId: "voice-next" });
+    controller.beginContinuation();
+    expect(controller.createHello()).toMatchObject({ previous_voice_session_id: "voice-next", requested_thread_id: "thread-history", resume_token: null });
+    controller.startNewSession();
+    expect(controller.continuationIdentity).toBeNull();
+    expect(controller.createHello().requested_thread_id).toBeUndefined();
+  });
   it("sends optional role providers in the session hello", () => {
     const controller = new ClientVoiceSessionController({
       input: new DeviceAudioInputRuntime(), output: new DeviceAudioOutputRuntime(),

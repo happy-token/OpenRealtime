@@ -84,7 +84,7 @@ from server.brain.realtime_grounding import (
     RealtimeGroundingCoordinator,
     TurnGrounder,
 )
-from server.brain.role_model import role_model_id, role_tool_ids
+from server.brain.role_model import role_model_id, role_tool_ids, role_record
 from server.brain.session_memory import SessionMemory
 from server.brain.tool_calling_brain import ToolCallingBrain
 from server.cli.harness import run_app
@@ -109,7 +109,6 @@ from server.realtime.capabilities import (
     LegacyAsrCapabilityAdapter,
     LegacyBrainCapabilityAdapter,
     LegacyTtsCapabilityAdapter,
-    LegacyTurnManagerCapabilityAdapter,
     LegacyVadCapabilityAdapter,
 )
 from server.realtime.capabilities.brain_streaming import (
@@ -117,14 +116,18 @@ from server.realtime.capabilities.brain_streaming import (
     ToolCallingBrainStreamingAdapter,
     VoiceRuntimeBrainStreamingAdapter,
 )
+from server.realtime.capabilities.coordinated_turn_manager import (
+    CoordinatedTurnManagerCapabilityAdapter,
+)
 from server.realtime.capabilities.speculative_brain import SpeculativeStreamingBrain
 from server.realtime.capabilities.speculative_speech import SpeculativeSpeechPipeline
-from server.realtime.cascaded import CascadedRealtimeEngine
-from server.realtime.observability import RealtimeTelemetryObserver
-from server.realtime.profile.builtin import (
-    BuiltinCascadedBindings,
-    resolve_builtin_profile,
+from server.realtime.cascaded.pipeline import (
+    CascadedPipeline,
+    CascadedPipelineBindings,
+    CascadedPipelineOptions,
 )
+from server.realtime.observability import RealtimeTelemetryObserver
+from server.realtime.profile.registry import RegisteredPlugin
 from server.realtime.provider_latency import ProviderLatencyObserver
 from server.signals.energy_vad import EnergyVadConfig
 from server.signals.plugins.silero_vad import SileroVad
@@ -152,6 +155,7 @@ from server.tools.everyday_source import EverydayToolSource
 from server.tools.fast_loop import FastToolLoop
 from server.tools.knowledge_base_source import KnowledgeBaseToolSource
 from server.tools.local_catalog_source import LocalCatalogToolSource
+from server.tools.permission_settings import tool_permission_mode
 from server.tools.policy_gateway import (
     ConfirmationChannel,
     ConfirmationRejected,
@@ -177,6 +181,7 @@ from server.transport.plugins.websocket import (
     StaticBearerWebSocketAuthenticator,
     serve,
 )
+from server.turn_policy.coordination import DefaultTurnCoordinationPolicy
 from server.turn_policy.dual_intent import DualIntentClassifier
 from server.turn_policy.eot_classifier import EotClassifier
 from server.turn_policy.plugins.classifier_eot_evidence_provider import (
@@ -190,6 +195,11 @@ from server.turn_policy.plugins.fireredchat_eot_provider import (
     FireRedChatOnnxModel,
 )
 from server.turn_policy.plugins.hybrid_eot_classifier import HybridEotClassifier
+from server.turn_policy.plugins.jev_classifier import (
+    JevClient,
+    JevEotClassifier,
+    JevSemanticInterruptionClassifier,
+)
 from server.turn_policy.plugins.llm_dual_intent_classifier import LlmDualIntentClassifier
 from server.turn_policy.plugins.llm_eot_classifier import (
     EOT_RESPONSE_SCHEMA,
@@ -911,7 +921,36 @@ def _build_vad() -> SileroVad:
     )
 
 
+def _semantic_provider(variable: str) -> str:
+    provider = os.environ.get(variable, "llm").strip().lower()
+    if provider not in {"llm", "jev"}:
+        raise ValueError(f"{variable} must be llm or jev")
+    return provider
+
+
+def _build_turn_coordination_policy() -> DefaultTurnCoordinationPolicy:
+    return DefaultTurnCoordinationPolicy(
+        incomplete_wait_ms=float(os.environ.get("VOICEAGENT_EOT_INCOMPLETE_TIMEOUT_MS", "5000")),
+        uncertain_wait_ms=float(os.environ.get("VOICEAGENT_EOT_UNCERTAIN_WAIT_MS", "300")),
+        backchannel_confidence=float(os.environ.get("VOICEAGENT_BACKCHANNEL_CONFIDENCE", "0.95")),
+    )
+
+
+def _build_jev_client() -> JevClient:
+    return JevClient(
+        api_key=os.environ.get("JEV_API_KEY", ""),
+        model=os.environ.get("VOICEAGENT_JEV_MODEL", "jev-1.13.0"),
+        timeout_s=float(os.environ.get("VOICEAGENT_JEV_TIMEOUT_MS", "2000")) / 1000,
+        max_concurrency=int(os.environ.get("VOICEAGENT_JEV_MAX_CONCURRENCY", "2")),
+    )
+
+
 def _build_eot_classifier(llm_client: LlmClient) -> EotClassifier | None:
+    if _semantic_provider("VOICEAGENT_EOT_PROVIDER") == "jev":
+        return JevEotClassifier(
+            _build_jev_client(),
+            min_confidence=float(os.environ.get("VOICEAGENT_JEV_EOT_MIN_CONFIDENCE", "0.8")),
+        )
     llm_classifier = None
     if _llm_credentials_configured():
         eot_llm_client = _build_eot_llm_client(llm_client)
@@ -1042,6 +1081,8 @@ def _build_dual_intent_classifier(llm_client: LlmClient) -> DualIntentClassifier
 def _build_semantic_interruption_classifier(
     llm_client: LlmClient,
 ) -> SemanticInterruptionClassifier | None:
+    if _semantic_provider("VOICEAGENT_INTERRUPTION_PROVIDER") == "jev":
+        return JevSemanticInterruptionClassifier(_build_jev_client())
     if _llm_credentials_configured():
         return LlmSemanticInterruptionClassifier(llm_client)
     return None
@@ -1061,7 +1102,11 @@ async def _log_ledger_event(session_id: str, event: LedgerEvent) -> None:
     )
 
 
-def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWebSocketSession:
+def _build_realtime_session(
+    session: InMemoryEndpointSession,
+    *,
+    pipeline_plugins: tuple[RegisteredPlugin, ...] = (),
+) -> VoiceSessionWebSocketSession:
     """Assemble the new stateful runtime behind the existing browser protocol."""
 
     if _application_runtime is None:
@@ -1107,13 +1152,20 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
     )
     if tool_registry is not None:
         tool_registry.select_tools([])
+    selected_permission_role: str | None = None
     tool_control_handler_factory = None
     confirmation_controller = None
     confirmation_authority = None
     if tool_registry is not None:
+        async def resolve_tool_permission(request):
+            return await asyncio.to_thread(
+                tool_permission_mode, identity.user_id, selected_permission_role,
+            )
+
         gateway = DefaultToolPolicyGateway(
             tool_registry,
             authorization_store=(_application_runtime.persistence.tool_authorizations),
+            permission_resolver=resolve_tool_permission,
         )
 
         tool_executor = ToolExecutor(tool_registry, gateway)
@@ -1207,8 +1259,12 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             response_prefetcher = streaming_brain
         vad_provider = LegacyVadCapabilityAdapter(_build_vad)
         asr_provider = LegacyAsrCapabilityAdapter(asr)
-        turn_manager_provider = LegacyTurnManagerCapabilityAdapter(
+        turn_manager_provider = CoordinatedTurnManagerCapabilityAdapter(
             TurnPolicy,
+            coordination_policy_factory=_build_turn_coordination_policy,
+            recovery_timeout_ms=float(
+                os.environ.get("VOICEAGENT_TURN_RECOVERY_TIMEOUT_MS", "10000")
+            ),
             dual_intent_classifier=_build_dual_intent_classifier(llm_client),
             semantic_interruption_classifier=semantic_interruption_classifier,
             semantic_interruption_partial_chars=int(
@@ -1221,9 +1277,18 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
                 os.environ.get("VOICEAGENT_SEMANTIC_INTERRUPTION_THRESHOLD", "0.8")
             ),
             semantic_interruption_timeout_ms=float(
-                os.environ.get("VOICEAGENT_SEMANTIC_INTERRUPTION_TIMEOUT_MS", "800")
+                os.environ.get(
+                    "VOICEAGENT_SEMANTIC_INTERRUPTION_TIMEOUT_MS",
+                    os.environ.get("VOICEAGENT_JEV_TIMEOUT_MS", "2000")
+                    if _semantic_provider("VOICEAGENT_INTERRUPTION_PROVIDER") == "jev"
+                    else "800",
+                )
             ),
-            eot_classifier=(None if binding is not None else _build_eot_classifier(llm_client)),
+            eot_classifier=(
+                None
+                if binding is not None and _semantic_provider("VOICEAGENT_EOT_PROVIDER") != "jev"
+                else _build_eot_classifier(llm_client)
+            ),
             classifier_timeout_ms=float(
                 os.environ.get("VOICEAGENT_EOT_LLM_TIMEOUT_MS", "5000")
             ),
@@ -1245,6 +1310,8 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             history_max_chars=int(
                 os.environ.get("VOICEAGENT_EOT_HISTORY_CHARS", "4000")
             ),
+            telemetry=telemetry,
+            debug_log=debug_log,
             response_prefetcher=response_prefetcher,
         )
         brain_provider = LegacyBrainCapabilityAdapter(streaming_brain)
@@ -1256,8 +1323,8 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             )
             / 1000,
         )
-        profile = resolve_builtin_profile(
-            BuiltinCascadedBindings(
+        pipeline = CascadedPipeline.assemble(
+            CascadedPipelineBindings(
                 vad=vad_provider,
                 asr=asr_provider,
                 turn_manager=turn_manager_provider,
@@ -1268,33 +1335,29 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
             profile_path=(
                 os.environ.get("VOICEAGENT_REALTIME_PROFILE_PATH") or None
             ),
-        )
-        engine = CascadedRealtimeEngine(
-            vad=vad_provider,
-            asr=asr_provider,
-            turn_manager=turn_manager_provider,
-            brain=brain_provider,
-            speech_renderer=speech_renderer,
-            tts=tts_provider,
-            speech_deliveries=_application_runtime.speech_deliveries,
-            response_timeout_s=float(
-                os.environ.get("VOICEAGENT_TURN_RESPONSE_TIMEOUT_S", "30")
-            ),
-            response_first_text_timeout_s=float(
-                os.environ.get("VOICEAGENT_RESPONSE_FIRST_TEXT_TIMEOUT_S", "5")
-            ),
-            response_cancel_timeout_s=float(
-                os.environ.get("VOICEAGENT_RESPONSE_CANCEL_TIMEOUT_S", "0.8")
-            ),
-            context_projector_factory=lambda: _build_model_context_projector(
-                llm_client
-            ),
-            provider_timing=ProviderLatencyObserver(
-                telemetry,
-                instances=binding.instance_ids if binding else None,
-                versions=binding.instance_versions if binding else None,
+            plugins=pipeline_plugins,
+            options=CascadedPipelineOptions(
+                speech_deliveries=_application_runtime.speech_deliveries,
+                response_timeout_s=float(
+                    os.environ.get("VOICEAGENT_TURN_RESPONSE_TIMEOUT_S", "30")
+                ),
+                response_first_text_timeout_s=float(
+                    os.environ.get("VOICEAGENT_RESPONSE_FIRST_TEXT_TIMEOUT_S", "5")
+                ),
+                response_cancel_timeout_s=float(
+                    os.environ.get("VOICEAGENT_RESPONSE_CANCEL_TIMEOUT_S", "0.8")
+                ),
+                context_projector_factory=lambda: _build_model_context_projector(
+                    llm_client
+                ),
+                provider_timing=ProviderLatencyObserver(
+                    telemetry,
+                    instances=binding.instance_ids if binding else None,
+                    versions=binding.instance_versions if binding else None,
+                ),
             ),
         )
+        engine, profile = pipeline.engine, pipeline.profile
         server_asr = not isinstance(asr, PreloadedAsrEngine)
         server_tts = not isinstance(tts, SilentTtsEngine)
     else:
@@ -1309,6 +1372,7 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
     )
 
     async def handle_auxiliary_frame(frame) -> None:
+        nonlocal selected_permission_role
         if isinstance(frame, TtsConfigFrame):
             if isinstance(tts, SelectableTtsEngine):
                 try:
@@ -1406,6 +1470,9 @@ def _build_realtime_session(session: InMemoryEndpointSession) -> VoiceSessionWeb
                     frame.persona_id,
                 )
         elif isinstance(frame, ToolConfigFrame):
+            selected_permission_role = frame.role_id
+            selected_role = role_record(identity.user_id, frame.role_id)
+            avatar_persona.select_role_name(selected_role.get("display_name") if selected_role else None)
             session_memory.select_role(frame.role_id)
             selected_model = role_model_id(identity.user_id, frame.role_id)
             allowed_tool_ids = role_tool_ids(identity.user_id, frame.role_id)
@@ -1705,7 +1772,11 @@ if __name__ == "__main__":
             if isinstance(state, ApplicationRuntime)
             else None
         ),
-        debug_log_query_factory=lambda state: state.debug_log_query if isinstance(state, ApplicationRuntime) else None,
+        debug_log_query_factory=(
+            lambda state: state.debug_log_query
+            if isinstance(state, ApplicationRuntime)
+            else None
+        ),
         diagnostics_health_reader=lambda: _application_runtime.diagnostics_health() if _application_runtime is not None else {"status": "unavailable"},
         voice_previewer=_preview_voice,
         session_conversation_reader=_read_session_conversation,

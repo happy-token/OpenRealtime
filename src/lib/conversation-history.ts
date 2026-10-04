@@ -11,10 +11,13 @@ export type ConversationHistoryItem = {
   role_name: string;
   mode: string;
   title: string;
+  title_customized?: boolean;
   started_at: string;
   updated_at: string;
   ended_at: string | null;
   entries: TranscriptEntry[];
+  thread_id?: string | null;
+  voice_session_id?: string | null;
 };
 
 const ID = /^[a-f0-9-]{36}$/i;
@@ -86,7 +89,12 @@ export async function getConversation(ownerId: string, id: string, root = conver
 
 export async function saveConversation(ownerId: string, input: {
   id: string; roleId: string | null; roleName: string; mode: string; entries: unknown; ended: boolean;
+  threadId?: string | null; voiceSessionId?: string | null;
 }, root = conversationHistoryRoot()) {
+  for (const id of [input.threadId, input.voiceSessionId]) {
+    if (id != null && (typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(id))) throw new Error("运行时会话信息无效");
+  }
+  if (Boolean(input.threadId) !== Boolean(input.voiceSessionId)) throw new Error("运行时会话信息无效");
   if (!ID.test(input.id) || (input.roleId !== null && (typeof input.roleId !== "string" || input.roleId.length > 160))
     || typeof input.roleName !== "string" || input.roleName.length > 120
     || typeof input.mode !== "string" || input.mode.length > 40 || typeof input.ended !== "boolean") throw new Error("对话信息无效");
@@ -97,13 +105,18 @@ export async function saveConversation(ownerId: string, input: {
     const index = items.findIndex((item) => item.id === input.id && item.owner_id === ownerId);
     if (items.some((item) => item.id === input.id && item.owner_id !== ownerId)) throw new Error("对话 ID 已被使用");
     const previous = index >= 0 ? items[index] : null;
+    if (previous && (previous.role_id !== input.roleId || previous.mode !== input.mode
+      || (previous.thread_id && input.threadId && previous.thread_id !== input.threadId))) throw new Error("对话身份无效，请新建对话");
     const now = new Date().toISOString();
     const firstText = entries.find((entry) => entry.role === "user" && entry.text.trim())?.text.trim()
       ?? entries.find((entry) => entry.text.trim())?.text.trim() ?? "新对话";
     const item: ConversationHistoryItem = {
       id: input.id, owner_id: ownerId, role_id: input.roleId, role_name: input.roleName || "默认助手",
-      mode: input.mode, title: firstText.slice(0, 60), started_at: previous?.started_at ?? now,
+      mode: input.mode, title: previous?.title_customized ? previous.title : firstText.slice(0, 60),
+      ...(previous?.title_customized ? { title_customized: true } : {}), started_at: previous?.started_at ?? now,
       updated_at: now, ended_at: input.ended ? now : null, entries,
+      thread_id: input.threadId ?? previous?.thread_id ?? null,
+      voice_session_id: input.voiceSessionId ?? previous?.voice_session_id ?? null,
     };
     if (index >= 0) items[index] = item;
     else items.push(item);
@@ -120,5 +133,19 @@ export async function deleteConversation(ownerId: string, id: string, root = con
     if (next.length === items.length) return false;
     await writeItems(root, next);
     return true;
+  });
+}
+
+export async function renameConversation(ownerId: string, id: string, title: string, root = conversationHistoryRoot()) {
+  if (typeof title !== "string" || !title.trim() || title.trim().length > 80 || /[\r\n]/.test(title)) throw new Error("对话名称需为 1–80 个字符，不能换行");
+  if (!ID.test(id)) return null;
+  return withAvatarCatalogLock(root, async () => {
+    const items = await readItems(root);
+    const item = items.find((entry) => entry.owner_id === ownerId && entry.id === id);
+    if (!item) return null;
+    item.title = title.trim();
+    item.title_customized = true;
+    await writeItems(root, items);
+    return item;
   });
 }

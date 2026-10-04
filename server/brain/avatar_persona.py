@@ -76,6 +76,7 @@ class AvatarPersonaPromptCatalog:
             total_chars += len(content)
             if total_chars > MAX_PERSONA_PROMPT_CHARS:
                 raise ValueError("Persona prompt is too large")
+            content = content.replace("{{role_name}}", role_name or "数字助手")
             files.append((filename, content))
         if not files:
             return None
@@ -146,6 +147,8 @@ class SessionAvatarPersona:
         self._catalog = catalog
         self._avatar_id: str | None = None
         self._persona_context: str | None = None
+        self._role_display_name: str | None = None
+        self._selection: tuple[str | None, str | None] = (None, None)
 
     def select_avatar(self, avatar_id: str | None) -> str | None:
         return self.select(avatar_id=avatar_id)
@@ -156,12 +159,15 @@ class SessionAvatarPersona:
         avatar_id: str | None = None,
         persona_id: str | None = None,
     ) -> str | None:
+        self._selection = (avatar_id, persona_id)
         self._avatar_id = None
         self._persona_context = None
         if persona_id is not None:
-            resolved = self._catalog.resolve_persona(persona_id)
+            resolved = self._catalog.resolve_persona(persona_id, self._role_display_name)
         elif avatar_id is not None:
             resolved = self._catalog.resolve(avatar_id)
+            if resolved and self._role_display_name is not None:
+                resolved = self._catalog.resolve_persona(resolved[0], self._role_display_name)
         else:
             return None
         if resolved is None:
@@ -170,6 +176,12 @@ class SessionAvatarPersona:
         self._avatar_id = avatar_id or f"persona:{selected_persona_id}"
         self._persona_context = context
         return selected_persona_id
+
+    def select_role_name(self, display_name: str | None) -> None:
+        """Use the trusted role catalog name regardless of config frame order."""
+        self._role_display_name = display_name
+        avatar_id, persona_id = self._selection
+        self.select(avatar_id=avatar_id, persona_id=persona_id)
 
     def apply(self, base_prompt: str) -> str:
         if self._avatar_id is None or self._persona_context is None:

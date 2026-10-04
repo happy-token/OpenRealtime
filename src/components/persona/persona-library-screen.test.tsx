@@ -12,7 +12,7 @@ describe("PersonaLibraryScreen", () => {
   it("places the create button beside the heading while the list is loading", () => {
     const html = renderToStaticMarkup(<PersonaLibraryScreen />);
     expect(html).toContain("<h2>人设</h2>");
-    expect(html).toContain("正在加载 Persona 列表");
+    expect(html).toContain("正在加载人设列表");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("创建人设");
     expect(html).not.toContain('data-create="true"');

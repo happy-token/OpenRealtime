@@ -9,6 +9,20 @@ under **Unreleased** until the next version is cut.
 
 ## [Unreleased]
 
+### Added
+
+- Knowledge, memory and history management guide covering CRUD, reset boundaries,
+  API contracts, shared storage and backup recovery; current project improvement
+  checklist and documentation navigation, available in the web documentation menu.
+
+### Changed
+
+- Manual memory management remains available while automatic memory is disabled.
+  Memory settings show loading and capacity, support refresh and deletion confirmation,
+  and discard the editing draft when switching roles.
+- Runtime memory projection selects the twenty most recently updated records,
+  so edits to older preferences are included in the bounded prompt context.
+
 ## [0.3.0] - 2026-08-21
 
 ### Added

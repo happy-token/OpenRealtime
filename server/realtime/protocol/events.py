@@ -103,6 +103,7 @@ class InputTranscriptCompleted:
     text: str
     transcript_revision: int
     provider_endpoint_observed: bool
+    continuation_of_turn_id: str | None = None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -240,6 +241,23 @@ class SpeechAudioDelta:
             raise ValueError("speech audio segment index must be non-negative")
         if self.occurred_at.tzinfo is None:
             raise ValueError("event timestamp must be timezone-aware")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SpeechTextAlignment:
+    event_id: str
+    context: InteractionContext
+    conversation_sequence: int
+    occurred_at: datetime
+    speech_id: str
+    audio_end_us: int
+    text_end: int
+    audio_start_us: int | None = None
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.event_id or not self.speech_id or self.audio_end_us < 0 or self.text_end < 0:
+            raise ValueError("invalid speech text alignment")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -833,6 +851,7 @@ RealtimeEvent = (
     | SpeechTextCommitted
     | SpeechAudioDelta
     | SpeechAudioCompleted
+    | SpeechTextAlignment
     | SpeechCancelled
     | SpeechPlaybackProgress
     | ItemProjected

@@ -1,0 +1,31 @@
+ .page { padding: 25px 0 60px; }
+.heading, .roleRow, .toolbar, .toolbar > div, .roleRow > div, .toggle, .actions, .dialog header, .dialog footer { display: flex; align-items: center; gap: 12px; }
+.heading, .roleRow, .toolbar, .dialog header { justify-content: space-between; }
+.heading h2 { margin: 0; font-size: var(--workspace-section-title-size); }
+.heading p, .toolbar, .explanation { color: var(--text-dim); font-size: .8rem; line-height: 1.7; }
+.roleRow { margin-top: 24px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; }
+.toggle { font-size: .8rem; } .toggle input { accent-color: var(--accent); }
+.toolbar { margin: 20px 0 14px; }
+.heading > button, .toolbar > div > button, .actions > button, .explanation > button, .dialog header > button, .dialog footer > button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; padding: 8px 14px; min-height: 36px; border: 1px solid var(--accent-border); border-radius: var(--button-radius); background: var(--accent); color: var(--accent-contrast); cursor: pointer; font: inherit; font-size: .8rem; }
+.page button.secondary { background: transparent; border-color: var(--border); color: var(--text-dim); }
+.page button:disabled { opacity: .5; cursor: not-allowed; }
+.page input:not([type="checkbox"]), .page textarea { min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: var(--button-radius); background: var(--surface-solid); color: var(--text); font: inherit; font-size: .85rem; }
+.list { border: 1px solid var(--border); border-radius: 16px; background: color-mix(in srgb,var(--surface-solid) 55%,transparent); overflow: hidden; }
+.list > p { padding: 16px; color: var(--text-dim); font-size: .85rem; }
+.memory { display: flex; align-items: center; gap: 16px; padding: 16px; }
+.memory + .memory { border-top: 1px solid var(--border); }
+.memory > div:first-child { min-width: 0; flex: 1; }
+.memory p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin: 6px 0; font-size: .85rem; }
+.memory small, .memory summary { color: var(--text-dim); font-size: .75rem; }
+.memory summary, .explanation summary { cursor: pointer; }
+.explanation { margin-top: 24px; }
+.dialog { inset: 0; position: fixed; width: min(580px,calc(100vw - 32px)); max-height: calc(100dvh - 48px); box-sizing: border-box; padding: 24px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-solid); color: var(--text); overflow-y: auto; }
+.dialog::backdrop { background: rgb(0 0 0 / .5); backdrop-filter: blur(6px); }
+.dialog h3 { margin: 0; }
+.dialog label { display: grid; gap: 8px; margin-top: 20px; font-size: .85rem; }
+.dialog textarea { width: 100%; line-height: 1.7; resize: vertical; }
+.dialog footer { justify-content: flex-end; margin-top: 20px; }
+.notice { color: var(--accent); } .error { color: var(--danger); }
+@media(max-width:640px) { .roleRow, .toolbar, .memory { flex-wrap: wrap; } .actions { margin-left: auto; } .toolbar input { width: 100%; } }
+
+.roleRow, .list { border-color: var(--settings-panel-border); border-radius: var(--settings-panel-radius); background: var(--settings-panel-bg); backdrop-filter: blur(var(--panel-blur,3px)); -webkit-backdrop-filter: blur(var(--panel-blur,3px)); }

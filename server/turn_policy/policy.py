@@ -13,6 +13,7 @@ its triggering Signal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from server.turn_policy.addressee import AddresseeClassifier, DefaultAddresseeClassifier
 from server.turn_policy.signals import ResponseAction, Signal
@@ -25,6 +26,20 @@ class Transition:
     name: str
     to_state: DialogueState
     action: ResponseAction | None
+
+
+class DialoguePolicy(Protocol):
+    """Session-local dialogue state authority, independent of the FSM algorithm.
+
+    Implementations expose canonical states/signals so Turn Manager can retain
+    its endpoint and interruption guards while replacing transition decisions.
+    A factory must create a fresh instance for each conversation.
+    """
+
+    @property
+    def state(self) -> DialogueState: ...
+
+    async def evaluate(self, signal: Signal, *, generation: int) -> Transition | None: ...
 
 
 _TABLE: dict[tuple[DialogueState, Signal], Transition] = {

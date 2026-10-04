@@ -169,9 +169,9 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
       Promise.all([fetchPersonalAvatars(controller.signal), fetchOwnedAvatars(controller.signal).catch(() => [])])
         .then(([personal, shared]) => [...personal, ...shared]),
       fetch("/api/personas", { cache: "no-store", signal: controller.signal })
-        .then((response) => response.ok ? readJsonResponse<{ personas?: PersonaSummary[] }>(response, "Persona 列表读取失败") : { personas: [] }),
+        .then((response) => response.ok ? readJsonResponse<{ personas?: PersonaSummary[] }>(response, "人设列表读取失败") : { personas: [] }),
       fetchTools(controller.signal).catch(() => []),
-      fetch("/api/knowledge", { cache: "no-store", signal: controller.signal }).then((response) => readJsonResponse<{ documents?: KnowledgeDocument[]; error?: string }>(response, "知识库读取失败")),
+      fetch(`/api/knowledge?roleId=${encodeURIComponent(roleId)}`, { cache: "no-store", signal: controller.signal }).then((response) => readJsonResponse<{ documents?: KnowledgeDocument[]; error?: string }>(response, "知识库读取失败")),
       fetch(`/api/knowledge/bindings/${encodeURIComponent(roleId)}`, { cache: "no-store", signal: controller.signal }).then((response) => readJsonResponse<{ documentIds?: string[]; error?: string }>(response, "知识库绑定读取失败")),
     ]).then(([nextRole, avatarRecords, personaPayload, toolRecords, knowledgePayload, bindingPayload]) => {
       if (!nextRole) throw new Error("角色不存在");
@@ -374,7 +374,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
       lastSavedFingerprintRef.current = roleSaveFingerprint(updated, savedKnowledgeIds);
       const response = await fetch(`/api/hosted-avatar-settings/${encodeURIComponent(hostedAvatar.id)}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memoryEnabled: role.memory_enabled, documentIds: knowledgeIds, toolIds: role.tool_ids }),
+        body: JSON.stringify({ memoryEnabled: role.memory_enabled, documentIds: knowledgeIds, toolIds: role.tool_ids, sourceRoleId: role.role_id }),
       });
       if (!response.ok) throw new Error("实时数字人已创建并关联角色，但知识库或记忆同步失败，请在资源库检查配置");
       setNotice("实时数字人已创建，角色配置已同步");
@@ -692,7 +692,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
             </section>
 
             <section className={styles.settingModule} data-open={openModule === "persona"}>
-              <button className={styles.settingSummary} type="button" aria-label={t("Persona 设置")} aria-expanded={openModule === "persona"} onClick={() => toggleConfigModule("persona")}><Sparkles /><span><small>Persona</small><strong>{role.persona_name ?? t("默认助手")}</strong><em>{personas.find((item) => item.personaId === role.persona_id)?.intro || t("使用角色默认的对话风格")}</em></span><ChevronDown /></button>
+              <button className={styles.settingSummary} type="button" aria-label={t("人设设置")} aria-expanded={openModule === "persona"} onClick={() => toggleConfigModule("persona")}><Sparkles /><span><small>{t("人设")}</small><strong>{role.persona_name ?? t("默认助手")}</strong><em>{personas.find((item) => item.personaId === role.persona_id)?.intro || t("使用角色默认的对话风格")}</em></span><ChevronDown /></button>
               {openModule === "persona" ? <div className={styles.settingDetails}>
                 <PersonaChoiceGrid personas={personas} value={role.persona_id} onChange={(personaId) => setRole({ ...role, persona_id: personaId, persona_name: personas.find((item) => item.personaId === personaId)?.personaName ?? null })} />
                 <div className={styles.resourceRows}><Link href={`/resources?tab=personas&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus /><span><strong>{t("新建人设")}</strong><small>{t("创建后自动回到当前角色")}</small></span><ChevronRight /></Link></div>
@@ -702,7 +702,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
             <section className={styles.settingModule} data-open={openModule === "tools"}>
               <button className={styles.settingSummary} type="button" aria-label={t("工具使用设置")} aria-expanded={openModule === "tools"} onClick={() => toggleConfigModule("tools")}><Wrench /><span><small>{t("工具使用")}</small><strong>{role.tool_ids.length ? t("已选择 ") + (role.tool_ids.length) + t(" 个") : t("暂未选择")}</strong><em>{t("内置、个人与共享工具")}</em></span><ChevronDown /></button>
               {openModule === "tools" ? <div className={styles.settingDetails}>
-                <div className={styles.moduleToolbar}><span>{t("选择角色可调用的工具")}</span><Link href={`/resources?tab=tools&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div>
+                <div className={styles.moduleToolbar}><span>{t("选择角色可调用的工具")}</span><div className={styles.moduleToolbarActions}><Link href={`/settings/permissions?roleId=${encodeURIComponent(role.role_id)}`} aria-label={t("设置当前角色的工具权限")}><Settings2 />{t("工具权限")}</Link><Link href={`/resources?tab=tools&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div></div>
                 <div className={styles.capabilityList} aria-label={t("角色工具")}>{tools.map((tool) => {
                 const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint && !tool.public_enabled);
                 const scope = tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人";
@@ -712,9 +712,9 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
             </section>
 
             <section className={styles.settingModule} data-open={openModule === "knowledge"}>
-              <button className={styles.settingSummary} type="button" aria-label={t("知识库设置")} aria-expanded={openModule === "knowledge"} onClick={() => toggleConfigModule("knowledge")}><BookOpen /><span><small>{t("知识库")}</small><strong>{knowledgeIds.length ? t("已选择 ") + (knowledgeIds.length) + t(" 份") : t("暂未选择")}</strong><em>{t("为角色补充专属资料")}</em></span><ChevronDown /></button>
+              <button className={styles.settingSummary} type="button" aria-label={t("知识库设置")} aria-expanded={openModule === "knowledge"} onClick={() => toggleConfigModule("knowledge")}><BookOpen /><span><small>{t("知识库")}</small><strong>{knowledgeIds.length ? t("已选择 ") + (knowledgeIds.length) + t(" 份") : t("暂未选择")}</strong><em>{t("关联资源库中的资料")}</em></span><ChevronDown /></button>
               {openModule === "knowledge" ? <div className={styles.settingDetails}>
-                <div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料")}</span><Link href={`/resources?tab=knowledge&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div>
+                <div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料，可与其他角色共用")}</span><Link href={`/resources?tab=knowledge&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div>
                 <div className={styles.capabilityList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((doc) => <label key={doc.document_id}><input type="checkbox" checked={knowledgeIds.includes(doc.document_id)} onChange={(event) => setKnowledgeIds((old) => event.target.checked ? [...old, doc.document_id] : old.filter((id) => id !== doc.document_id))} /><span><strong>{doc.title}</strong><small>{doc.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{doc.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>
               </div> : null}
             </section>

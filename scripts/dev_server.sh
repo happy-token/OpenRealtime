@@ -21,4 +21,4 @@ unset WEB_SEARCH_API_KEY
 
 export VOICEAGENT_EOT_FIRERED_MODEL_DIR="${VOICEAGENT_EOT_FIRERED_MODEL_DIR:-$PWD/models/fireredchat-turn-detector}"
 
-exec uv run --extra firered --extra postgres --extra object-store python demos/voice_web_server.py dev
+exec uv run --extra jev --extra firered --extra postgres --extra object-store python demos/voice_web_server.py dev

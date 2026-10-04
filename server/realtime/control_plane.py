@@ -196,6 +196,7 @@ class RealtimeTurnController:
             ),
             occurred_at=event.occurred_at,
             provider_metadata={
+                "continuation_of_turn_id": event.continuation_of_turn_id,
                 "transcript_revision": event.transcript_revision,
                 "provider_endpoint_observed": event.provider_endpoint_observed,
             },

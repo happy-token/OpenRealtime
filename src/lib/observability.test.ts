@@ -11,7 +11,8 @@ describe("observability presentation", () => {
   });
 
   it("uses readable chain names without hiding unknown modules", () => {
-    expect(metricLabel("tts.time_to_first_audio")).toBe("TTS 首音频");
+    expect(metricLabel("tts.time_to_first_audio")).toBe("回复启动 → 首音频（含生成）");
+    expect(metricLabel("tts.first_text_to_first_audio")).toBe("TTS 首音频包响应");
     expect(metricLabel("provider.custom")).toBe("provider.custom");
   });
 });

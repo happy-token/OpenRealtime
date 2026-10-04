@@ -17,6 +17,7 @@ export interface ClientVoiceSessionControllerOptions {
   input: DeviceAudioInputRuntime;
   output: DeviceAudioOutputRuntime;
   providers?: { asr?: "doubao" | "dashscope" | null; llm?: "deepseek" | "openai" | null };
+  continuation?: { threadId: string; voiceSessionId: string };
 }
 
 export class ClientVoiceSessionController {
@@ -37,10 +38,19 @@ export class ClientVoiceSessionController {
     this.input = options.input;
     this.output = options.output;
     this.providers = options.providers;
+    if (options.continuation) {
+      this.threadId = options.continuation.threadId;
+      this.previousVoiceSessionId = options.continuation.voiceSessionId;
+    }
   }
 
   get phase(): VoiceSessionPhase {
     return this.currentPhase;
+  }
+
+  get continuationIdentity(): { threadId: string; voiceSessionId: string } | null {
+    const voiceSessionId = this.sessionId ?? this.previousVoiceSessionId;
+    return this.threadId && voiceSessionId ? { threadId: this.threadId, voiceSessionId } : null;
   }
 
   createHello(): SessionHelloV2 {

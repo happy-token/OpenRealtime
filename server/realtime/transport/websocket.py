@@ -6,7 +6,7 @@ import asyncio
 import base64
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from server.conversation_journal import (
     ConversationItemDraft,
@@ -40,12 +40,14 @@ from server.realtime.protocol import (
     SpeechAudioDelta,
     SpokenContentDelta,
 )
+from server.realtime.protocol.events import SpeechTextAlignment
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
     AssistantAudioChunkFrame,
     AssistantResponseCompletedFrame,
     AssistantSpeechCancelledFrame,
     AssistantSpeechTextFrame,
+    AssistantTextAlignmentFrame,
     AssistantTextFrame,
     CancelAssistantResponseFrame,
     ConfirmationDecisionFrame,
@@ -79,6 +81,9 @@ class _PlaybackState:
     sample_rate_hz: int | None = None
     next_sequence: int = 0
     terminal_audio_sent: bool = False
+    delivered_text_end: int = 0
+    played_audio_end_us: int = 0
+    text_boundaries: list[tuple[int, int]] = field(default_factory=list)
 
 
 class RealtimeWebSocketFrameBridge:
@@ -234,6 +239,19 @@ class RealtimeWebSocketFrameBridge:
             else:
                 playback.intended_text = spoken
             return
+        if isinstance(event, SpeechTextAlignment):
+            playback = self._playback_by_generation.get(event.context.generation)
+            if playback and playback.speech_id == event.speech_id:
+                start_us = event.audio_start_us
+                if start_us is None:
+                    start_us = playback.text_boundaries[-1][0] if playback.text_boundaries else 0
+                playback.text_boundaries.append((event.audio_end_us, event.text_end))
+                await self._transport.send(AssistantTextAlignmentFrame(
+                    generation=event.context.generation, speech_id=event.speech_id,
+                    text=playback.intended_text[:event.text_end],
+                    audio_start_us=start_us, audio_end_us=event.audio_end_us,
+                ))
+            return
         if isinstance(event, AudioDelta):
             await self._send_audio(
                 generation=event.context.generation,
@@ -254,6 +272,14 @@ class RealtimeWebSocketFrameBridge:
             return
         if isinstance(event, ResponseCompleted):
             playback = self._playback_by_generation.get(event.context.generation)
+            if playback and playback.intended_text and playback.audio_end_us > 0 and not playback.text_boundaries:
+                # A provider without word timings still has one real utterance
+                # span. Display that span on the client playback clock.
+                playback.text_boundaries.append((playback.audio_end_us, len(playback.intended_text)))
+                await self._transport.send(AssistantTextAlignmentFrame(
+                    generation=event.context.generation, speech_id=playback.speech_id,
+                    text=playback.intended_text, audio_start_us=0, audio_end_us=playback.audio_end_us,
+                ))
             if (
                 playback is not None
                 and playback.sample_rate_hz is not None
@@ -494,7 +520,7 @@ class RealtimeWebSocketFrameBridge:
                 )
             )
             return
-        if not frame.finished and not frame.stopped:
+        if not frame.finished and not frame.stopped and frame.played_audio_end_us is None:
             return
         if frame.finished:
             played_audio_end_us = playback.audio_end_us
@@ -505,20 +531,19 @@ class RealtimeWebSocketFrameBridge:
                 frame.played_audio_end_us or 0,
                 playback.audio_end_us,
             )
-            delivered_text_end = (
-                round(
-                    len(playback.intended_text)
-                    * played_audio_end_us
-                    / playback.audio_end_us
-                )
-                if playback.audio_end_us > 0
-                else 0
+            delivered_text_end = max(
+                (text_end for audio_end, text_end in playback.text_boundaries
+                 if audio_end <= played_audio_end_us), default=0,
             )
             precision = (
                 PlaybackPrecision.ESTIMATED
                 if frame.played_audio_end_us is not None
                 else PlaybackPrecision.SEGMENT
             )
+        delivered_text_end = max(playback.delivered_text_end, delivered_text_end)
+        playback.delivered_text_end = delivered_text_end
+        played_audio_end_us = max(playback.played_audio_end_us, played_audio_end_us)
+        playback.played_audio_end_us = played_audio_end_us
         await self._conversation.send(
             ReportPlaybackProgress(
                 command_id=f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop' if frame.stopped else f'progress:{played_audio_end_us}'}",
@@ -548,18 +573,17 @@ class RealtimeWebSocketFrameBridge:
             round(frame.played_position_samples * 1_000_000 / sample_rate_hz),
             playback.audio_end_us,
         )
-        delivered_text_end = (
-            round(
-                len(playback.intended_text)
-                * played_audio_end_us
-                / playback.audio_end_us
-            )
-            if playback.audio_end_us > 0
-            else 0
+        delivered_text_end = max(
+            (text_end for audio_end, text_end in playback.text_boundaries
+             if audio_end <= played_audio_end_us), default=0,
         )
         if frame.phase == "finished":
             played_audio_end_us = playback.audio_end_us
             delivered_text_end = len(playback.intended_text)
+        delivered_text_end = max(playback.delivered_text_end, delivered_text_end)
+        playback.delivered_text_end = delivered_text_end
+        played_audio_end_us = max(playback.played_audio_end_us, played_audio_end_us)
+        playback.played_audio_end_us = played_audio_end_us
         await self._conversation.send(
             ReportPlaybackProgress(
                 command_id=(
@@ -572,7 +596,7 @@ class RealtimeWebSocketFrameBridge:
                 speech_id=frame.speech_id,
                 delivered_text_end=delivered_text_end,
                 played_audio_end_us=played_audio_end_us,
-                precision=PlaybackPrecision.EXACT,
+                precision=PlaybackPrecision.SEGMENT,
                 completed=frame.phase == "finished",
                 started=frame.phase == "started",
                 stopped=frame.phase == "stopped",

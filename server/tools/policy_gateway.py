@@ -6,7 +6,8 @@ import asyncio
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol, TypeAlias
@@ -20,6 +21,7 @@ from server.tools.canonical import (
     ToolBinding,
     ToolEffect,
 )
+from server.tools.permission_settings import ToolPermissionMode
 from server.tools.registry import ToolRegistry
 
 
@@ -83,6 +85,7 @@ class ToolRequest:
 class ToolPolicyContext:
     authenticated_scopes: frozenset[str] = frozenset()
     policy_version: str = "default-v1"
+    permission_mode: ToolPermissionMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,9 +194,7 @@ class ToolAuthorizationStore(Protocol):
 
 class InMemoryToolAuthorizationStore:
     def __init__(self) -> None:
-        self._decisions: dict[
-            tuple[str, str, str, str, str], tuple[str, ToolPolicyDecision]
-        ] = {}
+        self._decisions: dict[tuple[str, str, str, str, str], tuple[str, ToolPolicyDecision]] = {}
         self._grants: dict[str, tuple[ExecutionGrant, str, bool]] = {}
         self._pending: dict[str, tuple[PendingAuthorizationState, bool]] = {}
         self._lock = asyncio.Lock()
@@ -290,6 +291,7 @@ class DefaultToolPolicyGateway:
         grant_ttl_seconds: float = 30,
         confirmation_ttl_seconds: float = 60,
         authorization_store: ToolAuthorizationStore | None = None,
+        permission_resolver: Callable[[ToolRequest], Awaitable[ToolPermissionMode]] | None = None,
     ) -> None:
         if grant_ttl_seconds <= 0 or confirmation_ttl_seconds <= 0:
             raise ValueError("tool authorization TTLs must be positive")
@@ -297,12 +299,20 @@ class DefaultToolPolicyGateway:
         self._grant_ttl = grant_ttl_seconds
         self._confirmation_ttl = confirmation_ttl_seconds
         self._authorization_store = authorization_store or InMemoryToolAuthorizationStore()
+        self._permission_resolver = permission_resolver
 
     async def evaluate(
         self,
         request: ToolRequest,
         policy_context: ToolPolicyContext,
     ) -> ToolPolicyDecision:
+        if self._permission_resolver is not None:
+            mode = await self._permission_resolver(request)
+            policy_context = replace(
+                policy_context,
+                permission_mode=mode,
+                policy_version=f"tool-permissions-v1:{mode.value}",
+            )
         binding = self._registry.resolve_binding(
             request.tool_name,
             request.tool_version,
@@ -346,10 +356,7 @@ class DefaultToolPolicyGateway:
         pending = state.pending
         if pending.expires_at <= _utc_now():
             raise ConfirmationRejected("confirmation expired")
-        if (
-            action_digest != pending.action_digest
-            or not _same_subject(context, pending.context)
-        ):
+        if action_digest != pending.action_digest or not _same_subject(context, pending.context):
             raise ConfirmationRejected("confirmation does not match the pending action")
         if (
             approved
@@ -405,15 +412,27 @@ class DefaultToolPolicyGateway:
         descriptor = binding.descriptor
         if descriptor.confirmation is ConfirmationRequirement.FORBIDDEN:
             return Deny("forbidden_from_voice", "该工具不能从语音会话调用。")
-        if descriptor.latency is LatencyClass.BACKGROUND:
-            return DelegateBackground("background_tool", "该操作已转入后台处理。")
         if descriptor.risk is RiskLevel.CRITICAL:
             return Deny("critical_risk", "该高风险操作不能在当前会话中执行。")
+        if descriptor.latency is LatencyClass.BACKGROUND:
+            return DelegateBackground("background_tool", "该操作已转入后台处理。")
+        if policy_context.permission_mode is ToolPermissionMode.FULL:
+            return Allow(self._issue_grant(request, binding, policy_context))
         required_channel: ConfirmationChannel | None = None
         if descriptor.confirmation is ConfirmationRequirement.STRONG:
             required_channel = ConfirmationChannel.STRONG
-        elif descriptor.confirmation is ConfirmationRequirement.ALWAYS:
+        elif (
+            descriptor.confirmation is ConfirmationRequirement.ALWAYS
+            or policy_context.permission_mode is ToolPermissionMode.CONFIRM
+        ):
             required_channel = ConfirmationChannel.VOICE
+        elif (
+            policy_context.permission_mode is ToolPermissionMode.BALANCED
+            and descriptor.effects
+            <= {ToolEffect.NONE, ToolEffect.READ_PUBLIC, ToolEffect.READ_SENSITIVE}
+            and descriptor.risk in {RiskLevel.LOW, RiskLevel.MEDIUM}
+        ):
+            required_channel = None
         elif descriptor.risk in {RiskLevel.MEDIUM, RiskLevel.HIGH} or descriptor.effects & {
             ToolEffect.READ_SENSITIVE,
             ToolEffect.WRITE_REVERSIBLE,

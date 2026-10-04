@@ -44,15 +44,17 @@ class HybridEotClassifier:
         generation: int,
         context: EotContext,
     ) -> EotClassification:
-        request = EotRequest(text=text, generation=generation, context=context)
+        return await self.classify_request(
+            EotRequest(text=text, generation=generation, context=context)
+        )
+
+    async def classify_request(self, request: EotRequest) -> EotClassification:
         observations = await asyncio.gather(
             *(provider.evaluate(request) for provider in self._providers),
             return_exceptions=True,
         )
         for observation in observations:
-            if isinstance(observation, BaseException) and not isinstance(
-                observation, Exception
-            ):
+            if isinstance(observation, BaseException) and not isinstance(observation, Exception):
                 raise observation
         failures = [item for item in observations if isinstance(item, Exception)]
         evidence = [item for item in observations if not isinstance(item, BaseException)]
@@ -61,11 +63,7 @@ class HybridEotClassifier:
                 "all EOT evidence providers failed: "
                 + ", ".join(type(error).__name__ for error in failures)
             )
-        primary = (
-            observations[0]
-            if not isinstance(observations[0], Exception)
-            else evidence[0]
-        )
+        primary = observations[0] if not isinstance(observations[0], BaseException) else evidence[0]
         if self._strategy == "primary_with_shadow":
             decision = primary.decision
             confidence = primary.confidence
@@ -76,11 +74,7 @@ class HybridEotClassifier:
                 source += ";shadow=" + "+".join(shadow)
         else:
             decisions = {item.decision for item in evidence}
-            decision = (
-                evidence[0].decision
-                if len(decisions) == 1
-                else EotDecision.UNCERTAIN
-            )
+            decision = evidence[0].decision if len(decisions) == 1 else EotDecision.UNCERTAIN
             confidence_values = [
                 item.confidence for item in evidence if item.confidence is not None
             ]
@@ -88,9 +82,7 @@ class HybridEotClassifier:
             wait_ms = max(item.wait_ms for item in evidence)
             source = "hybrid:" + "+".join(item.source for item in evidence)
         if failures:
-            source += ";degraded=" + "+".join(
-                type(error).__name__ for error in failures
-            )
+            source += ";degraded=" + "+".join(type(error).__name__ for error in failures)
         return EotClassification(
             decision=decision,
             confidence=confidence,

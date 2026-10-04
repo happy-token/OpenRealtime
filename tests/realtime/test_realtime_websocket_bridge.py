@@ -28,6 +28,7 @@ from server.realtime import (
     ResponseStarted,
     SpokenContentDelta,
 )
+from server.realtime.protocol.events import SpeechTextAlignment
 from server.realtime.transport import RealtimeWebSocketFrameBridge
 from server.tools.policy_gateway import ConfirmationChannel
 from server.transport.frames import (
@@ -866,7 +867,7 @@ async def test_playback_interruption_projects_client_audio_position_to_text_pref
 
     command = conversation.commands[-1]
     assert isinstance(command, ReportPlaybackProgress)
-    assert command.delivered_text_end == 5
+    assert command.delivered_text_end == 0
     assert command.played_audio_end_us == 100_000
     assert command.precision is PlaybackPrecision.ESTIMATED
     assert command.completed is False
@@ -927,7 +928,31 @@ async def test_v2_playback_uses_output_epoch_speech_identity_and_exact_samples()
 
     command = conversation.commands[-1]
     assert isinstance(command, ReportPlaybackProgress)
-    assert command.delivered_text_end == 5
+    assert command.delivered_text_end == 0
     assert command.played_audio_end_us == 100_000
-    assert command.precision is PlaybackPrecision.EXACT
+    assert command.precision is PlaybackPrecision.SEGMENT
     assert command.completed is False
+
+async def test_playing_progress_includes_only_fully_played_aligned_segments():
+    conversation = RecordingConversation()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=RecordingTransport())
+    now = datetime.now(UTC)
+    ctx = event_context()
+    await bridge.handle_event(SpokenContentDelta(
+        event_id="text-aligned", context=ctx, conversation_sequence=1, occurred_at=now,
+        response_id="response-1", response_sequence=1, delta="第一句。第二句还没有播放。"))
+    await bridge.handle_event(AudioDelta(
+        event_id="audio-aligned", context=ctx, conversation_sequence=2, occurred_at=now,
+        response_id="response-1", response_sequence=2, speech_id="response:response-1",
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=200_000,
+                         encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio"),
+        segment_index=0))
+    await bridge.handle_event(SpeechTextAlignment(
+        event_id="boundary-aligned", context=ctx, conversation_sequence=3, occurred_at=now,
+        speech_id="response:response-1", audio_end_us=100_000, text_end=4))
+    for samples, expected in [(1200, 0), (2400, 4), (3600, 4)]:
+        await bridge.handle_inbound(PlaybackProgressV2(output_epoch="output-1", speech_id="response:response-1",
+                                generation=1, phase="playing", played_position_samples=samples))
+        command = conversation.commands[-1]
+        assert command.delivered_text_end == expected
+        assert command.precision is PlaybackPrecision.SEGMENT

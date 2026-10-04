@@ -1,3 +1,4 @@
+import { AvatarPlaybackClock, type AvatarMediaClock } from "@/voice/audio/avatar-playback-clock";
 import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 
 export interface AnamAudioSession {
@@ -9,11 +10,10 @@ export interface AnamAgentAudioInput {
   endSequence(): void;
 }
 
-interface VolumeTarget {
-  volume: number;
-}
+type VolumeTarget = AvatarMediaClock;
 
 interface GenerationPlayback {
+  clock: AvatarPlaybackClock;
   bytes: number;
   firstChunkAtMs: number;
   completed: boolean;
@@ -59,6 +59,7 @@ export class AnamAudioBridge implements AvatarAudioSink {
       if (!existing) this.clearGeneration(chunk.generation);
       return false;
     }
+    playback.clock.append(chunk.pcm16Base64, chunk.sampleRateHz);
     playback.bytes += decodedBase64ByteLength(chunk.pcm16Base64);
     playback.onEnded = chunk.onEnded;
     this.generations.set(chunk.generation, playback);
@@ -98,6 +99,10 @@ export class AnamAudioBridge implements AvatarAudioSink {
     }
   }
 
+  playbackPosition(generation: number) {
+    return this.generations.get(generation)?.clock.read(this.video) ?? null;
+  }
+
   isActive(generation: number): boolean {
     return this.generations.has(generation);
   }
@@ -125,6 +130,7 @@ export class AnamAudioBridge implements AvatarAudioSink {
   private createGeneration(chunk: AvatarAudioChunk): GenerationPlayback {
     const generation = chunk.generation;
     const playback: GenerationPlayback = {
+      clock: new AvatarPlaybackClock(chunk.generation, chunk.speechId),
       bytes: 0,
       firstChunkAtMs: Date.now(),
       completed: false,
@@ -138,6 +144,7 @@ export class AnamAudioBridge implements AvatarAudioSink {
       const current = this.generations.get(generation);
       if (!current || current.started) return;
       current.started = true;
+      current.clock.start(this.video);
       current.onStarted();
     }, ANAM_RENDER_BUFFER_MS);
     this.generations.set(generation, playback);

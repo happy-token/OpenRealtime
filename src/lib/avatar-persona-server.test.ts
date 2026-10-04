@@ -72,16 +72,16 @@ describe("readAvatarPersonaProfile", () => {
 
   it("keeps all seven selected Avatar profiles complete", async () => {
     const expected = new Map([
-      ["default-anam", ["Shuchang", "知性温柔"]],
-      ["shuchang", ["Shuchang", "知性温柔"]],
-      ["companion", ["陪伴", "柔光纯欲"]],
-      ["avatar-zhaoning", ["昭宁", "知性温柔"]],
-      ["avatar-meichuqing", ["梅初晴", "甜美元气"]],
-      ["avatar-qingyun", ["清韫", "忧郁薄雾"]],
-      ["avatar-selin", ["瑟琳", "浪漫法式"]],
-      ["avatar-shiruoshui", ["施若水", "柔光纯欲"]],
-      ["avatar-zhaoyue", ["曌月", "冷艳都市"]],
-      ["avatar-qingzhao", ["清照", "忧郁薄雾"]],
+      ["default-anam", ["Shuchang", "阅读顾问 · 知性温柔"]],
+      ["shuchang", ["Shuchang", "阅读顾问 · 知性温柔"]],
+      ["companion", ["陪伴", "日常陪伴 · 温柔安心"]],
+      ["avatar-zhaoning", ["昭宁", "阅读顾问 · 知性温柔"]],
+      ["avatar-meichuqing", ["梅初晴", "生活伙伴 · 活泼元气"]],
+      ["avatar-qingyun", ["清韫", "文字倾听 · 安静共情"]],
+      ["avatar-selin", ["瑟琳", "生活美学 · 浪漫优雅"]],
+      ["avatar-shiruoshui", ["施若水", "日常陪伴 · 温柔安心"]],
+      ["avatar-zhaoyue", ["曌月", "创意顾问 · 理性直接"]],
+      ["avatar-qingzhao", ["清照", "文字倾听 · 安静共情"]],
     ]);
 
     for (const [avatarId, [avatarDisplayName, personaName]] of expected) {

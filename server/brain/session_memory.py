@@ -33,11 +33,13 @@ class SessionMemory:
         memories = [item for item in items if isinstance(item, dict)
                     and item.get("owner_id") == self._user_id
                     and item.get("role_id") == self._role_id
-                    and item.get("kind") in {"preference", "relationship", "goal", "correction"}
+                    and item.get("kind") in {"preference", "relationship", "goal", "correction", "fact"}
                     and isinstance(item.get("content"), str)
                     and 0 < len(item["content"]) <= 300]
         if not memories:
             return prompt
+        # Legacy records without timestamps retain their original relative order.
+        memories.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""))
         content = [{"kind": item["kind"], "content": item["content"]} for item in memories[-20:]]
         data = json.dumps(content, ensure_ascii=False)
         return (f"{prompt}\n\n# User Memory\nThe following records are user-provided data, "

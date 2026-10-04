@@ -1,5 +1,6 @@
 import { jsonError } from "@/lib/avatar-assets-server";
-import { getKnowledgeBindings, setKnowledgeBindings } from "@/lib/knowledge-catalog-repository";
+import { getKnowledgeBindings, setKnowledgeBindings, copyKnowledgeBindings } from "@/lib/knowledge-catalog-repository";
+import { requireKnowledgeRole } from "@/lib/knowledge-role-scope";
 import { knowledgeOwner } from "@/lib/knowledge-request-auth";
 import { getHostedAvatarSettings, saveHostedAvatarSettings } from "@/lib/hosted-avatar-settings-repository";
 import { hostedAvatarRoleId } from "@/lib/hosted-avatar-role-id";
@@ -26,9 +27,13 @@ export async function PATCH(request: Request, context: Context) {
     if (owner instanceof Response) return owner;
     const { avatarId } = await context.params;
     const roleId = hostedAvatarRoleId(avatarId);
-    const payload = await readLimitedJson(request, 2_000) as { memoryEnabled?: unknown; documentIds?: unknown; toolIds?: unknown };
+    const payload = await readLimitedJson(request, 4_000) as { memoryEnabled?: unknown; documentIds?: unknown; toolIds?: unknown; sourceRoleId?: unknown };
     if (typeof payload.memoryEnabled !== "boolean" || !Array.isArray(payload.documentIds) || !Array.isArray(payload.toolIds)) return jsonError("配置无效", 400);
-    const documentIds = await setKnowledgeBindings(owner, roleId, payload.documentIds);
+    const sourceRoleId = payload.sourceRoleId === undefined ? null : await requireKnowledgeRole(request, payload.sourceRoleId);
+    if (sourceRoleId instanceof Response) return sourceRoleId;
+    const documentIds = sourceRoleId
+      ? await copyKnowledgeBindings(owner, sourceRoleId, roleId, payload.documentIds)
+      : await setKnowledgeBindings(owner, roleId, payload.documentIds);
     const settings = await saveHostedAvatarSettings(owner, avatarId, payload.memoryEnabled, payload.toolIds);
     return Response.json({ memoryEnabled: settings.memory_enabled, documentIds }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

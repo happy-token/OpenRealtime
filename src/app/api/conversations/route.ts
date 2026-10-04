@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       mode: input.mode as string,
       entries: input.entries,
       ended: input.ended as boolean,
+      threadId: input.threadId as string | null | undefined,
+      voiceSessionId: input.voiceSessionId as string | null | undefined,
     });
     const roleId = conversation.role_id ?? "default-assistant";
     try {

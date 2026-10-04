@@ -1,5 +1,16 @@
 export const PUBLIC_DOCUMENTS = [
+  { slug: "tool-permissions", title: "工具权限设置", category: "使用说明", description: "提前授权工具，配置全局权限、角色覆盖与继承，减少语音交流中的确认。", file: "TOOL-PERMISSIONS.md" },
+  { slug: "turn-coordination", title: "模块化话轮协调器", category: "技术文章", description: "替换对话协调策略、判停与打断模型，了解等待期限、连续插话和故障恢复。", file: "TURN-COORDINATION.md" },
+  { slug: "data-management", title: "知识与记忆管理指南", category: "使用说明", description: "知识增删改、记忆归零、会话上下文区别，以及 API、部署和备份恢复。", file: "DATA-MANAGEMENT-GUIDE.md" },
+  { slug: "project-improvements", title: "项目完善清单", category: "技术文章", description: "当前管理能力、项目缺口、优先级、验收标准和完整文档导航。", file: "PROJECT-IMPROVEMENT-AUDIT.md" },
+  { slug: "voice-interaction-review", title: "语音交互审查与框架规划", category: "技术文章", description: "借鉴 VoiceLoop 与 GPT Voice 的设计，规划输入归属、响应保障及统一协调插件。", file: "VOICELOOP-INTERACTION-REVIEW.md" },
+  { slug: "semantic-label-assessment", title: "判停与打断标签评估", category: "技术文章", description: "比较主流标签、核查当前动作映射，说明上下文、暂停、噪声与故障的优化方案。", file: "SEMANTIC-LABEL-ASSESSMENT.md" },
+  { slug: "semantic-decision-plugins", title: "判停与打断插件合约", category: "技术文章", description: "规范历史、当前文本、识别状态与语义输出，兼容纯文本和上下文模型。", file: "SEMANTIC-DECISION-PLUGINS.md" },
+  { slug: "voice-pipeline", title: "语音 Pipeline 与插件接口", category: "技术文章", description: "梳理对话状态、语义判停、打断、ASR、LLM 与 TTS 的统一接口和替换方式。", file: "VOICE-PIPELINE.md" },
   { slug: "quick-start", title: "首页使用指南", category: "使用说明", description: "从开始语音对话到数字人配置、查看消息与常见问题。", file: "QUICK-START.md" },
+  { slug: "knowledge-base", title: "知识库使用指南", category: "使用说明", description: "导入资料、测试检索、绑定角色，让多个角色共用资料并独立配置检索范围。", file: "KNOWLEDGE-BASE-GUIDE.md" },
+  { slug: "memory-and-history", title: "知识库 Demo、Memory 与续聊", category: "使用说明", description: "用售后助手示例验证知识与记忆，了解历史如何进入模型以及当前续聊的边界。", file: "MEMORY-AND-HISTORY-GUIDE.md" },
+  { slug: "knowledge-integration", title: "知识库选型与接入方案", category: "技术文章", description: "比较结构化文档、向量与混合检索，按 Python 插件接口接入 Qdrant、pgvector 或 Dify。", file: "KNOWLEDGE-INTEGRATION.md" },
   { slug: "digital-human", title: "数字人驱动方案", category: "技术文章", description: "了解实时驱动、多段式合成与动作编排的适用场景。", file: "DIGITAL-HUMAN-DRIVING.md" },
   { slug: "motion-orchestration", title: "动作编排使用指南", category: "使用说明", description: "准备配对素材，在会话中切换待机和讲话动作。", file: "MOTION-ORCHESTRATION-GUIDE.md" },
 ] as const;

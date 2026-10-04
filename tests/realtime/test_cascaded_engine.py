@@ -4,6 +4,7 @@ import array
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 
@@ -3087,3 +3088,70 @@ async def test_resolved_profile_can_replace_and_configure_a_cascaded_capability(
     assert any(isinstance(event, InputTranscriptCompleted) for event in emitted)
     assert configurable_vad.received_config == {"threshold": 50}
     await conversation.close()
+
+async def test_continuation_projection_replaces_user_text_without_losing_tool_facts():
+    from server.conversation_journal.models import item_from_draft
+    core = await CascadedRealtimeEngine(
+        vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig(energy_threshold=500, silence_duration_ms=32))),
+        asr=LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
+        turn_manager=LegacyTurnManagerCapabilityAdapter(TurnPolicy),
+        brain=LegacyBrainCapabilityAdapter(SilentBrain()),
+        speech_renderer=DeterministicSpeechRenderer(), tts=LegacyTtsCapabilityAdapter(SilentTts()),
+    ).open(context=context(), profile=None)
+    try:
+        old = replace(context(), turn_id="old")
+        new = replace(context(), turn_id="new", generation=2)
+        for seq, ctx, kind, text_value, metadata in [
+            (1, old, ConversationItemKind.USER_INPUT, "查天气", {}),
+            (2, old, ConversationItemKind.TOOL_RESULT, "已查询北京天气", {}),
+            (3, new, ConversationItemKind.USER_INPUT, "查天气\n还有明天", {"continuation_of_turn_id": "old"}),
+        ]:
+            core._projected_items[seq] = item_from_draft(
+                ConversationItemDraft(item_id=f"item-{seq}", context=ctx, kind=kind,
+                    status=ConversationItemStatus.COMPLETED, producer="test", content=(TextContent(text_value),),
+                    provider_metadata=metadata), sequence=seq, recorded_at=datetime.now(UTC),
+            )
+        turn = await core._turn_from_projection(3, generation=2)
+        assert turn.text == "查天气\n还有明天"
+        assert "已查询北京天气" in turn.conversation_context
+        assert "用户：查天气" not in turn.conversation_context
+    finally:
+        await core.close()
+
+async def test_immediate_preparing_yield_cancels_the_admitted_response(monkeypatch):
+    from server.realtime.capabilities.coordinated_turn_manager import CoordinatedTurnManagerCapabilityAdapter
+    from server.realtime.capabilities.turn_manager import AssistantYieldRequested as CapabilityYield
+    core = await CascadedRealtimeEngine(
+        vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig(energy_threshold=500, silence_duration_ms=32))),
+        asr=LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
+        turn_manager=CoordinatedTurnManagerCapabilityAdapter(TurnPolicy),
+        brain=LegacyBrainCapabilityAdapter(GatedStreamingBrain()),
+        speech_renderer=DeterministicSpeechRenderer(), tts=LegacyTtsCapabilityAdapter(EchoDuplexTts()),
+    ).open(context=context(), profile=None)
+    conversation = JournaledRealtimeConversation(context=context(), journal=InMemoryConversationJournal(), engine_conversation=core)
+    events = conversation.events()
+    original = core._input_pipeline.response_started
+
+    async def yield_on_preparing(response_id, *, context=None, preparing=False):
+        await original(response_id, context=context, preparing=preparing)
+        if preparing:
+            await core._input_pipeline._events.put(CapabilityYield(
+                context=replace(context, response_id=response_id), reason="barge_in_floor_claim"))
+            # Give the input pump a chance to process the preparing-time yield.
+            await asyncio.sleep(0)
+    monkeypatch.setattr(core._input_pipeline, "response_started", yield_on_preparing)
+    try:
+        await conversation.send(AppendItem(command_id="prepare-user", idempotency_key="prepare-user", context=context(),
+            draft=ConversationItemDraft(item_id="prepare-user", context=context(), kind=ConversationItemKind.USER_INPUT,
+                status=ConversationItemStatus.COMPLETED, producer="test", content=(TextContent("查天气"),))))
+        assert isinstance(await asyncio.wait_for(anext(events), .2), ItemProjected)
+        await conversation.send(RequestResponse(command_id="prepare-response", idempotency_key="prepare-response",
+            context=replace(context(), response_id="prepared"), response_id="prepared", minimum_thread_sequence=1))
+        async with asyncio.timeout(.5):
+            async for event in events:
+                if isinstance(event, ResponseCancelled):
+                    assert event.response_id == "prepared"
+                    break
+        assert core._active_response_id is None
+    finally:
+        await conversation.close()

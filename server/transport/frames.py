@@ -228,6 +228,18 @@ class AssistantSpeechTextFrame(BaseModel):
     generation: int
 
 
+class AssistantTextAlignmentFrame(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    type: Literal["assistant_text_alignment"] = "assistant_text_alignment"
+    generation: int
+    speech_id: str
+    text: str
+    audio_start_us: int = Field(ge=0)
+    audio_end_us: int = Field(ge=0)
+
+
+
+
 class AssistantAudioFrame(BaseModel):
     model_config = ConfigDict(frozen=True)
     type: Literal["assistant_audio"] = "assistant_audio"
@@ -431,6 +443,7 @@ OutboundFrame = (
     | AssistantTextFrame
     | InputAudioAck
     | AssistantSpeechTextFrame
+    | AssistantTextAlignmentFrame
     | AssistantAudioFrame
     | AssistantAudioChunkFrame
     | AssistantResponseCompletedFrame

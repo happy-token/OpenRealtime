@@ -135,7 +135,7 @@ class PlaybackProgressV2(BaseModel):
     output_epoch: str = Field(min_length=1)
     speech_id: str = Field(min_length=1)
     generation: int = Field(ge=0)
-    phase: Literal["started", "stopped", "finished"]
+    phase: Literal["started", "playing", "stopped", "finished"]
     played_position_samples: int = Field(ge=0)
 
 

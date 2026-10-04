@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+jev = ["typesafe-sdk>=0.7.2,<0.8"]
 postgres = [
     "asyncpg>=0.30",
     "cryptography>=43",

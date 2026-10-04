@@ -45,6 +45,7 @@ from server.realtime.capabilities import (
     StartTts,
     SubmitBrainToolResult,
     TtsAudioFrame,
+    TtsTextAlignment,
     TtsCancelled,
     TtsCapabilityProvider,
     TtsCapabilitySession,
@@ -106,6 +107,7 @@ from server.realtime.protocol.events import (
     SpeechAudioCompleted,
     SpeechAudioDelta,
     SpeechPlaybackProgress,
+    SpeechTextAlignment,
     SpokenContentDelta,
     ToolRequested,
 )
@@ -462,6 +464,13 @@ class CascadedRealtimeConversation:
             precision=command.precision,
             completed=command.completed,
         )
+        response = self._response_by_model_speech_id.get(command.speech_id)
+        if response is not None:
+            response_id, response_context = response
+            await self._input_pipeline.assistant_spoken_text(
+                record.delivered_speech_transcript,
+                context=replace(response_context, response_id=response_id),
+            )
         if command.completed:
             self._unsettled_model_speech_ids.discard(command.speech_id)
             response = self._response_by_model_speech_id.get(command.speech_id)
@@ -919,6 +928,9 @@ class CascadedRealtimeConversation:
             self._start_response(command, turn),
             name=f"cascaded-response-{command.response_id}",
         )
+        # Preparing can immediately trigger a yield for deferred speech. The
+        # cancellation target and task must exist before publishing it.
+        await self._input_pipeline.response_started(command.response_id, context=command.context, preparing=True)
 
     async def _cancel_response(self, command: CancelResponse) -> None:
         direct_delivery = self._direct_delivery_command
@@ -1016,10 +1028,21 @@ class CascadedRealtimeConversation:
                 continue
             text = "\n".join(part.text for part in item.content if isinstance(part, TextContent))
             if text:
+                superseded_turns = {
+                    projected.provider_metadata.get("continuation_of_turn_id")
+                    for projected in self._projected_items.values()
+                    if projected.sequence <= sequence
+                }
                 prior_items = tuple(
                     self._projected_items[prior_sequence]
                     for prior_sequence in sorted(self._projected_items)
                     if prior_sequence < sequence
+                    and not (
+                        self._projected_items[prior_sequence].context.turn_id in superseded_turns
+                        and self._projected_items[prior_sequence].kind in {
+                            ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT
+                        }
+                    )
                 )
                 return TurnContent(
                     text=text,
@@ -1214,10 +1237,7 @@ class CascadedRealtimeConversation:
             if event.response_id != command.response_id:
                 continue
             if isinstance(event, BrainResponseStarted):
-                await self._input_pipeline.response_started(
-                    command.response_id,
-                    context=command.context,
-                )
+                await self._input_pipeline.response_started(command.response_id, context=command.context)
                 await self._start_model_speech(
                     command,
                     context=response_context,
@@ -1240,10 +1260,6 @@ class CascadedRealtimeConversation:
                     self._tts_task_by_response_id[command.response_id] = tts_task
                 text_sequence += 1
                 await self._speech_deliveries.append_text(speech_id, event.delta)
-                await self._input_pipeline.assistant_spoken_text(
-                    event.delta,
-                    context=command.context,
-                )
                 await self._emit_response(
                     DisplayContentDelta,
                     context=response_context,
@@ -1479,7 +1495,14 @@ class CascadedRealtimeConversation:
         async for event in self._tts.events():
             if event.speech_id != speech_id:
                 continue
-            if isinstance(event, TtsAudioFrame):
+            if isinstance(event, TtsTextAlignment):
+                await self._emit(SpeechTextAlignment(
+                    event_id=str(uuid.uuid4()), context=replace(command.context, response_id=command.response_id),
+                    conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
+                    speech_id=speech_id, audio_end_us=event.audio_end_us, text_end=event.text_end,
+                    audio_start_us=event.audio_start_us,
+                ))
+            elif isinstance(event, TtsAudioFrame):
                 if event.frame.data:
                     self._model_speech_with_audio_ids.add(speech_id)
                 await self._emit_response(
@@ -1615,9 +1638,19 @@ class CascadedRealtimeConversation:
                         text=event.text,
                         transcript_revision=event.transcript_revision,
                         provider_endpoint_observed=event.provider_endpoint_observed,
+                        continuation_of_turn_id=event.continuation_of_turn_id,
                     )
                 )
             elif isinstance(event, CapabilityAssistantYieldRequested):
+                target_response = event.context.response_id
+                if (
+                    target_response is not None
+                    and self._active_response_id is not None
+                    and target_response != self._active_response_id
+                ):
+                    # A queued cancellation for A must never cancel replacement B.
+                    await self._input_pipeline.assistant_yielded(context=event.context)
+                    continue
                 await self._emit(
                     AssistantYieldRequested(
                         event_id=str(uuid.uuid4()),

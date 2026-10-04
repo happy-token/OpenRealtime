@@ -1,0 +1,1190 @@
+<!doctype html>
+<title>语音链路手册</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700;900&family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  /*
+    布局概念:信号机架式文档——左侧固定目录如机架标签条,主内容区按模块分层
+    排布,图表采用示波器/接线面板的视觉语言(线迹、闩锁、信号灯)。
+  */
+  :root {
+    color-scheme: light;
+
+    /* 色彩 token */
+    --ink: oklch(23% 0.016 262);
+    --ink-dim: oklch(46% 0.014 262);
+    --ink-faint: oklch(62% 0.012 262);
+    --paper: oklch(96.8% 0.006 90);
+    --panel: oklch(99% 0.003 90);
+    --panel-raised: oklch(100% 0 0);
+    --line: oklch(85% 0.012 90);
+    --line-strong: oklch(74% 0.014 90);
+    --signal: oklch(53% 0.1 199);
+    --signal-ink: oklch(30% 0.08 199);
+    --signal-dim: oklch(92% 0.028 199);
+    --warn: oklch(60% 0.15 55);
+    --warn-dim: oklch(93% 0.045 60);
+    --critical: oklch(54% 0.18 23);
+    --critical-dim: oklch(93% 0.05 23);
+
+    /* 字体 token */
+    --font-display: "Noto Serif SC", "Songti SC", serif;
+    --font-body: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ink: oklch(93% 0.01 262);
+      --ink-dim: oklch(72% 0.014 262);
+      --ink-faint: oklch(56% 0.014 262);
+      --paper: oklch(15.5% 0.015 262);
+      --panel: oklch(19.5% 0.017 262);
+      --panel-raised: oklch(23% 0.018 262);
+      --line: oklch(32% 0.02 262);
+      --line-strong: oklch(40% 0.022 262);
+      --signal: oklch(72% 0.11 196);
+      --signal-ink: oklch(88% 0.07 196);
+      --signal-dim: oklch(27% 0.045 196);
+      --warn: oklch(74% 0.14 65);
+      --warn-dim: oklch(30% 0.065 65);
+      --critical: oklch(70% 0.17 25);
+      --critical-dim: oklch(32% 0.08 25);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink: oklch(93% 0.01 262);
+    --ink-dim: oklch(72% 0.014 262);
+    --ink-faint: oklch(56% 0.014 262);
+    --paper: oklch(15.5% 0.015 262);
+    --panel: oklch(19.5% 0.017 262);
+    --panel-raised: oklch(23% 0.018 262);
+    --line: oklch(32% 0.02 262);
+    --line-strong: oklch(40% 0.022 262);
+    --signal: oklch(72% 0.11 196);
+    --signal-ink: oklch(88% 0.07 196);
+    --signal-dim: oklch(27% 0.045 196);
+    --warn: oklch(74% 0.14 65);
+    --warn-dim: oklch(30% 0.065 65);
+    --critical: oklch(70% 0.17 25);
+    --critical-dim: oklch(32% 0.08 25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+  ::selection { background: var(--signal-dim); color: var(--signal-ink); }
+
+  a { color: var(--signal-ink); text-decoration-color: var(--signal); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; margin: 0; }
+  code, .mono { font-family: var(--font-mono); }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 0 40px;
+    padding-inline: clamp(16px, 4vw, 32px);
+  }
+
+  /* ---------- 顶部总览条 ---------- */
+  .masthead {
+    grid-column: 1 / -1;
+    padding-block: clamp(28px, 5vw, 48px) 20px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--signal-ink);
+    background: var(--signal-dim);
+    padding: 4px 10px;
+    border-radius: 100px;
+    margin-bottom: 16px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--signal);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal) 25%, transparent);
+  }
+  .masthead h1 {
+    font-size: clamp(1.9rem, 4.4vw, 2.9rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+  }
+  .masthead p.lede {
+    max-width: 62ch;
+    color: var(--ink-dim);
+    font-size: 1.02rem;
+    margin-top: 14px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 22px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .meta-row b { color: var(--ink-dim); font-weight: 600; }
+
+  /* ---------- 左侧目录 ---------- */
+  nav.toc {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 24px);
+    align-self: start;
+    height: fit-content;
+    padding-top: 28px;
+    font-size: 13px;
+  }
+  nav.toc ol {
+    list-style: none;
+    margin: 0; padding: 0;
+    border-left: 1px solid var(--line);
+  }
+  nav.toc li a {
+    display: block;
+    padding: 7px 0 7px 16px;
+    margin-left: -1px;
+    border-left: 2px solid transparent;
+    color: var(--ink-dim);
+    text-decoration: none;
+  }
+  nav.toc li a:hover { color: var(--ink); border-left-color: var(--line-strong); }
+  nav.toc li a b {
+    font-family: var(--font-mono);
+    color: var(--ink-faint);
+    font-weight: 500;
+    margin-right: 8px;
+  }
+  nav.toc .toc-foot {
+    margin-top: 20px;
+    padding: 12px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--ink-faint);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* 移动端:目录变为横向滚动条 */
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    nav.toc {
+      position: static;
+      padding-top: 14px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    nav.toc ol {
+      display: flex;
+      gap: 4px;
+      border-left: none;
+      padding-bottom: 10px;
+    }
+    nav.toc li a {
+      white-space: nowrap;
+      border-left: none;
+      border: 1px solid var(--line);
+      border-radius: 100px;
+      padding: 6px 14px;
+    }
+    nav.toc .toc-foot { display: none; }
+  }
+
+  main { padding-block: 12px 60px; min-width: 0; }
+
+  section { padding-top: 56px; scroll-margin-top: 16px; }
+  section + section { border-top: 1px solid var(--line); }
+
+  .sec-head { margin-bottom: 28px; }
+  .sec-num {
+    font-family: var(--font-mono);
+    color: var(--signal-ink);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: 8px;
+  }
+  .sec-head h2 { font-size: clamp(1.35rem, 2.6vw, 1.7rem); }
+  .sec-dek { color: var(--ink-dim); max-width: 70ch; margin-top: 10px; }
+
+  h3.sub {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 1.02rem;
+    margin: 36px 0 14px;
+    color: var(--ink);
+  }
+  h3.sub .mono { color: var(--ink-faint); font-weight: 500; font-size: 0.85em; margin-left: 8px; }
+
+  p { margin: 0 0 14px; max-width: 72ch; }
+  ul.plain, ol.plain { margin: 0 0 14px; padding-left: 1.3em; max-width: 70ch; }
+  ul.plain li, ol.plain li { margin-bottom: 6px; }
+
+  /* ---------- 卡片/面板 ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin: 18px 0 28px;
+  }
+  @media (max-width: 760px) { .panel-grid { grid-template-columns: 1fr; } }
+
+  .spec-path {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    letter-spacing: 0.01em;
+    margin-bottom: 10px;
+    word-break: break-all;
+  }
+  .spec-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+  }
+  pre.code {
+    margin: 0 0 10px;
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.3px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .spec-note { color: var(--ink-dim); font-size: 13px; margin: 0; }
+  .spec-note code { font-size: 0.92em; background: var(--signal-dim); color: var(--signal-ink); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---------- 表格 ---------- */
+  .table-wrap { overflow-x: auto; margin: 4px 0 28px; border: 1px solid var(--line); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.3px; min-width: 560px; }
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--panel);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink-dim);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  tbody td code { font-family: var(--font-mono); font-size: 0.93em; }
+  table caption { display: none; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+  .pill-active { background: var(--signal-dim); color: var(--signal-ink); }
+  .pill-active::before { background: var(--signal); }
+  .pill-defined { background: var(--warn-dim); color: color-mix(in oklch, var(--warn) 55%, var(--ink)); }
+  .pill-defined::before { background: var(--warn); }
+  .pill-missing { background: var(--critical-dim); color: color-mix(in oklch, var(--critical) 60%, var(--ink)); }
+  .pill-missing::before { background: var(--critical); }
+
+  /* ---------- 图表 ---------- */
+  figure.diagram {
+    margin: 4px 0 20px;
+    padding: 20px clamp(10px, 2vw, 24px) 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  figure.diagram svg { display: block; width: 100%; height: auto; color: var(--ink); }
+  figure.diagram figcaption {
+    margin-top: 12px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    border-top: 1px dashed var(--line);
+    padding-top: 10px;
+  }
+  .svg-dim { color: var(--ink-faint); }
+  .svg-strong { color: var(--ink); }
+
+  /* ---------- 要点卡 ---------- */
+  .takeaway-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin: 16px 0 30px; }
+  @media (max-width: 760px) { .takeaway-grid { grid-template-columns: 1fr; } }
+  .takeaway {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--signal);
+    border-radius: 8px;
+    background: var(--panel);
+    padding: 14px 16px;
+  }
+  .takeaway h4 { font-size: 0.92rem; margin-bottom: 6px; }
+  .takeaway p { font-size: 13px; color: var(--ink-dim); margin: 0; }
+
+  .callout {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--warn);
+    background: var(--warn-dim);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13.3px;
+    color: color-mix(in oklch, var(--warn) 35%, var(--ink));
+    margin: 4px 0 24px;
+  }
+  .callout b { color: var(--ink); }
+
+  footer.doc-foot {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    margin-top: 20px;
+    padding: 24px clamp(16px,4vw,32px) 40px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    max-width: 1180px;
+    margin-inline: auto;
+  }
+  footer.doc-foot p { max-width: none; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    section { animation: fade-up 0.4s ease-out both; }
+  }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+</style>
+
+<div class="shell">
+  <header class="masthead">
+    <span class="eyebrow">OpenRealtime · 系统架构与可观测性</span>
+    <h1>语音链路手册</h1>
+    <p class="lede">
+      一次语音轮次从麦克风到扬声器要穿过的每一个闩锁、状态机和事件总线——
+      本手册梳理 OpenRealtime 的整体结构、消息流程、模块接口定义,
+      并重点拆解语义完整度判断(EOT)与语义打断判断两套机制的内部工作原理,
+      最后给出延迟观测的现状盘点与建设建议。
+    </p>
+    <div class="meta-row">
+      <span><b>范围</b> server/realtime · server/turn_policy · server/observability</span>
+      <span><b>整理时间</b> 2026-10-03</span>
+      <span><b>性质</b> 只读代码分析,未改动任何源码</span>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="目录">
+    <ol>
+      <li><a href="#overview"><b>01</b>架构总览</a></li>
+      <li><a href="#flow"><b>02</b>消息流程</a></li>
+      <li><a href="#interfaces"><b>03</b>模块接口定义</a></li>
+      <li><a href="#eot"><b>04</b>EOT 语义完整度判断</a></li>
+      <li><a href="#barge"><b>05</b>语义打断判断</a></li>
+      <li><a href="#latency"><b>06</b>延迟观测现状与建议</a></li>
+    </ol>
+    <div class="toc-foot">本页为架构研究文档,非实现代码。若需落地延迟统计功能,建议另开实施计划。</div>
+  </nav>
+
+  <main>
+    <!-- ============ 01 架构总览 ============ -->
+    <section id="overview">
+      <div class="sec-head">
+        <span class="sec-num">01 / 06</span>
+        <h2>架构总览</h2>
+        <p class="sec-dek">
+          整体理念是「契约 + 能力插座」:VAD / ASR / TurnManager / Brain / TTS 都先定义为
+          <code class="mono">Protocol</code>(<code class="mono">XxxCapabilityProvider.open()</code> →
+          <code class="mono">XxxCapabilitySession</code>),再由具体实现接入插座。
+          Turn Policy 作为独立的「仲裁层」挂在 TurnManager 旁,只做语义/状态判断,不直接碰音频。
+        </p>
+      </div>
+
+      <figure class="diagram">
+        <svg viewBox="0 0 940 440" role="img" aria-label="OpenRealtime 分层架构图:传输层之上是 Realtime 协议层,协议层驱动 VAD、ASR、TurnManager、Brain、TTS 五个能力插座,TurnManager 与下方的 Turn Policy 仲裁层双向交互判断语义完整度与打断,右侧 Observability 面板以虚线从各层抽取遥测数据。">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <!-- Row1 Transport -->
+          <rect x="20" y="20" width="680" height="56" rx="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="40" y="43" font-size="13.5" font-weight="700" fill="currentColor">传输层 Transport</text>
+          <text x="40" y="62" font-size="11.5" class="svg-dim">WebSocket / UDP 帧 · transport/frames.py</text>
+
+          <line x1="360" y1="76" x2="360" y2="104" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)" />
+
+          <!-- Row2 Protocol -->
+          <rect x="20" y="104" width="680" height="56" rx="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="40" y="127" font-size="13.5" font-weight="700" fill="currentColor">Realtime 协议层</text>
+          <text x="40" y="146" font-size="11.5" class="svg-dim">commands / events · control_plane.py · RealtimeTurnController</text>
+
+          <line x1="360" y1="160" x2="360" y2="188" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow)" />
+          <text x="368" y="178" font-size="10.5" class="svg-dim">CascadedInputPipeline 路由</text>
+
+          <!-- Row3 capabilities -->
+          <g font-size="12.5">
+            <rect x="20" y="188" width="126" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="83" y="214" text-anchor="middle" font-weight="700" fill="currentColor">VAD</text>
+            <text x="83" y="232" text-anchor="middle" font-size="10.5" class="svg-dim">声学端点</text>
+
+            <rect x="158" y="188" width="126" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="221" y="214" text-anchor="middle" font-weight="700" fill="currentColor">ASR</text>
+            <text x="221" y="232" text-anchor="middle" font-size="10.5" class="svg-dim">流式转写</text>
+
+            <rect x="296" y="188" width="126" height="64" rx="7" style="stroke:var(--signal)" stroke-width="1.8" fill="none" />
+            <text x="359" y="212" text-anchor="middle" font-weight="700" style="fill:var(--signal-ink)">TurnManager</text>
+            <text x="359" y="230" text-anchor="middle" font-size="10.5" class="svg-dim">对话状态驱动</text>
+            <text x="359" y="244" text-anchor="middle" font-size="10" class="svg-dim">↕ 与 Turn Policy 交互</text>
+
+            <rect x="434" y="188" width="126" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="497" y="214" text-anchor="middle" font-weight="700" fill="currentColor">Brain</text>
+            <text x="497" y="232" text-anchor="middle" font-size="10.5" class="svg-dim">LLM 推理</text>
+
+            <rect x="572" y="188" width="126" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="635" y="214" text-anchor="middle" font-weight="700" fill="currentColor">TTS</text>
+            <text x="635" y="232" text-anchor="middle" font-size="10.5" class="svg-dim">流式合成</text>
+          </g>
+          <text x="20" y="268" font-size="10.5" class="svg-dim">↑ 能力插座层(capabilities/*.py)· 每个皆为 Protocol + Session 契约</text>
+
+          <line x1="359" y1="252" x2="359" y2="300" style="stroke:var(--signal)" stroke-width="1.8" marker-end="url(#arrow)" />
+          <text x="367" y="282" font-size="10.5" style="fill:var(--signal-ink)">EOT / 打断 决策请求</text>
+
+          <!-- Row4 Turn Policy -->
+          <rect x="20" y="300" width="680" height="68" rx="8" style="stroke:var(--signal)" stroke-width="1.6" fill="none" />
+          <text x="40" y="325" font-size="13.5" font-weight="700" style="fill:var(--signal-ink)">Turn Policy 仲裁层</text>
+          <text x="40" y="344" font-size="11.5" class="svg-dim">SemanticEndpointGate(EOT) · SemanticInterruptionGate(打断) · 5态对话 FSM</text>
+          <text x="40" y="359" font-size="10.5" class="svg-dim">states.py / policy.py / signals.py / eot_classifier.py</text>
+
+          <path d="M20 300 L20 180 Q20 160 40 160 L60 160" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#arrow)" />
+          <text x="64" y="163" font-size="10" class="svg-dim">AsrCommitRequested / AssistantYieldRequested 回传协议层</text>
+
+          <!-- Observability side panel -->
+          <rect x="720" y="20" width="200" height="348" rx="10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 4" />
+          <text x="740" y="46" font-size="13" font-weight="700" fill="currentColor">可观测性</text>
+          <text x="740" y="64" font-size="10.5" class="svg-dim">Observability</text>
+          <text x="740" y="92" font-size="10.5" class="svg-dim">· Telemetry 锚点记录</text>
+          <text x="740" y="112" font-size="10.5" class="svg-dim">· ResponseLatencyTrace</text>
+          <text x="740" y="132" font-size="10.5" class="svg-dim">· ProviderLatencyObserver</text>
+          <text x="740" y="152" font-size="10.5" class="svg-dim">· StageTracer 日志</text>
+          <text x="740" y="172" font-size="10.5" class="svg-dim">· DiagnosticsQuery 聚合</text>
+          <text x="740" y="192" font-size="10.5" class="svg-dim">· /observability/* HTTP</text>
+
+          <line x1="700" y1="48" x2="720" y2="48" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" />
+          <line x1="700" y1="132" x2="720" y2="132" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" />
+          <line x1="700" y1="220" x2="720" y2="220" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" />
+          <line x1="700" y1="334" x2="720" y2="334" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" />
+        </svg>
+        <figcaption>
+          传输层承载原始帧;协议层把帧翻译为命令/事件;五个能力插座并行工作,其中 TurnManager
+          与 Turn Policy 仲裁层之间是本手册的核心——EOT 与打断的判断都发生在这条双向箭头上。
+          Observability 以虚线从四层抽取数据,目前实际接线情况见第 06 节。
+        </figcaption>
+      </figure>
+
+      <div class="panel-grid">
+        <div class="panel">
+          <div class="spec-title">级联式(Cascaded)引擎</div>
+          <p class="spec-note">
+            <code>server/realtime/cascaded/engine.py</code> 是当前编排核心:ASR→EOT→LLM→TTS
+            逐级级联,每一级都是独立可替换的能力插座。<code>server/realtime/native/</code>
+            下还有另一种 <code>engine_kind</code>(端到端原生引擎)与之并列,本手册聚焦级联架构。
+          </p>
+        </div>
+        <div class="panel">
+          <div class="spec-title">Legacy 适配器模式</div>
+          <p class="spec-note">
+            新契约大量通过 <code>LegacyXxxCapabilityAdapter</code> 包装旧实现接入插座——
+            例如 EOT/打断判断的真正落点其实在
+            <code>LegacyTurnManagerCapabilitySession</code> 内部,而不是 TurnManager 契约本身。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 02 消息流程 ============ -->
+    <section id="flow">
+      <div class="sec-head">
+        <span class="sec-num">02 / 06</span>
+        <h2>消息流程:一次完整语音轮次</h2>
+        <p class="sec-dek">
+          时间从上到下流动。四条泳道对应客户端、输入管线(VAD+ASR)、TurnManager(含 EOT 闩锁)、
+          会话引擎(控制面 + Brain + TTS)。虚线为回传/反馈路径。
+        </p>
+      </div>
+
+      <figure class="diagram">
+        <svg viewBox="0 0 940 760" role="img" aria-label="正常语音轮次时序图:客户端发送音频帧给输入管线,输入管线做VAD与ASR识别后交给TurnManager做语义完整度双闩锁判断,确认后提交给会话引擎触发Brain生成与TTS合成,音频与文本持续推送回客户端,客户端回传播放进度,最终收到响应完成事件。">
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <!-- lane headers -->
+          <g font-size="12" font-weight="700">
+            <rect x="40" y="16" width="140" height="38" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="110" y="40" text-anchor="middle" fill="currentColor">客户端 / WS</text>
+
+            <rect x="270" y="16" width="150" height="38" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="345" y="40" text-anchor="middle" fill="currentColor">输入管线</text>
+
+            <rect x="500" y="16" width="170" height="38" rx="7" style="stroke:var(--signal)" stroke-width="1.8" fill="none" />
+            <text x="585" y="40" text-anchor="middle" style="fill:var(--signal-ink)">TurnManager · EOT 闩锁</text>
+
+            <rect x="750" y="16" width="160" height="38" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <text x="830" y="40" text-anchor="middle" fill="currentColor">控制面 / Brain / TTS</text>
+          </g>
+          <!-- lane guides -->
+          <line x1="110" y1="54" x2="110" y2="730" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.4" />
+          <line x1="345" y1="54" x2="345" y2="730" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.4" />
+          <line x1="585" y1="54" x2="585" y2="730" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.4" />
+          <line x1="830" y1="54" x2="830" y2="730" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.4" />
+
+          <!-- step 1 -->
+          <line x1="110" y1="92" x2="345" y2="92" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)" />
+          <text x="118" y="84" font-size="11">① AppendAudio(音频帧)</text>
+
+          <!-- step 2 self -->
+          <rect x="285" y="110" width="120" height="46" rx="6" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <text x="345" y="130" text-anchor="middle" font-size="10.8">② VAD 停顿检测</text>
+          <text x="345" y="146" text-anchor="middle" font-size="10.8">+ ASR 流式转写</text>
+
+          <!-- step3 input->turnmanager -->
+          <line x1="345" y1="156" x2="585" y2="196" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)" />
+          <text x="420" y="182" font-size="11">③ ObserveAsrEvent / ObserveVadEvent</text>
+
+          <!-- step4 self: dual latch -->
+          <rect x="505" y="206" width="160" height="76" rx="7" style="stroke:var(--signal)" stroke-width="1.6" fill="none" />
+          <text x="585" y="228" text-anchor="middle" font-size="11" font-weight="700" style="fill:var(--signal-ink)">④ SemanticEndpointGate</text>
+          <text x="585" y="246" text-anchor="middle" font-size="10.3" class="svg-dim">语义锁 + 声学锁</text>
+          <text x="585" y="262" text-anchor="middle" font-size="10.3" class="svg-dim">双闩锁 → COMPLETE</text>
+          <text x="585" y="276" text-anchor="middle" font-size="10" class="svg-dim">(详见第04节)</text>
+
+          <!-- step5 turnmanager -> input (commit request) -->
+          <line x1="505" y1="300" x2="345" y2="330" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)" />
+          <text x="368" y="320" font-size="11">⑤ AsrCommitRequested → CommitAsrInput</text>
+
+          <!-- step6 input self: final -->
+          <rect x="285" y="340" width="120" height="40" rx="6" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <text x="345" y="364" text-anchor="middle" font-size="10.8">⑥ UserTurnCommitted</text>
+
+          <!-- step7 input -> control plane -->
+          <line x1="405" y1="368" x2="750" y2="398" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)" />
+          <text x="430" y="390" font-size="11">⑦ InputTranscriptCompleted → RequestResponse</text>
+
+          <!-- step8 engine self -->
+          <rect x="755" y="408" width="150" height="56" rx="7" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <text x="830" y="430" text-anchor="middle" font-size="10.8">⑧ Journal 落库</text>
+          <text x="830" y="446" text-anchor="middle" font-size="10.8">Brain 流式生成 + TTS 合成</text>
+
+          <!-- step9 engine -> client long -->
+          <line x1="750" y1="490" x2="110" y2="520" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow2)" />
+          <text x="150" y="512" font-size="11">⑨ AudioDelta / AssistantTextFrame(持续推送)</text>
+
+          <!-- step10 client -> engine feedback (dashed) -->
+          <line x1="110" y1="560" x2="750" y2="590" stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrow2)" />
+          <text x="150" y="580" font-size="11" class="svg-dim">⑩ PlaybackProgress 回传(反馈)</text>
+
+          <!-- step11 engine -> client -->
+          <line x1="750" y1="628" x2="110" y2="656" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow2)" />
+          <text x="150" y="648" font-size="11">⑪ ResponseCompleted</text>
+
+          <text x="40" y="716" font-size="10.5" class="svg-dim">注:若用户在 ⑧⑨ 期间重新开口说话,则并行触发打断流程(见第05节),不等待 ⑪ 完成。</text>
+        </svg>
+        <figcaption>
+          完整轮次共跨 4 条泳道、11 个标号步骤。③→④→⑤→⑥ 是语义完整度判断的核心区间;
+          ⑨⑩ 为流式推送与播放进度回传,二者并行而非串行。
+        </figcaption>
+      </figure>
+
+      <div class="callout">
+        <b>关键数据结构</b>:全链路由 <code class="mono">InteractionContext</code> 贯穿
+        (tenant_id / user_id / voice_session_id / thread_id / turn_id / generation / response_id),
+        几乎每条 command / event 都携带它;<code class="mono">AudioFrame</code> 则携带
+        <code class="mono">stream_id / sequence / timestamp_us / duration_us / encoding / data</code>。
+        所有用户输入与 assistant 输出都先落 <b>Journal</b>(<code class="mono">ConversationItem</code>)
+        再投影(<code class="mono">ItemProjected</code>)才允许触发响应或交付——Journal 是语义真相来源。
+      </div>
+    </section>
+
+    <!-- ============ 03 模块接口定义 ============ -->
+    <section id="interfaces">
+      <div class="sec-head">
+        <span class="sec-num">03 / 06</span>
+        <h2>核心模块接口定义</h2>
+        <p class="sec-dek">按层级分组列出关键类 / 函数签名,仅保留对理解链路最必要的字段,完整字段请对照源码。</p>
+      </div>
+
+      <h3 class="sub">3.1 传输与协议层</h3>
+      <div class="panel-grid">
+        <div class="panel">
+          <div class="spec-path">server/realtime/transport/websocket.py</div>
+          <div class="spec-title">RealtimeWebSocketFrameBridge</div>
+          <pre class="code">handle_event(event: RealtimeEvent) -&gt; None
+_append_v2_audio(frame: InputAudioFrame) -&gt; None
+_append_user_text(text: str) -&gt; None   # 文本输入走硬性打断
+_report_playback(frame: PlaybackProgressFrame) -&gt; None</pre>
+          <p class="spec-note">协议事件 ↔ WS 帧的双向翻译器,是客户端与协议层之间唯一的边界。</p>
+        </div>
+        <div class="panel">
+          <div class="spec-path">server/realtime/control_plane.py</div>
+          <div class="spec-title">RealtimeTurnController</div>
+          <pre class="code">_handle_event(event: RealtimeEvent) -&gt; None
+_commit_user_transcript() -&gt; None      # AppendItem 写入 Journal
+_request_response_for_projected_user() -&gt; None</pre>
+          <p class="spec-note">ASR 完成转录 → 落库 Journal → 触发 <code>RequestResponse</code> 命令,是“输入侧”到“生成侧”的交接点。</p>
+        </div>
+        <div class="panel" style="grid-column: 1 / -1;">
+          <div class="spec-path">server/realtime/protocol/{commands,events,audio}.py</div>
+          <div class="spec-title">关键命令 / 事件一览</div>
+          <div class="table-wrap" style="margin:0;">
+            <table>
+              <thead><tr><th>名称</th><th>类型</th><th>作用</th></tr></thead>
+              <tbody>
+                <tr><td>AppendAudio</td><td>Command</td><td>追加一帧输入音频</td></tr>
+                <tr><td>AppendItem</td><td>Command</td><td>向 Journal 写入一条对话条目</td></tr>
+                <tr><td>RequestResponse</td><td>Command</td><td>请求针对已投影用户输入生成响应</td></tr>
+                <tr><td>CancelResponse</td><td>Command</td><td>取消当前进行中的响应(打断/文本抢占)</td></tr>
+                <tr><td>ReportPlaybackProgress</td><td>Command</td><td>客户端回传播放进度</td></tr>
+                <tr><td>InputTranscriptCompleted</td><td>Event</td><td>用户轮次已提交(语义完整度确认通过)</td></tr>
+                <tr><td>ResponseStarted / ResponseCompleted</td><td>Event</td><td>响应生命周期起止</td></tr>
+                <tr><td>DisplayContentDelta / SpokenContentDelta</td><td>Event</td><td>文本增量(展示用 / 朗读用,可不同)</td></tr>
+                <tr><td>AudioDelta / SpeechTextAlignment</td><td>Event</td><td>音频增量 / 文本-音频对齐信息</td></tr>
+                <tr><td>AssistantYieldRequested</td><td>Event</td><td>打断确认,助手需让出话轮</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="sub">3.2 能力插座 <span class="mono">capabilities/*.py</span></h3>
+      <div class="panel-grid">
+        <div class="panel">
+          <div class="spec-path">capabilities/vad.py · asr.py</div>
+          <div class="spec-title">VAD / ASR 契约</div>
+          <pre class="code">VadCapabilitySession.send(AnalyzeVadAudio)
+  → VadSpeechStarted / VadSpeechStopped
+
+AsrCapabilitySession.send(AppendAsrAudio | CommitAsrInput)
+  → AsrTranscriptDelta / AsrEndpointHint / AsrTranscriptFinal</pre>
+        </div>
+        <div class="panel">
+          <div class="spec-path">capabilities/brain.py · tts.py</div>
+          <div class="spec-title">Brain / TTS 契约</div>
+          <pre class="code">BrainCapabilitySession.send(RequestBrainResponse)
+  → BrainResponseStarted / BrainTextDelta
+  → BrainToolRequested / BrainResponseCompleted
+
+TtsCapabilitySession.send(StartTts|AppendTtsText|CommitTts|CancelTts)
+  → TtsAudioFrame / TtsTextAlignment / TtsCompleted</pre>
+        </div>
+        <div class="panel">
+          <div class="spec-path">capabilities/input_pipeline.py</div>
+          <div class="spec-title">CascadedInputPipeline</div>
+          <pre class="code">append_audio(frame: AudioFrame) -&gt; None
+_route_vad(event) / _route_asr(event) -&gt; None
+_route_turn_manager(event) -&gt; None
+_project_asr_event(event) -&gt; AsrEvent | None  # 回声过滤</pre>
+          <p class="spec-note">VAD/ASR 事件的路由中枢,也是 assistant 回声过滤的落点(见 05 节)。</p>
+        </div>
+        <div class="panel">
+          <div class="spec-path">capabilities/turn_manager.py</div>
+          <div class="spec-title">TurnManagerCapabilitySession</div>
+          <pre class="code">send(ObserveVadEvent | ObserveAsrEvent) -&gt; None
+# 真正实现见 LegacyTurnManagerCapabilitySession,
+# 内部持有 SemanticEndpointGate + SemanticInterruptionGate</pre>
+        </div>
+        <div class="panel" style="grid-column:1/-1;">
+          <div class="spec-path">realtime/cascaded/engine.py</div>
+          <div class="spec-title">CascadedRealtimeEngine / CascadedRealtimeConversation</div>
+          <pre class="code">send(command: RealtimeCommand) -&gt; None
+_pump_input() -&gt; None            # 消费 input_pipeline 事件流
+_request_response() -&gt; None      # 构造 TurnContent,派发 _start_response()
+_route_response() -&gt; None        # 消费 brain.events(),驱动 TTS 启停
+_pump_tts() -&gt; None               # 消费 tts.events(),产出 AudioDelta
+_cancel_response(reason: str) -&gt; None</pre>
+          <p class="spec-note">级联架构的编排核心,把 Brain 的文本流与 TTS 的音频流拼接成最终推送给客户端的事件序列。</p>
+        </div>
+      </div>
+
+      <h3 class="sub">3.3 Turn Policy 状态机 <span class="mono">turn_policy/*.py</span></h3>
+      <div class="panel-grid">
+        <div class="panel">
+          <div class="spec-path">turn_policy/states.py · signals.py</div>
+          <div class="spec-title">DialogueState / Signal / ResponseAction</div>
+          <pre class="code">class DialogueState(Enum):
+    IDLE, LISTEN, SPEAK, WAIT, DUAL
+
+class ResponseAction(Enum):
+    RESPOND, WAIT, YIELD, CONTINUE, ...</pre>
+        </div>
+        <div class="panel">
+          <div class="spec-path">turn_policy/policy.py</div>
+          <div class="spec-title">TurnPolicy</div>
+          <pre class="code">evaluate(signal: Signal) -&gt; Transition
+# 内部维护 τ1–τ11 共 11 条转移规则表</pre>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>规则</th><th>信号</th><th>转移</th><th>动作</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>τ1</td><td>USER_SPEECH_ONSET</td><td>IDLE→LISTEN</td><td>-</td><td>需唤醒词+寻址判断双重门控</td></tr>
+            <tr><td>τ3/τ5</td><td>USER_EOT_CONFIRMED</td><td>LISTEN/WAIT→SPEAK</td><td>RESPOND</td><td>EOT 双闩锁 COMMIT 后触发</td></tr>
+            <tr><td>τ4</td><td>USER_HESITATION</td><td>LISTEN→WAIT</td><td>WAIT</td><td>声学停顿但语义未完整</td></tr>
+            <tr><td>τ6</td><td>USER_RESUMED</td><td>WAIT→LISTEN</td><td>-</td><td>用户继续说话</td></tr>
+            <tr><td>τ7</td><td>SYSTEM_EOT</td><td>SPEAK→IDLE</td><td>-</td><td>assistant 回复结束</td></tr>
+            <tr><td>τ8</td><td>OVERLAP_DETECTED</td><td>SPEAK→DUAL</td><td>-</td><td>打断检测的触发点</td></tr>
+            <tr><td>τ9</td><td>FLOOR_CLAIM</td><td>DUAL→LISTEN</td><td>YIELD</td><td>语义仲裁确认为真打断</td></tr>
+            <tr><td>τ10</td><td>BACKCHANNEL</td><td>DUAL→SPEAK</td><td>CONTINUE</td><td>仅是附和,assistant 继续说</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">3.4 可观测性 <span class="mono">observability/*.py</span></h3>
+      <div class="panel-grid">
+        <div class="panel">
+          <div class="spec-path">observability/latency.py</div>
+          <div class="spec-title">ResponseLatencyTrace / LatencyMilestone</div>
+          <pre class="code">class LatencyMilestone(Enum):
+    TURN_ACCEPTED, ENGINE_STARTED, FIRST_TEXT_DELTA,
+    FIRST_SPEAKABLE_SEGMENT, TTS_REQUESTED, TTS_FIRST_AUDIO,
+    FIRST_AUDIO_DELTA, FIRST_AUDIO_SENT,
+    BARGE_IN_CONFIRMED, PLAYBACK_STOPPED, RESPONSE_TERMINAL
+
+class VoiceLatencyTargets:
+    first_audio_p50_ms = 800
+    first_audio_p95_ms = 1500
+    barge_in_to_stop_ms = 200</pre>
+          <p class="spec-note">契约完整,见第06节「预留未接线」。</p>
+        </div>
+        <div class="panel">
+          <div class="spec-path">observability/telemetry.py</div>
+          <div class="spec-title">SessionTelemetry / DiagnosticsQuery</div>
+          <pre class="code">record(name: str, duration_ms: float, **tags) -&gt; None
+_capture_ledger_timing(event_name: str) -&gt; None
+
+# Protocol:
+async def overview(window) -&gt; DiagnosticsOverview
+async def list_sessions(window, limit=50) -&gt; tuple[SessionSummary,...]
+async def session_detail(voice_session_id) -&gt; SessionDetail | None</pre>
+          <p class="spec-note"><code>MetricAggregate</code> 已实现按指标名分组的 p50/p95/p99/max/超时/错误计数聚合。</p>
+        </div>
+        <div class="panel">
+          <div class="spec-path">realtime/provider_latency.py</div>
+          <div class="spec-title">ProviderLatencyObserver</div>
+          <pre class="code">TimedAsrSession   # 包装 ASR session,打点首字/末帧耗时
+TimedTtsSession   # 包装 TTS session,打点首文本块→首音频耗时</pre>
+        </div>
+        <div class="panel">
+          <div class="spec-path">control_plane/http.py</div>
+          <div class="spec-title">现有诊断 HTTP API(ThreadingHTTPServer, 127.0.0.1:8766)</div>
+          <pre class="code">GET  /healthz
+GET  /observability/overview?minutes=60
+GET  /observability/sessions?minutes=60&amp;limit=50
+GET  /observability/sessions/{id}
+DELETE /observability/sessions   # body: {session_ids:[...]}</pre>
+          <p class="spec-note">新增“延迟统计查询”接口的风格参考,见第06节。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 04 EOT ============ -->
+    <section id="eot">
+      <div class="sec-head">
+        <span class="sec-num">04 / 06</span>
+        <h2>EOT 语义完整度判断机制</h2>
+        <p class="sec-dek">
+          核心协调器是 <code class="mono">SemanticEndpointGate</code>(<code class="mono">turn_policy/semantic_endpoint.py</code>)——
+          一个候选轮次只有同时拿到「语义锁」与「声学锁」才会真正提交。
+        </p>
+      </div>
+
+      <figure class="diagram">
+        <svg viewBox="0 0 760 380" role="img" aria-label="EOT双闩锁机制图:语义锁由EOT分类器判断完整/不完整/不确定,声学锁由VAD停顿或ASR空闲超时判断,两锁同时满足才汇入AND节点提交为COMMIT,进入USER_EOT_CONFIRMED信号;若有新的ASR修订或VAD重启会使候选失效并回退重新判断。">
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <rect x="30" y="30" width="300" height="92" rx="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="50" y="56" font-size="13" font-weight="700" fill="currentColor">语义锁 Semantic Lock</text>
+          <text x="50" y="76" font-size="10.8" class="svg-dim">EOT 分类器 classify_request()</text>
+          <text x="50" y="92" font-size="10.8" class="svg-dim">COMPLETE / INCOMPLETE / UNCERTAIN</text>
+          <text x="50" y="108" font-size="10.8" class="svg-dim">超时 5000ms → 降级为 UNCERTAIN</text>
+
+          <rect x="430" y="30" width="300" height="92" rx="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="450" y="56" font-size="13" font-weight="700" fill="currentColor">声学/静音锁 Acoustic Lock</text>
+          <text x="450" y="76" font-size="10.8" class="svg-dim">VadSpeechStopped 事件</text>
+          <text x="450" y="92" font-size="10.8" class="svg-dim">或 ASR 文本空闲超时</text>
+          <text x="450" y="108" font-size="10.8" class="svg-dim">(默认 asr_idle_stop_ms=1000ms)</text>
+
+          <line x1="180" y1="122" x2="330" y2="185" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow3)" />
+          <line x1="580" y1="122" x2="430" y2="185" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow3)" />
+
+          <polygon points="380,172 440,200 380,228 320,200" fill="none" style="stroke:var(--signal)" stroke-width="1.8" />
+          <text x="380" y="196" text-anchor="middle" font-size="11.5" font-weight="700" style="fill:var(--signal-ink)">两锁</text>
+          <text x="380" y="210" text-anchor="middle" font-size="11.5" font-weight="700" style="fill:var(--signal-ink)">AND</text>
+
+          <line x1="380" y1="228" x2="380" y2="262" style="stroke:var(--signal)" stroke-width="1.8" marker-end="url(#arrow3)" />
+
+          <rect x="220" y="262" width="320" height="48" rx="8" style="stroke:var(--signal)" stroke-width="1.6" fill="none" />
+          <text x="380" y="282" text-anchor="middle" font-size="12" font-weight="700" style="fill:var(--signal-ink)">COMMIT</text>
+          <text x="380" y="298" text-anchor="middle" font-size="10.8" class="svg-dim">→ τ3/τ5 USER_EOT_CONFIRMED → SPEAK + RESPOND</text>
+
+          <path d="M220 286 Q90 286 90 180 Q90 100 180 90" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrow3)" />
+          <text x="95" y="190" font-size="10" class="svg-dim" transform="rotate(-90 95 190)">活动失效 → 候选作废,重新判断</text>
+          <text x="95" y="340" font-size="10.3" class="svg-dim">新 ASR revision 或 VAD 重启:若语义已 COMPLETE,仅需重新等一次声学锁(不丢弃已有语义判断)</text>
+        </svg>
+        <figcaption>
+          语义锁与声学锁各自独立判断,只有二者「同时」满足才真正提交话轮——这避免了纯声学方案的
+          误切(话没说完就被静音打断)与纯语义方案的滞后(模型判完还要再等真实停顿)。
+        </figcaption>
+      </figure>
+
+      <h3 class="sub">三态结果与等待策略</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>后续动作</th></tr></thead>
+          <tbody>
+            <tr><td>COMPLETE</td><td>短文本立即收尾;长文本(≥60字)先等 <code>long_text_grace_ms</code>(默认200ms)宽限期,期间若检测到新语音则取消</td></tr>
+            <tr><td>INCOMPLETE</td><td>发 <code>transcript.incomplete</code> 事件,保持话轮打开,<code>incomplete_timeout_ms</code>(默认5000ms)超时强制提交</td></tr>
+            <tr><td>UNCERTAIN</td><td>按线性插值 <code>wait_ms</code> 短暂等待,裁剪在 <code>[min_eot_ms, max_eot_ms]</code> 区间内</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">活性兜底(防止话轮永不收尾)</h3>
+      <ul class="plain">
+        <li><b>ASR 空闲合成停顿</b>:声学 VAD 仍判定在说话,但 ASR 文本已停止增长超过 <code>asr_idle_stop_ms</code>,则合成一个 VAD Stop 事件推动判断。</li>
+        <li><b>绝对等待上限</b>:以最近一次「实质 ASR 文本进展」为起点,设 <code>max_open_ms</code>(默认10000ms)绝对上限,专门应对 VAD 振荡(噪声反复触发 start/stop)导致的死锁。</li>
+      </ul>
+
+      <h3 class="sub">分类器实现一览 <span class="mono">turn_policy/plugins/*.py</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>分类器</th><th>策略</th></tr></thead>
+          <tbody>
+            <tr><td>PunctuationEotScorer</td><td>纯规则:句末标点→COMPLETE,连接词结尾→INCOMPLETE,否则 UNCERTAIN。零网络开销,始终在线</td></tr>
+            <tr><td>LlmEotClassifier</td><td>调用 LLM,要求输出 <code>{status, confidence, wait_ms}</code> JSON,支持流式边收边解析</td></tr>
+            <tr><td>FireRedChatEotProvider</td><td>本地 ONNX 模型推理,线程池运行避免阻塞事件循环,阈值 0.5 二分类</td></tr>
+            <tr><td>FastCompleteFallbackEotClassifier</td><td>两阶段:fast 判断「保守 COMPLETE」直接接受;否则转 fallback(通常是LLM),并对 fallback 结果做「悬空模式」否决(以连词/介词结尾强制改判 INCOMPLETE)</td></tr>
+            <tr><td>HybridEotClassifier</td><td>并行多个证据源,consensus(全一致才采用,否则 UNCERTAIN)或 primary_with_shadow(主结果为准,其余仅记录)</td></tr>
+            <tr><td>EnsembleEotClassifier</td><td>fast + slow 双评分器仲裁:分歧时降级为 UNCERTAIN,不允许单一信号独断;slow 超时(默认450ms)回退 fast</td></tr>
+            <tr><td>JevEotClassifier</td><td>外部分类服务,confidence 低于阈值(默认0.8)降级为 UNCERTAIN</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="spec-note" style="max-width:70ch;">
+        这些分类器可以互相组合(如 <code class="mono">FastCompleteFallbackEotClassifier</code> 本身又作为
+        <code class="mono">SemanticEndpointGate.classifier</code> 参数传入),项目没有强制统一到一种范式,取决于部署配置。
+      </p>
+    </section>
+
+    <!-- ============ 05 打断 ============ -->
+    <section id="barge">
+      <div class="sec-head">
+        <span class="sec-num">05 / 06</span>
+        <h2>语义打断(Barge-in)判断机制</h2>
+        <p class="sec-dek">
+          两层防护:先过滤 assistant 自己的回声,再对真实新语音做语义仲裁——
+          区分「只是让它停」「要修正/补充」「只是附和」「与它无关的背景音」。
+        </p>
+      </div>
+
+      <figure class="diagram">
+        <svg viewBox="0 0 820 560" role="img" aria-label="打断判定决策流程图:SPEAK中检测到重叠语音后先判断是否为回声,是则丢弃;否则进入语义打断仲裁,规则优先否则latest-wins模型分类,得到结果后判断是否应停止播放,若应停止再判断是否要生成新用户轮次。">
+          <defs>
+            <marker id="arrow4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor" />
+            </marker>
+          </defs>
+
+          <rect x="230" y="16" width="360" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="410" y="45" text-anchor="middle" font-size="12.5" font-weight="700" fill="currentColor">SPEAK 中检测到重叠语音(τ8 OVERLAP_DETECTED)</text>
+
+          <line x1="410" y1="64" x2="410" y2="96" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+
+          <polygon points="410,96 480,132 410,168 340,132" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="410" y="128" text-anchor="middle" font-size="11.5">是回声?</text>
+          <text x="410" y="144" text-anchor="middle" font-size="9.5" class="svg-dim">文本是播报内容前缀</text>
+
+          <line x1="480" y1="132" x2="620" y2="132" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+          <text x="505" y="124" font-size="10.5">是</text>
+          <rect x="620" y="108" width="160" height="48" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <text x="700" y="128" text-anchor="middle" font-size="10.8">丢弃转写</text>
+          <text x="700" y="144" text-anchor="middle" font-size="9.5" class="svg-dim">assistant_playback_echo</text>
+
+          <line x1="410" y1="168" x2="410" y2="200" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+          <text x="420" y="188" font-size="10.5" class="svg-dim">否</text>
+
+          <rect x="220" y="200" width="380" height="60" rx="8" style="stroke:var(--signal)" stroke-width="1.6" fill="none" />
+          <text x="410" y="222" text-anchor="middle" font-size="12" font-weight="700" style="fill:var(--signal-ink)">SemanticInterruptionGate</text>
+          <text x="410" y="240" text-anchor="middle" font-size="10.3" class="svg-dim">规则引擎优先,否则 latest-wins 模型分类调度</text>
+          <text x="410" y="254" text-anchor="middle" font-size="10.3" class="svg-dim">(超时800ms fail-open)</text>
+
+          <line x1="410" y1="260" x2="410" y2="292" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+
+          <polygon points="410,292 490,330 410,368 330,330" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="410" y="326" text-anchor="middle" font-size="11.5">should_stop?</text>
+          <text x="410" y="342" text-anchor="middle" font-size="9.5" class="svg-dim">stop/correction/interrupt</text>
+
+          <line x1="330" y1="330" x2="140" y2="330" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+          <text x="190" y="322" font-size="10.5" class="svg-dim">否</text>
+          <rect x="20" y="306" width="200" height="48" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <text x="120" y="326" text-anchor="middle" font-size="10.8">继续播报</text>
+          <text x="120" y="342" text-anchor="middle" font-size="9.5" class="svg-dim">τ10 DUAL→SPEAK(backchannel/ignore/uncertain)</text>
+
+          <line x1="410" y1="368" x2="410" y2="400" style="stroke:var(--signal)" stroke-width="1.8" marker-end="url(#arrow4)" />
+          <text x="420" y="390" font-size="10.5" style="fill:var(--signal-ink)">是</text>
+
+          <rect x="250" y="400" width="320" height="52" rx="8" style="stroke:var(--signal)" stroke-width="1.6" fill="none" />
+          <text x="410" y="421" text-anchor="middle" font-size="11.5" font-weight="700" style="fill:var(--signal-ink)">AssistantYieldRequested</text>
+          <text x="410" y="438" text-anchor="middle" font-size="10" class="svg-dim">取消 Brain/TTS → AssistantSpeechCancelledFrame</text>
+
+          <line x1="410" y1="452" x2="410" y2="484" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+
+          <polygon points="410,484 490,520 410,556 330,520" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="410" y="516" text-anchor="middle" font-size="11.5">creates_turn?</text>
+          <text x="410" y="532" text-anchor="middle" font-size="9.5" class="svg-dim">correction/interrupt</text>
+
+          <line x1="330" y1="520" x2="140" y2="520" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+          <text x="190" y="512" font-size="10.5" class="svg-dim">否(stop)</text>
+          <rect x="20" y="496" width="200" height="48" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <text x="120" y="516" text-anchor="middle" font-size="10.8">丢弃该段转写</text>
+          <text x="120" y="532" text-anchor="middle" font-size="9.5" class="svg-dim">不生成新用户轮次</text>
+
+          <line x1="490" y1="520" x2="650" y2="520" stroke="currentColor" stroke-width="1.4" marker-end="url(#arrow4)" />
+          <text x="560" y="512" font-size="10.5">是</text>
+          <rect x="600" y="496" width="200" height="48" rx="7" fill="none" stroke="currentColor" stroke-width="1.3" />
+          <text x="700" y="516" text-anchor="middle" font-size="10.8">进入 EOT 流程</text>
+          <text x="700" y="532" text-anchor="middle" font-size="9.5" class="svg-dim">生成新用户轮次(回到第04节)</text>
+        </svg>
+        <figcaption>
+          六类标签先归约为「该不该停」,再归约为「该不该把这段话当新任务」——两次归约,
+          避免打断逻辑写成一个巨大的六分支判断。
+        </figcaption>
+      </figure>
+
+      <h3 class="sub">六类标签与动作</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>label</th><th>含义</th><th>停播</th><th>生成新轮次</th></tr></thead>
+          <tbody>
+            <tr><td>stop</td><td>只要求停止,无后续任务(“别说了”)</td><td>是</td><td>否(丢弃该段输入)</td></tr>
+            <tr><td>correction</td><td>修正已有条件或当前回答</td><td>是</td><td>是</td></tr>
+            <tr><td>interrupt</td><td>回答助手提问 / 提出新任务</td><td>是</td><td>是</td></tr>
+            <tr><td>backchannel</td><td>“嗯/好的”等支持性反馈</td><td>否</td><td>否</td></tr>
+            <tr><td>ignore</td><td>回声/旁话/环境噪音/低证据短片段</td><td>否</td><td>否</td></tr>
+            <tr><td>uncertain</td><td>证据不足,延迟判断</td><td>否</td><td>延迟决定</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="takeaway-grid">
+        <div class="takeaway">
+          <h4>regex 规则优先,不等模型</h4>
+          <p>精确停止短语("别说了"/"闭嘴")与附和词("嗯"/"好的")直接命中规则,不消耗模型调用预算,也不受调用延迟影响。</p>
+        </div>
+        <div class="takeaway">
+          <h4>latest-wins 调度</h4>
+          <p>新的 ASR revision 到达时取消上一个未完成的模型分类任务,只保留最新文本的判定结果——防止旧判定在新文本就绪前抢先放行。</p>
+        </div>
+        <div class="takeaway">
+          <h4>fail-open 而非 fail-closed</h4>
+          <p>模型超时(800ms)或异常时:有文本→INTERRUPT,无文本→IGNORE。宁可多打断一次,也不让系统卡死。</p>
+        </div>
+        <div class="takeaway">
+          <h4>置信度阈值兜底</h4>
+          <p>模型给出 stop 类标签但置信度低于 <code class="mono">confidence_threshold</code>(默认0.8)时,降级为 UNCERTAIN,不足以打断。</p>
+        </div>
+      </div>
+
+      <h3 class="sub">文本输入的硬性打断</h3>
+      <p>
+        <code class="mono">RealtimeWebSocketFrameBridge._append_user_text()</code> 处理用户直接发文本消息的场景:
+        无条件先 <code class="mono">_cancel_active_response(reason="text_barge_in")</code> 取消当前响应,再处理新文本——
+        这条路径不走语义仲裁,是硬性打断,与语音打断的仲裁路径并列但独立。
+      </p>
+    </section>
+
+    <!-- ============ 06 延迟观测 ============ -->
+    <section id="latency">
+      <div class="sec-head">
+        <span class="sec-num">06 / 06</span>
+        <h2>延迟观测现状与建设建议</h2>
+        <p class="sec-dek">
+          结论先说:协议层(响应/首字/首音)已有活跃打点,聚合查询能力(p50/p95/p99)已完整实现;
+          最大缺口是「打断延迟」和「EOT/打断分类器自身推理耗时」目前都没有真正写入遥测——
+          契约已经定义好,只是没有接线。
+        </p>
+      </div>
+
+      <h3 class="sub">现状盘点</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>层级 / 模块</th><th>状态</th><th>覆盖范围</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>协议层响应时序</td>
+              <td><span class="pill pill-active">活跃</span></td>
+              <td><code>RealtimeTelemetryObserver</code>:response请求→首文字→首音频→终态,含 outcome 分类(OK/CANCELLED/TIMEOUT/ERROR)</td>
+            </tr>
+            <tr>
+              <td>供应商级 ASR/TTS 耗时</td>
+              <td><span class="pill pill-active">活跃</span></td>
+              <td><code>ProviderLatencyObserver</code> + <code>TimedAsrSession</code>/<code>TimedTtsSession</code>,在 <code>demos/voice_web_server.py</code> 中已实例化并通过 <code>provider_timing</code> 参数接入</td>
+            </tr>
+            <tr>
+              <td>EOT 分类器推理耗时</td>
+              <td><span class="pill pill-defined">部分预留</span></td>
+              <td><code>ClassifierEotEvidenceProvider.evaluate()</code> 自带 <code>inference_ms</code> 字段,但未见转发进 telemetry</td>
+            </tr>
+            <tr>
+              <td>命名锚点时序(speech_started→playback_finished)</td>
+              <td><span class="pill pill-defined">定义未接线</span></td>
+              <td><code>SessionTelemetry._capture_ledger_timing()</code> 已设计好派生指标公式,但未发现任何 <code>EventLedger.emit()</code> 实际发出这些事件名</td>
+            </tr>
+            <tr>
+              <td>响应延迟里程碑(ResponseLatencyTrace)</td>
+              <td><span class="pill pill-defined">定义未接线</span></td>
+              <td><code>LatencyMilestone</code> 枚举与 <code>VoiceLatencyTargets</code> 目标值完整,但未发现 <code>.mark()</code> 的实际调用</td>
+            </tr>
+            <tr>
+              <td>打断延迟(检测→实际停止播放)</td>
+              <td><span class="pill pill-missing">缺失</span></td>
+              <td>无任何实际记录;<code>BARGE_IN_CONFIRMED</code>/<code>PLAYBACK_STOPPED</code> 里程碑与 200ms 目标值仅存在于契约中</td>
+            </tr>
+            <tr>
+              <td>语义打断分类器推理耗时</td>
+              <td><span class="pill pill-missing">缺失</span></td>
+              <td><code>SemanticInterruptionGate</code> 内部有超时控制,但没有记录推理耗时</td>
+            </tr>
+            <tr>
+              <td>聚合查询(p50/p95/p99)</td>
+              <td><span class="pill pill-active">完整实现</span></td>
+              <td><code>DiagnosticsOverview</code> / <code>MetricAggregate</code>,按指标名分组</td>
+            </tr>
+            <tr>
+              <td>按会话查询明细</td>
+              <td><span class="pill pill-active">完整实现</span></td>
+              <td><code>session_detail()</code>,含完整事件列表</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">设计建议</h3>
+      <div class="takeaway-grid">
+        <div class="takeaway">
+          <h4>纯函数式分段延迟计算</h4>
+          <p>仿照 <code class="mono">ResponseLatencyTrace.mark()</code> 已有的「里程碑不可回退」校验,把每段延迟计算写成不可变快照上的纯函数:先校验相关时间戳是否严格单调递增,违反顺序就放弃上报而不是产出负数或污染统计。</p>
+        </div>
+        <div class="takeaway">
+          <h4>统一的调用打点上下文管理器</h4>
+          <p><code class="mono">SessionTelemetry.provider_call()</code> 已经是这个模式(<code class="mono">async with</code> 包一层外部调用,出口无论成败都打一条结构化事件,outcome 归约到 ok/timeout/error/cancelled 等稳定小词表)——EOT 分类器与打断分类器的推理调用应直接复用同一套,而不是另起一套打点方式。</p>
+        </div>
+        <div class="takeaway">
+          <h4>把"预留契约"接线,而不是新发明一套</h4>
+          <p><code class="mono">LatencyMilestone</code>/<code class="mono">ResponseLatencyTrace</code> 和 <code class="mono">_capture_ledger_timing</code> 的命名锚点协议已经把数据模型和派生公式设计好了,目前只是没人调用 <code class="mono">.mark()</code> 或 <code class="mono">ledger.emit()</code> 发出对应事件——最小的落地路径是接线,不是重新设计。</p>
+        </div>
+        <div class="takeaway">
+          <h4>Generation 是延迟统计的边界</h4>
+          <p>全链路已用 <code class="mono">generation</code> 做取消/替换的边界(打断会产生新 generation,旧 generation 的异步结果需要被丢弃)。打断延迟统计必须锚定在同一个 generation 上,否则会把过期事件误算进当前轮次。</p>
+        </div>
+      </div>
+
+      <h3 class="sub">新增 HTTP 接口建议(延续现有风格)</h3>
+      <p>现有 <code class="mono">control_plane/http.py</code> 已有 <code class="mono">DiagnosticsQuery</code> 协议、统一 <code class="mono">_write_json()</code>、query 参数范围校验的写法,新接口应直接复用而不是另起一套:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>建议路由</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>GET /observability/latency/overview?minutes=&amp;prefix=</code></td>
+              <td>复用 <code>DiagnosticsOverview</code>,按指标名前缀(<code>asr.*</code>/<code>tts.*</code>/<code>eot.*</code>/<code>barge_in.*</code>)分组展示 p50/p95/p99</td>
+            </tr>
+            <tr>
+              <td><code>GET /observability/sessions/{id}/latency</code></td>
+              <td>单会话分段延迟明细:语义锁耗时/声学锁等待/首音延迟(对应 FTL 拆解),以及打断场景的检测→确认→停播三段计时</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">补齐缺口的具体落点</h3>
+      <ol class="plain">
+        <li>在 <code class="mono">SemanticEndpointGate._classify()</code> 与 <code class="mono">SemanticInterruptionGate._classify()</code> 内部,仿照 <code class="mono">ClassifierEotEvidenceProvider</code> 的 <code class="mono">inference_ms</code> 打点方式,补充调用 <code class="mono">telemetry.record()</code>。</li>
+        <li>在打断触发点(<code class="mono">_request_assistant_yield</code>)、<code class="mono">CancelTts</code> 实际发出点、客户端 <code class="mono">client_playback_stopped</code> 回传点三处打时间戳,拼出「检测→取消命令发出→客户端确认停止」三段延迟。</li>
+        <li>把 <code class="mono">EotEvidence.inference_ms</code> 这个已存在但未转发的字段接入 telemetry,是成本最低的第一步。</li>
+      </ol>
+
+      <div class="callout">
+        <b>下一步</b>:以上是现状梳理与设计建议,尚未改动任何代码。延迟统计功能涉及多处埋点与至少一个新接口,
+        属于非trivial的多文件实现——如果要继续,建议先过一遍实施计划(数据模型、埋点位置、接口契约)再动手。
+      </div>
+    </section>
+  </main>
+
+  <footer class="doc-foot">
+    <p>
+      方法说明:本文档基于对 OpenRealtime <code class="mono">server/</code> 目录的静态代码分析整理,
+      整理时间 2026-10-03。文档随代码演进可能过时,关键结论建议以源码为准复核。
+    </p>
+  </footer>
+</div>
