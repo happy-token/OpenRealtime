@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import re
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -30,6 +31,7 @@ from server.conversation_journal.input_evidence import (
     InputEvidenceUnavailable,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.core.turn_content import TurnContent, same_asr_utterance
 from server.observability.telemetry import (
     SessionDebugLog,
@@ -73,6 +75,8 @@ from server.realtime.capabilities.turn_manager import (
     UserTurnCommitted,
 )
 from server.realtime.capabilities.vad import VadSpeechStarted, VadSpeechStopped
+from server.realtime.protocol.playback import ReplyPlayback
+from server.realtime.scope import conversation_scope
 from server.turn_policy.classifier_execution import ClassificationExecutor, run_classification
 from server.turn_policy.coordination import (
     DefaultTurnCoordinationPolicy,
@@ -162,6 +166,11 @@ class _Input:
     blocked: bool = False
     rejected_text: str | None = None
     admission_reason: str | None = None
+    sentence_wait: CurrentSentencePermit | None = None
+    sentence_revoked: bool = False
+    sentence_wait_playback: ReplyPlayback | None = None
+    sentence_trigger_text: str = ""
+    sentence_wait_initial_ns: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,7 +341,14 @@ class CoordinatedTurnManagerSession:
         return (not self._closed and self._failure is None and not self._evidence_fault_reported
                 and self._revision_evidence_failure is None
                 and (self._evidence is None or self._evidence.failure is None)
+                and (self._input is None or self._input.sentence_wait is None)
                 and self._revisions.delivery_allowed(response_id))
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return (not self._closed and self._failure is None and not self._evidence_fault_reported
+                and self._revision_evidence_failure is None
+                and (self._evidence is None or self._evidence.failure is None)
+                and self._revisions.sentence_playback_permit_current(permit, now_ns=time.monotonic_ns()))
 
     def response_revision(self, response_id: str) -> ReplyRevision | None:
         reply = self._revisions.reply
@@ -364,7 +380,16 @@ class CoordinatedTurnManagerSession:
     def _revoke_response(self, response_id: str, *, reason: str) -> None:
         before = self._revisions.reply
         revoked = self._revisions.revoke(response_id, reason=reason)
-        if revoked is not None and before is not None and before.delivery_permitted:
+        if revoked is not None and before is not None and before.sentence_permit is not None and revoked.sentence_permit is None:
+            permit = before.sentence_permit
+            item = self._input
+            if item is not None and item.sentence_wait == permit:
+                item.sentence_revoked = True
+                self._timer("sentence_stop_ack", self._provider.recovery_timeout_ms * 2 + 250, item)
+            self._outbox.put_nowait(AssistantYieldRequested(
+                context=replace(item.context if item and item.target_response == response_id else permit.context, response_id=response_id),
+                reason=reason, revokes_sentence_permit_id=permit.permit_id))
+        if revoked is not None and before is not None and revoked != before:
             self._record_revision("reply_invalidated", self._response_context or self._context,
                                   asdict(revoked))
 
@@ -682,7 +707,12 @@ class CoordinatedTurnManagerSession:
             self._tasks.clear()
             return
         if isinstance(event, (_Result, _Timer)):
-            if isinstance(event, _Timer) and event.kind in {"asr_final", "yield_ack"}:
+            if isinstance(event, _Timer) and event.kind == "sentence_expiry":
+                pending = self._input
+                if pending and pending.identity == event.identity and pending.sentence_wait is not None:
+                    await self._withdraw_sentence_wait(pending, "sentence_permit_deadline")
+                return
+            if isinstance(event, _Timer) and event.kind in {"asr_final", "yield_ack", "sentence_stop_ack"}:
                 pending = self._input
                 if (
                     pending
@@ -690,6 +720,7 @@ class CoordinatedTurnManagerSession:
                     and (
                         pending.commit_pending
                         if event.kind == "asr_final"
+                        else pending.sentence_wait is not None if event.kind == "sentence_stop_ack"
                         else pending.yield_pending
                     )
                 ):
@@ -856,6 +887,8 @@ class CoordinatedTurnManagerSession:
                     await self._project(event.context or self._context)
                 return
             prior_reply = self._revisions.reply
+            if self._input is not None and self._input.sentence_wait is not None:
+                await self._withdraw_sentence_wait(self._input, "response_replaced")
             bound = self._revisions.bind_response(event.response_id, event.context or self._context)
             if prior_reply is None or prior_reply.response_id != event.response_id:
                 self._record_revision("reply_bound", event.context or self._context, asdict(bound))
@@ -903,6 +936,25 @@ class CoordinatedTurnManagerSession:
             await self._project(event.context or self._context)
             return
         if isinstance(event, ObserveAssistantPlayback):
+            item = self._input
+            permit = item.sentence_wait if item is not None else None
+            previous = item.sentence_wait_playback if item is not None else None
+            valid_wait_fact = (permit is not None and previous is not None and event.response_id == permit.response_id
+                and (event.fact.output_epoch == permit.output_epoch
+                     or not event.fact.terminal and event.fact.output_epoch is None and event.fact.position_precision != "sample")
+                and event.fact.speech_id == permit.speech_id
+                and conversation_scope(event.context) == conversation_scope(permit.context)
+                and (event.context.turn_id, event.context.generation) == (permit.context.turn_id, permit.context.generation)
+                and event.context.response_id in {permit.context.response_id, permit.response_id}
+                and event.fact.sample_rate_hz in {None, permit.sample_rate_hz}
+                and event.fact.observed_at_ns >= (item.sentence_wait_initial_ns if event.fact.terminal and item is not None
+                                                  else previous.observed_at_ns)
+                and event.fact.played_audio_end_us >= previous.played_audio_end_us
+                and event.fact.confirmed_text_end >= previous.confirmed_text_end
+                and (event.fact.played_position_samples is None or previous.played_position_samples is None
+                     or event.fact.played_position_samples >= previous.played_position_samples))
+            if permit is not None and event.response_id == permit.response_id and event.fact.terminal and not valid_wait_fact:
+                return
             before = self._revisions.reply.playback if self._revisions.reply else None
             if self._revisions.observe_playback_fact(event.response_id, event.context, event.fact):
                 if self._response_id == event.response_id:
@@ -910,11 +962,29 @@ class CoordinatedTurnManagerSession:
                 assert self._revisions.reply is not None
                 after = self._revisions.reply.playback
                 assert after is not None
+                if permit is not None and item is not None and event.response_id == permit.response_id and not event.fact.terminal:
+                    # A legacy/unknown observation still advances the physical
+                    # frontier, even though it cannot keep sentence authority.
+                    item.sentence_wait_playback = after
+                if (permit is not None and not event.fact.terminal
+                    and not self._revisions.sentence_playback_permit_current(permit, now_ns=time.monotonic_ns())):
+                    assert item is not None
+                    await self._withdraw_sentence_wait(item, "sentence_playback_evidence_changed")
                 # Record identity/precision transitions, not every sample tick.
                 if (before is None or before.current_sentence != after.current_sentence
                     or before.terminal != after.terminal
                     or before.position_precision != after.position_precision):
                     self._record_revision("reply_playback_observed", event.context, asdict(after))
+            if valid_wait_fact:
+                # Retain the original output's validated physical frontier even
+                # after a replacement has become the revision ledger's current reply.
+                assert item is not None and permit is not None
+                item.sentence_wait_playback = replace(event.fact, output_epoch=permit.output_epoch)
+                if event.fact.terminal:
+                    item.sentence_wait = None
+                    item.sentence_wait_playback = None
+                    self._cancel("sentence_expiry", "sentence_stop_ack")
+                    await self._advance(item)
             return
         if isinstance(event, ObserveAssistantSpokenText):
             reply = self._revisions.reply
@@ -1202,6 +1272,11 @@ class CoordinatedTurnManagerSession:
         if changed:
             self._prefetch.observe_text(text)
             item.text, item.revision = text, event.revision
+            if item.sentence_wait is not None and (
+                not semantic_text(text).startswith(semantic_text(item.sentence_trigger_text))
+                or not self._is_ordinary_supplement(item)
+            ):
+                await self._withdraw_sentence_wait(item, "supplement_revised")
             # The chunk scheduler deduplicates punctuation/whitespace-only updates.
             # Keep their accepted evidence because no replacement call will be issued.
             if not same_semantic_snapshot:
@@ -1560,6 +1635,44 @@ class CoordinatedTurnManagerSession:
             },
         )
 
+    def _is_ordinary_supplement(self, item: _Input) -> bool:
+        if not item.text or self._last_committed is None:
+            return False
+        try:
+            association = self._provider.input_association_policy.associate(InputAssociationRequest(
+                text=item.text, previous_turn_id=self._last_committed[0], verdict=item.verdict))
+            if (not isinstance(association, InputAssociation) or association.relation is not InputRelation.SUPPLEMENT
+                or association.related_turn_id != self._last_committed[0]):
+                return False
+            # A supplement marker cannot conceal an explicit stop/correction
+            # in a later clause. Reuse the existing pure policies; do not reopen JEV after STOP.
+            for clause in re.split(r"(?<=[，,。.!！？?；;\n])", item.text):
+                if not clause.strip():
+                    continue
+                relation = self._provider.input_association_policy.associate(InputAssociationRequest(
+                    text=clause, previous_turn_id=self._last_committed[0]))
+                rule = self._interruption_decider.match_rule(replace(
+                    self._rule_context(item, InterruptionBoundary.SENTENCE_END), text=clause, previous_chunks=()))
+                if (relation.relation is InputRelation.CORRECTION
+                    or rule is not None and rule.label in {InterruptionLabel.STOP, InterruptionLabel.CORRECTION}):
+                    return False
+            return True
+        except Exception:
+            logger.warning("Supplement association failed; stopping immediately", exc_info=True)
+            return False
+
+    async def _withdraw_sentence_wait(self, item: _Input, reason: str) -> None:
+        permit = item.sentence_wait
+        if permit is None or item.sentence_revoked:
+            return
+        self._revoke_response(permit.response_id, reason=reason)
+        if not item.sentence_revoked:
+            item.sentence_revoked = True
+            await self._outbox.put(AssistantYieldRequested(
+                context=replace(item.context, response_id=permit.response_id), reason=reason,
+                revokes_sentence_permit_id=permit.permit_id))
+        self._timer("sentence_stop_ack", self._provider.recovery_timeout_ms * 2 + 250, item)
+
     async def _yield(self, item: _Input) -> None:
         if item.yielded or item.yield_pending or item.target_response is None:
             return
@@ -1568,6 +1681,20 @@ class CoordinatedTurnManagerSession:
             return
         item.floor_claim_confirmed = True
         item.yield_pending = True
+        permit = None
+        if item.sentence_wait is None and self._is_ordinary_supplement(item) and item.verdict is not None and item.verdict.label is InterruptionLabel.INTERRUPT and item.verdict.source != "fallback":
+            permit = self._revisions.grant_current_sentence(item.target_response,
+                trigger_input_id=item.identity, transcript_revision=item.revision, now_ns=time.monotonic_ns())
+        if permit is not None:
+            item.sentence_wait = permit
+            item.sentence_revoked = False
+            item.sentence_trigger_text = item.text
+            item.sentence_wait_playback = self._revisions.reply.playback if self._revisions.reply is not None else None
+            assert item.sentence_wait_playback is not None
+            item.sentence_wait_initial_ns = item.sentence_wait_playback.observed_at_ns
+        if permit is not None:
+            self._prefetch.invalidate("sentence_handoff_wait")
+            self._timer("sentence_expiry", (permit.expires_at_ns - time.monotonic_ns()) / 1e6, item)
         self._revoke_response(item.target_response, reason="barge_in_floor_claim")
         self._timer("yield_ack", self._provider.recovery_timeout_ms, item)
         await self._outbox.put(
@@ -1575,11 +1702,12 @@ class CoordinatedTurnManagerSession:
                 context=replace(item.context, response_id=item.target_response),
                 reason="barge_in_floor_claim",
                 speech_started_ns=item.speech_started_ns,
+                sentence_permit=permit,
             )
         )
 
     async def _advance(self, item: _Input, *, force: bool = False, admission_reason: str | None = None) -> None:
-        if item.blocked or item.commit_pending or item.speech_active or item.stop is None or not item.text:
+        if item.blocked or item.commit_pending or item.sentence_wait is not None or item.speech_active or item.stop is None or not item.text:
             return
         if item.continuation_of_turn_id and item.target_response is None:
             return

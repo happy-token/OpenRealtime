@@ -125,3 +125,5 @@
 2026-10-07 renderer句末批次：Browser按实际样本截断跨句PCM、清后续source、有界等待及实际位置回执；页面响应帧前置准入、旧目标timer隔离、reset异步unknown与混合数字人完成屏障均有先红后绿回归。新增严格可选wire许可及core句段类型，最终Python1937 passed/69 skipped/3 subtests、前端74 passed、真实Chrome10场景通过，详见[renderer句末报告](../reports/2026-10-07-renderer-sentence-stop.md)。测试许可由受控Socket提供，生产actor签发/保存、Bridge传播/撤销和heard_frontier交接仍未实现；数字人/G3和全部其他阶段继续开放。
 
 2026-10-07 actor PCM批次：实际PCM位置与采样率贯通既有生产链，内部pair严格/一致；采样率绑定与当前精度分离，legacy降级不遗忘时钟。部分finished排空、退序stopped未知位置、持久stop与更大late progress两种顺序均已回归；最终Python1972 passed/69 skipped/3 subtests、Mypy/Ruff及独立审查通过，详见[PCM时钟报告](../reports/2026-10-07-actor-pcm-playback-clock.md)。本批仍不签发生产许可；下一任务是actor版本/epoch/句段/deadline授权、Bridge传递/撤销和heard_frontier重验。全部G0–G5与横向未交付项保持原范围。
+
+2026-10-07已贯通[生产actor句末许可与物理交接](../reports/2026-10-07-production-sentence-permits.md)：现有actor签发、账本保存、装饰层转发，Bridge按绝对剩余期限传递/立即撤销；生成取消与物理停止独立，原目标等待不因回复替换消失，双停播操作齐备后才交付新文本/音频。当前先确认实际停止再生成；预生成/HF最终重验、真实浏览器生产链路及数字人/G3仍待验收，阶段3与ADR保持开放。

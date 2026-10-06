@@ -19,7 +19,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
-from server.core.playback import sample_position_us
+from server.core.playback import CurrentSentencePermit, sample_position_us
 from server.realtime.protocol import (
     AppendAudio,
     AppendItem,
@@ -47,7 +47,11 @@ from server.realtime.protocol import (
     SpeechAudioDelta,
     SpokenContentDelta,
 )
-from server.realtime.protocol.engine import is_output_deliverable
+from server.realtime.protocol.engine import (
+    VERSIONED_OUTPUT_EVENTS,
+    is_output_deliverable,
+    is_sentence_permit_current,
+)
 from server.realtime.protocol.events import (
     RealtimeCapabilityFailed,
     SpeechAudioCompleted,
@@ -72,6 +76,7 @@ from server.transport.frames import (
     InboundFrame,
     OutboundFrame,
     PlaybackProgressFrame,
+    SentencePlaybackPermitFrame,
     UserTextFrame,
     UserTranscriptFrame,
     VoiceSessionReadyFrame,
@@ -122,6 +127,7 @@ class _OutputStop:
     failed_at: datetime | None = None
     fact_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
     projection_stage: str = "storage"
+    receipt_timeout_s: float = 1.5
     state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"] = "STOP_REQUESTED"
     reason: str | None = None
     deadline: asyncio.TimerHandle | None = None
@@ -255,6 +261,9 @@ class RealtimeWebSocketFrameBridge:
             return
         if not is_output_deliverable(self._conversation, event):
             return
+        if (isinstance(event, VERSIONED_OUTPUT_EVENTS)
+            and (not await self._wait_output_stops() or not is_output_deliverable(self._conversation, event))):
+            return
         if isinstance(event, RealtimeCapabilityFailed) and event.capability == "semantic_input":
             await self._send_frame(VoiceSessionFailureFrame(
                 code="semantic_input_rejected", phase="input", retryable=True,
@@ -275,6 +284,15 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, AssistantYieldRequested):
+            if event.revokes_sentence_permit_id is not None:
+                original = next((stop for stop in self._output_stops.values()
+                    if stop.request.sentence_permit is not None
+                    and stop.request.sentence_permit.permit_id == event.revokes_sentence_permit_id
+                    and stop.request.output_epoch == self.output_epoch), None)
+                if original is not None:
+                    await self._request_output_stop(original.request.generation, original.request.speech_id,
+                        target_context=original.target_context, force_immediate=True)
+                return
             interrupted_generation = (
                 self._response_generation_by_id.get(event.context.response_id,
                     next((generation for generation, playback in self._playback_by_generation.items()
@@ -288,7 +306,7 @@ class RealtimeWebSocketFrameBridge:
             if interrupted_generation is not None:
                 playback = self._playback_by_generation.get(interrupted_generation)
                 await self._request_output_stop(interrupted_generation,
-                    playback.speech_id if playback else None)
+                    playback.speech_id if playback else None, sentence_permit=event.sentence_permit)
             return
         if isinstance(event, ItemProjected):
             waiter = self._projection_waiters.pop(event.item_id, None)
@@ -448,7 +466,7 @@ class RealtimeWebSocketFrameBridge:
                     )
                 )
             await self._request_output_stop(event.context.generation, f"response:{event.response_id}", "failed",
-                target_context=replace(event.context, response_id=event.response_id))
+                target_context=replace(event.context, response_id=event.response_id), force_immediate=True)
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
             return
@@ -463,7 +481,8 @@ class RealtimeWebSocketFrameBridge:
                 return
             if cancelled_generation not in self._locally_cancelled_generations:
                 await self._request_output_stop(cancelled_generation, f"response:{event.response_id}",
-                    target_context=replace(event.context, response_id=event.response_id))
+                    target_context=replace(event.context, response_id=event.response_id),
+                    force_immediate=event.reason != "barge_in_floor_claim")
             self._locally_cancelled_generations.discard(cancelled_generation)
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
@@ -693,7 +712,9 @@ class RealtimeWebSocketFrameBridge:
 
     async def _request_output_stop(self, generation: int, speech_id: str | None,
                                    reason: Literal["interrupted", "failed", "cancelled"] = "interrupted", *,
-                                   target_context: InteractionContext | None = None) -> None:
+                                   target_context: InteractionContext | None = None,
+                                   sentence_permit: CurrentSentencePermit | None = None,
+                                   force_immediate: bool = False) -> None:
         if self._closed:
             return
         if not self._precise_output_stop or speech_id is None:
@@ -709,22 +730,44 @@ class RealtimeWebSocketFrameBridge:
             return
         self._locally_cancelled_speech.add(speech_id)
         key = (self.output_epoch, generation, speech_id)
-        if key in self._stop_by_target:
-            return
+        previous_id = self._stop_by_target.get(key)
+        if previous_id is not None:
+            previous = self._output_stops[previous_id]
+            if not force_immediate or previous.request.sentence_permit is None:
+                return
         if len(self._output_stops) >= 512:
             self._stop_output_failed = True
             await self._notify_stop_failure("stop_operation_budget")
             return
         loop = asyncio.get_running_loop()
+        playback = self._playback_by_speech.get(speech_id)
+        permit_frame = None
+        if (sentence_permit is not None and reason == "interrupted" and not force_immediate
+            and is_sentence_permit_current(self._conversation, sentence_permit)
+            and sentence_permit.output_epoch == self.output_epoch and sentence_permit.speech_id == speech_id
+            and sentence_permit.context.generation == generation and playback is not None
+            and sentence_permit.sample_rate_hz == playback.sample_rate_hz
+            and sentence_permit.audio_end_samples <= playback.audio_samples
+            and sentence_permit.sentence_id in playback.sentences):
+            remaining_ms = (sentence_permit.expires_at_ns - time.monotonic_ns()) // 1_000_000
+            if remaining_ms > 0:
+                permit_frame = SentencePlaybackPermitFrame(
+                    permit_id=sentence_permit.permit_id, input_id=sentence_permit.input_id,
+                    input_version=sentence_permit.input_version, response_id=sentence_permit.response_id,
+                    reply_version=sentence_permit.reply_version, sentence_id=sentence_permit.sentence_id,
+                    audio_start_samples=sentence_permit.audio_start_samples,
+                    audio_end_samples=sentence_permit.audio_end_samples,
+                    sample_rate_hz=sentence_permit.sample_rate_hz, max_wait_ms=remaining_ms)
         request = AssistantSpeechCancelledFrame(generation=generation, reason=reason,
-            output_epoch=self.output_epoch, speech_id=speech_id, stop_command_id=str(uuid.uuid4()))
+            output_epoch=self.output_epoch, speech_id=speech_id, stop_command_id=str(uuid.uuid4()), sentence_permit=permit_frame)
         assert request.stop_command_id is not None
         playback = self._playback_by_speech.get(speech_id)
         stop = _OutputStop(request=request, ready=loop.create_future(),
             target_context=playback.context if playback is not None else target_context)
         self._output_stops[request.stop_command_id] = stop
         self._stop_by_target[key] = request.stop_command_id
-        stop.deadline = loop.call_later(self._output_stop_timeout_s, self._expire_output_stop, stop)
+        stop.receipt_timeout_s = self._output_stop_timeout_s + (permit_frame.max_wait_ms / 1000 if permit_frame else 0)
+        stop.deadline = loop.call_later(stop.receipt_timeout_s, self._expire_output_stop, stop)
         self._observe_output_stop(stop, "requested")
         if stop.target_context is None:
             self._fail_stop_handoff(stop, "stop_target_identity_missing")
@@ -866,7 +909,7 @@ class RealtimeWebSocketFrameBridge:
             phase=phase, state=stop.state, reason=stop.reason, receipt_outcome=stop.receipt_outcome,
             played_position_samples=stop.played_position_samples, requested_at=stop.requested_at,
             received_at=stop.received_at, occurred_at=occurred_at, requested_ns=stop.requested_ns,
-            received_ns=stop.received_ns, monotonic_ns=monotonic_ns, timeout_ms=self._output_stop_timeout_s * 1000)
+            received_ns=stop.received_ns, monotonic_ns=monotonic_ns, timeout_ms=stop.receipt_timeout_s * 1000)
         try:
             self._diagnostic_observer(observation)
         except (Exception, asyncio.CancelledError):

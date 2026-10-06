@@ -42,3 +42,5 @@ actor签发许可，版本账本保存引用，既有输出边界执行并上报
 同日继续补[浏览器句末执行与响应帧隔离](../reports/2026-10-07-renderer-sentence-stop.md)：跨句PCM按精确样本边界截断，后续source清除；等待/撤销按实际位置返回，重复操作不续期，reset后的未知停止持续封锁。真实Chrome10场景包含主页面状态回归。仅新增wire契约和renderer能力，测试Socket提供许可；生产actor签发/保存、Bridge传播/撤销、heard_frontier衔接和真实数字人/G3仍未实现，本ADR保持Proposed。
 
 同日补[actor 精确PCM时钟](../reports/2026-10-07-actor-pcm-playback-clock.md)：真实位置/采样率贯通现有版本账本；无pair不授予sample精度，降级不遗忘时钟绑定。退序进度不伪造新位置，未知终态不被迟到投影升精度；暂时排空与整回复终态分开。该事实补强未签发/保存当前句许可，Bridge许可传播及heard_frontier重验仍未实现，ADR/G3继续开放。
+
+2026-10-07已贯通[生产actor句末许可与物理交接](../reports/2026-10-07-production-sentence-permits.md)：现有actor签发、账本保存、装饰层转发，Bridge按绝对剩余期限传递/立即撤销；生成取消与物理停止独立，原目标等待不因回复替换消失，双停播操作齐备后才交付新文本/音频。当前先确认实际停止再生成；预生成/HF最终重验、真实浏览器生产链路及数字人/G3仍待验收，阶段3与ADR保持开放。

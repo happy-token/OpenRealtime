@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.commands import (
     DeliveryMode,
@@ -52,6 +53,8 @@ class AssistantYieldRequested:
     reason: str
     schema_version: int = 1
     speech_started_ns: int | None = None
+    sentence_permit: CurrentSentencePermit | None = None
+    revokes_sentence_permit_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.reason:

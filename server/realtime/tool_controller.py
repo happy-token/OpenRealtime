@@ -18,6 +18,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.observability.telemetry import telemetry_generation_scope
 from server.realtime.protocol import (
     AppendItem,
@@ -33,7 +34,7 @@ from server.realtime.protocol import (
     ResponseFailed,
     ToolRequested,
 )
-from server.realtime.protocol.engine import is_output_deliverable
+from server.realtime.protocol.engine import is_output_deliverable, is_sentence_permit_current
 from server.realtime.scope import conversation_scope
 from server.tools.control import (
     CommittedToolItemsProvider,
@@ -236,6 +237,9 @@ class RealtimeToolController:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return not self._closed and is_sentence_permit_current(self._conversation, permit)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._conversation, event)

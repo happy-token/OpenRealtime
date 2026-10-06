@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.realtime.protocol.commands import RealtimeCommand
 from server.realtime.protocol.events import (
     AgentDelegationRequestProposed,
@@ -39,6 +40,12 @@ def is_output_deliverable(conversation: RealtimeConversation, event: RealtimeEve
         return True  # Closing/quiescing a delegate cannot hide terminal/diagnostic facts.
     gate = getattr(conversation, "output_delivery_allowed", None)
     return bool(gate(event)) if gate is not None else True
+
+
+def is_sentence_permit_current(conversation: RealtimeConversation | None, permit: CurrentSentencePermit) -> bool:
+    """Optional read-only authority; unsupported delegates stop immediately."""
+    gate = getattr(conversation, "sentence_playback_permit_current", None)
+    return bool(gate(permit)) if gate is not None else False
 
 
 class RealtimeConversation(Protocol):

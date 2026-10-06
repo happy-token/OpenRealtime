@@ -23,6 +23,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities import (
     AppendTtsText,
@@ -1770,6 +1771,11 @@ class CascadedRealtimeConversation:
                     and target_response != self._active_response_id
                 ):
                     # A queued cancellation for A must never cancel replacement B.
+                    if event.revokes_sentence_permit_id is not None:
+                        await self._emit(AssistantYieldRequested(
+                            event_id=str(uuid.uuid4()), context=event.context,
+                            conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
+                            reason=event.reason, revokes_sentence_permit_id=event.revokes_sentence_permit_id))
                     await self._input_pipeline.assistant_yielded(context=event.context)
                     continue
                 await self._emit(
@@ -1780,6 +1786,8 @@ class CascadedRealtimeConversation:
                         occurred_at=datetime.now(UTC),
                         reason=event.reason,
                         speech_started_ns=event.speech_started_ns,
+                        sentence_permit=event.sentence_permit,
+                        revokes_sentence_permit_id=event.revokes_sentence_permit_id,
                     )
                 )
                 if self._active_response_id is not None:
@@ -1795,7 +1803,7 @@ class CascadedRealtimeConversation:
                             reason=event.reason,
                         )
                     )
-                elif self._external_speech_id is not None:
+                elif self._external_speech_id is not None and target_response in {None, self._external_speech_id}:
                     speech_id = self._external_speech_id
                     await self.send(
                         CancelSpeech(
@@ -1809,6 +1817,7 @@ class CascadedRealtimeConversation:
                 elif (
                     self._direct_delivery_command is not None
                     and self._response_task is not None
+                    and target_response in {None, f"delivery:{self._direct_delivery_command.delivery_id}"}
                 ):
                     self._direct_delivery_cancel_reason = event.reason
                     task = self._response_task
@@ -1820,8 +1829,10 @@ class CascadedRealtimeConversation:
                     # separate lifecycle: a floor claim must still interrupt
                     # that delivery and truncate future model context to what
                     # the client confirms it actually played.
-                    unsettled_speech_id = next(iter(self._unsettled_model_speech_ids), None)
-                    if unsettled_speech_id is not None:
+                    unsettled_speech_id = (f"response:{target_response}" if target_response is not None
+                                           else next(iter(self._unsettled_model_speech_ids), None))
+                    if unsettled_speech_id in self._unsettled_model_speech_ids:
+                        assert unsettled_speech_id is not None
                         await self._cancel_model_speech(
                             unsettled_speech_id,
                             reason=event.reason,
@@ -1876,6 +1887,9 @@ class CascadedRealtimeConversation:
     async def _emit(self, event: RealtimeEvent) -> None:
         if self.output_delivery_allowed(event):
             await self._events.put(event)
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return not self._closed and self._input_pipeline.sentence_playback_permit_current(permit)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         if not isinstance(event, VERSIONED_OUTPUT_EVENTS):

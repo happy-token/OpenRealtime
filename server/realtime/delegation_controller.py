@@ -11,6 +11,7 @@ from typing import Protocol, cast
 from server.agent_session.supervisor import TaskSubmission
 from server.agent_session.task_models import DelegationRequest
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.realtime.protocol import (
     AgentDelegationRequested,
     AgentDelegationRequestProposed,
@@ -20,7 +21,7 @@ from server.realtime.protocol import (
     RealtimeConversation,
     RealtimeEvent,
 )
-from server.realtime.protocol.engine import is_output_deliverable
+from server.realtime.protocol.engine import is_output_deliverable, is_sentence_permit_current
 from server.realtime.scope import conversation_scope
 
 _CLOSED = object()
@@ -156,6 +157,9 @@ class RealtimeDelegationController:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return not self._closed and is_sentence_permit_current(self._conversation, permit)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._conversation, event)

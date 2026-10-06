@@ -12,6 +12,7 @@ from server.conversation_journal import (
     ConversationItem,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AppendAsrAudio,
@@ -165,6 +166,10 @@ class CascadedInputPipeline:
     def response_delivery_allowed(self, response_id: str) -> bool:
         check = getattr(self._turn_manager, "response_delivery_allowed", None)
         return bool(check(response_id)) if check is not None else True
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        gate = getattr(self._turn_manager, "sentence_playback_permit_current", None)
+        return not self._closed and bool(gate(permit)) if gate is not None else False
 
     def response_revision(self, response_id: str) -> ReplyRevision | None:
         read = getattr(self._turn_manager, "response_revision", None)

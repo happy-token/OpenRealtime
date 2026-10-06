@@ -16,6 +16,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AsrCommitRejected,
@@ -131,6 +132,8 @@ class AssistantYieldRequested:
     context: InteractionContext
     reason: str
     speech_started_ns: int | None = None
+    sentence_permit: CurrentSentencePermit | None = None
+    revokes_sentence_permit_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.reason:

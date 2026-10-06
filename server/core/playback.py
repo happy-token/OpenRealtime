@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from server.core.interaction_context import InteractionContext
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SentenceSpan:
@@ -55,3 +57,42 @@ def validate_sample_position(position: int | None, sample_rate_hz: int | None) -
         or not 0 < sample_rate_hz <= 384000
     ):
         raise ValueError("exact playback requires a safe sample position and valid rate")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CurrentSentencePermit:
+    """Actor authority for one already-started sentence, never new delivery."""
+
+    permit_id: str
+    context: InteractionContext
+    input_id: str
+    input_version: int
+    response_id: str
+    reply_version: int
+    output_epoch: str
+    speech_id: str
+    sentence_id: str
+    audio_start_samples: int
+    audio_end_samples: int
+    sample_rate_hz: int
+    trigger_input_id: str
+    trigger_transcript_revision: int
+    issued_at_ns: int
+    expires_at_ns: int
+    confirmed_text_end: int
+
+    def __post_init__(self) -> None:
+        if any(not isinstance(value, str) or not value for value in (
+            self.permit_id, self.input_id, self.response_id, self.output_epoch,
+            self.speech_id, self.sentence_id, self.trigger_input_id)):
+            raise ValueError("sentence permit identities must be non-empty")
+        validate_sample_position(self.audio_start_samples, self.sample_rate_hz)
+        validate_sample_position(self.audio_end_samples, self.sample_rate_hz)
+        if (self.audio_start_samples >= self.audio_end_samples
+            or self.speech_id not in {self.response_id, f"response:{self.response_id}"}
+            or any(type(value) is not int or not 0 < value <= 2**53 - 1 for value in (
+                self.input_version, self.reply_version, self.trigger_transcript_revision))
+            or any(type(value) is not int or value < 0 for value in (
+                self.issued_at_ns, self.expires_at_ns, self.confirmed_text_end))
+            or not 0 < self.expires_at_ns - self.issued_at_ns <= 5_000_000_000):
+            raise ValueError("sentence permit requires a finite valid version and sample range")

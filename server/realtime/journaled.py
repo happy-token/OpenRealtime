@@ -7,12 +7,17 @@ from collections.abc import AsyncIterator
 
 from server.conversation_journal import ConversationJournal, JournalScope
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.realtime.protocol.commands import (
     AppendItem,
     ProjectCommittedItem,
     RealtimeCommand,
 )
-from server.realtime.protocol.engine import RealtimeConversation, is_output_deliverable
+from server.realtime.protocol.engine import (
+    RealtimeConversation,
+    is_output_deliverable,
+    is_sentence_permit_current,
+)
 from server.realtime.protocol.events import RealtimeEvent
 from server.realtime.scope import conversation_scope
 
@@ -138,6 +143,9 @@ class JournaledRealtimeConversation:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._engine_conversation.events()
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return is_sentence_permit_current(self._engine_conversation, permit)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._engine_conversation, event)

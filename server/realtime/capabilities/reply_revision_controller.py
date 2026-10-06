@@ -7,6 +7,7 @@ input and reply; immutable history belongs to the conversation Journal.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass, replace
 
 from server.conversation_journal import (
@@ -16,6 +17,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit, sample_position_us
 from server.realtime.protocol.playback import ReplyPlayback, sentence_identity
 from server.realtime.scope import conversation_scope
 
@@ -47,6 +49,7 @@ class ReplyRevision:
     completed: bool = False
     invalidation_reason: str | None = None
     playback: ReplyPlayback | None = None
+    sentence_permit: CurrentSentencePermit | None = None
 
 
 class ReplyRevisionController:
@@ -219,9 +222,56 @@ class ReplyRevisionController:
             raise ValueError("reply invalidation reason must be non-empty")
         if self.reply is None or self.reply.response_id != response_id:
             return None
-        if self.reply.delivery_permitted:
-            self.reply = replace(self.reply, delivery_permitted=False, invalidation_reason=reason)
+        retained = self.reply.sentence_permit if reason == "barge_in_floor_claim" else None
+        if self.reply.delivery_permitted or self.reply.sentence_permit != retained:
+            self.reply = replace(self.reply, delivery_permitted=False, invalidation_reason=reason, sentence_permit=retained)
         return self.reply
+
+    def grant_current_sentence(self, response_id: str, *, trigger_input_id: str,
+                               transcript_revision: int, now_ns: int) -> CurrentSentencePermit | None:
+        reply, owner = self.reply, self._reply_context
+        if (not self.delivery_allowed(response_id) or reply is None or owner is None
+            or reply.input_id is None or reply.input_version is None):
+            return None
+        fact = reply.playback
+        if (fact is None or fact.terminal or fact.position_precision != "sample"
+            or fact.current_sentence is None or fact.output_epoch is None
+            or fact.played_position_samples is None or fact.sample_rate_hz is None):
+            return None
+        sentence, rate = fact.current_sentence, fact.sample_rate_hz
+        age_ns = now_ns - fact.observed_at_ns
+        if not 0 <= age_ns <= 250_000_000 or fact.played_audio_end_us + age_ns // 1000 >= sentence.audio_end_us:
+            return None
+        start = (sentence.audio_start_us * rate + 500_000) // 1_000_000
+        end = (sentence.audio_end_us * rate + 500_000) // 1_000_000
+        if (sample_position_us(start, rate) != sentence.audio_start_us
+            or sample_position_us(end, rate) != sentence.audio_end_us
+            or not start < fact.played_position_samples < end
+            or fact.confirmed_text_end > sentence.text_start):
+            return None
+        wait_ms = (sentence.audio_end_us - fact.played_audio_end_us + 999) // 1000 + 250
+        if wait_ms > 1500:
+            return None
+        permit = CurrentSentencePermit(permit_id=str(uuid.uuid4()), context=owner,
+            input_id=reply.input_id, input_version=reply.input_version, response_id=reply.response_id,
+            reply_version=reply.reply_version, output_epoch=fact.output_epoch, speech_id=fact.speech_id,
+            sentence_id=sentence.sentence_id, audio_start_samples=start, audio_end_samples=end, sample_rate_hz=rate,
+            trigger_input_id=trigger_input_id, trigger_transcript_revision=transcript_revision,
+            issued_at_ns=now_ns, expires_at_ns=now_ns + wait_ms * 1_000_000,
+            confirmed_text_end=fact.confirmed_text_end)
+        self.reply = replace(reply, sentence_permit=permit)
+        return permit
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit, *, now_ns: int) -> bool:
+        reply = self.reply
+        fact = reply.playback if reply is not None else None
+        return bool(not self._closed and reply is not None and reply.sentence_permit == permit
+            and now_ns < permit.expires_at_ns and fact is not None and not fact.terminal
+            and fact.position_precision == "sample" and fact.output_epoch == permit.output_epoch
+            and fact.speech_id == permit.speech_id and fact.sample_rate_hz == permit.sample_rate_hz
+            and fact.current_sentence is not None and fact.current_sentence.sentence_id == permit.sentence_id
+            and fact.played_position_samples is not None
+            and permit.audio_start_samples < fact.played_position_samples < permit.audio_end_samples)
 
     def observe_playback(self, response_id: str) -> None:
         if not self._closed and self.reply is not None and self.reply.response_id == response_id:
@@ -273,6 +323,7 @@ class ReplyRevisionController:
         if fact.sample_rate_hz is not None:
             self._sample_rate_hz = fact.sample_rate_hz
         self.reply = replace(reply, playback=fact,
+            sentence_permit=None if fact.terminal else reply.sentence_permit,
             playback_started=reply.playback_started or fact.played_audio_end_us > 0)
         return self.reply != reply
 

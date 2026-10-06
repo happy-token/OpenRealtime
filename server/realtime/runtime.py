@@ -12,6 +12,7 @@ from typing import cast
 
 from server.conversation_journal import ConversationJournal, JournalScope
 from server.core.interaction_context import InteractionContext
+from server.core.playback import CurrentSentencePermit
 from server.realtime.control_plane import RealtimeTurnController
 from server.realtime.delegation_controller import (
     AgentTaskSubmitter,
@@ -39,6 +40,7 @@ from server.realtime.protocol.engine import (
     RealtimeConversation,
     RealtimeEngine,
     is_output_deliverable,
+    is_sentence_permit_current,
 )
 from server.realtime.protocol.events import (
     ItemProjected,
@@ -530,6 +532,9 @@ class ManagedRealtimeConversation:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
+
+    def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
+        return not self._closed and is_sentence_permit_current(self._conversation, permit)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._conversation, event)

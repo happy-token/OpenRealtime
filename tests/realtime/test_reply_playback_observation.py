@@ -9,10 +9,13 @@ from server.conversation_journal import (
     ConversationItemDraft,
     ConversationItemKind,
     ConversationItemStatus,
+    InMemoryConversationJournal,
     TextContent,
 )
 from server.conversation_journal.models import item_from_draft
-from server.realtime import ProjectCommittedItem, RequestResponse, ResponseCompleted
+from server.realtime import AppendItem, ProjectCommittedItem, RequestResponse, ResponseCompleted
+from server.realtime.registry import ActiveRealtimeConversations
+from server.realtime.runtime import RealtimeRuntimeFactory
 from server.realtime.transport import RealtimeWebSocketFrameBridge
 from server.speech.plugins.doubao_tts_direct import _alignment_chunks
 from server.speech.tts import SynthesizedAudioChunk
@@ -42,40 +45,41 @@ class Provider:
                 yield chunk
 
 
-async def playing_core(*, speech_deliveries=None, precise_stop=False):
+async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False):
     core = await open_core(
-        brain=Brain(),
+        brain=brain or Brain(),
+        asr=asr, turn_manager=turn_manager,
         tts=Provider(),
         interaction_context=context(),
         speech_deliveries=speech_deliveries,
     )
+    conversation = core
+    if managed:
+        class FixedEngine:
+            async def open(self, **kwargs):
+                return core
+
+        conversation = await RealtimeRuntimeFactory(
+            engine=FixedEngine(), journal=InMemoryConversationJournal(), speech_deliveries=speech_deliveries,
+            active_conversations=ActiveRealtimeConversations(),
+        ).open(context=context(), profile=None)
     bridge = RealtimeWebSocketFrameBridge(
         context=context(),
-        conversation=core,
+        conversation=conversation,
         transport=RecordingTransport(),
         output_epoch="epoch",
         precise_output_stop=precise_stop,
     )
-    await core.send(
-        ProjectCommittedItem(
-            command_id="user",
-            idempotency_key="user",
-            context=context(),
-            item=item_from_draft(
-                ConversationItemDraft(
-                    item_id="user",
-                    context=context(),
-                    kind=ConversationItemKind.USER_INPUT,
-                    status=ConversationItemStatus.COMPLETED,
-                    producer="test",
-                    content=(TextContent("说两句"),),
-                ),
-                sequence=1,
-                recorded_at=datetime.now(UTC),
-            ),
-        )
+    draft = ConversationItemDraft(
+        item_id="user", context=context(), kind=ConversationItemKind.USER_INPUT,
+        status=ConversationItemStatus.COMPLETED, producer="test", content=(TextContent("说两句"),),
     )
-    await core.send(
+    if managed:
+        await conversation.send(AppendItem(command_id="user", idempotency_key="user", context=context(), draft=draft))
+    else:
+        await core.send(ProjectCommittedItem(command_id="user", idempotency_key="user", context=context(),
+            item=item_from_draft(draft, sequence=1, recorded_at=datetime.now(UTC))))
+    await conversation.send(
         RequestResponse(
             command_id="request",
             idempotency_key="request",
@@ -85,7 +89,7 @@ async def playing_core(*, speech_deliveries=None, precise_stop=False):
         )
     )
     async with asyncio.timeout(1):
-        async for event in core.events():
+        async for event in conversation.events():
             await bridge.handle_event(event)
             if isinstance(event, ResponseCompleted):
                 break

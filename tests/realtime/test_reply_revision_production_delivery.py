@@ -65,11 +65,11 @@ class Transport:
         self.frames.append(frame)
 
 
-async def open_core(*, brain=None, tts=None, speech_deliveries=None, interaction_context=None):
+async def open_core(*, brain=None, tts=None, speech_deliveries=None, interaction_context=None, turn_manager=None, asr=None):
     return await CascadedRealtimeEngine(
         vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig())),
-        asr=LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
-        turn_manager=CoordinatedTurnManagerCapabilityAdapter(TurnPolicy),
+        asr=asr or LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
+        turn_manager=turn_manager or CoordinatedTurnManagerCapabilityAdapter(TurnPolicy),
         brain=LegacyBrainCapabilityAdapter(brain or GatedStreamingBrain()),
         speech_renderer=DeterministicSpeechRenderer(),
         tts=LegacyTtsCapabilityAdapter(tts or EchoDuplexTts()),
