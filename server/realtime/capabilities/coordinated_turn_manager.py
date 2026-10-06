@@ -14,7 +14,7 @@ import math
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -44,6 +44,10 @@ from server.realtime.capabilities.asr import (
     AsrTranscriptFinal,
 )
 from server.realtime.capabilities.assistant_echo import project_assistant_echo
+from server.realtime.capabilities.reply_revision_controller import (
+    ReplyRevision,
+    ReplyRevisionController,
+)
 from server.realtime.capabilities.response_prefetch_controller import (
     PrefetchCandidate,
     ResponsePrefetchController,
@@ -58,6 +62,7 @@ from server.realtime.capabilities.turn_manager import (
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
     ObserveConversationItem,
+    ObserveResponseInvalidated,
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
@@ -71,6 +76,7 @@ from server.turn_policy.classifier_execution import ClassificationExecutor, run_
 from server.turn_policy.coordination import (
     DefaultTurnCoordinationPolicy,
     FloorOwner,
+    InterruptionDisposition,
     TurnCoordinationPolicy,
 )
 from server.turn_policy.dual_intent import DualIntent
@@ -147,6 +153,7 @@ class _Input:
     evidence_bytes: int = 0
     blocked: bool = False
     rejected_text: str | None = None
+    admission_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +286,7 @@ class CoordinatedTurnManagerSession:
         self._response_context: InteractionContext | None = None
         self._last_committed: tuple[str, str] | None = None
         self._awaiting_response = False
+        self._revisions = ReplyRevisionController()
         self._response_playback_started = False
         self._assistant_text = ""
         self._history: dict[str, tuple[int, EotHistoryMessage]] = {}
@@ -294,6 +302,7 @@ class CoordinatedTurnManagerSession:
         self._failure: Exception | None = None
         self._deferred_input: list[ObserveVadEvent | ObserveAsrEvent] = []
         self._evidence_fault_reported = False
+        self._revision_evidence_failure: str | None = None
         self._evidence = InputEvidenceRecorder(
             provider.input_evidence_journal, context=context, on_failure=self._notify_evidence_failure,
             write_timeout_s=provider.input_evidence_timeout_s,
@@ -307,9 +316,43 @@ class CoordinatedTurnManagerSession:
     def set_prefetch_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
         self._prefetch.set_turn_builder(builder)
 
+    def response_delivery_allowed(self, response_id: str) -> bool:
+        """Read-only permission, also checked when queued output is drained."""
+        return (not self._closed and not self._evidence_fault_reported
+                and self._revision_evidence_failure is None
+                and (self._evidence is None or self._evidence.failure is None)
+                and self._revisions.delivery_allowed(response_id))
+
+    def response_revision(self, response_id: str) -> ReplyRevision | None:
+        reply = self._revisions.reply
+        return reply if reply is not None and reply.response_id == response_id else None
+
+    async def invalidate_response(self, response_id: str, *, context: InteractionContext, reason: str) -> None:
+        await self.send(ObserveResponseInvalidated(context=context, response_id=response_id, reason=reason))
+
+    def _record_revision(self, event: str, context: InteractionContext, detail: dict[str, Any]) -> None:
+        if self._provider._telemetry is not None:
+            self._provider._telemetry.record("response.revision", generation=context.generation,
+                attributes={"operation": event, **detail})
+        if self._evidence is not None:
+            current = self._revisions.input
+            try:
+                self._evidence.offer(current.input_id if current else context.turn_id,
+                                     event, detail, context=context)
+            except InputEvidenceUnavailable:
+                self._notify_evidence_failure("input_evidence_unavailable")
+
+    def _revoke_response(self, response_id: str, *, reason: str) -> None:
+        before = self._revisions.reply
+        revoked = self._revisions.revoke(response_id, reason=reason)
+        if revoked is not None and before is not None and before.delivery_permitted:
+            self._record_revision("reply_invalidated", self._response_context or self._context,
+                                  asdict(revoked))
+
     def _notify_evidence_failure(self, reason: str) -> None:
         if self._closed:
             return
+        self._revision_evidence_failure = reason
         try:
             self._inbox.put_nowait((_EvidenceFault(reason), None))
         except asyncio.QueueFull:
@@ -337,6 +380,8 @@ class CoordinatedTurnManagerSession:
         if item.blocked:
             return
         item.blocked = True
+        if self._response_id is not None:
+            self._revoke_response(self._response_id, reason=reason)
         item.rejected_text = text
         self._deferred_input.clear()
         self._tasks.clear()
@@ -584,13 +629,15 @@ class CoordinatedTurnManagerSession:
             self._state = state
 
     async def _handle(self, event: Any) -> None:
-        if self._evidence is not None and self._evidence.failure and not self._evidence_fault_reported:
+        if self._evidence is not None and (self._evidence.failure or self._revision_evidence_failure) and not self._evidence_fault_reported:
             self._evidence_fault_reported = True
             if self._input is not None:
                 self._begin_input_rejection(self._input, "input_evidence_unavailable", self._input.text)
             else:
                 self._tasks.clear()
                 self._prefetch.invalidate("input_evidence_unavailable")
+                if self._response_id is not None:
+                    self._revoke_response(self._response_id, reason="input_evidence_unavailable")
                 await self._outbox.put(SemanticInputRejected(
                     context=self._context, reason="input_evidence_unavailable",
                     evidence_id=None, evidence_saved=False,
@@ -725,14 +772,11 @@ class CoordinatedTurnManagerSession:
                         "ASR stalled during speech; input recovery deadline exceeded"
                     )
                 if item.target_response and not item.floor_claim_confirmed and not item.yielded:
-                    # A recovery deadline is not evidence of a floor claim.
-                    await self._outbox.put(AsrDiscardRequested(context=item.context, reason="unresolved_overlap"))
-                    self._input = None
-                    self._tasks.clear()
-                    await self._project(item.context)
+                    # Ambiguous text is neither feedback proof nor a floor claim.
+                    # Preserve it and report a bounded failure instead of discarding.
+                    self._begin_input_rejection(item, "unresolved_overlap_deadline", item.text)
                     return
-                item.endpoint = EotClassification(EotDecision.COMPLETE, source="recovery_deadline")
-                await self._advance(item, force=True)
+                await self._advance(item, force=True, admission_reason="recovery_deadline")
             elif event.acoustic_version == item.acoustic_version:
                 if event.kind == "idle":
                     if item.speech_active:
@@ -750,7 +794,7 @@ class CoordinatedTurnManagerSession:
                         self._collect_chunks(item, force=True)
                     await self._advance(item)
                 elif event.kind == "commit":
-                    await self._advance(item, force=True)
+                    await self._advance(item, force=True, admission_reason="endpoint_wait_deadline")
             return
         if isinstance(event, ObserveConversationItem):
             journal_item = event.item
@@ -776,6 +820,9 @@ class CoordinatedTurnManagerSession:
                         oldest = min(self._history, key=lambda key: self._history[key][0])
                         del self._history[oldest]
             return
+        if isinstance(event, ObserveResponseInvalidated):
+            self._revoke_response(event.response_id, reason=event.reason)
+            return
         if isinstance(event, ObserveSystemResponseStarted):
             if (
                 event.context
@@ -787,6 +834,10 @@ class CoordinatedTurnManagerSession:
                 if not event.preparing:
                     await self._project(event.context or self._context)
                 return
+            prior_reply = self._revisions.reply
+            bound = self._revisions.bind_response(event.response_id, event.context or self._context)
+            if prior_reply is None or prior_reply.response_id != event.response_id:
+                self._record_revision("reply_bound", event.context or self._context, asdict(bound))
             self._response_id = event.response_id
             self._response_context = event.context
             self._assistant_text = ""
@@ -822,6 +873,7 @@ class CoordinatedTurnManagerSession:
         if isinstance(event, ObserveSystemResponseCompleted):
             if event.response_id != self._response_id:
                 return
+            self._revisions.finish(event.response_id)
             self._response_id = None
             if self._input and self._input.target_response == event.response_id:
                 self._input.yielded = True
@@ -837,6 +889,8 @@ class CoordinatedTurnManagerSession:
             ):
                 self._assistant_text = event.text
                 self._response_playback_started |= event.playback_started
+                if event.playback_started and event.context.response_id is not None:
+                    self._revisions.observe_playback(event.context.response_id)
             return
         if isinstance(event, ObserveAssistantYielded):
             item = self._input
@@ -924,6 +978,21 @@ class CoordinatedTurnManagerSession:
                         event.context, turn_id=str(uuid.uuid4()), generation=event.context.generation + 1,
                     )
                 self._prefetch.finalize(committed_text, committed_context.generation)
+                version = self._revisions.commit_input(
+                    input_id=item.identity, context=committed_context, text=committed_text,
+                    transcript_revision=event.revision,
+                    continuation_of_turn_id=item.continuation_of_turn_id,
+                    admission_reason=item.admission_reason or "semantic_complete",
+                )
+                self._record_input_evidence(item, "input_committed", {
+                    **asdict(version),
+                    "input_revision": asdict(version),
+                    "logical_input_id": version.input_id,
+                    "endpoint_decision": item.endpoint.decision.value if item.endpoint else None,
+                    "endpoint_source": item.endpoint.source if item.endpoint else None,
+                })
+                if item.blocked:
+                    return
                 self._last_committed = (committed_context.turn_id, committed_text)
                 self._awaiting_response = True
                 await self._outbox.put(
@@ -935,6 +1004,11 @@ class CoordinatedTurnManagerSession:
                         provider_endpoint_observed=item.provider_endpoint,
                         committed_at=datetime.now(UTC),
                         speech_ended_ns=item.speech_ended_ns,
+                        input_id=version.input_id,
+                        input_version=version.input_version,
+                        admission_reason=version.admission_reason,
+                        endpoint_decision=item.endpoint.decision.value if item.endpoint else None,
+                        endpoint_source=item.endpoint.source if item.endpoint else None,
                     )
                 )
             if isinstance(event, AsrCommitRejected):
@@ -1247,7 +1321,9 @@ class CoordinatedTurnManagerSession:
         return InterruptionClassification(InterruptionLabel.INTERRUPT if intent is DualIntent.FLOOR_CLAIM else InterruptionLabel.BACKCHANNEL, 1)
 
     def _judge_interruption(self, item: _Input, boundary: InterruptionBoundary) -> None:
-        if item.blocked:
+        if item.blocked or item.floor_claim_confirmed:
+            # STOP already locked this batch. Acoustic sealing must retain its
+            # accepted verdict, rather than clearing it for an unusable rejudge.
             return
         if self._provider.semantic_chunks_enabled and item.semantic_chunk is None:
             if item.yielded or item.yield_pending:
@@ -1398,6 +1474,7 @@ class CoordinatedTurnManagerSession:
             return
         item.floor_claim_confirmed = True
         item.yield_pending = True
+        self._revoke_response(item.target_response, reason="barge_in_floor_claim")
         self._timer("yield_ack", self._provider.recovery_timeout_ms, item)
         await self._outbox.put(
             AssistantYieldRequested(
@@ -1407,7 +1484,7 @@ class CoordinatedTurnManagerSession:
             )
         )
 
-    async def _advance(self, item: _Input, *, force: bool = False) -> None:
+    async def _advance(self, item: _Input, *, force: bool = False, admission_reason: str | None = None) -> None:
         if item.blocked or item.commit_pending or item.speech_active or item.stop is None or not item.text:
             return
         if item.continuation_of_turn_id and item.target_response is None:
@@ -1421,6 +1498,15 @@ class CoordinatedTurnManagerSession:
                 if self._provider.semantic_chunks_enabled and not item.speech_active and semantic_text(item.verdict.candidate.text) == semantic_text(item.text):
                     item.verdict = replace(item.verdict, candidate=replace(item.verdict.candidate, boundary=InterruptionBoundary.SENTENCE_END))
                 action = self._policy.interruption(item.verdict)
+                if (item.floor_claim_confirmed and item.yielded
+                        and semantic_text(item.verdict.candidate.text) != semantic_text(item.text)):
+                    # New text after a locked STOP is input admission, not a new
+                    # stop decision for the already cancelled target. Exact pure
+                    # controls/feedback still finish without creating a reply.
+                    sealed_rule = self._interruption_decider.match_rule(
+                        self._rule_context(item, InterruptionBoundary.SENTENCE_END))
+                    action = InterruptionDisposition(False, sealed_rule is None or sealed_rule.label
+                        not in {InterruptionLabel.STOP, InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE})
                 if (action.admit_input and not action.stop_response
                         and not item.floor_claim_confirmed and not item.yielded):
                     # Keep ambiguous input while playback owns the floor. Natural
@@ -1455,6 +1541,10 @@ class CoordinatedTurnManagerSession:
                     self._timer("commit", delay, item)
                 return
         item.commit_pending = True
+        item.admission_reason = admission_reason or (
+            "interruption_confirmed" if item.floor_claim_confirmed else
+            "deferred_overlap_after_playback" if item.target_response else "semantic_complete"
+        )
         self._prefetch.cancel_pending()
         self._tasks.clear()
         self._timer("asr_final", self._provider.recovery_timeout_ms, item)
@@ -1475,6 +1565,7 @@ class CoordinatedTurnManagerSession:
         if self._closed:
             return
         self._closed = True
+        self._revisions.close()
         tasks = [self._actor, *self._all_jobs]
         for task in tasks:
             task.cancel()

@@ -95,6 +95,13 @@ class ObserveSystemResponseStarted:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ObserveResponseInvalidated:
+    context: InteractionContext
+    response_id: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ObserveAssistantYielded:
     context: InteractionContext
 
@@ -165,6 +172,11 @@ class UserTurnCommitted:
     committed_at: datetime
     continuation_of_turn_id: str | None = None
     speech_ended_ns: int | None = None
+    input_id: str | None = None
+    input_version: int | None = None
+    admission_reason: str | None = None
+    endpoint_decision: str | None = None
+    endpoint_source: str | None = None
 
     def __post_init__(self) -> None:
         if not self.text or self.transcript_revision < 1:
@@ -181,6 +193,7 @@ TurnManagerCommand = (
     | ObserveAssistantYielded
     | ObserveAssistantSpokenText
     | ObserveConversationItem
+    | ObserveResponseInvalidated
 )
 TurnManagerEvent = (
     DialogueStateChanged

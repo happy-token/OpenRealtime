@@ -13,6 +13,7 @@ from server.conversation_journal import ConversationJournal, JournalScope
 from server.core.interaction_context import InteractionContext
 from server.observability.log_context import bind_voice_session_log_context
 from server.realtime.protocol import RealtimeCommand, RealtimeConversation, RealtimeEvent
+from server.realtime.protocol.engine import is_output_deliverable
 from server.realtime.protocol.events import RealtimeCapabilityFailed
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.runtime import RealtimeRuntimeFactory
@@ -101,6 +102,9 @@ class _ReconnectableConversation:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._events()
+
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return self._current is not None and is_output_deliverable(self._current, event)
 
     async def _events(self) -> AsyncIterator[RealtimeEvent]:
         observed_generation = 0

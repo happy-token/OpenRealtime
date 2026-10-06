@@ -22,6 +22,7 @@ from server.realtime.capabilities.asr import (
     DiscardAsrInput,
 )
 from server.realtime.capabilities.assistant_echo import project_assistant_echo
+from server.realtime.capabilities.reply_revision_controller import ReplyRevision
 from server.realtime.capabilities.turn_manager import (
     AsrCommitRequested,
     AsrDiscardRequested,
@@ -80,6 +81,7 @@ class CascadedInputPipeline:
         self._context = context
         self._vad = vad
         self._provider_timing = provider_timing
+        self._asr: AsrCapabilitySession
         if provider_timing:
             from server.realtime.provider_latency import TimedAsrSession
 
@@ -144,9 +146,9 @@ class CascadedInputPipeline:
         vad_session, asr_session, turn_session = opened
         return cls(
             context=context,
-            vad=vad_session,
-            asr=asr_session,
-            turn_manager=turn_session,
+            vad=cast(VadCapabilitySession, vad_session),
+            asr=cast(AsrCapabilitySession, asr_session),
+            turn_manager=cast(TurnManagerCapabilitySession, turn_session),
             event_queue_size=event_queue_size,
             provider_timing=provider_timing,
         )
@@ -155,6 +157,19 @@ class CascadedInputPipeline:
         bind = getattr(self._turn_manager, "set_prefetch_turn_builder", None)
         if bind is not None:
             bind(builder)
+
+    def response_delivery_allowed(self, response_id: str) -> bool:
+        check = getattr(self._turn_manager, "response_delivery_allowed", None)
+        return bool(check(response_id)) if check is not None else True
+
+    def response_revision(self, response_id: str) -> ReplyRevision | None:
+        read = getattr(self._turn_manager, "response_revision", None)
+        return read(response_id) if read is not None else None
+
+    async def invalidate_response(self, response_id: str, *, context: InteractionContext, reason: str) -> None:
+        invalidate = getattr(self._turn_manager, "invalidate_response", None)
+        if invalidate is not None:
+            await invalidate(response_id, context=context, reason=reason)
 
     async def append_audio(
         self,

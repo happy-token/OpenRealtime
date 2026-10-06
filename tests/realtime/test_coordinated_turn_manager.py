@@ -19,6 +19,7 @@ from server.realtime.capabilities.turn_manager import (
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
+    SemanticInputRejected,
     UserTurnCommitted,
 )
 from server.realtime.capabilities.vad import VadSpeechStarted, VadSpeechStopped
@@ -414,7 +415,9 @@ async def test_model_failure_preserves_completed_input():
         await asyncio.sleep(0.03)
         assert session._input is not None and not session._input.yield_pending
         assert session.snapshot().response_id == "a"
-        await take(stream, AsrDiscardRequested)
+        rejected = await take(stream, SemanticInputRejected)
+        assert rejected.reason == "unresolved_overlap_deadline"
+        assert session._input.rejected_text == "查上海天气"
         assert session.snapshot().response_id == "a"
     finally:
         await stream.aclose()

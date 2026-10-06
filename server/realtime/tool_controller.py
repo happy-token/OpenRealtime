@@ -32,6 +32,7 @@ from server.realtime.protocol import (
     ResponseFailed,
     ToolRequested,
 )
+from server.realtime.protocol.engine import is_output_deliverable
 from server.realtime.scope import conversation_scope
 from server.tools.control import (
     CommittedToolItemsProvider,
@@ -84,6 +85,8 @@ class RealtimeToolController:
     async def _pump_events(self) -> None:
         try:
             async for event in self._conversation.events():
+                if not self.output_delivery_allowed(event):
+                    continue
                 if isinstance(event, ToolRequested):
                     self._start_tool(event)
                 elif isinstance(
@@ -169,6 +172,8 @@ class RealtimeToolController:
             origin=event.origin,
         )
         try:
+            if not self.output_delivery_allowed(event):
+                return
             try:
                 feedback = await handler.handle(
                     request,
@@ -227,12 +232,17 @@ class RealtimeToolController:
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
 
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return is_output_deliverable(self._conversation, event)
+
     async def _iterate_events(self) -> AsyncIterator[RealtimeEvent]:
         while True:
             event = await self._events.get()
             if event is _CLOSED:
                 return
-            yield cast(RealtimeEvent, event)
+            typed_event = cast(RealtimeEvent, event)
+            if self.output_delivery_allowed(typed_event):
+                yield typed_event
 
     async def close(self) -> None:
         if self._closed:

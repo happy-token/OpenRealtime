@@ -85,6 +85,7 @@ from server.realtime.protocol.commands import (
     SpeechContextPolicy,
     StartSpeech,
 )
+from server.realtime.protocol.engine import VERSIONED_OUTPUT_EVENTS
 from server.realtime.protocol.events import (
     AgentDelegationRequestProposed,
     AssistantYieldRequested,
@@ -110,7 +111,10 @@ from server.realtime.protocol.events import (
     SpeechAudioCompleted,
     SpeechAudioDelta,
     SpeechPlaybackProgress,
+    SpeechStarted,
+    SpeechTextAccepted,
     SpeechTextAlignment,
+    SpeechTextCommitted,
     SpokenContentDelta,
     ToolRequested,
 )
@@ -250,6 +254,9 @@ class CascadedRealtimeEngine:
             )
             raise failure
         input_pipeline, brain, tts = opened
+        input_pipeline = cast(CascadedInputPipeline, input_pipeline)
+        brain = cast(BrainCapabilitySession, brain)
+        tts = cast(TtsCapabilitySession, tts)
         if self._provider_timing is not None:
             tts = TimedTtsSession(tts, self._provider_timing, context)
         speech_deliveries = self._speech_deliveries or InMemorySpeechDeliveryStore()
@@ -396,6 +403,7 @@ class CascadedRealtimeConversation:
         if isinstance(command, CancelSpeech):
             self._require_external_speech(command.speech_id)
             tts_task = self._external_tts_task
+            await self._input_pipeline.invalidate_response(command.speech_id, context=command.context, reason=command.reason)
             await self._tts.send(
                 CancelTts(speech_id=command.speech_id, reason=command.reason)
             )
@@ -928,13 +936,32 @@ class CascadedRealtimeConversation:
         )
         self._active_response_id = command.response_id
         self._response_admitted_by_id[command.response_id] = asyncio.Event()
+        ready = asyncio.Event()
         self._response_task = asyncio.create_task(
-            self._start_response(command, turn),
+            self._start_response(command, turn, ready=ready),
             name=f"cascaded-response-{command.response_id}",
         )
         # Preparing can immediately trigger a yield for deferred speech. The
         # cancellation target and task must exist before publishing it.
-        await self._input_pipeline.response_started(command.response_id, context=command.context, preparing=True)
+        try:
+            await self._input_pipeline.response_started(command.response_id, context=command.context, preparing=True)
+        except BaseException:
+            # Preparing failed before Brain admission. Do not release a request
+            # the caller was told had failed; clean up the already visible task.
+            task = self._response_task
+            if task is not None:
+                self._cancel_reason_by_response_id[command.response_id] = "preparing_failed"
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                if self._response_task is task:
+                    self._response_task = None
+                if self._active_response_id == command.response_id:
+                    self._active_response_id = None
+                self._response_admitted_by_id.pop(command.response_id, None)
+                self._cancel_reason_by_response_id.pop(command.response_id, None)
+            raise
+        finally:
+            ready.set()
 
     async def _cancel_response(self, command: CancelResponse) -> None:
         direct_delivery = self._direct_delivery_command
@@ -946,8 +973,14 @@ class CascadedRealtimeConversation:
         ):
             self._direct_delivery_cancel_reason = command.reason
             task = self._response_task
-            task.cancel()
-            await task
+            await self._input_pipeline.invalidate_response(command.response_id, context=command.context, reason=command.reason)
+            completed_before_cancel = task.done()
+            if not completed_before_cancel:
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            if completed_before_cancel:
+                await self._cancel_model_speech(f"response:{command.response_id}", reason=command.reason)
+                await self._notify_cancelled_playback(command, response_context=direct_delivery.context)
             return
         if (
             self._active_response_id != command.response_id
@@ -955,9 +988,20 @@ class CascadedRealtimeConversation:
             or self._response_task.done()
         ):
             raise ValueError("response identity is not active")
-        self._cancel_reason_by_response_id[command.response_id] = command.reason
-        await self._response_admitted_by_id[command.response_id].wait()
         task = self._response_task
+        admission = self._response_admitted_by_id[command.response_id]
+        self._cancel_reason_by_response_id[command.response_id] = command.reason
+        await self._input_pipeline.invalidate_response(command.response_id, context=command.context, reason=command.reason)
+        await admission.wait()
+        if task.done():
+            # Completion during permission revocation must never select a new task.
+            self._cancel_reason_by_response_id.pop(command.response_id, None)
+            speech_id = f"response:{command.response_id}"
+            response = self._response_by_model_speech_id.get(speech_id)
+            response_context = response[1] if response is not None else command.context
+            await self._cancel_model_speech(speech_id, reason=command.reason)
+            await self._notify_cancelled_playback(command, response_context=response_context)
+            return
         task.cancel()
         done, pending = await asyncio.wait(
             {task},
@@ -1003,6 +1047,17 @@ class CascadedRealtimeConversation:
             reason=command.reason,
         )
         await self._dispatch_next_delivery()
+
+    async def _notify_cancelled_playback(
+        self, command: CancelResponse, *, response_context: InteractionContext,
+    ) -> None:
+        if command.reason == "barge_in_floor_claim":
+            return  # The input pump already published this stop fact.
+        await self._emit(AssistantYieldRequested(
+            event_id=str(uuid.uuid4()), context=replace(response_context, response_id=command.response_id),
+            conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
+            reason=command.reason,
+        ))
 
     def _observe_detached_response_task(self, task: asyncio.Task[None]) -> None:
         self._detached_response_tasks.discard(task)
@@ -1061,13 +1116,18 @@ class CascadedRealtimeConversation:
                 )
         raise ValueError("projected context has no model-visible text input")
 
-    async def _start_response(self, command: RequestResponse, turn: TurnContent) -> None:
+    async def _start_response(self, command: RequestResponse, turn: TurnContent, *, ready: asyncio.Event) -> None:
         self._response_admitted_by_id[command.response_id].set()
         failure: str | None = None
         cancelled_reason: str | None = None
+        brain_requested = False
         deadline = asyncio.timeout(self._response_timeout_s)
         try:
             async with deadline:
+                await ready.wait()
+                if not self._input_pipeline.response_delivery_allowed(command.response_id):
+                    raise asyncio.CancelledError
+                brain_requested = True
                 await self._brain.send(
                     RequestBrainResponse(
                         response_id=command.response_id,
@@ -1127,12 +1187,13 @@ class CascadedRealtimeConversation:
                 command.response_id,
                 "cancelled",
             )
-            await self._brain.send(
-                CancelBrainResponse(
-                    response_id=command.response_id,
-                    reason=cancelled_reason,
+            if brain_requested:
+                await self._brain.send(
+                    CancelBrainResponse(
+                        response_id=command.response_id,
+                        reason=cancelled_reason,
+                    )
                 )
-            )
             tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
             if tts_task is not None:
                 await self._tts.send(
@@ -1243,6 +1304,8 @@ class CascadedRealtimeConversation:
             except TimeoutError as error:
                 raise _FirstResponseTextDeadlineExceeded from error
             if event.response_id != command.response_id:
+                continue
+            if not isinstance(event, (BrainResponseCompleted, BrainResponseFailed)) and not self._input_pipeline.response_delivery_allowed(command.response_id):
                 continue
             if isinstance(event, BrainResponseStarted):
                 await self._input_pipeline.response_started(command.response_id, context=command.context)
@@ -1503,6 +1566,8 @@ class CascadedRealtimeConversation:
         async for event in self._tts.events():
             if event.speech_id != speech_id:
                 continue
+            if isinstance(event, (TtsTextAlignment, TtsAudioFrame)) and not self._input_pipeline.response_delivery_allowed(command.response_id):
+                continue
             if isinstance(event, TtsTextAlignment):
                 await self._emit(SpeechTextAlignment(
                     event_id=str(uuid.uuid4()), context=replace(command.context, response_id=command.response_id),
@@ -1569,6 +1634,12 @@ class CascadedRealtimeConversation:
         response_id = fields.get("response_id")
         if not isinstance(response_id, str):
             raise TypeError("response event must carry response_id")
+        if event_type is ResponseStarted:
+            revision = self._input_pipeline.response_revision(response_id)
+            if revision is not None:
+                fields.update(input_id=revision.input_id, input_version=revision.input_version,
+                              reply_version=revision.reply_version,
+                              supersedes_response_id=revision.supersedes_response_id)
         is_terminal = event_type in {
             ResponseCompleted,
             ResponseCancelled,
@@ -1648,6 +1719,11 @@ class CascadedRealtimeConversation:
                         provider_endpoint_observed=event.provider_endpoint_observed,
                         continuation_of_turn_id=event.continuation_of_turn_id,
                         speech_ended_ns=event.speech_ended_ns,
+                        input_id=event.input_id,
+                        input_version=event.input_version,
+                        admission_reason=event.admission_reason,
+                        endpoint_decision=event.endpoint_decision,
+                        endpoint_source=event.endpoint_source,
                     )
                 )
             elif isinstance(event, CapabilityAssistantYieldRequested):
@@ -1708,10 +1784,10 @@ class CascadedRealtimeConversation:
                     # separate lifecycle: a floor claim must still interrupt
                     # that delivery and truncate future model context to what
                     # the client confirms it actually played.
-                    speech_id = next(iter(self._unsettled_model_speech_ids), None)
-                    if speech_id is not None:
+                    unsettled_speech_id = next(iter(self._unsettled_model_speech_ids), None)
+                    if unsettled_speech_id is not None:
                         await self._cancel_model_speech(
-                            speech_id,
+                            unsettled_speech_id,
                             reason=event.reason,
                         )
                 await self._input_pipeline.assistant_yielded(context=event.context)
@@ -1727,11 +1803,18 @@ class CascadedRealtimeConversation:
                     )
                 )
             elif isinstance(event, SemanticInputRejected):
+                message = (
+                    "未能确认这段语音的意图，会话已结束，请重新开始后重试。"
+                    if event.reason == "unresolved_overlap_deadline" else
+                    "日志保存失败，会话已结束，请重新开始后重试。"
+                    if event.reason == "input_evidence_unavailable" else
+                    "本轮输入已停止处理，请缩短内容或分段后重新开始会话。"
+                )
                 await self._emit(RealtimeCapabilityFailed(
                     event_id=str(uuid.uuid4()), context=event.context,
                     conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
                     capability="semantic_input",
-                    error=("本轮输入已停止处理，请缩短内容或分段后重新开始会话。"
+                    error=(message
                            + ("输入证据已保存。" if event.evidence_saved else "输入证据未确认保存。")
                            + f" [{event.reason}]"),
                 ))
@@ -1755,7 +1838,19 @@ class CascadedRealtimeConversation:
             )
 
     async def _emit(self, event: RealtimeEvent) -> None:
-        await self._events.put(event)
+        if self.output_delivery_allowed(event):
+            await self._events.put(event)
+
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        if not isinstance(event, VERSIONED_OUTPUT_EVENTS):
+            return True  # Cancellation/failure/completion facts must still drain.
+        response_id: str | None
+        if isinstance(event, (SpeechStarted, SpeechTextAccepted, SpeechTextCommitted, SpeechAudioDelta)) or isinstance(event, SpeechTextAlignment) and event.speech_id not in self._model_speech_ids:
+            response_id = event.speech_id
+        else:
+            response_id = (event.context.response_id or getattr(event, "response_id", None)
+                           or getattr(event, "speech_id", None))
+        return response_id is None or self._input_pipeline.response_delivery_allowed(response_id)
 
     def _next_sequence(self) -> int:
         self._sequence += 1
@@ -1766,7 +1861,9 @@ class CascadedRealtimeConversation:
             event = await self._events.get()
             if event is _CLOSED:
                 return
-            yield cast(RealtimeEvent, event)
+            typed_event = cast(RealtimeEvent, event)
+            if self.output_delivery_allowed(typed_event):
+                yield typed_event
 
     async def close(self) -> None:
         if self._closed:

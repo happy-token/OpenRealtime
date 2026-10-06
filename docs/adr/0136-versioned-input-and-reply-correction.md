@@ -1,6 +1,6 @@
 # ADR 0136：输入与回复版本及补充纠正
 
-日期：2026-10-05。状态：Proposed，待实施。
+日期：2026-10-05；2026-10-06更新。状态：Proposed，部分实施；完整关联与G2未验收。
 
 ## 决策方向
 
@@ -29,4 +29,12 @@ ReplyRevisionController是actor同步命令驱动的版本账本/纯规划器，
 
 2026-10-06已接入Journal输入证据适配器、逻辑输入预算和管理员分页回读。ASR修订使用替换位置与后缀重建；有效分类结果与候选关联。独立证据scope不进入主LLM历史；持久确认失败显式终止会话，不把内存ack称为落盘。实际tenant/user/thread从服务端会话记录解析，支持续接线程。新增的是存储适配边界，没有第二个语义actor。
 
-[实施报告](../reports/2026-10-06-input-evidence-and-resource-budgets.md)列出预算、采集范围、故障出口及测试限制。正式input/reply版本账本、关联判断与交付许可未落地，ADR状态仍为Proposed。
+[实施报告](../reports/2026-10-06-input-evidence-and-resource-budgets.md)列出预算、采集范围、故障出口及测试限制。该前置批次尚未实现正式input/reply版本账本；后续首批实现见下文。
+
+## 输入 / 回复版本首批实施
+
+2026-10-06已新增actor同步驱动的ReplyRevisionController：保存当前逻辑输入/回复版本及替代关系，禁止重发绑定恢复撤销许可，不增业务actor。输入及助手Journal携带版本；独立证据区分ASR观察上下文与正式提交上下文。未播旧输出取消后，在engine、生产装饰链出队及WebSocket最终出口复验同一许可，终态事实不被过滤。
+
+分类原结论与admission_reason分离，未确认重叠输入截止有保留证据的显式失败出口；STOP已执行仍锁定。自然完成与取消竞争保留原回复上下文，结算原播报并发出停播通知，不重复回复终态。
+
+新增21项回归覆盖上述机制，详细范围见[版本与交付隔离报告](../reports/2026-10-06-reply-version-delivery-isolation.md)。一般补充语义关联、跨Session重建/幂等、播放中当前句许可与真实G2尚未完成；0137/0138继续待实施，不能将整回复失效当作句末衔接。ADR继续Proposed。

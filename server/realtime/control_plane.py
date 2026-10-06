@@ -33,7 +33,7 @@ from server.realtime.protocol.commands import (
     RequestResponse,
     SpeechContextPolicy,
 )
-from server.realtime.protocol.engine import RealtimeConversation
+from server.realtime.protocol.engine import RealtimeConversation, is_output_deliverable
 from server.realtime.protocol.events import (
     DisplayContentDelta,
     InputTranscriptCompleted,
@@ -58,6 +58,7 @@ class _ResponseDraft:
     parent_item_id: str | None
     display_parts: list[str] = field(default_factory=list)
     spoken_parts: list[str] = field(default_factory=list)
+    revision_metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +168,11 @@ class RealtimeTurnController:
             self._response_drafts[event.response_id] = _ResponseDraft(
                 context=event.context,
                 parent_item_id=self._response_parents.get(event.response_id),
+                revision_metadata={
+                    "input_id": event.input_id, "input_version": event.input_version,
+                    "reply_version": event.reply_version,
+                    "supersedes_response_id": event.supersedes_response_id,
+                },
             )
         elif isinstance(event, DisplayContentDelta):
             self._draft_for(event.response_id, event.context).display_parts.append(event.delta)
@@ -199,6 +205,11 @@ class RealtimeTurnController:
                 "continuation_of_turn_id": event.continuation_of_turn_id,
                 "transcript_revision": event.transcript_revision,
                 "provider_endpoint_observed": event.provider_endpoint_observed,
+                "input_id": event.input_id,
+                "input_version": event.input_version,
+                "admission_reason": event.admission_reason,
+                "endpoint_decision": event.endpoint_decision,
+                "endpoint_source": event.endpoint_source,
             },
         )
         await self._send_internal(
@@ -268,7 +279,7 @@ class RealtimeTurnController:
                 f"assistant-output:{event.response_id}",
             ),
         )
-        metadata: dict[str, str] = {"response_id": event.response_id}
+        metadata: dict[str, object] = {"response_id": event.response_id, **draft.revision_metadata}
         if isinstance(event, ResponseFailed):
             metadata["error"] = event.error
         elif isinstance(event, ResponseCancelled):
@@ -354,6 +365,9 @@ class RealtimeTurnController:
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
 
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return is_output_deliverable(self._conversation, event)
+
     async def _iterate_events(self) -> AsyncIterator[RealtimeEvent]:
         while True:
             event = await self._events.get()
@@ -361,7 +375,8 @@ class RealtimeTurnController:
                 if event.error is not None:
                     raise RuntimeError("realtime turn controller event pump failed") from event.error
                 return
-            yield event
+            if self.output_delivery_allowed(event):
+                yield event
 
     async def close(self) -> None:
         if self._closed:

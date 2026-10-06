@@ -27,20 +27,23 @@ flowchart TB
  Actor --> Policy
  Policy -->|提交 / 停止 / 等待决定| Actor
  subgraph Reply[回复与交付]
-  Revision[ReplyRevisionController：actor命令驱动的版本账本 / 纯验证，待实施]
+  Revision[ReplyRevisionController：actor命令驱动的当前版本账本 / 纯验证，已实施]
   Prefetch[现有 ResponsePrefetchController：提前生成与缓存失效]
   Brain[Brain / LLM：生成文本]
   Speech[TTS capability / Speech renderer：合成句段音频]
   Output[现有 PlaybackOutputController：播放路由与取消]
   Sentence[输出许可 / 实际停播与句末屏障，待扩展]
+  Gate[既有engine / 装饰链 / WebSocket：同一回复许可在交付出口复验]
  end
- Actor -->|当前提交与取消| Prefetch --> Brain --> Speech --> Transport
+ Actor -->|当前提交与取消| Prefetch --> Brain --> Speech
  Transport -->|播放输出| Client
  Client -->|renderer 实际播放事件| Output
  Output -->|播放回执| Transport
  Transport -->|播放事实| Actor
- Actor -.-> Revision
- Revision -.->|版本与许可验证结果| Actor
+ Actor --> Revision
+ Revision -->|版本与许可验证结果| Actor
+ Actor -->|当前回复交付许可| Gate
+ Speech --> Gate --> Transport
  Actor -.->|签发精确交付许可| Sentence
  Sentence -.-> Output
  Journal[Conversation Journal：输入与历史证据]
@@ -53,10 +56,10 @@ flowchart TB
  Speech --> Obs
  Transport --> Obs
  classDef planned stroke-dasharray: 5 5
- class Revision,Sentence planned
+ class Sentence planned
 ```
 
-ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其返回actor的是同步验证/账本结果。新生成可以准备，但交付仍经actor签发许可。播放事实投影与版本状态分开保存，不由账本推断音频停止。
+ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其返回actor的是同步验证/账本结果。当前回复交付许可已实施，各既有输出边界复验同一状态；精确当前句许可仍待0137。播放事实投影与版本状态分开保存，不由账本推断音频停止。
 
 说明：任务注册器拥有异步任务；分类执行器封装每次调用，图中的箭头表示职责与调用路径。客户端播放控制器在客户端hook内使用，协议传递其回执到服务端；不把它误画成服务端音频播放引擎。
 
@@ -71,7 +74,7 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 |输入话轮、已执行打断、提交决定|Turn actor|向capability发送动作|
 |分类含义与策略|classifier插件/CoordinationPolicy|不直接操控音频或提交|
 |预生成候选生命周期|PrefetchController|回复提交时复用或失效|
-|回复版本、替代关系、许可引用|actor驱动的ReplyRevisionController，待实施|禁止旧版本新交付；仅精确当前句许可可继续至句末|
+|当前输入/回复版本、替代关系、整回复交付许可|actor驱动的ReplyRevisionController，已实施|既有输出边界复验；精确当前句许可与跨Session重建仍待实现|
 |实际播放位置、队列与句末确认|renderer/PlaybackOutputController|通过带ID回执向服务端报告|
 |停播/句末交付屏障|输出边界，待扩展|执行actor许可并等待实际回执，不自行裁决语义|
 |持久历史与诊断|Journal/Observability|保存事实，不接管实时决策|
@@ -88,15 +91,17 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 
 已存在：候选有界并行、任务/token执行边界、通用分类诊断、原有规则与预生成、客户端既有播放路由。并发1/2判停文本一致性、执行前旧停止证据冲突、长输入完成记录清理还需补强，不能笼统视为完整安全验收。
 
-未完成：统一正式回复版本控制、完整补充关联、实际句末切换、误打断恢复。这些按0136—0138实施，必须先确认各renderer回执能力。
+已补0136首批：当前输入/回复版本、替代关系、取消前撤销许可、生产装饰链与WebSocket交付复验、原判停结论与截止原因分离，以及未决重叠输入的显式失败出口。账本覆盖运行中ASR正式提交，完整范围见[首批报告](../reports/2026-10-06-reply-version-delivery-isolation.md)。
+
+未完成：完整补充语义关联、跨Session版本重建/幂等、实际句末切换、误打断恢复与G2。这些按0136—0138继续实施，必须确认各renderer回执能力。
 
 当前yield_ack来自服务端取消完成，不是客户端实际stopped；现有PlaybackOutputController只能整generation取消，尚无当前句保留/未来队列清理/恢复已取消generation接口。协议能力审计前移到阶段0，功能实现仍扩展原输出边界。
 
-2026-10-06输入证据接线后主协调器有1501行。本次只是抽离执行机制，后续应将回复版本状态迁出，不继续往_Input增加一组纠正/恢复布尔字段。原有输入actor依然是决策入口，不能让新控制器各自直接修改它的状态。
+2026-10-06版本接线后主协调器1592行，新版本账本135行，回复状态已迁入同步辅助模块。原有输入actor依然是决策入口，不新增业务actor；后续不继续往_Input增加一组纠正/恢复布尔字段，不让控制器自行裁决语义。
 
 ## 模块增量约束
 
-本轮新增2个执行辅助模块；它们是本进程内模块，不是新的服务或网络调用。下一阶段新增1个正式回复版本控制器，尽量扩展现有Prefetch/Output。先证明状态归属和契约，再决定是否拆文件；不按异常类型建立控制器。
+前批新增2个执行辅助模块，本批再新增1个同步版本账本；它们是本进程内模块，不是新服务或网络调用。交付校验扩展既有engine、装饰链和WebSocket，没有新增一套队列。后续句末与恢复继续扩展现有Prefetch/Output，先证明状态归属和契约，不按异常类型建立控制器。
 
 
-输入证据与逻辑预算的存储边界见[ADR0140](../adr/0140-input-evidence-and-resource-boundaries.md)。存储worker不维护语义状态或输出许可；预算拒绝仍由同一actor裁决。诊断回读与Session保留策略在ApplicationRuntime/控制平面，删除与活动thread注册使用进程内生命周期排他保护。正式回复版本规划仍待0136，不继续新增异常业务actor。
+输入证据与逻辑预算的存储边界见[ADR0140](../adr/0140-input-evidence-and-resource-boundaries.md)。存储worker不维护语义状态或输出许可；预算拒绝仍由同一actor裁决。诊断回读与Session保留策略在ApplicationRuntime/控制平面，删除与活动thread注册使用进程内生命周期排他保护。0136已接入当前版本账本，完整关联与后续交付规划仍未完成，不继续新增异常业务actor。

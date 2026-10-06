@@ -20,6 +20,7 @@ from server.realtime.protocol import (
     RealtimeConversation,
     RealtimeEvent,
 )
+from server.realtime.protocol.engine import is_output_deliverable
 from server.realtime.scope import conversation_scope
 
 _CLOSED = object()
@@ -70,6 +71,8 @@ class RealtimeDelegationController:
     async def _pump_events(self) -> None:
         try:
             async for event in self._conversation.events():
+                if not self.output_delivery_allowed(event):
+                    continue
                 if isinstance(event, AgentDelegationRequestProposed):
                     self._start_submission(event)
                     continue
@@ -93,6 +96,8 @@ class RealtimeDelegationController:
 
     async def _submit(self, event: AgentDelegationRequestProposed) -> None:
         try:
+            if not self.output_delivery_allowed(event):
+                return
             request = self._request_factory(event)
             if request.delegation_request_id != event.delegation_request_id:
                 raise ValueError(
@@ -152,12 +157,17 @@ class RealtimeDelegationController:
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
 
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return is_output_deliverable(self._conversation, event)
+
     async def _iterate_events(self) -> AsyncIterator[RealtimeEvent]:
         while True:
             event = await self._events.get()
             if event is _CLOSED:
                 return
-            yield cast(RealtimeEvent, event)
+            typed_event = cast(RealtimeEvent, event)
+            if self.output_delivery_allowed(typed_event):
+                yield typed_event
 
     async def close(self) -> None:
         if self._closed:

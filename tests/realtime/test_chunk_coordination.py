@@ -318,7 +318,9 @@ async def test_uncertain_overlap_does_not_yield_at_sentence_end_or_recovery():
         assert not session._input.yield_pending
         await asyncio.sleep(1.05)
         assert session.snapshot().response_id == "a"
-        assert session._input is None
+        assert session._input.blocked
+        assert session._input.rejected_text == "识别内容不清。"
+        assert not session.response_delivery_allowed("a")
     finally:
         await session.close()
 

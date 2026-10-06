@@ -107,6 +107,11 @@ class InputTranscriptCompleted:
     continuation_of_turn_id: str | None = None
     schema_version: int = 1
     speech_ended_ns: int | None = None
+    input_id: str | None = None
+    input_version: int | None = None
+    admission_reason: str | None = None
+    endpoint_decision: str | None = None
+    endpoint_source: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.text:
@@ -543,6 +548,10 @@ class ResponseStarted:
     response_id: str
     response_sequence: int
     schema_version: int = 1
+    input_id: str | None = None
+    input_version: int | None = None
+    reply_version: int | None = None
+    supersedes_response_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_response_event(

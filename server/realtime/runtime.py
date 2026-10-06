@@ -33,7 +33,12 @@ from server.realtime.protocol.commands import (
     RequestResponse,
     StartSpeech,
 )
-from server.realtime.protocol.engine import RealtimeConversation, RealtimeEngine
+from server.realtime.protocol.engine import (
+    VERSIONED_OUTPUT_EVENTS,
+    RealtimeConversation,
+    RealtimeEngine,
+    is_output_deliverable,
+)
 from server.realtime.protocol.events import (
     ItemProjected,
     RealtimeCapabilityFailed,
@@ -374,7 +379,7 @@ class ManagedRealtimeConversation:
                 ):
                     self._replayed_item_ids.remove(event.item_id)
                     continue
-                await self._publish(event)
+                await self._publish(event, origin=conversation)
                 if isinstance(event, RealtimeCapabilityFailed):
                     self._schedule_recovery(event)
         except asyncio.CancelledError:
@@ -394,9 +399,10 @@ class ManagedRealtimeConversation:
                 )
             )
 
-    async def _publish(self, event: RealtimeEvent) -> None:
+    async def _publish(self, event: RealtimeEvent, *, origin: RealtimeConversation | None = None) -> None:
         self._event_sequence += 1
-        await self._events.put(replace(event, conversation_sequence=self._event_sequence))
+        await self._events.put((origin or self._conversation,
+                               replace(event, conversation_sequence=self._event_sequence)))
 
     def _schedule_recovery(self, event: RealtimeCapabilityFailed) -> None:
         if self._failure_recovery is None or self._closed:
@@ -482,12 +488,19 @@ class ManagedRealtimeConversation:
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._iterate_events()
 
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return is_output_deliverable(self._conversation, event)
+
     async def _iterate_events(self) -> AsyncIterator[RealtimeEvent]:
         while True:
             event = await self._events.get()
             if event is _CLOSED:
                 return
-            yield cast(RealtimeEvent, event)
+            origin, typed_event = cast(tuple[RealtimeConversation, RealtimeEvent], event)
+            if origin is not self._conversation and isinstance(typed_event, VERSIONED_OUTPUT_EVENTS):
+                continue
+            if is_output_deliverable(origin, typed_event):
+                yield typed_event
 
     async def close(self) -> None:
         async with self._send_lock:

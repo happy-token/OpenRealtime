@@ -12,7 +12,7 @@ from server.realtime.protocol.commands import (
     ProjectCommittedItem,
     RealtimeCommand,
 )
-from server.realtime.protocol.engine import RealtimeConversation
+from server.realtime.protocol.engine import RealtimeConversation, is_output_deliverable
 from server.realtime.protocol.events import RealtimeEvent
 from server.realtime.scope import conversation_scope
 
@@ -138,6 +138,9 @@ class JournaledRealtimeConversation:
 
     def events(self) -> AsyncIterator[RealtimeEvent]:
         return self._engine_conversation.events()
+
+    def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
+        return is_output_deliverable(self._engine_conversation, event)
 
     async def close(self) -> None:
         await self._engine_conversation.close()

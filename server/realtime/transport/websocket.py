@@ -40,6 +40,7 @@ from server.realtime.protocol import (
     SpeechAudioDelta,
     SpokenContentDelta,
 )
+from server.realtime.protocol.engine import is_output_deliverable
 from server.realtime.protocol.events import RealtimeCapabilityFailed, SpeechTextAlignment
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
@@ -156,6 +157,8 @@ class RealtimeWebSocketFrameBridge:
             await self._inbound_fallback(frame)
 
     async def handle_event(self, event: RealtimeEvent) -> None:
+        if not is_output_deliverable(self._conversation, event):
+            return
         if isinstance(event, RealtimeCapabilityFailed) and event.capability == "semantic_input":
             await self._transport.send(VoiceSessionFailureFrame(
                 code="semantic_input_rejected", phase="input", retryable=True,
