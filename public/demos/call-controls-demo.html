@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>OpenRealtime · 会话操作条交互预览</title>
+  <style id="project-tokens">:root {
+  --bg: #eef1f8;
+  --bg-soft: #f7f8fc;
+  --surface: rgba(255, 255, 255, 0.66);
+  --surface-solid: #ffffff;
+  --surface-raised: rgba(255, 255, 255, 0.9);
+  --border: rgba(73, 79, 112, 0.13);
+  --border-strong: rgba(73, 79, 112, 0.2);
+  --text: #101116;
+  --text-dim: #666b7c;
+  --text-faint: #9aa0b2;
+  --accent: #5b4cf6;
+  --accent-deep: #3826d8;
+  --accent-cyan: #29a7f6;
+  --listening: #5268f7;
+  --thinking: #8b5cf6;
+  --speaking: #179ee6;
+  --danger: #dc4960;
+  --shadow-soft: 0 24px 80px rgba(76, 82, 126, 0.13);
+  --shadow-card: 0 16px 48px rgba(69, 75, 119, 0.1);
+  --dropdown-radius: 13px;
+  --button-radius: 12px;
+  --dropdown-popover-radius: 16px;
+
+  --font-display: "SF Pro Display", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Menlo", "Consolas", monospace;
+
+  --workspace-page-title-size: clamp(1.72rem, 2.6vw, 2.35rem);
+  --workspace-section-title-size: 1.05rem;
+  --workspace-body-size: .84rem;
+  --workspace-label-size: .78rem;
+  --workspace-caption-size: .7rem;
+
+  --panel-surface-alpha: .3;
+  --panel-highlight-alpha: .072;
+  --panel-soft-alpha: .03;
+  --panel-blur: 3px;
+
+  --duration-fast: 180ms;
+  --duration-normal: 420ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body[data-color-scheme="dark"] {
+  --surface-muted: color-mix(in srgb, var(--surface-solid) 72%, var(--bg));
+  --control-surface: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  --control-surface-hover: color-mix(in srgb, var(--accent) 9%, var(--surface-raised));
+  --control-border: color-mix(in srgb, var(--border-strong) 78%, transparent);
+  --accent-surface: color-mix(in srgb, var(--accent) 13%, var(--surface-raised));
+  --accent-border: color-mix(in srgb, var(--accent) 52%, var(--border));
+  --accent-contrast: var(--bg);
+  --accent-shadow: color-mix(in srgb, var(--accent) 24%, transparent);
+  --shadow-soft: 0 24px 80px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 16px 48px rgba(0, 0, 0, 0.22);
+}
+
+body[data-theme="catppuccin"] {
+  --bg: #11111b;
+  --bg-soft: #181825;
+  --surface: rgba(49, 50, 68, 0.72);
+  --surface-solid: #1e1e2e;
+  --surface-raised: rgba(49, 50, 68, 0.94);
+  --border: rgba(205, 214, 244, 0.12);
+  --border-strong: rgba(203, 166, 247, 0.24);
+  --text: #cdd6f4;
+  --text-dim: #a6adc8;
+  --text-faint: #7f849c;
+  --accent: #cba6f7;
+  --accent-deep: #b4befe;
+  --accent-cyan: #89dceb;
+  --listening: #89b4fa;
+  --thinking: #cba6f7;
+  --speaking: #89dceb;
+  --danger: #f38ba8;
+}
+
+body[data-theme="tokyo-night"] {
+  --bg: #16161e;
+  --bg-soft: #1a1b26;
+  --surface: rgba(36, 40, 59, 0.76);
+  --surface-solid: #1f2335;
+  --surface-raised: rgba(36, 40, 59, 0.95);
+  --border: rgba(192, 202, 245, 0.12);
+  --border-strong: rgba(122, 162, 247, 0.26);
+  --text: #c0caf5;
+  --text-dim: #9aa5ce;
+  --text-faint: #737da5;
+  --accent: #7aa2f7;
+  --accent-deep: #7dcfff;
+  --accent-cyan: #7dcfff;
+  --listening: #7aa2f7;
+  --thinking: #bb9af7;
+  --speaking: #7dcfff;
+  --danger: #f7768e;
+}
+
+body[data-theme="rose-pine"] {
+  --bg: #12101a;
+  --bg-soft: #191724;
+  --surface: rgba(38, 35, 58, 0.76);
+  --surface-solid: #1f1d2e;
+  --surface-raised: rgba(38, 35, 58, 0.95);
+  --border: rgba(224, 222, 244, 0.12);
+  --border-strong: rgba(196, 167, 231, 0.25);
+  --text: #e0def4;
+  --text-dim: #908caa;
+  --text-faint: #6e6a86;
+  --accent: #c4a7e7;
+  --accent-deep: #9ccfd8;
+  --accent-cyan: #9ccfd8;
+  --listening: #9ccfd8;
+  --thinking: #c4a7e7;
+  --speaking: #ebbcba;
+  --danger: #eb6f92;
+}
+
+body[data-theme="kanagawa"] {
+  --bg: #16161d;
+  --bg-soft: #1f1f28;
+  --surface: rgba(54, 54, 70, 0.72);
+  --surface-solid: #2a2a37;
+  --surface-raised: rgba(54, 54, 70, 0.95);
+  --border: rgba(220, 215, 186, 0.12);
+  --border-strong: rgba(149, 127, 184, 0.27);
+  --text: #dcd7ba;
+  --text-dim: #9cabca;
+  --text-faint: #727169;
+  --accent: #957fb8;
+  --accent-deep: #7e9cd8;
+  --accent-cyan: #7fb4ca;
+  --listening: #7e9cd8;
+  --thinking: #957fb8;
+  --speaking: #7fb4ca;
+  --danger: #e46876;
+}
+
+body[data-theme="duskfox"] {
+  --bg: #171522;
+  --bg-soft: #232136;
+  --surface: rgba(57, 53, 82, 0.72);
+  --surface-solid: #2d2a45;
+  --surface-raised: rgba(57, 53, 82, 0.95);
+  --border: rgba(224, 222, 244, 0.12);
+  --border-strong: rgba(154, 126, 204, 0.27);
+  --text: #e0def4;
+  --text-dim: #908caa;
+  --text-faint: #6e6a86;
+  --accent: #9a7ecc;
+  --accent-deep: #6085b6;
+  --accent-cyan: #63cdcf;
+  --listening: #6085b6;
+  --thinking: #9a7ecc;
+  --speaking: #63cdcf;
+  --danger: #eb6f92;
+}
+
+body[data-theme="onedark"] {
+  --bg: #1b1e23;
+  --bg-soft: #282c34;
+  --surface: rgba(62, 68, 81, 0.72);
+  --surface-solid: #2c313a;
+  --surface-raised: rgba(62, 68, 81, 0.95);
+  --border: rgba(171, 178, 191, 0.12);
+  --border-strong: rgba(97, 175, 239, 0.24);
+  --text: #abb2bf;
+  --text-dim: #8b929f;
+  --text-faint: #6b727f;
+  --accent: #61afef;
+  --accent-deep: #528bff;
+  --accent-cyan: #56b6c2;
+  --listening: #61afef;
+  --thinking: #c678dd;
+  --speaking: #56b6c2;
+  --danger: #e06c75;
+}
+
+body[data-theme="night-owl"] {
+  --bg: #06111f;
+  --bg-soft: #011627;
+  --surface: rgba(13, 38, 59, 0.76);
+  --surface-solid: #0d263b;
+  --surface-raised: rgba(17, 43, 65, 0.95);
+  --border: rgba(214, 222, 235, 0.12);
+  --border-strong: rgba(130, 170, 255, 0.25);
+  --text: #d6deeb;
+  --text-dim: #9fb3c8;
+  --text-faint: #637777;
+  --accent: #82aaff;
+  --accent-deep: #7fdbca;
+  --accent-cyan: #7fdbca;
+  --listening: #82aaff;
+  --thinking: #c792ea;
+  --speaking: #7fdbca;
+  --danger: #ef5350;
+}
+
+body[data-theme="dracula"] {
+  --bg: #1f2029;
+  --bg-soft: #282a36;
+  --surface: rgba(68, 71, 90, 0.7);
+  --surface-solid: #30323f;
+  --surface-raised: rgba(68, 71, 90, 0.95);
+  --border: rgba(248, 248, 242, 0.12);
+  --border-strong: rgba(189, 147, 249, 0.26);
+  --text: #f8f8f2;
+  --text-dim: #c7c7c2;
+  --text-faint: #8b8c98;
+  --accent: #bd93f9;
+  --accent-deep: #8be9fd;
+  --accent-cyan: #8be9fd;
+  --listening: #8be9fd;
+  --thinking: #bd93f9;
+  --speaking: #50fa7b;
+  --danger: #ff5555;
+}
+
+body[data-theme="nord"] {
+  --bg: #242933;
+  --bg-soft: #2e3440;
+  --surface: rgba(59, 66, 82, 0.72);
+  --surface-solid: #343b49;
+  --surface-raised: rgba(59, 66, 82, 0.95);
+  --border: rgba(236, 239, 244, 0.12);
+  --border-strong: rgba(136, 192, 208, 0.25);
+  --text: #eceff4;
+  --text-dim: #d8dee9;
+  --text-faint: #7b88a1;
+  --accent: #88c0d0;
+  --accent-deep: #81a1c1;
+  --accent-cyan: #8fbcbb;
+  --listening: #81a1c1;
+  --thinking: #b48ead;
+  --speaking: #8fbcbb;
+  --danger: #bf616a;
+}
+
+/* Shared settings surfaces resolve against the active body's theme. */
+:root, body {
+  --settings-panel-radius: 16px;
+  --settings-panel-bg: color-mix(in srgb, var(--surface-solid) calc(var(--panel-surface-alpha, .3) * 100%), transparent);
+  --settings-panel-border: var(--border);
+}
+</style>
+  <style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 var(--font-body); }
+    button, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button, select { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+    button:disabled { opacity: .35; cursor: default; }
+    svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .page { min-height: 100dvh; padding: 0 32px 22px; max-width: 1680px; margin: auto; }
+    .topbar { min-height: 86px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { display: flex; align-items: center; gap: 12px; letter-spacing: -.3px; }
+    .brand-mark { width: 30px; height: 30px; border: 1px solid var(--border-strong); border-radius: 10px; display: grid; place-items: center; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+    .brand strong { font-weight: 600; font-size: 15px; }
+    .brand small { display: block; color: var(--text-faint); font-size: 11px; letter-spacing: .15px; }
+    .header-actions { display: flex; align-items: center; gap: 15px; }
+    .prototype-label { color: var(--text-dim); font-size: 11px; border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; }
+    .theme-label { font-size: 11px; color: var(--text-faint); }
+    select { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 7px 25px 7px 10px; max-width: 152px; color-scheme: dark; font-size: 12px; }
+    .stage { position: relative; height: max(630px, calc(100dvh - 146px)); border: 1px solid var(--border); border-radius: 28px; overflow: hidden; isolation: isolate; background: radial-gradient(ellipse at 74% 25%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 55%), var(--bg-soft); }
+    .stage::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(var(--border-strong) .65px, transparent .65px); background-size: 24px 24px; opacity: .18; mask-image: linear-gradient(#000, transparent 70%); }
+    .stage-header { position: absolute; top: 22px; left: 25px; right: 25px; display: flex; justify-content: space-between; align-items: center; gap: 14px; z-index: 3; }
+    .session-label { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--text-dim); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--speaking); box-shadow: 0 0 10px color-mix(in srgb, var(--speaking) 40%, transparent); }
+    .session-label[data-muted="true"] .dot { background: var(--text-faint); box-shadow: none; }
+    .mode-tabs { display: flex; padding: 4px; gap: 3px; border-radius: 13px; border: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(12px); }
+    .mode-tabs button { border: 0; background: transparent; padding: 6px 16px; border-radius: 9px; font-size: 12px; color: var(--text-dim); transition: background 220ms, color 220ms; }
+    .mode-tabs button[aria-pressed="true"] { background: var(--surface-solid); color: var(--text); box-shadow: 0 2px 7px #0002; }
+    .scene { position: absolute; inset: 88px 24px 252px; display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
+    .conversation { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; max-width: 580px; justify-self: center; align-self: start; transition: opacity 260ms, transform 420ms var(--ease-out-expo); }
+    .conversation h1 { margin: 18px 0 3px; font-size: 24px; font-weight: 500; letter-spacing: -.6px; }
+    .conversation > p { color: var(--text-faint); font-size: 12px; margin: 0 0 26px; }
+    .messages { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; padding-right: 10px; scroll-behavior: smooth; }
+    .message { margin: 0 0 22px; max-width: 92%; }
+    .message small { color: var(--text-faint); font-size: 10px; display: block; margin-bottom: 6px; letter-spacing: .3px; }
+    .message p { margin: 0; font-size: 15px; line-height: 1.95; }
+    .message.user { margin-left: auto; text-align: right; }
+    .message.user p { display: inline-block; padding: 9px 15px; background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 13%, transparent); border-radius: 16px 16px 4px 16px; text-align: left; font-size: 14px; }
+    .presence { align-self: center; text-align: center; position: relative; padding: 8px; transition: transform 600ms var(--ease-out-expo); }
+    .orb { position: relative; width: clamp(130px, min(18vw, 24vh), 205px); aspect-ratio: 1; margin: 0 auto 22px; border-radius: 50%; background: radial-gradient(circle at 29% 27%, color-mix(in srgb, var(--accent-cyan) 75%, #fff) 0%, color-mix(in srgb, var(--accent) 85%, transparent) 24%, var(--accent-deep) 51%, color-mix(in srgb, var(--accent-deep) 55%, #171923) 70%, #131723 94%); box-shadow: inset 0 0 30px #ffffff50, inset -25px -30px 40px #0c0a263b, 0 26px 75px color-mix(in srgb, var(--accent) 16%, transparent); animation: breathe 6s ease-in-out infinite; }
+    .orb::before { content: ""; position: absolute; inset: 8%; border-radius: 50%; border: 1px solid #ffffff45; transform: rotate(-35deg) scaleX(.65); box-shadow: 18px 0 40px #ffffff18; }
+    .orb::after { content: ""; position: absolute; width: 64%; height: 19%; left: 18%; bottom: -22%; border-radius: 50%; background: var(--accent); filter: blur(30px); opacity: .12; }
+    .presence strong { font-size: 18px; font-weight: 450; letter-spacing: 1px; }
+    .presence p { margin: 5px 0; font-size: 12px; color: var(--text-faint); }
+    .wave { height: 18px; display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 12px; }
+    .wave i { display: block; width: 3px; height: var(--h); border-radius: 3px; background: var(--accent); opacity: .65; animation: wave 1.8s calc(var(--n) * -170ms) ease-in-out infinite; }
+    .stage[data-muted="true"] .wave i { animation-play-state: paused; height: 3px; opacity: .25; }
+    .stage[data-mode="fullscreen"] .scene { display: flex; justify-content: center; bottom: 235px; }
+    .stage[data-mode="fullscreen"] .conversation { display: none; }
+    .stage[data-mode="fullscreen"] .presence { align-self: center; }
+    .stage[data-mode="content"] .scene { grid-template-columns: minmax(0, 1fr); }
+    .stage[data-mode="content"] .conversation { max-width: 640px; }
+    .stage[data-mode="content"] .messages { padding-right: 130px; }
+    .stage[data-mode="content"] .presence { position: absolute; right: 12px; bottom: -26px; width: 130px; padding: 0; }
+    .stage[data-mode="content"] .orb { width: 64px; margin-bottom: 12px; }
+    .stage[data-mode="content"] .presence strong { font-size: 11px; }
+    .stage[data-mode="content"] .presence p, .stage[data-mode="content"] .wave { display: none; }
+    .caption { position: absolute; margin: 0; bottom: 145px; left: 50%; transform: translateX(-50%); width: min(590px, calc(100% - 40px)); text-align: center; color: var(--text-dim); font-size: 15px; letter-spacing: .3px; }
+    .dock { --motion: 440ms cubic-bezier(.16, 1, .3, 1); position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%); width: min(940px, calc(100% - 48px)); min-height: 78px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 12px; z-index: 6; border-radius: 28px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); background: linear-gradient(145deg, #ffffff0b, transparent 42%), color-mix(in srgb, var(--surface-solid) 55%, transparent); box-shadow: 0 18px 48px #0003, inset 0 1px #ffffff18; backdrop-filter: blur(20px) saturate(140%); transition: width var(--motion), grid-template-columns var(--motion); }
+    .stage[data-mode="fullscreen"] .dock[data-expanded="false"] { width: min(312px, calc(100% - 24px)); grid-template-columns: 0fr auto; gap: 0; }
+    .toolbar { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+    .toolbar::before { content: ""; width: 1px; height: 32px; background: var(--border-strong); margin-right: 6px; }
+    .stage[data-mode="fullscreen"] .dock[data-expanded="false"] .toolbar::before { display: none; }
+    .main-actions, .fullscreen-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .main-actions { width: 160px; transform-origin: right center; transition: width var(--motion), opacity 180ms, transform var(--motion); }
+    .fullscreen-tools { width: 104px; transition: width var(--motion); }
+    .dock[data-expanded="true"] .main-actions { width: 0; opacity: 0; transform: translateX(16px) scale(.65); overflow: hidden; pointer-events: none; }
+    .dock[data-expanded="true"] .fullscreen-tools { width: 48px; }
+    .icon-button { width: 48px; min-width: 48px; height: 48px; padding: 0; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; background: color-mix(in srgb, var(--surface-solid) 54%, transparent); color: var(--text-dim); position: relative; transition: background 180ms, color 180ms, transform 180ms; }
+    .icon-button:hover { background: color-mix(in srgb, var(--text) 9%, var(--surface-solid)); color: var(--text); transform: translateY(-2px); }
+    .icon-button:active { transform: scale(.92); }
+    #mic[aria-pressed="false"] { color: var(--accent); border-color: var(--accent); }
+    .tip::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translate(-50%, 4px); border-radius: 8px; padding: 5px 9px; background: var(--surface-solid); border: 1px solid var(--border-strong); color: var(--text); font-size: 11px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 160ms, transform 160ms; }
+    .tip:hover::after, .tip:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+    #end { background: color-mix(in srgb, var(--danger) 9%, var(--surface-solid)); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 36%, var(--border)); }
+    #end svg { transform: rotate(135deg); }
+    #end:hover { background: color-mix(in srgb, var(--danger) 20%, var(--surface-solid)); }
+    #captions[aria-pressed="true"] { color: var(--accent); }
+    .composer { min-width: 0; max-height: 120px; opacity: 1; visibility: visible; transition: opacity 180ms 70ms, transform var(--motion), visibility 0s; }
+    .stage[data-mode="fullscreen"] .dock[data-expanded="false"] .composer { max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; transform: scale(.85); pointer-events: none; transition: opacity 120ms, transform var(--motion), visibility 0s 180ms; }
+    .input-surface { min-width: 0; min-height: 52px; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 18px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius: 28px; background: color-mix(in srgb, var(--surface-solid) 76%, transparent); box-shadow: inset 0 1px 2px #ffffff05; }
+    .input-surface:focus-within { border-color: color-mix(in srgb, var(--accent) 48%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent); }
+    textarea { display: block; min-width: 0; width: 100%; flex: 1; border: 0; background: transparent; resize: none; height: 24px; padding: 0; outline: none; font-size: 14px; line-height: 24px; scrollbar-width: thin; }
+    textarea::placeholder { color: var(--text-faint); }
+    textarea:focus-visible { outline: none; }
+    #send { flex: 0 0 auto; height: 42px; border: 0; border-radius: 999px; background: linear-gradient(135deg, var(--accent), var(--accent-cyan)); color: var(--bg); display: flex; align-items: center; gap: 7px; padding: 0 17px; font-size: 12px; font-weight: 650; }
+    #send svg { width: 17px; height: 17px; }
+    #send:disabled { opacity: .42; }
+    #menu-end { color: var(--danger); border-top: 1px solid var(--border); border-radius: 0 0 10px 10px; margin-top: 12px; }
+    #menu-end svg { color: var(--danger); transform: rotate(135deg); }
+    .popover { position: absolute; bottom: calc(100% + 14px); right: 0; width: 248px; border-radius: 18px; padding: 13px; background: var(--surface-solid); border: 1px solid var(--border-strong); box-shadow: 0 18px 50px #0004; }
+    .popover h2 { font-size: 11px; font-weight: 500; color: var(--text-faint); margin: 0 7px 10px; }
+    .menu-action { width: 100%; display: flex; gap: 10px; align-items: center; border: 0; border-radius: 10px; background: transparent; padding: 9px 8px; text-align: left; font-size: 12px; }
+    .menu-action:hover { background: var(--surface-raised); }
+    .menu-action svg { width: 18px; height: 18px; color: var(--accent); }
+    .menu-modes { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 11px; }
+    .menu-modes p { margin: 0 7px 9px; color: var(--text-faint); font-size: 10px; }
+    .menu-modes > div { display: flex; gap: 5px; }
+    .menu-modes button { flex: 1; border: 1px solid var(--border); border-radius: 9px; padding: 7px 0; font-size: 11px; background: transparent; color: var(--text-dim); }
+    .menu-modes button[aria-checked="true"] { color: var(--accent); border-color: var(--border-strong); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+    .footnote { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 15px 3px 0; font-size: 11px; color: var(--text-faint); }
+    .footnote span { color: var(--text-dim); }
+    .footnote a { color: var(--text-faint); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+    .ended { position: absolute; inset: 0; z-index: 9; display: grid; place-content: center; text-align: center; background: color-mix(in srgb, var(--bg-soft) 92%, transparent); backdrop-filter: blur(12px); }
+    .ended h2 { margin: 0 0 8px; font-size: 24px; font-weight: 500; }
+    .ended p { font-size: 12px; color: var(--text-faint); }
+    #restart { margin: 16px auto 0; border: 1px solid var(--border-strong); border-radius: 14px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 10px 22px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    @keyframes breathe { 50% { transform: translateY(-7px) scale(1.025); } }
+    @keyframes wave { 50% { transform: scaleY(.4); } }
+    @media (max-width: 700px) {
+      .page { padding: 0 12px 16px; }
+      .topbar { min-height: 78px; gap: 10px; }
+      .prototype-label, .theme-label { display: none; }
+      .brand strong { font-size: 13px; }
+      .brand-mark { width: 26px; height: 26px; }
+      .header-actions { gap: 6px; }
+      select { width: 108px; font-size: 11px; }
+      .stage { height: max(650px, calc(100dvh - 152px)); border-radius: 22px; }
+      .stage-header { top: 17px; left: 16px; right: 16px; align-items: flex-start; }
+      .session-label { padding-top: 10px; font-size: 10px; gap: 6px; }
+      .mode-tabs button { padding: 5px 10px; }
+      .scene { inset: 85px 20px 235px; gap: 14px; }
+      .stage[data-mode="sidecar"] .scene { grid-template-columns: minmax(0, 1fr) 90px; }
+      .stage[data-mode="sidecar"] .presence { padding: 0; align-self: start; margin-top: 48px; }
+      .stage[data-mode="sidecar"] .orb { width: 80px; margin-bottom: 15px; }
+      .stage[data-mode="sidecar"] .presence strong { font-size: 12px; }
+      .stage[data-mode="sidecar"] .presence p, .stage[data-mode="sidecar"] .wave { display: none; }
+      .conversation h1 { font-size: 20px; }
+      .message p, .message.user p { font-size: 13px; }
+      .messages { height: 260px; padding-right: 4px; }
+      .stage[data-mode="content"] .presence { right: 0; bottom: -5px; width: 72px; }
+      .stage[data-mode="content"] .messages { padding-right: 88px; }
+      .stage[data-mode="fullscreen"] .scene { inset: 75px 10px 235px; }
+      .stage[data-mode="fullscreen"] .orb { width: 184px; }
+      .dock { bottom: 25px; width: calc(100% - 16px); padding: 8px; gap: 8px; min-height: 66px; border-radius: 23px; }
+      .icon-button { width: 44px; min-width: 44px; height: 44px; }
+      .main-actions { width: 148px; }
+      .fullscreen-tools { width: 96px; }
+      .dock[data-expanded="true"] .fullscreen-tools { width: 44px; }
+      .toolbar::before { margin-right: 0; height: 28px; }
+      .input-surface { min-height: 48px; padding-left: 12px; gap: 5px; }
+      textarea { font-size: 12px; }
+      #send { height: 38px; padding: 0 10px; gap: 4px; font-size: 11px; }
+      #send svg { width: 15px; height: 15px; }
+      .tip::after { max-width: 160px; }
+      .footnote { display: block; padding-top: 12px; font-size: 10px; }
+      .footnote > :last-child { display: block; margin-top: 4px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body data-theme="dracula" data-color-scheme="dark">
+  <svg class="symbols" aria-hidden="true"><defs>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
+    <symbol id="i-muted" viewBox="0 0 24 24"><path d="m2 2 20 20M9 9v3a3 3 0 0 0 5 2M9 5V4a3 3 0 0 1 6 0v5M5 10v2a7 7 0 0 0 12 5M19 10v2M12 19v3M8 22h8"/></symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M14 9v11"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 3.1 5.2 2 2 0 0 1 5.1 3h3a2 2 0 0 1 2 1.7l.5 2.5a2 2 0 0 1-.6 1.8l-1.3 1.3a16 16 0 0 0 5 5l1.3-1.3a2 2 0 0 1 1.8-.6l2.5.5a2 2 0 0 1 1.7 2z"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 15h10"/></symbol>
+    <symbol id="i-caption" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 10h3M14 10h3M7 14h2M13 14h4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z M11 13 22 2"/></symbol>
+    <symbol id="i-brand" viewBox="0 0 24 24"><path d="M5 10v4M9 6v12M13 3v18M17 7v10M21 10v4"/></symbol>
+  </defs></svg>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark"><svg><use href="#i-brand"/></svg></span><div><strong>OpenRealtime</strong><small>会话操作条 · 交互预览</small></div></div>
+      <div class="header-actions"><span class="prototype-label">HTML 原型 · 模拟对话</span><label class="theme-label" for="theme">主题</label><select id="theme" aria-label="演示主题"><option value="dracula">Dracula</option><option value="catppuccin">Catppuccin</option><option value="tokyo-night">Tokyo Night</option><option value="rose-pine">Rosé Pine</option><option value="kanagawa">Kanagawa</option><option value="duskfox">Duskfox</option><option value="onedark">OneDark</option><option value="night-owl">Night Owl</option><option value="nord">Nord</option></select></div>
+    </header>
+    <main class="stage" id="stage" data-mode="sidecar" data-muted="false">
+      <header class="stage-header"><div class="session-label" id="session-status" data-muted="false"><i class="dot"></i><span id="status-text">语音会话预览</span></div><nav class="mode-tabs" aria-label="页面模式"><button data-mode="fullscreen" aria-pressed="false">全屏</button><button data-mode="sidecar" aria-pressed="true">并排</button><button data-mode="content" aria-pressed="false">内容</button></nav></header>
+      <div class="scene">
+        <section class="conversation" aria-label="模拟对话"><h1>把想法，慢慢说清楚。</h1><p>若水 · 你的语音伙伴</p><div class="messages" id="messages" aria-live="polite"><article class="message user"><small>你</small><p>帮我整理一下今天的工作安排。</p></article><article class="message"><small>若水</small><p>当然。先把最重要的事情告诉我，我们一起排出一个轻松、清晰的节奏。</p></article></div></section>
+        <div class="presence" aria-hidden="true"><div class="orb"></div><strong>若水</strong><p>认真听你说</p><div class="wave"><i style="--h:6px;--n:1"></i><i style="--h:11px;--n:2"></i><i style="--h:17px;--n:3"></i><i style="--h:10px;--n:4"></i><i style="--h:18px;--n:5"></i><i style="--h:14px;--n:6"></i><i style="--h:7px;--n:7"></i></div></div>
+      </div>
+      <p class="caption" id="caption" hidden>先把最重要的事情告诉我，我们一起安排。</p>
+      <section class="dock" id="dock" data-expanded="false" aria-label="会话操作">
+        <form class="composer" id="composer" aria-label="文字输入">
+          <div class="input-surface"><textarea id="message" aria-label="输入对话消息" placeholder="输入文字…" rows="1" maxlength="2000"></textarea><button type="submit" id="send" disabled><svg><use href="#i-send"/></svg>发送</button></div>
+        </form>
+        <div class="toolbar">
+          <div class="fullscreen-tools" id="fullscreen-tools" hidden>
+            <button class="icon-button tip" id="input-toggle" aria-expanded="false" aria-controls="composer" aria-label="展开文字输入" data-tip="展开文字输入"><svg><use href="#i-keyboard"/></svg><span id="input-label" class="sr-only">文字输入</span></button>
+            <button class="icon-button tip" id="captions" aria-label="隐藏字幕" aria-pressed="true" data-tip="隐藏字幕"><svg><use href="#i-caption"/></svg></button>
+          </div>
+          <div class="main-actions" id="main-actions">
+            <button class="icon-button tip" id="mic" aria-label="关闭麦克风" aria-pressed="true" data-tip="关闭麦克风"><svg><use href="#i-mic"/></svg></button>
+            <button class="icon-button tip" id="mode" aria-label="切换页面模式" aria-expanded="false" aria-controls="controls-popover" data-tip="切换页面模式"><svg><use href="#i-layout"/></svg></button>
+            <button class="icon-button tip" id="end" aria-label="结束预览" data-tip="挂断"><svg><use href="#i-phone"/></svg></button>
+          </div>
+          <button class="icon-button tip" id="more" aria-label="展开通话操作" aria-expanded="false" aria-controls="controls-popover" data-tip="展开通话操作" hidden><svg><use href="#i-more"/></svg></button>
+        </div>
+        <section class="popover" id="controls-popover" aria-label="更多通话操作面板" hidden>
+          <h2>通话操作</h2><button class="menu-action" id="menu-mic"><svg><use href="#i-mic"/></svg><span>关闭麦克风</span></button>
+          <button class="menu-action" id="menu-captions" hidden><svg><use href="#i-caption"/></svg><span>隐藏字幕</span></button>
+          <div class="menu-modes"><p>页面模式</p><div role="radiogroup" aria-label="切换页面模式"><button role="radio" data-mode="fullscreen" aria-checked="false">全屏</button><button role="radio" data-mode="sidecar" aria-checked="true">并排</button><button role="radio" data-mode="content" aria-checked="false">内容</button></div></div>
+          <button class="menu-action" id="menu-end"><svg><use href="#i-phone"/></svg><span>结束预览</span></button>
+        </section>
+      </section>
+      <section class="ended" id="ended" hidden role="dialog" aria-modal="true" aria-labelledby="ended-title"><h2 id="ended-title">预览已结束</h2><p>这只是交互演示，没有开启真实麦克风。</p><button id="restart">重新体验</button></section>
+    </main>
+    <footer class="footnote"><div><span id="interaction-note">并排与内容模式直接输入；全屏点击键盘按钮展开。</span></div><div>全屏输入展开时，三个通话按钮一起收拢　·　<a href="https://m3.material.io/styles/motion" target="_blank" rel="noreferrer">动效参考</a></div></footer>
+    <div id="announcement" class="sr-only" role="status" aria-live="polite"></div>
+  </div>
+  <script>
+    (() => {
+      const el = (id) => document.getElementById(id);
+      const stage = el('stage'), dock = el('dock'), composer = el('composer');
+      const input = el('message'), toggle = el('input-toggle'), more = el('more');
+      const mic = el('mic'), mode = el('mode'), popover = el('controls-popover');
+      const state = { mode: 'sidecar', expanded: false, muted: false, captions: true, ended: false };
+      const themes = Array.from(el('theme').options, option => option.value);
+      let focusFrame = 0;
+      let popoverTrigger = null;
+      try {
+        const saved = localStorage.getItem('openrealtime-app-theme');
+        if (themes.includes(saved)) document.body.dataset.theme = saved;
+      } catch { /* Standalone previews also work without storage. */ }
+      el('theme').value = document.body.dataset.theme;
+      el('theme').addEventListener('change', event => { document.body.dataset.theme = event.target.value; });
+
+      function icon(button, name) { button.querySelector('use').setAttribute('href', '#i-' + name); }
+      function closePopover(restoreFocus = false) {
+        popover.hidden = true;
+        more.setAttribute('aria-expanded', 'false');
+        mode.setAttribute('aria-expanded', 'false');
+        if (restoreFocus && popoverTrigger) {
+          if (!popoverTrigger.hidden && !popoverTrigger.closest('[inert]')) popoverTrigger.focus();
+          else mode.focus();
+        }
+        popoverTrigger = null;
+      }
+      function openPopover(trigger) {
+        if (!popover.hidden) { closePopover(true); return; }
+        popover.hidden = false;
+        popoverTrigger = trigger;
+        trigger.setAttribute('aria-expanded', 'true');
+        el('menu-mic').focus();
+      }
+      function render() {
+        stage.dataset.mode = state.mode;
+        stage.dataset.muted = String(state.muted);
+        if (state.mode !== 'fullscreen') state.expanded = false;
+        dock.dataset.expanded = String(state.expanded);
+        const showComposer = state.mode !== 'fullscreen' || state.expanded;
+        composer.inert = !showComposer;
+        el('main-actions').inert = state.expanded;
+        el('main-actions').setAttribute('aria-hidden', String(state.expanded));
+        el('fullscreen-tools').hidden = state.mode !== 'fullscreen';
+        more.hidden = !state.expanded;
+        toggle.setAttribute('aria-expanded', String(state.expanded));
+        toggle.setAttribute('aria-label', state.expanded ? '收起文字输入' : '展开文字输入');
+        toggle.dataset.tip = state.expanded ? '收起文字输入' : '展开文字输入';
+        el('input-label').textContent = state.expanded ? '收起输入' : input.value ? '继续输入' : '文字输入';
+        icon(toggle, state.expanded ? 'chevron' : 'keyboard');
+        mic.setAttribute('aria-pressed', String(!state.muted));
+        const micLabel = state.muted ? '开启麦克风' : '关闭麦克风';
+        mic.setAttribute('aria-label', micLabel);
+        mic.dataset.tip = micLabel;
+        icon(mic, state.muted ? 'muted' : 'mic');
+        icon(el('menu-mic'), state.muted ? 'muted' : 'mic');
+        el('menu-mic').querySelector('span').textContent = micLabel;
+        el('session-status').dataset.muted = String(state.muted);
+        el('status-text').textContent = state.muted ? '麦克风已关闭 · 预览' : '语音会话预览';
+        el('captions').hidden = state.mode !== 'fullscreen' || state.expanded;
+        el('menu-captions').hidden = state.mode !== 'fullscreen';
+        const captionLabel = state.captions ? '隐藏字幕' : '显示字幕';
+        el('captions').setAttribute('aria-label', captionLabel);
+        el('captions').dataset.tip = captionLabel;
+        el('captions').setAttribute('aria-pressed', String(state.captions));
+        el('menu-captions').querySelector('span').textContent = captionLabel;
+        el('caption').hidden = state.mode !== 'fullscreen' || !state.captions;
+        document.querySelectorAll('[data-mode]').forEach(button => {
+          if (button.tagName !== 'BUTTON') return;
+          button.setAttribute(button.getAttribute('role') === 'radio' ? 'aria-checked' : 'aria-pressed', String(button.dataset.mode === state.mode));
+          if (button.getAttribute('role') === 'radio') button.tabIndex = button.dataset.mode === state.mode ? 0 : -1;
+        });
+        el('send').disabled = !input.value.trim() || state.ended;
+        el('interaction-note').textContent = state.mode !== 'fullscreen' ? '输入框直接显示 · Enter 发送 · Shift + Enter 换行' : state.expanded ? '点击收起按钮或按 Esc，恢复三个通话按钮；草稿保留。' : '点击键盘按钮展开输入框；字幕按钮仅在全屏显示。';
+      }
+      function setExpanded(expanded) {
+        if (state.mode !== 'fullscreen') return;
+        cancelAnimationFrame(focusFrame);
+        closePopover();
+        state.expanded = expanded;
+        render();
+        if (expanded) focusFrame = requestAnimationFrame(() => { if (state.expanded && !state.ended) input.focus(); });
+        else toggle.focus();
+      }
+      function setMode(nextMode) {
+        cancelAnimationFrame(focusFrame);
+        closePopover();
+        if (state.mode !== nextMode) state.expanded = false;
+        state.mode = nextMode;
+        render();
+        if (state.expanded) input.focus();
+        else mode.focus();
+        el('announcement').textContent = '已切换为' + ({ fullscreen: '全屏', sidecar: '并排', content: '内容' })[nextMode] + '模式';
+      }
+      toggle.addEventListener('click', () => setExpanded(!state.expanded));
+      more.addEventListener('click', () => openPopover(more));
+      mode.addEventListener('click', () => openPopover(mode));
+      [mic, el('menu-mic')].forEach(button => button.addEventListener('click', () => {
+        state.muted = !state.muted;
+        render();
+      }));
+      [el('captions'), el('menu-captions')].forEach(button => button.addEventListener('click', () => {
+        state.captions = !state.captions;
+        render();
+      }));
+      document.querySelectorAll('button[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+      document.querySelector('[role="radiogroup"]').addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const buttons = Array.from(event.currentTarget.querySelectorAll('[role="radio"]'));
+        const current = buttons.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 :
+          (current + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length;
+        cancelAnimationFrame(focusFrame);
+        if (state.mode !== buttons[next].dataset.mode) state.expanded = false;
+        state.mode = buttons[next].dataset.mode;
+        render();
+        buttons[next].focus();
+      });
+      input.addEventListener('input', () => {
+        render();
+        input.style.height = '24px';
+        input.style.height = Math.min(input.scrollHeight, 72) + 'px';
+      });
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); composer.requestSubmit(); }
+      });
+      function addMessage(text, user) {
+        const article = document.createElement('article');
+        article.className = 'message' + (user ? ' user' : '');
+        const label = document.createElement('small');
+        label.textContent = user ? '你' : '若水 · 演示回复';
+        const paragraph = document.createElement('p');
+        paragraph.textContent = text;
+        article.append(label, paragraph);
+        el('messages').append(article);
+      }
+      composer.addEventListener('submit', event => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text || state.ended) return;
+        addMessage(text, true);
+        addMessage('收到你的补充。我们把它一起加入刚才的安排。', false);
+        el('caption').textContent = '收到你的补充。我们把它一起加入刚才的安排。';
+        input.value = '';
+        input.style.height = '24px';
+        if (state.mode === 'fullscreen') setExpanded(false);
+        else { render(); input.focus(); }
+        el('messages').scrollTop = el('messages').scrollHeight;
+        el('announcement').textContent = state.mode === 'fullscreen' ? '演示消息已发送，输入框已收起' : '演示消息已发送，可以继续输入';
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!popover.hidden && !popover.contains(event.target) && !more.contains(event.target) && !mode.contains(event.target)) closePopover();
+      });
+      document.addEventListener('keydown', event => {
+        if (state.ended) {
+          if (event.key === 'Tab') { event.preventDefault(); el('restart').focus(); }
+          return;
+        }
+        if (event.key !== 'Escape') return;
+        if (!popover.hidden) { event.preventDefault(); closePopover(true); }
+        else if (state.expanded) { event.preventDefault(); setExpanded(false); }
+      });
+      function endPreview() {
+        cancelAnimationFrame(focusFrame);
+        closePopover();
+        state.ended = true;
+        dock.inert = true;
+        document.querySelector('.scene').inert = true;
+        document.querySelector('.stage-header').inert = true;
+        document.querySelector('.topbar').inert = true;
+        document.querySelector('.footnote').inert = true;
+        el('ended').hidden = false;
+        el('restart').focus();
+      }
+      [el('end'), el('menu-end')].forEach(button => button.addEventListener('click', endPreview));
+      el('restart').addEventListener('click', () => {
+        state.ended = false;
+        dock.inert = false;
+        document.querySelector('.scene').inert = false;
+        document.querySelector('.stage-header').inert = false;
+        document.querySelector('.topbar').inert = false;
+        document.querySelector('.footnote').inert = false;
+        el('ended').hidden = true;
+        if (state.mode === 'fullscreen') setExpanded(false);
+        else { render(); mode.focus(); }
+      });
+      render();
+    })();
+  </script>
+</body>
+</html>

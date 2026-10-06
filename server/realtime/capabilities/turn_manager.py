@@ -115,6 +115,7 @@ class ObserveConversationItem:
 class AssistantYieldRequested:
     context: InteractionContext
     reason: str
+    speech_started_ns: int | None = None
 
     def __post_init__(self) -> None:
         if not self.reason:
@@ -148,6 +149,14 @@ class AsrDiscardRequested:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class SemanticInputRejected:
+    context: InteractionContext
+    reason: str
+    evidence_id: str | None
+    evidence_saved: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class UserTurnCommitted:
     context: InteractionContext
     text: str
@@ -155,6 +164,7 @@ class UserTurnCommitted:
     provider_endpoint_observed: bool
     committed_at: datetime
     continuation_of_turn_id: str | None = None
+    speech_ended_ns: int | None = None
 
     def __post_init__(self) -> None:
         if not self.text or self.transcript_revision < 1:
@@ -178,6 +188,7 @@ TurnManagerEvent = (
     | AsrDiscardRequested
     | UserTurnCommitted
     | AssistantYieldRequested
+    | SemanticInputRejected
 )
 
 

@@ -48,6 +48,7 @@ class Interrupt:
 
 
 async def opened(**kwargs):
+    kwargs.setdefault("semantic_interruption_classifier", Interrupt())
     return await CoordinatedTurnManagerCapabilityAdapter(
         TurnPolicy,
         asr_idle_stop_ms=15,
@@ -224,21 +225,17 @@ async def test_slow_model_does_not_block_resumption_and_stale_result_is_rejected
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("label", [InterruptionLabel.UNCERTAIN, InterruptionLabel.IGNORE])
-async def test_model_negative_result_does_not_swallow_user_request(label):
-    session = await opened(
-        eot_classifier=Endpoint(), semantic_interruption_classifier=Interrupt(label)
-    )
-    stream = session.events()
+async def test_model_negative_result_preserves_playback(label):
+    session = await opened(eot_classifier=Endpoint(), semantic_interruption_classifier=Interrupt(label))
     try:
         await session.send(ObserveSystemResponseStarted(response_id="a", context=context()))
         await start(session)
         await text(session)
         await stop(session)
-        await take(stream, AssistantYieldRequested)
-        await session.send(ObserveAssistantYielded(context=replace(context(), response_id=session.snapshot().response_id)))
-        await take(stream, AsrCommitRequested)
+        await asyncio.sleep(0.03)
+        assert session.snapshot().response_id == "a"
+        assert session._input is None if label is InterruptionLabel.IGNORE else not session._input.yield_pending
     finally:
-        await stream.aclose()
         await session.close()
 
 
@@ -414,9 +411,11 @@ async def test_model_failure_preserves_completed_input():
         await start(session)
         await text(session)
         await stop(session)
-        await take(stream, AssistantYieldRequested)
-        await session.send(ObserveAssistantYielded(context=replace(context(), response_id=session.snapshot().response_id)))
-        await take(stream, AsrCommitRequested)
+        await asyncio.sleep(0.03)
+        assert session._input is not None and not session._input.yield_pending
+        assert session.snapshot().response_id == "a"
+        await take(stream, AsrDiscardRequested)
+        assert session.snapshot().response_id == "a"
     finally:
         await stream.aclose()
         await session.close()
@@ -647,9 +646,9 @@ async def test_old_final_cannot_finish_deferred_turn_in_same_generation(rejected
         await session.close()
 
 @pytest.mark.asyncio
-async def test_before_first_audio_continuation_merges_and_cancels_without_model_wait():
+async def test_before_first_audio_confirmed_continuation_merges_after_classification():
     endpoint = Endpoint()
-    session = await opened(eot_classifier=endpoint, semantic_interruption_classifier=Interrupt(InterruptionLabel.BACKCHANNEL))
+    session = await opened(eot_classifier=endpoint, semantic_interruption_classifier=Interrupt())
     stream = session.events()
     first = context()
     next_context = replace(first, turn_id="next-turn", generation=first.generation + 1)
@@ -782,9 +781,12 @@ async def test_before_audio_stop_or_explicit_new_question_is_not_appended(uttera
         await session.send(ObserveSystemResponseStarted(response_id="a", context=first, preparing=True))
         await start(session, second)
         await text(session, utterance, ctx=second)
+        if utterance == "停":
+            await stop(session, second)
         await take(stream, AssistantYieldRequested)
         await session.send(ObserveAssistantYielded(context=replace(second, response_id="a")))
-        await stop(session, second)
+        if utterance != "停":
+            await stop(session, second)
         if utterance == "停":
             await take(stream, AsrDiscardRequested)
             assert session.snapshot().input_id is None

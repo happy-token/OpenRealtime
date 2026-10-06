@@ -28,7 +28,7 @@ export function resolveSessionRecoveryIssue({ connection, micError, micAvailable
   if (voiceOnly && micError) return { kind: "response", title: "语音会话未开始", message: micError, retryLabel: "手动重试", retry: "microphone" };
   if (voiceOnly && connection === "error") return { kind: "connection", title: "语音连接失败", message: sessionError || "请手动重试语音会话。", retryLabel: "手动重试", retry: "microphone" };
   if (connection === "reconnecting") return { kind: "connection", title: "连接中断，正在恢复…", message: "输入的文字会保留，也可以立即重试。", retryLabel: "立即重试", retry: "connection" };
-  if (connection === "error") return { kind: "connection", title: "连接未恢复", message: "请重试连接或改用文字，输入的草稿会保留。", retryLabel: "重试连接", retry: "connection" };
+  if (connection === "error") return { kind: "connection", title: "连接未恢复", message: sessionError || "请重试连接或改用文字，输入的草稿会保留。", retryLabel: "重试连接", retry: "connection" };
   if (sessionError) return { kind: "response", title: "本轮回复未完成", message: sessionError, retryLabel: "重新连接", retry: "connection" };
   if (micError) return { kind: "microphone", title: "麦克风无法使用", message: micError.replace(/^麦克风错误：/, ""), retryLabel: "重试麦克风", retry: "microphone" };
   if (connection === "open" && !micAvailable) return { kind: "microphone", title: "当前没有可用的语音输入", message: "你仍然可以继续使用文字对话，稍后也可以重新尝试麦克风。", retryLabel: "重试麦克风", retry: "microphone" };

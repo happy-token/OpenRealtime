@@ -1,0 +1,329 @@
+{
+  "session_id": "95a9b382-1c3c-4a28-b45f-3b298a5db7b5",
+  "model": "jev-1.13.0",
+  "threshold": 0.8,
+  "authorized_by_user": "允许（2026-10-06，天气会话JEV外部复测）",
+  "baseline_full_generated_response_context": [
+    {
+      "run": 1,
+      "local_text": "明天天气",
+      "cumulative_text": "明天天气",
+      "label": "uncertain",
+      "confidence": 0.45,
+      "probabilities": {
+        "stop": 0.01,
+        "backchannel": 0.04,
+        "uncertain": 0.55,
+        "ignore": 0.01,
+        "correction": 0.01,
+        "interrupt": 0.38
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 1185.7,
+      "model": "jev-1.13.0"
+    },
+    {
+      "run": 1,
+      "local_text": "怎么样？",
+      "cumulative_text": "明天天气怎么样？",
+      "label": "uncertain",
+      "confidence": 0.27,
+      "probabilities": {
+        "interrupt": 0.33,
+        "correction": 0.04,
+        "ignore": 0.01,
+        "uncertain": 0.38,
+        "stop": 0.01,
+        "backchannel": 0.23
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 305.5,
+      "model": "jev-1.13.0"
+    },
+    {
+      "run": 1,
+      "local_text": "不是今天，我问的是明天的天气。",
+      "cumulative_text": "不是今天，我问的是明天的天气。",
+      "label": "correction",
+      "confidence": 0.83,
+      "probabilities": {
+        "backchannel": 0.0,
+        "uncertain": 0.02,
+        "interrupt": 0.12,
+        "ignore": 0.0,
+        "stop": 0.0,
+        "correction": 0.86
+      },
+      "effective_label": "correction",
+      "elapsed_ms": 307.0,
+      "model": "jev-1.13.0"
+    },
+    {
+      "run": 2,
+      "local_text": "明天天气",
+      "cumulative_text": "明天天气",
+      "label": "uncertain",
+      "confidence": 0.44,
+      "probabilities": {
+        "backchannel": 0.04,
+        "uncertain": 0.53,
+        "interrupt": 0.4,
+        "ignore": 0.01,
+        "stop": 0.01,
+        "correction": 0.01
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 308.4,
+      "model": "jev-1.13.0"
+    },
+    {
+      "run": 2,
+      "local_text": "怎么样？",
+      "cumulative_text": "明天天气怎么样？",
+      "label": "uncertain",
+      "confidence": 0.29,
+      "probabilities": {
+        "stop": 0.0,
+        "uncertain": 0.41,
+        "ignore": 0.01,
+        "correction": 0.07,
+        "interrupt": 0.35,
+        "backchannel": 0.16
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 299.0,
+      "model": "jev-1.13.0"
+    },
+    {
+      "run": 2,
+      "local_text": "不是今天，我问的是明天的天气。",
+      "cumulative_text": "不是今天，我问的是明天的天气。",
+      "label": "correction",
+      "confidence": 0.81,
+      "probabilities": {
+        "uncertain": 0.02,
+        "stop": 0.0,
+        "backchannel": 0.0,
+        "ignore": 0.0,
+        "correction": 0.85,
+        "interrupt": 0.13
+      },
+      "effective_label": "correction",
+      "elapsed_ms": 384.3,
+      "model": "jev-1.13.0"
+    }
+  ],
+  "contrast_observed_playback_prefix_context": [
+    {
+      "run": 1,
+      "variant": "baseline",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.39,
+      "probabilities": {
+        "interrupt": 0.49,
+        "ignore": 0.01,
+        "uncertain": 0.32,
+        "backchannel": 0.13,
+        "stop": 0.0,
+        "correction": 0.05
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 764.1
+    },
+    {
+      "run": 1,
+      "variant": "whole_primary",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.59,
+      "probabilities": {
+        "uncertain": 0.3,
+        "correction": 0.02,
+        "interrupt": 0.66,
+        "backchannel": 0.01,
+        "ignore": 0.01,
+        "stop": 0.0
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 345.5
+    },
+    {
+      "run": 1,
+      "variant": "source_clarity",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.48,
+      "probabilities": {
+        "uncertain": 0.17,
+        "interrupt": 0.57,
+        "stop": 0.0,
+        "ignore": 0.01,
+        "backchannel": 0.2,
+        "correction": 0.05
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 340.8
+    },
+    {
+      "run": 1,
+      "variant": "task_clarity",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.51,
+      "probabilities": {
+        "correction": 0.04,
+        "uncertain": 0.2,
+        "stop": 0.0,
+        "backchannel": 0.16,
+        "interrupt": 0.59,
+        "ignore": 0.01
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 364.5
+    },
+    {
+      "run": 2,
+      "variant": "baseline",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.36,
+      "probabilities": {
+        "backchannel": 0.16,
+        "stop": 0.0,
+        "uncertain": 0.32,
+        "correction": 0.04,
+        "ignore": 0.01,
+        "interrupt": 0.47
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 349.1
+    },
+    {
+      "run": 2,
+      "variant": "whole_primary",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.57,
+      "probabilities": {
+        "ignore": 0.01,
+        "interrupt": 0.65,
+        "stop": 0.0,
+        "uncertain": 0.31,
+        "backchannel": 0.02,
+        "correction": 0.01
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 300.9
+    },
+    {
+      "run": 2,
+      "variant": "source_clarity",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.49,
+      "probabilities": {
+        "backchannel": 0.17,
+        "interrupt": 0.58,
+        "ignore": 0.01,
+        "stop": 0.0,
+        "correction": 0.06,
+        "uncertain": 0.18
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 299.7
+    },
+    {
+      "run": 2,
+      "variant": "task_clarity",
+      "playback_context": "observed-prefix-31",
+      "label": "interrupt",
+      "confidence": 0.45,
+      "probabilities": {
+        "ignore": 0.01,
+        "uncertain": 0.25,
+        "interrupt": 0.54,
+        "stop": 0.0,
+        "correction": 0.05,
+        "backchannel": 0.15
+      },
+      "effective_label": "uncertain",
+      "elapsed_ms": 331.0
+    }
+  ],
+  "compact_candidate": {
+    "prompt": "只判断当前用户的累计文本cumulative_transcript（若缺失则transcript）对助手当前回复的动作意图。transcript和previous_chunks在有累计文本时仅是封口元数据，不能作为独立意图重复判断。可回应的新问题或补充要求选interrupt；明确纠正原需求或回答选correction；只要求停止选stop；纯附和、鼓励继续选backchannel；有明确背景/旁人/回声证据选ignore；识别乱码或无法理解意图选uncertain。相关话题的后续问题也需响应，不是附和。不要判断用户是否说完；无需用户另说停。声源unknown不构成背景证据。前面的有效纠正或任务不能被尾部附和抹去，除非明确撤回。",
+    "results": [
+      {
+        "run": 1,
+        "variant": "compact",
+        "label": "interrupt",
+        "confidence": 0.6,
+        "probabilities": {
+          "correction": 0.21,
+          "uncertain": 0.07,
+          "interrupt": 0.67,
+          "backchannel": 0.04,
+          "ignore": 0.01,
+          "stop": 0.0
+        },
+        "effective_label": "uncertain",
+        "elapsed_ms": 1813.4
+      },
+      {
+        "run": 1,
+        "variant": "compact_whole_primary",
+        "label": "interrupt",
+        "confidence": 0.83,
+        "probabilities": {
+          "stop": 0.0,
+          "backchannel": 0.01,
+          "uncertain": 0.04,
+          "correction": 0.08,
+          "ignore": 0.0,
+          "interrupt": 0.87
+        },
+        "effective_label": "interrupt",
+        "elapsed_ms": 329.2
+      },
+      {
+        "run": 2,
+        "variant": "compact",
+        "label": "interrupt",
+        "confidence": 0.57,
+        "probabilities": {
+          "backchannel": 0.05,
+          "stop": 0.0,
+          "uncertain": 0.06,
+          "ignore": 0.01,
+          "correction": 0.24,
+          "interrupt": 0.64
+        },
+        "effective_label": "uncertain",
+        "elapsed_ms": 271.0
+      },
+      {
+        "run": 2,
+        "variant": "compact_whole_primary",
+        "label": "interrupt",
+        "confidence": 0.81,
+        "probabilities": {
+          "backchannel": 0.01,
+          "uncertain": 0.06,
+          "interrupt": 0.85,
+          "ignore": 0.0,
+          "stop": 0.0,
+          "correction": 0.08
+        },
+        "effective_label": "interrupt",
+        "elapsed_ms": 285.7
+      }
+    ]
+  },
+  "scope_notes": [
+    "不是原始请求逐字节重放：原始完整model payload未保存；依据转写、历史与播放进度重建。",
+    "baseline初轮使用完整生成回答，之后使用onset播放回执对应31字符前缀；两种上下文分开报告。",
+    "18次真实请求；小样本不能宣称总体准确率或P95。",
+    "附和/撤回/乱码扩展矩阵被自动审批拒绝，未执行。候选提示未上线。"
+  ]
+}

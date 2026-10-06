@@ -219,8 +219,6 @@ class EndpointSessionRegistry:
 
         if (
             not closed
-            and entry.endpoint_identity is not None
-            and entry.endpoint_identity.admission is not None
             and getattr(transport, "closed_normally", False)
         ):
             await entry.session.close()

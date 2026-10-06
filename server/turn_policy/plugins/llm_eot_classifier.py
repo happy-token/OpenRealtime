@@ -21,6 +21,11 @@ The conversation may include committed user and assistant messages before the
 final user message. Use that history only to resolve references and short
 contextual answers; classify the latest transcript, not the earlier messages.
 
+The transcript is the cumulative transcript through this candidate's boundary,
+even when input_state.chunk_id is present. Judge the entire cumulative intent,
+not just the last independently sealed chunk. input_state.previous_chunks is
+auxiliary context; do not concatenate it with the transcript again.
+
 Classify only semantic completeness; silence is evaluated separately.
 - complete: the user has expressed an actionable or answerable thought.
 - incomplete: the utterance clearly depends on words the user is likely to add.

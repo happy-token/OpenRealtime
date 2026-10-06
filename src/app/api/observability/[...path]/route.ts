@@ -38,7 +38,7 @@ export async function GET(
     });
   } catch {
     return NextResponse.json(
-      { error: "诊断服务暂时不可用" },
+      { error: "诊断服务暂时不可用，请检查语音后端服务后重试" },
       { status: 503 },
     );
   }

@@ -205,6 +205,9 @@ class DiagnosticsOverview:
     degraded_count: int
     metrics: tuple[MetricAggregate, ...]
     capability_failures: tuple[dict[str, Any], ...] = ()
+    module_health: tuple[dict[str, Any], ...] = ()
+    failed_turn_count: int = 0
+    latency_collection_ready: bool = False
 
     @property
     def success_rate(self) -> float | None:
@@ -237,6 +240,9 @@ class DiagnosticsOverview:
             "degraded_count": self.degraded_count,
             "metrics": [metric.to_dict() for metric in self.metrics],
             "capability_failures": list(self.capability_failures),
+            "module_health": list(self.module_health),
+            "failed_turn_count": self.failed_turn_count,
+            "latency_collection_ready": self.latency_collection_ready,
         }
 
 
@@ -250,6 +256,8 @@ class SessionSummary:
     error_count: int
     no_response_count: int
     event_count: int
+    disconnect_count: int = 0
+    failure_names: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -1502,6 +1510,8 @@ def _overview(
             row["timeout_count" if record.outcome is TelemetryOutcome.TIMEOUT else "error_count"] += 1
     terminals = [record for record in records if record.kind is TelemetryKind.TERMINAL]
     interrupted = [record for record in terminals if _record_is_expected_interruption(record)]
+    from server.observability.module_health import module_health
+    health = module_health({"name": record.name, "outcome": record.outcome.value, "error_type": record.error_type, "voice_session_id": record.voice_session_id} for record in records)
     now = window.until or datetime.now(UTC)
     return DiagnosticsOverview(
         since=window.since,
@@ -1527,6 +1537,9 @@ def _overview(
         ),
         metrics=metrics,
         capability_failures=tuple(failures[name] for name in sorted(failures)),
+        module_health=health,
+        latency_collection_ready=any(record.name == "interaction.collection_ready" for record in records),
+        failed_turn_count=len({(record.voice_session_id, record.response_id or record.turn_id or str(record.generation)) for record in terminals if record.outcome in {TelemetryOutcome.ERROR, TelemetryOutcome.TIMEOUT, TelemetryOutcome.NO_RESPONSE}}),
     )
 
 
@@ -1577,4 +1590,6 @@ def _session_summary(records: Sequence[TelemetryRecord]) -> SessionSummary:
             record.outcome is TelemetryOutcome.NO_RESPONSE for record in terminals
         ),
         event_count=len(ordered),
+        disconnect_count=sum(record.name == "transport.disconnected" for record in ordered),
+        failure_names=tuple(sorted({record.name for record in ordered if record.outcome in {TelemetryOutcome.ERROR, TelemetryOutcome.TIMEOUT} or record.name == "transport.disconnected"})),
     )

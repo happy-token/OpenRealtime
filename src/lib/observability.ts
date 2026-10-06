@@ -11,7 +11,12 @@ export type MetricAggregate = {
   degraded_count: number;
 };
 
+export type ModuleHealth = { module: string; error_count: number | null; timeout_count: number | null; disconnect_count: number | null; retry_count: number | null; recovery_rate: number | null; recovered_count?: number; recovery_failed_count?: number; affected_session_count?: number };
+
 export type DiagnosticsOverview = {
+  module_health?: ModuleHealth[];
+  failed_turn_count?: number;
+  latency_collection_ready?: boolean;
   since: string;
   until: string;
   session_count: number;
@@ -30,6 +35,8 @@ export type DiagnosticsOverview = {
 };
 
 export type SessionSummary = {
+  disconnect_count?: number;
+  failure_names?: string[];
   voice_session_id: string;
   first_event_at: string;
   last_event_at: string;
@@ -173,11 +180,18 @@ export function metricLabel(name: string): string {
 
 
 export const CORE_LATENCY_METRICS = [
+  "provider.asr.connection_setup", "provider.tts.connection_setup",
+  "jev.eot.slot_wait", "jev.eot.client_ready", "jev.eot.request",
   "asr.speech_start_to_first_text", "asr.last_frame_to_final_text",
   "llm.request_to_first_text", "tts.first_text_to_first_audio",
   "turn_policy.eot_classify", "semantic_interruption.classify",
 ] as const;
 export const METRIC_DESCRIPTIONS: Record<string, string> = {
+  "jev.eot.slot_wait": "判停调用开始获取 JEV 并发槽位 → 获得槽位；不包含候选文本块在单飞队列中的等待。",
+  "jev.eot.client_ready": "获得槽位 → SDK 客户端准备完成；HTTP 连接可能在后续请求阶段才建立。",
+  "jev.eot.request": "SDK system_one 请求开始 → 完整结果返回，包含网络、HTTP 连接、服务端处理与 SDK 解析；并非纯模型推理。",
+  "provider.asr.connection_setup": "ASR capability 初始化调用开始 → WebSocket 建连并发送配置完成；不代表首文本已返回。",
+  "provider.tts.connection_setup": "TTS 后台预连接开始 → 提供商连接就绪；若已有连接则仅测复用检查，不计入提前完成后的首包延迟。",
   "turn_policy.eot_classify": "语义判停判断开始 → 结果返回，含规则或分类器处理，不含判停前静音等待。",
   "semantic_interruption.classify": "语义打断判断开始 → 结果返回，含规则或分类器处理，不等于客户端实际停播延迟。",
   "asr.speech_start_to_first_text": "VAD 检测到开口 → 首次非空识别文本；含识别所需音频积累与 VAD 检测误差，不含开口前静音。",
@@ -191,9 +205,16 @@ export const METRIC_DESCRIPTIONS: Record<string, string> = {
   "brain.time_to_first_text": "回复请求 → 首文本事件，包含路由、检索与编排，不能视为纯 LLM TTFT。",
   "provider.deepseek.responses.stream": "DeepSeek 整次 Responses 流式请求耗时，不是首 Token 延迟。",
   "provider.deepseek.chat.stream": "DeepSeek 整次 Chat 流式请求耗时，不是首 Token 延迟。",
+  "turn.speech_end_to_client_playback": "VAD 停说时刻估算 → 客户端首播回执。包含静音等待、判停、生成与交付；VAD 边界有检测误差，回执包含网络回传，不是客户端同一时钟的精确测量。",
+  "barge_in.speech_start_to_client_stop": "VAD 检测开口 → 有效抢话后客户端停播回执。仅计有效打断；附和、自然结束、主动挂断不计，含 VAD 检测和回执传输误差。",
   "turn.endpoint_to_client_playback": "端点确认 → 客户端播放回执；不含端点确认前的判停等待。",
 };
 Object.assign(METRIC_LABELS, {
+  "jev.eot.slot_wait": "JEV 判停并发排队",
+  "jev.eot.client_ready": "JEV 判停客户端准备",
+  "jev.eot.request": "JEV 判停请求等待",
+  "provider.asr.connection_setup": "ASR 建立连接延迟",
+  "provider.tts.connection_setup": "TTS 建立连接延迟",
   "asr.speech_start_to_first_text": "ASR 首包延迟",
   "asr.input_to_first_text": "音频输入 → 首文本（含静音等待）",
   "asr.last_frame_to_final_text": "ASR 尾包延迟",
@@ -210,3 +231,44 @@ export function dashboardLatencyMetrics(metrics: MetricAggregate[]) {
 }
 
 export type CollectionHealth = { status: "ok" | "degraded" | "unavailable"; telemetry: { dropped_events: number; pending_events: number; write_error: boolean; storage_backend: string }; debug_log: { dropped_events: number; pending_events: number; write_error: boolean; storage_backend: string } };
+
+export async function loadDiagnosticsOverview(minutes: number, signal: AbortSignal): Promise<{
+  overview: DiagnosticsOverview | null;
+  sessions: SessionSummary[];
+  health: CollectionHealth | null;
+  errors: string[];
+}> {
+  async function getJson<T>(url: string): Promise<T> {
+    const response = await fetch(url, { cache: "no-store", signal });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+    return body;
+  }
+  const [aggregate, list, collection] = await Promise.allSettled([
+    getJson<DiagnosticsOverview>(`/api/observability/overview?minutes=${minutes}`),
+    getJson<SessionSummary[]>(`/api/observability/sessions?minutes=${minutes}&limit=500`),
+    getJson<CollectionHealth>("/api/observability/health"),
+  ]);
+  const errors: string[] = [];
+  const failureMessage = (label: string, reason: unknown) =>
+    reason instanceof Error && reason.message ? `${label}：${reason.message}` : label;
+  if (aggregate.status === "rejected") errors.push(failureMessage("总览指标暂时不可用", aggregate.reason));
+  if (list.status === "rejected") errors.push(failureMessage("会话列表暂时不可用", list.reason));
+  return {
+    overview: aggregate.status === "fulfilled" ? aggregate.value : null,
+    sessions: list.status === "fulfilled" ? list.value : [],
+    health: collection.status === "fulfilled" && collection.value?.telemetry && collection.value?.debug_log ? collection.value : null,
+    errors,
+  };
+}
+
+export function diagnosticModule(name: string): string | null {
+  if (/eot_classifier|eot_classify/.test(name)) return "eot";
+  if (name.includes("interruption")) return "interruption";
+  if (/asr|\.vad/.test(name)) return "asr";
+  if (name.includes("tts")) return "tts";
+  if (/deepseek|llm|\.brain/.test(name)) return "llm";
+  if (name.includes("transport")) return "transport";
+  if (/playback|speech_output/.test(name)) return "playback";
+  return null;
+}

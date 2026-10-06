@@ -18,6 +18,7 @@ from server.conversation_journal import (
     JournalScope,
     TextContent,
 )
+from server.conversation_journal.input_evidence import InputEvidenceRecorder, input_evidence_scope
 from server.core.interaction_context import InteractionContext
 from server.observability.telemetry import DiagnosticsWindow, TelemetryIdentity
 from server.persistence.postgres import PostgresPersistence
@@ -175,6 +176,10 @@ async def test_runtime_deletes_session_telemetry_and_conversation_history() -> N
     )
     telemetry.record("turn.total", duration_ms=100)
 
+    evidence = InputEvidenceRecorder(runtime.journal, context=context, on_failure=lambda _: None)
+    await evidence.offer("input-1", "asr_revision", {"suffix": "delete me"}).committed
+    await evidence.close()
+
     runtime.debug_log.bind("voice-delete").log("turn", "decision", "delete me")
     runtime.debug_log.bind("voice-keep").log("turn", "decision", "keep me")
 
@@ -183,7 +188,8 @@ async def test_runtime_deletes_session_telemetry_and_conversation_history() -> N
         ["voice-delete"], tenant_id="local", user_id="user"
     )
 
-    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1}
+    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1, "deleted_evidence_threads": 1}
+    assert await runtime.journal.read(input_evidence_scope(context)) == ()
     assert not await runtime.debug_log_query.session_timeline("voice-delete")
     assert len(await runtime.debug_log_query.session_timeline("voice-keep")) == 1
     assert await runtime.diagnostics.session_detail("voice-delete") is None
@@ -235,3 +241,102 @@ async def test_postgres_runtime_owns_pool_without_running_migrations() -> None:
     await runtime.close()
 
     assert pool.closed is True
+
+
+async def test_delete_origin_session_preserves_resumed_session_history_and_diagnostics():
+    from dataclasses import replace
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    origin = InteractionContext(tenant_id="tenant", user_id="user", device_id="device", voice_session_id="origin",
+                                thread_id="origin", turn_id="turn", generation=1)
+    resumed = replace(origin, voice_session_id="resumed", generation=2)
+    try:
+        for ctx in (origin, resumed):
+            await runtime.journal.append(ConversationItemDraft(
+                item_id=ctx.voice_session_id, context=ctx, kind=ConversationItemKind.USER_INPUT,
+                status=ConversationItemStatus.COMMITTED, producer="test", content=(TextContent(ctx.voice_session_id),)))
+            runtime.telemetry.bind(TelemetryIdentity(ctx.tenant_id, ctx.user_id, ctx.device_id,
+                                  ctx.voice_session_id, ctx.thread_id)).record("interaction.collection_ready")
+        result = await runtime.delete_session_history(["origin"], tenant_id="local", user_id="local-user")
+        assert result["deleted_threads"] == 0
+        assert len(await runtime.journal.read(JournalScope.from_context(origin))) == 2
+        assert await runtime.diagnostics.session_detail("origin") is None
+        assert await runtime.diagnostics.session_detail("resumed") is not None
+    finally:
+        await runtime.close()
+
+
+async def test_delete_origin_retains_thread_referenced_by_active_session_without_items():
+    from dataclasses import replace
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    origin = InteractionContext(tenant_id="tenant", user_id="user", device_id="device", voice_session_id="origin",
+                                thread_id="origin", turn_id="turn", generation=1)
+    resumed = replace(origin, voice_session_id="resumed")
+    class Conversation:
+        async def close(self):
+            pass
+    conversation = Conversation()
+    runtime.active_realtime_conversations.register(context=resumed, conversation=conversation)
+    try:
+        await runtime.journal.append(ConversationItemDraft(item_id="origin", context=origin,
+            kind=ConversationItemKind.USER_INPUT, status=ConversationItemStatus.COMMITTED,
+            producer="test", content=(TextContent("retain original context"),)))
+        runtime.telemetry.bind(TelemetryIdentity(origin.tenant_id, origin.user_id, origin.device_id,
+                              origin.voice_session_id, origin.thread_id)).record("interaction.collection_ready")
+        result = await runtime.delete_session_history(["origin"], tenant_id="local", user_id="local-user")
+        assert result["deleted_threads"] == 0
+        assert await runtime.journal.read(JournalScope.from_context(origin))
+    finally:
+        runtime.active_realtime_conversations.unregister(context=resumed, conversation=conversation)
+        await runtime.close()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_thread_deletion_excludes_interleaved_registration_and_releases_guard(monkeypatch, fail):
+    from dataclasses import replace
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    ctx = InteractionContext(tenant_id="tenant", user_id="user", device_id="device", voice_session_id="origin",
+                             thread_id="origin", turn_id="turn", generation=1)
+    resumed = replace(ctx, voice_session_id="resumed")
+    entered, release = asyncio.Event(), asyncio.Event()
+    original_delete = runtime.debug_log.delete_sessions
+
+    async def paused_delete(session_ids):
+        entered.set()
+        await release.wait()
+        if fail:
+            raise RuntimeError("injected delete failure")
+        return await original_delete(session_ids)
+
+    monkeypatch.setattr(runtime.debug_log, "delete_sessions", paused_delete)
+    runtime.telemetry.bind(TelemetryIdentity(ctx.tenant_id, ctx.user_id, ctx.device_id,
+                          ctx.voice_session_id, ctx.thread_id)).record("interaction.collection_ready")
+    await runtime.journal.append(ConversationItemDraft(item_id="origin", context=ctx,
+        kind=ConversationItemKind.USER_INPUT, status=ConversationItemStatus.COMMITTED,
+        producer="test", content=(TextContent("original"),)))
+    deleting = asyncio.create_task(runtime.delete_session_history(["origin"], tenant_id="tenant", user_id="user"))
+    class Conversation:
+        async def close(self):
+            pass
+    conversation = Conversation()
+    try:
+        async with asyncio.timeout(1):
+            await entered.wait()
+        with pytest.raises(RuntimeError, match="being deleted"):
+            runtime.active_realtime_conversations.register(context=resumed, conversation=conversation)
+        release.set()
+        if fail:
+            with pytest.raises(RuntimeError, match="injected"):
+                await deleting
+            assert await runtime.journal.read(JournalScope.from_context(ctx))
+        else:
+            assert (await deleting)["deleted_threads"] == 1
+        runtime.active_realtime_conversations.register(context=resumed, conversation=conversation)
+        assert runtime.active_realtime_conversations.resolve(resumed) is not None
+    finally:
+        release.set()
+        await asyncio.gather(deleting, return_exceptions=True)
+        runtime.active_realtime_conversations.unregister(context=resumed, conversation=conversation)
+        await runtime.close()

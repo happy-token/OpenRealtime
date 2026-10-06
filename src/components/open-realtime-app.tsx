@@ -532,7 +532,7 @@ export function OpenRealtimeApp({
   }, [engine]);
 
   const toggleSessionPause = useCallback(async () => {
-    if (sessionPaused) {
+    if (sessionPaused || !engine.micActive) {
       await retryMicrophone();
       return;
     }
@@ -795,7 +795,7 @@ export function OpenRealtimeApp({
               roleId={initialRole?.role_id}
               setAvatarAudioSink={engine.setAvatarAudioSink}
               reducedMotion={reducedMotion}
-              captionsEnabled={captionsEnabled && pageForm !== "sidecar"}
+              captionsEnabled={captionsEnabled && pageForm === "fullscreen"}
               onAvatarRendererReady={handleAvatarRendererReady}
               onAvatarAmbientColorChange={setAvatarAmbientColor}
               publicVoiceEnabled={publicVoiceEnabled}
@@ -820,12 +820,11 @@ export function OpenRealtimeApp({
             />}
             controls={sessionReview ? null : <SessionControlBar
               pageForm={pageForm}
-              paused={sessionPaused}
+              paused={sessionPaused || !engine.micActive}
               captionsEnabled={captionsEnabled}
               onPageFormChange={handlePageFormChange}
               onCaptionsChange={setCaptionsEnabled}
               onPauseToggle={toggleSessionPause}
-              onOpenSettings={() => openSettings()}
               onTerminate={terminateSession}
               onSendText={engine.sendText}
               assistantBusy={engine.state === "thinking" || engine.state === "speaking"}

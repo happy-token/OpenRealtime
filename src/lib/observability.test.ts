@@ -15,6 +15,8 @@ describe("observability presentation", () => {
     expect(metricLabel("asr.speech_start_to_first_text")).toBe("ASR 首包延迟");
     expect(metricLabel("asr.last_frame_to_final_text")).toBe("ASR 尾包延迟");
     expect(metricLabel("tts.first_text_to_first_audio")).toBe("TTS 首包延迟");
+    expect(metricLabel("provider.asr.connection_setup")).toBe("ASR 建立连接延迟");
+    expect(metricLabel("provider.tts.connection_setup")).toBe("TTS 建立连接延迟");
     expect(metricLabel("provider.custom")).toBe("provider.custom");
   });
 });

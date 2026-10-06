@@ -45,12 +45,12 @@ from server.realtime.capabilities import (
     StartTts,
     SubmitBrainToolResult,
     TtsAudioFrame,
-    TtsTextAlignment,
     TtsCancelled,
     TtsCapabilityProvider,
     TtsCapabilitySession,
     TtsCompleted,
     TtsFailed,
+    TtsTextAlignment,
     UserTurnCommitted,
     resolve_spoken_content,
 )
@@ -61,7 +61,10 @@ from server.realtime.capabilities import (
     DialogueStateChanged as CapabilityDialogueStateChanged,
 )
 from server.realtime.capabilities.asr import AsrCapabilityProvider
-from server.realtime.capabilities.turn_manager import TurnManagerCapabilityProvider
+from server.realtime.capabilities.turn_manager import (
+    SemanticInputRejected,
+    TurnManagerCapabilityProvider,
+)
 from server.realtime.capabilities.vad import VadCapabilityProvider
 from server.realtime.errors import ContextVisibilityError
 from server.realtime.plugins import AudioPluginGraph
@@ -303,6 +306,7 @@ class CascadedRealtimeConversation:
         self._commands_by_idempotency_key: dict[str, RealtimeCommand] = {}
         self._sequence = 0
         self._projected_items: dict[int, ConversationItem] = {}
+        self._input_pipeline.set_prefetch_turn_builder(self._turn_for_prefetch)
         self._projected_sequence_by_item_id: dict[str, int] = {}
         self._last_projected_thread_sequence = 0
         self._response_sequence_by_id: dict[str, int] = {}
@@ -1007,6 +1011,25 @@ class CascadedRealtimeConversation:
         except asyncio.CancelledError:
             pass
 
+    def _prior_model_items(self, before_sequence: int) -> tuple[ConversationItem, ...]:
+        superseded_turns = {
+            item.provider_metadata.get("continuation_of_turn_id")
+            for item in self._projected_items.values() if item.sequence <= before_sequence
+        }
+        return tuple(
+            self._projected_items[sequence]
+            for sequence in sorted(self._projected_items)
+            if sequence < before_sequence and not (
+                self._projected_items[sequence].context.turn_id in superseded_turns
+                and self._projected_items[sequence].kind in {ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT}
+            )
+        )
+
+    async def _turn_for_prefetch(self, text: str, generation: int) -> TurnContent:
+        items = self._prior_model_items(max(self._projected_items, default=0) + 1)
+        return TurnContent(text=text, generation=generation,
+            conversation_context=await self._context_projector.project_text(items))
+
     async def _turn_from_projection(
         self,
         minimum_thread_sequence: int,
@@ -1028,22 +1051,7 @@ class CascadedRealtimeConversation:
                 continue
             text = "\n".join(part.text for part in item.content if isinstance(part, TextContent))
             if text:
-                superseded_turns = {
-                    projected.provider_metadata.get("continuation_of_turn_id")
-                    for projected in self._projected_items.values()
-                    if projected.sequence <= sequence
-                }
-                prior_items = tuple(
-                    self._projected_items[prior_sequence]
-                    for prior_sequence in sorted(self._projected_items)
-                    if prior_sequence < sequence
-                    and not (
-                        self._projected_items[prior_sequence].context.turn_id in superseded_turns
-                        and self._projected_items[prior_sequence].kind in {
-                            ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT
-                        }
-                    )
-                )
+                prior_items = self._prior_model_items(sequence)
                 return TurnContent(
                     text=text,
                     generation=generation,
@@ -1639,6 +1647,7 @@ class CascadedRealtimeConversation:
                         transcript_revision=event.transcript_revision,
                         provider_endpoint_observed=event.provider_endpoint_observed,
                         continuation_of_turn_id=event.continuation_of_turn_id,
+                        speech_ended_ns=event.speech_ended_ns,
                     )
                 )
             elif isinstance(event, CapabilityAssistantYieldRequested):
@@ -1658,6 +1667,7 @@ class CascadedRealtimeConversation:
                         conversation_sequence=self._next_sequence(),
                         occurred_at=datetime.now(UTC),
                         reason=event.reason,
+                        speech_started_ns=event.speech_started_ns,
                     )
                 )
                 if self._active_response_id is not None:
@@ -1716,6 +1726,15 @@ class CascadedRealtimeConversation:
                         error=event.error,
                     )
                 )
+            elif isinstance(event, SemanticInputRejected):
+                await self._emit(RealtimeCapabilityFailed(
+                    event_id=str(uuid.uuid4()), context=event.context,
+                    conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
+                    capability="semantic_input",
+                    error=("本轮输入已停止处理，请缩短内容或分段后重新开始会话。"
+                           + ("输入证据已保存。" if event.evidence_saved else "输入证据未确认保存。")
+                           + f" [{event.reason}]"),
+                ))
 
     async def _pump_audio_plugins(self) -> None:
         assert self._audio_graph is not None

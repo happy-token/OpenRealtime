@@ -8,18 +8,35 @@ Canonical five-state events are a compatibility projection, not the authority.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass, replace
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from server.conversation_journal import ConversationItemKind, ConversationVisibility, TextContent
+from server.conversation_journal import (
+    ConversationItemKind,
+    ConversationJournal,
+    ConversationVisibility,
+    TextContent,
+)
+from server.conversation_journal.input_evidence import (
+    EvidenceReceipt,
+    InputEvidenceRecorder,
+    InputEvidenceUnavailable,
+)
 from server.core.interaction_context import InteractionContext
-from server.observability.telemetry import SessionDebugLog, SessionTelemetry, TelemetryKind, TelemetryOutcome
+from server.core.turn_content import TurnContent, same_asr_utterance
+from server.observability.telemetry import (
+    SessionDebugLog,
+    SessionTelemetry,
+    TelemetryKind,
+    TelemetryOutcome,
+)
 from server.realtime.capabilities.asr import (
     AsrCommitRejected,
     AsrEndpointHint,
@@ -27,6 +44,10 @@ from server.realtime.capabilities.asr import (
     AsrTranscriptFinal,
 )
 from server.realtime.capabilities.assistant_echo import project_assistant_echo
+from server.realtime.capabilities.response_prefetch_controller import (
+    PrefetchCandidate,
+    ResponsePrefetchController,
+)
 from server.realtime.capabilities.turn_manager import (
     AsrCommitRequested,
     AsrDiscardRequested,
@@ -40,11 +61,13 @@ from server.realtime.capabilities.turn_manager import (
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
+    SemanticInputRejected,
     TurnManagerCommand,
     TurnManagerEvent,
     UserTurnCommitted,
 )
 from server.realtime.capabilities.vad import VadSpeechStarted, VadSpeechStopped
+from server.turn_policy.classifier_execution import ClassificationExecutor, run_classification
 from server.turn_policy.coordination import (
     DefaultTurnCoordinationPolicy,
     FloorOwner,
@@ -59,8 +82,15 @@ from server.turn_policy.eot_classifier import (
     EotRequest,
     classify_eot,
 )
+from server.turn_policy.interruption_rules import InterruptionRuleContext, InterruptionRuleProvider
+from server.turn_policy.plugins.rule_first_interruption_classifier import (
+    ExactInterruptionRules,
+    RuleFirstInterruptionClassifier,
+)
 from server.turn_policy.policy import TurnPolicy
-from server.turn_policy.semantic_input import SemanticInputState, TextBoundary
+from server.turn_policy.semantic_chunk_scheduler import SemanticChunkScheduler
+from server.turn_policy.semantic_chunks import SemanticChunk, SemanticChunkBuffer, semantic_text
+from server.turn_policy.semantic_input import SemanticInputBudget, SemanticInputState, TextBoundary
 from server.turn_policy.semantic_interruption import (
     InterruptionBoundary,
     InterruptionCandidate,
@@ -69,8 +99,8 @@ from server.turn_policy.semantic_interruption import (
     InterruptionRequest,
     InterruptionVerdict,
     classify_interruption,
-    match_interruption_rule,
 )
+from server.turn_policy.semantic_task_registry import SemanticTaskRegistry
 from server.turn_policy.states import DialogueState
 
 logger = logging.getLogger(__name__)
@@ -90,18 +120,33 @@ class _Input:
     acoustic_version: int = 0
     endpoint: EotClassification | None = None
     verdict: InterruptionVerdict | None = None
+    verdict_prefix: str | None = None
     yielded: bool = False
+    floor_claim_confirmed: bool = False
+    speech_started_ns: int | None = None
+    speech_ended_ns: int | None = None
     yield_pending: bool = False
     commit_pending: bool = False
     provider_endpoint: bool = False
     boundary: TextBoundary = TextBoundary.PARTIAL
     started_us: int = 0
     last_judged_text: str = ""
+    chunks: SemanticChunkScheduler | None = None
+    semantic_chunk: SemanticChunk | None = None
+    prior_chunks: tuple[str, ...] = ()
+    chunk_feedback_only: bool = True
     vad_observed: bool = False
     assistant_text_at_onset: str = ""
     before_playback: bool = False
     continuation_text: str = ""
     continuation_of_turn_id: str | None = None
+    created_ns: int = field(default_factory=time.monotonic_ns)
+    observations: int = 0
+    evidence_text: str = ""
+    evidence_id: str | None = None
+    evidence_bytes: int = 0
+    blocked: bool = False
+    rejected_text: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +165,7 @@ class _Result:
     kind: str
     value: EotClassification | InterruptionVerdict
     token: str
+    chunk_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +174,26 @@ class _Timer:
     revision: int
     acoustic_version: int
     kind: str
+    chunk_prefix: str | None = None
+    semantic_prefix: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _InputBudgetDeadline:
+    identity: str
+
+
+@dataclass(frozen=True, slots=True)
+class _EvidenceFault:
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class _InputRejectionResult:
+    identity: str
+    reason: str
+    evidence_id: str | None
+    saved: bool
 
 
 class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter):
@@ -142,13 +208,27 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         *args: Any,
         coordination_policy_factory: Callable[[], TurnCoordinationPolicy] | None = None,
         recovery_timeout_ms: float = 10000,
+        semantic_chunks_enabled: bool = False,
+        semantic_chunk_concurrency: int = 1,
+        interruption_chunk_chars: int = 5,
+        chunk_stability_ms: float = 120,
+        response_prefetch_enabled: bool = False,
+        interruption_rules: InterruptionRuleProvider | None = None,
         telemetry: SessionTelemetry | None = None,
         debug_log: SessionDebugLog | None = None,
+        input_budget: SemanticInputBudget | None = None,
+        input_evidence_journal: ConversationJournal | None = None,
+        input_evidence_timeout_s: float = 1,
         **kwargs: Any,
     ) -> None:
         if args and (len(args) != 1 or args[0] is not TurnPolicy):
             raise ValueError("Use coordination_policy_factory to replace coordinator decisions")
         super().__init__(*(args or (TurnPolicy,)), **kwargs)
+        if not math.isfinite(input_evidence_timeout_s) or input_evidence_timeout_s <= 0:
+            raise ValueError("input evidence timeout must be finite and positive")
+        self.input_budget = input_budget or SemanticInputBudget()
+        self.input_evidence_journal = input_evidence_journal
+        self.input_evidence_timeout_s = input_evidence_timeout_s
         if not math.isfinite(recovery_timeout_ms) or recovery_timeout_ms <= 0:
             raise ValueError("recovery_timeout_ms must be finite and positive")
         for value in (
@@ -161,6 +241,16 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         ):
             if not math.isfinite(value) or value < 0:
                 raise ValueError("coordination timings must be finite and non-negative")
+        if not math.isfinite(chunk_stability_ms) or chunk_stability_ms < 0:
+            raise ValueError("chunk stability must be finite and non-negative")
+        SemanticChunkBuffer(character_limit=interruption_chunk_chars)
+        self.interruption_rules = interruption_rules if interruption_rules is not None else ExactInterruptionRules()
+        self.response_prefetch_enabled = response_prefetch_enabled
+        SemanticChunkScheduler(character_limit=interruption_chunk_chars, max_concurrency=semantic_chunk_concurrency)
+        self.semantic_chunk_concurrency = semantic_chunk_concurrency
+        self.semantic_chunks_enabled = semantic_chunks_enabled
+        self.interruption_chunk_chars = interruption_chunk_chars
+        self.chunk_stability_ms = chunk_stability_ms
         self.recovery_timeout_ms = recovery_timeout_ms
         self.coordination_policy_factory = coordination_policy_factory or (
             lambda: DefaultTurnCoordinationPolicy(
@@ -180,6 +270,8 @@ class CoordinatedTurnManagerSession:
         self, provider: CoordinatedTurnManagerCapabilityAdapter, context: InteractionContext
     ) -> None:
         self._provider = provider
+        if provider._telemetry is not None:
+            provider._telemetry.record("interaction.collection_ready", attributes={"measurement": "server_vad_receipt_estimate"})
         self._context = context
         self._policy = provider.coordination_policy_factory()
         self._input: _Input | None = None
@@ -194,13 +286,113 @@ class CoordinatedTurnManagerSession:
         self._floor = FloorOwner.USER
         self._inbox: asyncio.Queue[Any] = asyncio.Queue(maxsize=64)
         self._outbox: asyncio.Queue[Any] = asyncio.Queue(maxsize=64)
-        self._jobs: dict[str, asyncio.Task[None]] = {}
-        self._all_jobs: set[asyncio.Task[None]] = set()
+        self._tasks = SemanticTaskRegistry()
+        self._classifier_executor = ClassificationExecutor(provider.semantic_chunk_concurrency)
+        self._jobs = self._tasks.jobs
+        self._all_jobs = self._tasks.all_tasks
         self._closed = False
         self._failure: Exception | None = None
-        self._requests: dict[str, str] = {}
         self._deferred_input: list[ObserveVadEvent | ObserveAsrEvent] = []
+        self._evidence_fault_reported = False
+        self._evidence = InputEvidenceRecorder(
+            provider.input_evidence_journal, context=context, on_failure=self._notify_evidence_failure,
+            write_timeout_s=provider.input_evidence_timeout_s,
+        ) if provider.input_evidence_journal is not None else None
+        self._interruption_decider = RuleFirstInterruptionClassifier(model_call=self._classify_interruption_model, rules=provider.interruption_rules)
+        self._prefetch = ResponsePrefetchController(provider._response_prefetcher,
+            enabled=provider.response_prefetch_enabled, is_current=self._prefetch_is_current,
+            observer=lambda operation, generation, attributes: self._log_prefetch(operation, generation, **attributes))
         self._actor = asyncio.create_task(self._run(), name="turn-coordinator")
+
+    def set_prefetch_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
+        self._prefetch.set_turn_builder(builder)
+
+    def _notify_evidence_failure(self, reason: str) -> None:
+        if self._closed:
+            return
+        try:
+            self._inbox.put_nowait((_EvidenceFault(reason), None))
+        except asyncio.QueueFull:
+            pass  # Every queued event also checks recorder.failure before changing input state.
+
+    def _record_input_evidence(self, item: _Input, event: str, detail: dict[str, Any], *, snapshot: str | None = None) -> EvidenceReceipt | None:
+        if self._evidence is None or item.blocked:
+            return None
+        try:
+            receipt = self._evidence.offer(item.identity, event, {
+                "generation": item.context.generation, "turn_id": item.context.turn_id,
+                "revision": item.revision, "target_response_id": item.target_response, **detail,
+            }, context=item.context)
+        except InputEvidenceUnavailable:
+            self._begin_input_rejection(item, "input_evidence_unavailable", item.text if snapshot is None else snapshot,
+                                        observed_revision=detail.get("revision", item.revision))
+            return None
+        item.evidence_bytes += receipt.size_bytes
+        if item.evidence_bytes > self._provider.input_budget.max_evidence_bytes:
+            self._begin_input_rejection(item, "input_evidence_bytes", item.text if snapshot is None else snapshot,
+                                        observed_revision=detail.get("revision", item.revision))
+        return receipt
+
+    def _begin_input_rejection(self, item: _Input, reason: str, text: str, *, observed_revision: int | None = None) -> None:
+        if item.blocked:
+            return
+        item.blocked = True
+        item.rejected_text = text
+        self._deferred_input.clear()
+        self._tasks.clear()
+        if item.chunks is not None:
+            item.chunks.cancel_active()
+        self._prefetch.invalidate(reason)
+        receipt = None
+        captured = False
+        if self._evidence is not None:
+            # Capture a complete terminal snapshot when it fits the separate evidence limit.
+            # Unexpectedly huge provider payloads are explicitly marked uncaptured, never sliced.
+            captured = len(text) <= 16 * 1024 and len(text.encode("utf-8")) <= 32 * 1024
+            try:
+                receipt = self._evidence.offer(item.identity, "input_rejected", {
+                    "reason": reason, "accepted_revision": item.revision,
+                    "rejected_revision": item.revision if observed_revision is None else observed_revision,
+                    "capture_complete": captured,
+                    "text": text if captured else None, "characters": len(text),
+                }, context=item.context)
+            except InputEvidenceUnavailable:
+                pass  # The actor retains rejected_text and reports the missing commit explicitly.
+
+        async def finish() -> None:
+            saved = False
+            if receipt is not None:
+                try:
+                    async with asyncio.timeout(self._provider.input_evidence_timeout_s + 0.1):
+                        committed = await asyncio.shield(receipt.committed)
+                        saved = captured and receipt.durable and committed.item_id == receipt.item_id
+                except (InputEvidenceUnavailable, TimeoutError):
+                    pass
+            await self._inbox.put((_InputRejectionResult(
+                item.identity, reason, receipt.item_id if receipt is not None else None, saved,
+            ), None))
+
+        self._job("input_rejection", finish())
+
+    def _prefetch_is_current(self, candidate: PrefetchCandidate) -> bool:
+        item = self._input
+        return bool(item is not None and not item.blocked and item.identity == candidate.identity and not item.commit_pending
+                    and item.target_response is None and same_asr_utterance(item.text, candidate.text))
+
+    def _log_prefetch(self, operation: str, generation: int, **attributes: Any) -> None:
+        if self._provider._telemetry is not None:
+            self._provider._telemetry.record("response.prefetch", generation=generation,
+                attributes={"operation": operation, **attributes})
+        if self._provider._debug_log is not None:
+            self._provider._debug_log.log("llm", "prefetch", operation, generation=generation, detail=attributes)
+
+    def _maybe_prefetch(self, item: _Input) -> None:
+        if item.blocked:
+            return
+        self._prefetch.prepare(PrefetchCandidate(identity=item.identity, generation=item.context.generation,
+            text=item.text, revision=item.revision, speech_active=item.speech_active,
+            interrupted=item.target_response is not None, continuation=bool(item.continuation_of_turn_id),
+            committed=item.commit_pending))
 
     def snapshot(self) -> TurnCoordinationSnapshot:
         item = self._input
@@ -261,7 +453,7 @@ class CoordinatedTurnManagerSession:
         except Exception as error:
             self._failure = error
             logger.exception("Turn coordination failed")
-            self._cancel(*tuple(self._jobs))
+            self._tasks.clear()
             await self._outbox.put(_CLOSED)
         finally:
             if done is not None and not done.done():
@@ -272,24 +464,22 @@ class CoordinatedTurnManagerSession:
                     done.set_exception(RuntimeError("Turn coordinator stopped"))
 
     def _job(self, key: str, operation: Any) -> None:
-        previous = self._jobs.pop(key, None)
-        if previous:
-            previous.cancel()
-        task = asyncio.create_task(operation, name=f"turn-{key}")
-        self._jobs[key] = task
-        self._all_jobs.add(task)
-        task.add_done_callback(self._all_jobs.discard)
+        self._tasks.start(key, operation)
 
     def _cancel(self, *keys: str) -> None:
-        for key in keys:
-            task = self._jobs.pop(key, None)
-            if task:
-                task.cancel()
+        self._tasks.cancel(*keys)
 
     def _timer(self, kind: str, delay_ms: float, item: _Input) -> None:
         if not math.isfinite(delay_ms) or delay_ms < 0:
             raise ValueError("coordination wait must be finite and non-negative")
-        message = _Timer(item.identity, item.revision, item.acoustic_version, kind)
+        message = _Timer(
+            item.identity,
+            item.revision,
+            item.acoustic_version,
+            kind,
+            item.chunks.stability_prefix if item.chunks else None,
+            semantic_text(item.text) if kind == "commit" and item.chunks else None,
+        )
 
         async def wait() -> None:
             await asyncio.sleep(delay_ms / 1000)
@@ -299,16 +489,23 @@ class CoordinatedTurnManagerSession:
 
     def _current(self, message: _Result | _Timer) -> _Input | None:
         item = self._input
-        return (
-            item
-            if (
-                item
-                and not item.commit_pending
-                and item.identity == message.identity
-                and item.revision == message.revision
-            )
-            else None
-        )
+        if item is None or item.commit_pending or item.identity != message.identity:
+            return None
+        if isinstance(message, _Timer):
+            if message.kind == "chunks":
+                return item  # Stability is checked against the scheduler in _handle.
+            if message.kind == "commit" and message.semantic_prefix is not None:
+                # Equivalent ASR revisions retain the same absolute commit deadline.
+                # Meaningful rewrites invalidate it even if a provider reuses revision.
+                return item if semantic_text(item.text) == message.semantic_prefix else None
+            return item if item.revision == message.revision else None
+        if item.revision == message.revision or (
+            message.chunk_id is not None
+            and item.chunks is not None
+            and item.chunks.matches_active(message.chunk_id)
+        ):
+            return item
+        return None
 
     def _defer_input(self, event: ObserveVadEvent | ObserveAsrEvent) -> None:
         if len(self._deferred_input) >= 64:
@@ -318,6 +515,15 @@ class CoordinatedTurnManagerSession:
     def _ensure_input(self, context: InteractionContext) -> _Input:
         if self._input is None:
             self._input = _Input(str(uuid.uuid4()), context, self._response_id, assistant_text_at_onset=self._assistant_text)
+            identity = self._input.identity
+
+            async def deadline() -> None:
+                await asyncio.sleep(self._provider.input_budget.max_duration_ms / 1000)
+                await self._inbox.put((_InputBudgetDeadline(identity), None))
+
+            self._job("input_budget_duration", deadline())
+            if self._provider.semantic_chunks_enabled:
+                self._input.chunks = SemanticChunkScheduler(character_limit=self._provider.interruption_chunk_chars if self._response_id else 64, max_concurrency=self._provider.semantic_chunk_concurrency)
             if (
                 self._last_committed and (self._awaiting_response or (
                     self._response_id and not self._response_playback_started
@@ -378,6 +584,37 @@ class CoordinatedTurnManagerSession:
             self._state = state
 
     async def _handle(self, event: Any) -> None:
+        if self._evidence is not None and self._evidence.failure and not self._evidence_fault_reported:
+            self._evidence_fault_reported = True
+            if self._input is not None:
+                self._begin_input_rejection(self._input, "input_evidence_unavailable", self._input.text)
+            else:
+                self._tasks.clear()
+                self._prefetch.invalidate("input_evidence_unavailable")
+                await self._outbox.put(SemanticInputRejected(
+                    context=self._context, reason="input_evidence_unavailable",
+                    evidence_id=None, evidence_saved=False,
+                ))
+        if isinstance(event, _EvidenceFault):
+            return
+        if isinstance(event, _InputBudgetDeadline):
+            item = self._input
+            if item is not None and item.identity == event.identity and not item.commit_pending:
+                self._begin_input_rejection(item, "input_duration", item.text)
+            return
+        if isinstance(event, _InputRejectionResult):
+            item = self._input
+            if item is None or item.identity != event.identity or not item.blocked:
+                return
+            await self._outbox.put(SemanticInputRejected(
+                context=item.context, reason=event.reason, evidence_id=event.evidence_id,
+                evidence_saved=event.saved,
+            ))
+            if event.saved:
+                await self._outbox.put(AsrDiscardRequested(context=item.context, reason=event.reason))
+                self._input = None
+            self._tasks.clear()
+            return
         if isinstance(event, (_Result, _Timer)):
             if isinstance(event, _Timer) and event.kind in {"asr_final", "yield_ack"}:
                 pending = self._input
@@ -393,18 +630,80 @@ class CoordinatedTurnManagerSession:
                     raise TimeoutError(f"Turn coordination missing {event.kind}")
                 return
             item = self._current(event)
-            if item is None:
+            if item is None or item.blocked:
                 return
             if isinstance(event, _Result):
-                if self._requests.get(event.kind) != event.token:
+                if not self._tasks.accept(event.kind, event.chunk_id, event.token):
+                    return
+                chunk = None
+                if event.chunk_id is not None:
+                    feedback = None
+                    if isinstance(event.value, InterruptionVerdict):
+                        disposition = self._policy.interruption(event.value)
+                        feedback = (
+                            event.value.label is InterruptionLabel.BACKCHANNEL
+                            and event.value.source != "fallback"
+                            and not disposition.stop_response
+                            and not disposition.admit_input
+                        )
+                    chunk = item.chunks.complete(event.chunk_id, feedback=feedback) if item.chunks else None
+                    if chunk is None:
+                        return
+                    self._log_chunk(item, chunk, "result", {"outcome": "accepted", "result": str(event.value)})
+                label = event.value.label if isinstance(event.value, InterruptionVerdict) else event.value.decision
+                self._record_input_evidence(item, "classification_result", {
+                    "chunk_id": event.chunk_id,
+                    "semantic_end": chunk.semantic_end if chunk is not None else None,
+                    "current_asr_evidence_id": item.evidence_id, "candidate_revision": event.revision,
+                    "request_token": event.token,
+                    "kind": event.kind, "label": label.value, "source": event.value.source,
+                    "confidence": event.value.confidence,
+                })
+                if item.blocked:
                     return
                 if isinstance(event.value, EotClassification):
-                    item.endpoint = event.value
+                    if event.chunk_id is None or (chunk is not None and chunk.semantic_end == len(semantic_text(item.text))):
+                        item.endpoint = event.value
                 else:
+                    if item.floor_claim_confirmed or item.yield_pending:
+                        return
+                    # Before STOP is issued, a full-input negative verdict supersedes
+                    # an older positive prefix. After STOP, the lock above wins.
+                    # Full-input means the entire candidate snapshot, not SentenceEnd.
+                    # Retaining input (admit_input) is separate from rejecting stale STOP.
+                    # Only the tail-rule feedback proof needs permission to discard it.
+                    full_prefix = semantic_text(item.text)
+                    latest_rejects_stop = (
+                        item.verdict is not None
+                        and item.verdict_prefix == full_prefix
+                        and item.verdict.label in {InterruptionLabel.IGNORE, InterruptionLabel.BACKCHANNEL}
+                    )
+                    if (event.chunk_id is not None and chunk is not None
+                            and chunk.semantic_end != len(full_prefix)
+                            and (item.yielded or not event.value.should_stop or latest_rejects_stop)):
+                        self._log_chunk(item, chunk, "result_ignored", {
+                            "reason": "playback_completed_prefix" if item.yielded else "superseded_by_full_input" if latest_rejects_stop else "non_stopping_prefix",
+                        })
+                        self._drain_chunks(item)
+                        await self._advance(item)
+                        return
                     item.verdict = event.value
+                    item.verdict_prefix = full_prefix[:chunk.semantic_end] if event.chunk_id is not None and chunk is not None else full_prefix
                     action = self._policy.interruption(event.value)
-                    if action.stop_response:
+                    if action.stop_response and not item.yielded:
+                        item.floor_claim_confirmed = True
+                        self._cancel("interruption_model", "chunks")
+                        if item.chunks is not None:
+                            item.chunks.cancel_active()
                         await self._yield(item)
+                if event.chunk_id is not None:
+                    self._drain_chunks(item)
+                await self._advance(item)
+            elif event.kind == "chunks":
+                if item.chunks is None or event.chunk_prefix != item.chunks.stability_prefix:
+                    return
+                self._jobs.pop("chunks", None)
+                self._collect_chunks(item, stable=True)
                 await self._advance(item)
             elif event.kind == "interruption":
                 self._start_interruption_judge(
@@ -425,8 +724,13 @@ class CoordinatedTurnManagerSession:
                     raise TimeoutError(
                         "ASR stalled during speech; input recovery deadline exceeded"
                     )
-                if item.target_response and not item.yielded:
-                    await self._yield(item)
+                if item.target_response and not item.floor_claim_confirmed and not item.yielded:
+                    # A recovery deadline is not evidence of a floor claim.
+                    await self._outbox.put(AsrDiscardRequested(context=item.context, reason="unresolved_overlap"))
+                    self._input = None
+                    self._tasks.clear()
+                    await self._project(item.context)
+                    return
                 item.endpoint = EotClassification(EotDecision.COMPLETE, source="recovery_deadline")
                 await self._advance(item, force=True)
             elif event.acoustic_version == item.acoustic_version:
@@ -442,6 +746,8 @@ class CoordinatedTurnManagerSession:
                         audio_timestamp_us=item.timestamp_us,
                         silence_duration_us=0,
                     )
+                    if self._provider.semantic_chunks_enabled:
+                        self._collect_chunks(item, force=True)
                     await self._advance(item)
                 elif event.kind == "commit":
                     await self._advance(item, force=True)
@@ -487,7 +793,11 @@ class CoordinatedTurnManagerSession:
             self._response_playback_started = False
             item = self._input
             if item and not item.commit_pending and item.target_response != event.response_id:
+                self._prefetch.invalidate("target_response_changed")
                 self._cancel("yield_ack", "interruption_model", "interruption", "endpoint_model", "commit")
+                if self._provider.semantic_chunks_enabled:
+                    item.chunks = SemanticChunkScheduler(character_limit=self._provider.interruption_chunk_chars, max_concurrency=self._provider.semantic_chunk_concurrency)
+                    self._cancel("chunks")
                 item.target_response = event.response_id
                 item.assistant_text_at_onset = ""
                 if (self._last_committed and event.context
@@ -499,10 +809,10 @@ class CoordinatedTurnManagerSession:
                     item.continuation_text = ""
                     item.continuation_of_turn_id = None
                 item.yielded = False
+                item.floor_claim_confirmed = False
                 item.yield_pending = False
                 item.verdict = None
-                if item.continuation_of_turn_id and item.speech_active:
-                    await self._yield(item)
+                item.verdict_prefix = None
                 if item.text:
                     self._judge_interruption(item, InterruptionBoundary(item.boundary.value))
             self._awaiting_response = False
@@ -555,17 +865,21 @@ class CoordinatedTurnManagerSession:
             item.vad_observed = True
             item.timestamp_us = max(item.timestamp_us, observation.audio_timestamp_us)
             if isinstance(observation, VadSpeechStarted):
+                item.speech_started_ns = item.speech_started_ns or time.monotonic_ns()
+                item.speech_ended_ns = None
+                self._prefetch.invalidate("speech_resumed")
                 if not item.started_us:
                     item.started_us = observation.audio_timestamp_us
                 item.speech_active = True
                 item.stop = None
                 self._cancel("idle", "commit")
-                if item.continuation_of_turn_id and item.target_response:
-                    await self._yield(item)
             elif isinstance(observation, VadSpeechStopped):
+                item.speech_ended_ns = time.monotonic_ns() - max(0, observation.silence_duration_us) * 1000
                 item.speech_active = False
                 item.stop = observation
                 if item.text:
+                    if self._provider.semantic_chunks_enabled:
+                        self._collect_chunks(item, force=True)
                     if item.target_response:
                         self._judge_interruption(item, InterruptionBoundary.SENTENCE_END)
                     await self._advance(item)
@@ -583,6 +897,7 @@ class CoordinatedTurnManagerSession:
             item = self._input
             if (
                 item is None
+                or item.blocked
                 or not item.commit_pending
                 or event.context.generation != item.context.generation
                 or event.context.turn_id != item.context.turn_id
@@ -593,11 +908,22 @@ class CoordinatedTurnManagerSession:
                     item.continuation_text + "\n" + event.text
                     if item.continuation_text else event.text
                 )
+                violation = self._provider.input_budget.violation(
+                    committed_text, revisions=item.observations + 1,
+                    elapsed_ms=(time.monotonic_ns() - item.created_ns) / 1e6,
+                )
+                if violation:
+                    self._begin_input_rejection(item, violation, committed_text, observed_revision=event.revision)
+                    return
+                self._record_input_evidence(item, "asr_final", {"text": event.text, "revision": event.revision}, snapshot=committed_text)
+                if item.blocked:
+                    return
                 committed_context = event.context
                 if item.continuation_of_turn_id == event.context.turn_id:
                     committed_context = replace(
                         event.context, turn_id=str(uuid.uuid4()), generation=event.context.generation + 1,
                     )
+                self._prefetch.finalize(committed_text, committed_context.generation)
                 self._last_committed = (committed_context.turn_id, committed_text)
                 self._awaiting_response = True
                 await self._outbox.put(
@@ -608,19 +934,25 @@ class CoordinatedTurnManagerSession:
                         transcript_revision=event.revision,
                         provider_endpoint_observed=item.provider_endpoint,
                         committed_at=datetime.now(UTC),
+                        speech_ended_ns=item.speech_ended_ns,
                     )
                 )
+            if isinstance(event, AsrCommitRejected):
+                self._prefetch.invalidate("commit_rejected")
             self._input = None
-            self._cancel(*tuple(self._jobs))
+            self._tasks.clear()
             deferred, self._deferred_input = self._deferred_input, []
+            final_revision = event.revision if isinstance(event, AsrTranscriptFinal) else None
             for observation in deferred:
                 # Final text already owns revisions through its acknowledged version.
                 if (
                     isinstance(event, AsrTranscriptFinal)
                     and isinstance(observation, ObserveAsrEvent)
+                    and isinstance(observation.event, (AsrTranscriptDelta, AsrEndpointHint, AsrTranscriptFinal))
                     and observation.event.context.generation == event.context.generation
                     and observation.event.context.turn_id == event.context.turn_id
-                    and observation.event.revision <= event.revision
+                    and final_revision is not None
+                    and observation.event.revision <= final_revision
                 ):
                     continue
                 await self._handle(observation)
@@ -641,12 +973,53 @@ class CoordinatedTurnManagerSession:
             )
             return
         item = self._ensure_input(event.context)
+        if item.blocked:
+            return
+        if self._evidence is not None and self._evidence.failure:
+            self._begin_input_rejection(item, "input_evidence_unavailable", text, observed_revision=event.revision)
+            return
         if item.commit_pending:
+            violation = self._provider.input_budget.violation(
+                text, revisions=item.observations + len(self._deferred_input) + 1,
+                elapsed_ms=(time.monotonic_ns() - item.created_ns) / 1e6,
+            )
+            if violation:
+                self._begin_input_rejection(item, violation, text, observed_revision=event.revision)
+                return
             self._defer_input(ObserveAsrEvent(event=event))
             return
         if event.revision < item.revision:
             return
         changed = item.text != text or item.revision != event.revision
+        observed_boundary = TextBoundary.SENTENCE_END if isinstance(event, AsrEndpointHint) else TextBoundary.PARTIAL
+        if changed or item.boundary != observed_boundary:
+            violation = self._provider.input_budget.violation(
+                text, revisions=item.observations + 1,
+                elapsed_ms=(time.monotonic_ns() - item.created_ns) / 1e6,
+            )
+            if violation:
+                self._begin_input_rejection(item, violation, text, observed_revision=event.revision)
+                return
+            common = 0
+            for previous, current in zip(item.evidence_text, text):
+                if previous != current:
+                    break
+                common += 1
+            receipt = self._record_input_evidence(item, "asr_revision", {
+                "revision": event.revision, "boundary": "sentence_end" if isinstance(event, AsrEndpointHint) else "partial",
+                "replace_from": common, "suffix": text[common:], "previous_item_id": item.evidence_id,
+                "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            }, snapshot=text)
+            if item.blocked:
+                item.rejected_text = text
+                return
+            item.observations += 1
+            item.evidence_text = text
+            item.evidence_id = receipt.item_id if receipt is not None else None
+        same_semantic_snapshot = (
+            self._provider.semantic_chunks_enabled
+            and semantic_text(item.text) == semantic_text(text)
+        )
         previous_boundary = item.boundary
         item.boundary = (
             TextBoundary.SENTENCE_END
@@ -656,10 +1029,19 @@ class CoordinatedTurnManagerSession:
         item.provider_endpoint |= isinstance(event, AsrEndpointHint)
         item.timestamp_us = max(item.timestamp_us, getattr(event, "audio_timestamp_us", 0))
         if changed:
+            self._prefetch.observe_text(text)
             item.text, item.revision = text, event.revision
-            item.endpoint = None
-            item.verdict = None
-            self._cancel("commit", "interruption_model")
+            # The chunk scheduler deduplicates punctuation/whitespace-only updates.
+            # Keep their accepted evidence because no replacement call will be issued.
+            if not same_semantic_snapshot:
+                item.endpoint = None
+            if not same_semantic_snapshot and not item.yielded and not item.yield_pending:
+                item.verdict = None
+                item.verdict_prefix = None
+            if not same_semantic_snapshot:
+                self._cancel("commit")
+            if not self._provider.semantic_chunks_enabled:
+                self._cancel("interruption_model")
             self._judge_endpoint(item)
             self._timer("recovery", self._provider.recovery_timeout_ms, item)
         elif previous_boundary is not item.boundary:
@@ -676,7 +1058,85 @@ class CoordinatedTurnManagerSession:
         await self._advance(item)
         await self._project(event.context)
 
+    def _log_chunk(self, item: _Input, chunk: SemanticChunk, event: str, detail: dict[str, Any]) -> None:
+        if event != "sealed":
+            self._record_input_evidence(item, "chunk_" + event, {
+                "chunk_id": chunk.chunk_id, "chunk_text": chunk.text,
+                "chunk_revision": chunk.revision,
+                "semantic_end": chunk.semantic_end, "asr_evidence_id": item.evidence_id,
+                **{key: value for key, value in detail.items() if key not in {"classified_text", "result"}},
+            })
+        if self._provider._debug_log is not None:
+            self._provider._debug_log.log("interruption" if item.target_response else "eot", f"chunk_{event}", f"chunk {chunk.sequence}: {chunk.trigger}", generation=item.context.generation, turn_id=item.context.turn_id, detail={"chunk_id": chunk.chunk_id, "chunk_text": chunk.text, "revision": chunk.revision, "target_response_id": item.target_response, **detail})
+
+    def _collect_chunks(self, item: _Input, *, stable: bool = False, force: bool = False) -> None:
+        if item.chunks is None or not item.text or item.commit_pending or item.blocked:
+            return
+        if item.continuation_of_turn_id and item.target_response is None:
+            return
+        update = item.chunks.observe(item.text, revision=item.revision,
+            stable=stable or item.boundary is TextBoundary.SENTENCE_END, force=force)
+        if item.chunks.history_size > self._provider.input_budget.max_chunks:
+            self._begin_input_rejection(item, "input_chunks", item.text)
+            return
+        for offset in range(0, len(update.sealed), 128):
+            self._record_input_evidence(item, "chunks_sealed", {
+                "asr_evidence_id": item.evidence_id,
+                "chunks": [{"chunk_id": chunk.chunk_id, "text": chunk.text,
+                            "semantic_end": chunk.semantic_end, "trigger": chunk.trigger}
+                           for chunk in update.sealed[offset:offset + 128]],
+            })
+            if item.blocked:
+                return
+        for invalidated in update.invalidated_candidates:
+            self._log_chunk(item, invalidated, "invalidated", {"reason": "asr_rewrite"})
+            family = "interruption_model" if item.target_response else "endpoint_model"
+            self._cancel(family + ":" + invalidated.chunk_id)
+        for chunk in update.sealed:
+            self._log_chunk(item, chunk, "sealed", {})
+            if item.blocked:
+                return
+        if update.merged is not None:
+            self._log_chunk(item, update.merged, "merged", {"source_chunk_ids": list(update.merged_sources)})
+        if update.stability_changed:
+            self._cancel("chunks")
+            if item.chunks.stability_prefix is not None and not stable and not force:
+                self._timer("chunks", self._provider.chunk_stability_ms, item)
+        self._drain_chunks(item)
+        if stable or force or item.boundary is TextBoundary.SENTENCE_END:
+            self._maybe_prefetch(item)
+
+    def _drain_chunks(self, item: _Input) -> None:
+        if item.blocked or item.chunks is None or item.commit_pending or item.yield_pending or (item.yielded and item.floor_claim_confirmed):
+            return
+        while (chunk := item.chunks.begin_next()) is not None:
+            cumulative_text = item.chunks.cumulative_text(chunk)
+            if cumulative_text is None:
+                raise RuntimeError("Semantic scheduler issued an invalid candidate")
+            # Independent chunks trigger calls; EOT evaluates the cumulative meaning.
+            candidate_text = chunk.text if item.target_response else cumulative_text
+            frozen = replace(item, text=candidate_text, revision=chunk.revision, semantic_chunk=chunk,
+                prior_chunks=item.chunks.context_before(chunk),
+                chunk_feedback_only=item.chunks.feedback_only_before(chunk))
+            self._log_chunk(item, chunk, "requested", {
+                "classification_scope": "cumulative",
+                "classified_text": cumulative_text,
+                "prior_feedback_confirmed": frozen.chunk_feedback_only,
+            })
+            if item.blocked:
+                return
+            if item.target_response:
+                boundary = InterruptionBoundary.SENTENCE_END if item.boundary is TextBoundary.SENTENCE_END or not item.speech_active else InterruptionBoundary.PARTIAL
+                self._judge_interruption(frozen, boundary)
+            else:
+                self._judge_endpoint(frozen)
+
     def _judge_endpoint(self, item: _Input) -> None:
+        if item.blocked:
+            return
+        if self._provider.semantic_chunks_enabled and item.semantic_chunk is None:
+            self._collect_chunks(item)
+            return
         if item.target_response is not None or item.continuation_of_turn_id:
             return  # Overlap input uses acoustic/ASR stopping, never semantic EOT.
         request = EotRequest(
@@ -685,6 +1145,9 @@ class CoordinatedTurnManagerSession:
             context=EotContext(self._history_snapshot()),
             interaction=item.context,
             input_state=SemanticInputState(
+                chunk_id=item.semantic_chunk.chunk_id if item.semantic_chunk else None,
+                chunk_trigger=item.semantic_chunk.trigger if item.semantic_chunk else None,
+                previous_chunks=item.prior_chunks,
                 transcript_revision=item.revision,
                 boundary=item.boundary,
                 speech_active=item.speech_active if item.vad_observed else None,
@@ -694,7 +1157,7 @@ class CoordinatedTurnManagerSession:
         )
         identity, revision = item.identity, item.revision
         token = str(uuid.uuid4())
-        self._requests["endpoint"] = token
+        self._tasks.register("endpoint", item.semantic_chunk.chunk_id if item.semantic_chunk else None, token)
 
         async def judge() -> None:
             started_ns = time.monotonic_ns()
@@ -717,9 +1180,9 @@ class CoordinatedTurnManagerSession:
             finally:
                 self._record_semantic_duration("turn_policy.eot_classify", item, started_ns, outcome)
             self._log_eot_decision(result, item)
-            await self._inbox.put((_Result(identity, revision, "endpoint", result, token), None))
+            await self._inbox.put((_Result(identity, revision, "endpoint", result, token, item.semantic_chunk.chunk_id if item.semantic_chunk else None), None))
 
-        self._job("endpoint_model", judge())
+        self._job("endpoint_model" + (":" + item.semantic_chunk.chunk_id if item.semantic_chunk else ""), judge())
 
     def _record_semantic_duration(self, name: str, item: _Input, started_ns: int, outcome: TelemetryOutcome) -> None:
         if self._provider._telemetry is not None:
@@ -732,19 +1195,15 @@ class CoordinatedTurnManagerSession:
     async def _classify_eot_timed(
         self, classifier: Any, request: EotRequest, generation: int
     ) -> EotClassification:
-        timeout_s = self._provider._endpoint_gate._classifier_timeout_s
-        telemetry = self._provider._telemetry
-        if telemetry is None:
-            return await asyncio.wait_for(classify_eot(classifier, request), timeout_s)
-        async with telemetry.provider_call(
-            provider="eot_classifier",
-            operation="classify",
-            timeout_ms=timeout_s * 1000,
-            generation=generation,
-        ) as call:
-            result = await asyncio.wait_for(classify_eot(classifier, request), timeout_s)
-            call.mark_first_response()
-            return result
+        return await run_classification(
+            lambda: classify_eot(classifier, request), operation="eot",
+            executor=self._classifier_executor,
+            timeout_s=self._provider._endpoint_gate._classifier_timeout_s,
+            telemetry=self._provider._telemetry, generation=generation,
+            attributes={"chunk_id": request.input_state.chunk_id,
+                "chunk_trigger": request.input_state.chunk_trigger,
+                "transcript_revision": request.input_state.transcript_revision},
+        )
 
     def _log_eot_decision(self, result: EotClassification, item: _Input) -> None:
         debug_log = self._provider._debug_log
@@ -763,30 +1222,59 @@ class CoordinatedTurnManagerSession:
             },
         )
 
+    def _rule_context(self, item: _Input, boundary: InterruptionBoundary) -> InterruptionRuleContext:
+        return InterruptionRuleContext(text=item.text, boundary=boundary,
+            assistant_text=item.assistant_text_at_onset,
+            previous_chunks=item.prior_chunks if item.semantic_chunk is not None else (),
+            previous_feedback_only=item.chunk_feedback_only, before_playback=item.before_playback)
+
+    async def _classify_interruption_model(self, request: InterruptionRequest) -> InterruptionClassification:
+        classifier = self._provider._semantic_interruption_classifier
+        if classifier is not None:
+            return await self._classify_interruption_timed(classifier, request, request.generation)
+        item = self._input
+        overlap_ms = max(0, item.timestamp_us - item.started_us) / 1000 if item else 0
+        intent = await run_classification(
+            lambda: self._provider._dual_intent_classifier.classify(
+                generation=request.generation, overlap_ms=overlap_ms,
+                text=request.cumulative_transcript or request.transcript),
+            operation="interruption", executor=self._classifier_executor,
+            timeout_s=self._provider._semantic_interruption_timeout_ms / 1000,
+            telemetry=self._provider._telemetry, generation=request.generation,
+            attributes={"classifier": "dual_intent", "chunk_id": request.input_state.chunk_id,
+                "transcript_revision": request.input_state.transcript_revision},
+        )
+        return InterruptionClassification(InterruptionLabel.INTERRUPT if intent is DualIntent.FLOOR_CLAIM else InterruptionLabel.BACKCHANNEL, 1)
+
     def _judge_interruption(self, item: _Input, boundary: InterruptionBoundary) -> None:
+        if item.blocked:
+            return
+        if self._provider.semantic_chunks_enabled and item.semantic_chunk is None:
+            if item.yielded or item.yield_pending:
+                return
+            rule = self._interruption_decider.match_rule(self._rule_context(item, boundary))
+            if rule is not None and rule.label is InterruptionLabel.STOP:
+                self._cancel("interruption_model", "chunks")
+                if item.chunks is not None:
+                    item.chunks.cancel_active()
+                self._start_interruption_judge(item, InterruptionCandidate(item.text, item.context.generation, item.revision, boundary), rule)
+            else:
+                self._collect_chunks(item)
+            return
         # A sentence boundary can change admission (e.g. partial "停" versus
         # final "停"); do not commit using evidence for the earlier boundary.
         item.verdict = None
+        item.verdict_prefix = None
         candidate = InterruptionCandidate(
             item.text, item.context.generation, item.revision, boundary
         )
-        rule = match_interruption_rule(item.text, boundary=boundary)
-        if item.before_playback:
-            if item.text.strip().startswith(("换个问题", "另一个问题", "新的问题", "重新开始")):
-                item.continuation_text = ""
-                item.continuation_of_turn_id = None
-            if rule is None or rule.label is not InterruptionLabel.STOP:
-                rule = InterruptionClassification(InterruptionLabel.INTERRUPT, 1)
-        # Exact feedback words are not context-free: a question can invite "yes".
-        question = any(mark in item.assistant_text_at_onset for mark in ("?", "？"))
-        if (
-            rule
-            and rule.label is InterruptionLabel.BACKCHANNEL
-            and (question or boundary is InterruptionBoundary.PARTIAL)
-        ):
-            rule = None
+        if item.before_playback and item.text.strip().startswith(("换个问题", "另一个问题", "新的问题", "重新开始")):
+            item.continuation_text = ""
+            item.continuation_of_turn_id = None
+        rule = self._interruption_decider.match_rule(self._rule_context(item, boundary))
         if (
             boundary is InterruptionBoundary.PARTIAL
+            and item.semantic_chunk is None
             and rule is None
             and len(item.text) - len(item.last_judged_text)
             < self._provider._semantic_interruption_partial_chars
@@ -802,6 +1290,15 @@ class CoordinatedTurnManagerSession:
         rule: InterruptionClassification | None,
     ) -> None:
         item.last_judged_text = item.text
+        cumulative_text = (
+            item.chunks.cumulative_text(item.semantic_chunk)
+            if item.chunks is not None and item.semantic_chunk is not None
+            else None
+        )
+        if item.semantic_chunk is not None and cumulative_text is None:
+            raise RuntimeError("Interruption candidate has no valid cumulative snapshot")
+        if cumulative_text is not None:
+            candidate = replace(candidate, text=cumulative_text)
         request = InterruptionRequest(
             transcript=item.text,
             assistant_text=item.assistant_text_at_onset,
@@ -810,43 +1307,27 @@ class CoordinatedTurnManagerSession:
             history=self._history_snapshot(),
             interaction=item.context,
             input_state=SemanticInputState(
+                chunk_id=item.semantic_chunk.chunk_id if item.semantic_chunk else None,
+                chunk_trigger=item.semantic_chunk.trigger if item.semantic_chunk else None,
+                previous_chunks=item.prior_chunks,
                 transcript_revision=item.revision,
                 boundary=TextBoundary(candidate.boundary.value),
                 speech_active=item.speech_active if item.vad_observed else None,
             ),
+            cumulative_transcript=cumulative_text,
         )
         identity, revision = item.identity, item.revision
         token = str(uuid.uuid4())
-        self._requests["interruption"] = token
-        overlap_ms = max(0, item.timestamp_us - item.started_us) / 1000
-
+        self._tasks.register("interruption", item.semantic_chunk.chunk_id if item.semantic_chunk else None, token)
         async def judge() -> None:
             started_ns = time.monotonic_ns()
             outcome = TelemetryOutcome.OK
             source = "rule" if rule else "model"
+            raw_classification = None
             try:
-                classifier = self._provider._semantic_interruption_classifier
-                if rule is not None:
-                    result = rule
-                elif classifier is not None:
-                    result = await self._classify_interruption_timed(
-                        classifier, request, item.context.generation
-                    )
-                else:
-                    intent = await asyncio.wait_for(
-                        self._provider._dual_intent_classifier.classify(
-                            generation=request.generation,
-                            overlap_ms=overlap_ms,
-                            text=request.transcript,
-                        ),
-                        self._provider._semantic_interruption_timeout_ms / 1000,
-                    )
-                    result = InterruptionClassification(
-                        InterruptionLabel.INTERRUPT
-                        if intent is DualIntent.FLOOR_CLAIM
-                        else InterruptionLabel.BACKCHANNEL,
-                        1,
-                    )
+                decision = await self._interruption_decider.resolve(request, rule)
+                result, source = decision.classification, decision.source
+                raw_classification = result
                 if result.confidence < self._provider._semantic_interruption_threshold:
                     result = InterruptionClassification(
                         InterruptionLabel.UNCERTAIN, result.confidence
@@ -862,32 +1343,31 @@ class CoordinatedTurnManagerSession:
             finally:
                 self._record_semantic_duration("semantic_interruption.classify", item, started_ns, outcome)
             verdict = InterruptionVerdict(candidate, result, source)  # type: ignore[arg-type]
-            self._log_interruption_decision(verdict, item)
+            self._log_interruption_decision(verdict, item, raw_classification=raw_classification)
             await self._inbox.put(
-                (_Result(identity, revision, "interruption", verdict, token), None)
+                (_Result(identity, revision, "interruption", verdict, token, item.semantic_chunk.chunk_id if item.semantic_chunk else None), None)
             )
 
         self._cancel("interruption")
-        self._job("interruption_model", judge())
+        self._job("interruption_model" + (":" + item.semantic_chunk.chunk_id if item.semantic_chunk else ""), judge())
 
     async def _classify_interruption_timed(
         self, classifier: Any, request: InterruptionRequest, generation: int
     ) -> InterruptionClassification:
-        timeout_s = self._provider._semantic_interruption_timeout_ms / 1000
-        telemetry = self._provider._telemetry
-        if telemetry is None:
-            return await asyncio.wait_for(classify_interruption(classifier, request), timeout_s)
-        async with telemetry.provider_call(
-            provider="interruption_classifier",
-            operation="classify",
-            timeout_ms=timeout_s * 1000,
-            generation=generation,
-        ) as call:
-            result = await asyncio.wait_for(classify_interruption(classifier, request), timeout_s)
-            call.mark_first_response()
-            return result
+        return await run_classification(
+            lambda: classify_interruption(classifier, request), operation="interruption",
+            executor=self._classifier_executor,
+            timeout_s=self._provider._semantic_interruption_timeout_ms / 1000,
+            telemetry=self._provider._telemetry, generation=generation,
+            attributes={"chunk_id": request.input_state.chunk_id,
+                "chunk_trigger": request.input_state.chunk_trigger,
+                "transcript_revision": request.input_state.transcript_revision},
+        )
 
-    def _log_interruption_decision(self, verdict: InterruptionVerdict, item: _Input) -> None:
+    def _log_interruption_decision(
+        self, verdict: InterruptionVerdict, item: _Input,
+        *, raw_classification: InterruptionClassification | None = None,
+    ) -> None:
         debug_log = self._provider._debug_log
         if debug_log is None:
             return
@@ -901,6 +1381,12 @@ class CoordinatedTurnManagerSession:
                 "confidence": verdict.classification.confidence,
                 "should_stop": verdict.should_stop,
                 "creates_turn": verdict.creates_turn,
+                "raw_label": raw_classification.label.value if raw_classification else None,
+                "confidence_threshold": self._provider._semantic_interruption_threshold,
+                "below_confidence_threshold": (
+                    raw_classification.confidence < self._provider._semantic_interruption_threshold
+                    if raw_classification else None
+                ),
             },
         )
 
@@ -910,25 +1396,36 @@ class CoordinatedTurnManagerSession:
         if self._response_id != item.target_response:
             item.yielded = True
             return
+        item.floor_claim_confirmed = True
         item.yield_pending = True
         self._timer("yield_ack", self._provider.recovery_timeout_ms, item)
         await self._outbox.put(
             AssistantYieldRequested(
                 context=replace(item.context, response_id=item.target_response),
                 reason="barge_in_floor_claim",
+                speech_started_ns=item.speech_started_ns,
             )
         )
 
     async def _advance(self, item: _Input, *, force: bool = False) -> None:
-        if item.commit_pending or item.speech_active or item.stop is None or not item.text:
+        if item.blocked or item.commit_pending or item.speech_active or item.stop is None or not item.text:
             return
         if item.continuation_of_turn_id and item.target_response is None:
             return
         if item.target_response:
+            if not force and not item.floor_claim_confirmed and (item.chunks is not None and item.chunks.busy):
+                return  # Non-stopping prefix evidence cannot admit/discard the full input.
             if item.verdict is None and not force:
                 return
             if item.verdict:
+                if self._provider.semantic_chunks_enabled and not item.speech_active and semantic_text(item.verdict.candidate.text) == semantic_text(item.text):
+                    item.verdict = replace(item.verdict, candidate=replace(item.verdict.candidate, boundary=InterruptionBoundary.SENTENCE_END))
                 action = self._policy.interruption(item.verdict)
+                if (action.admit_input and not action.stop_response
+                        and not item.floor_claim_confirmed and not item.yielded):
+                    # Keep ambiguous input while playback owns the floor. Natural
+                    # completion releases the floor without confirming interruption.
+                    return
                 question_answer = item.verdict.label is InterruptionLabel.BACKCHANNEL and any(
                     mark in item.assistant_text_at_onset for mark in ("?", "？")
                 )
@@ -942,7 +1439,7 @@ class CoordinatedTurnManagerSession:
                         )
                     )
                     self._input = None
-                    self._cancel(*tuple(self._jobs))
+                    self._tasks.clear()
                     await self._project(item.context)
                     return
             if not item.yielded:
@@ -958,12 +1455,17 @@ class CoordinatedTurnManagerSession:
                     self._timer("commit", delay, item)
                 return
         item.commit_pending = True
-        self._cancel(*tuple(self._jobs))
+        self._prefetch.cancel_pending()
+        self._tasks.clear()
         self._timer("asr_final", self._provider.recovery_timeout_ms, item)
         await self._outbox.put(
             AsrCommitRequested(
                 context=item.context,
-                reason="coordinated_turn_commit",
+                reason=(
+                    "deferred_overlap_after_playback"
+                    if item.target_response and item.yielded and not item.floor_claim_confirmed
+                    else "coordinated_turn_commit"
+                ),
                 audio_end_timestamp_us=item.stop.audio_timestamp_us,
             )
         )
@@ -982,7 +1484,15 @@ class CoordinatedTurnManagerSession:
                 task.exception()
         if pending:
             logger.warning("Turn coordinator closed with %d uncooperative tasks", len(pending))
-        self._jobs.clear()
+        self._tasks.clear()
+        residual_classifiers = await self._classifier_executor.close()
+        if residual_classifiers:
+            logger.warning("Turn coordinator closed with %d quarantined classifiers", residual_classifiers)
+        await self._prefetch.close()
+        if self._evidence is not None:
+            missing = await self._evidence.close()
+            if missing:
+                logger.warning("Input evidence closed with %d uncommitted records", missing)
         self._input = None
         self._response_id = None
         # Closing must not depend on a consumer draining the output queue.

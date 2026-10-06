@@ -1,16 +1,13 @@
+import { isPersonalModelKind } from "@/lib/personal-model-kind";
 import { isSameOriginAvatarMutation } from "@/lib/avatar-test-access";
 import { readLimitedJson, RequestBodyTooLarge } from "@/lib/request-body";
 import { deleteUserLipsyncService, loadUserLipsyncService, normalizePersonalLipsyncToken, normalizePersonalLipsyncUrl, saveUserLipsyncService } from "@/lib/user-lipsync-service";
-import { deleteUserTalkingService, isPersonalTalkingKind, listUserTalkingServices, saveUserTalkingService } from "@/lib/user-talking-model-services";
+import { deleteUserTalkingService, listUserTalkingServices, saveUserTalkingService } from "@/lib/user-talking-model-services";
 import { userFromRequest } from "@/lib/user-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const json = (body: object, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
-
-function isPersonalModelKind(value: unknown): value is "lipforcing" | "musetalk" | "wav2lip" {
-  return value === "lipforcing" || isPersonalTalkingKind(value);
-}
 
 export async function GET(request: Request) {
   const user = await userFromRequest(request);
@@ -52,5 +49,3 @@ export async function PATCH(request: Request) {
     return json({ error: "保存个人模型服务失败" }, 503);
   }
 }
-
-export { isPersonalModelKind };

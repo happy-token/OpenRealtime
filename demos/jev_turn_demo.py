@@ -41,9 +41,13 @@ async def run_case(name: str, transcript: str, playback: str | None) -> dict[str
         model=os.environ.get("VOICEAGENT_JEV_MODEL", "jev-1.13.0"),
         timeout_s=float(os.environ.get("VOICEAGENT_JEV_TIMEOUT_MS", "2000")) / 1000,
         observer=decisions.append,
+        reuse_connections=True,
     )
     ctx = InteractionContext("demo", "demo", "demo", name, name, name, 1)
     provider = CoordinatedTurnManagerCapabilityAdapter(
+        semantic_chunks_enabled=True,
+        interruption_chunk_chars=5,
+        chunk_stability_ms=120,
         coordination_policy_factory=lambda: DefaultTurnCoordinationPolicy(
             backchannel_confidence=float(
                 os.environ.get("VOICEAGENT_BACKCHANNEL_CONFIDENCE", "0.95")
@@ -133,6 +137,7 @@ async def run_case(name: str, transcript: str, playback: str | None) -> dict[str
     finally:
         await stream.aclose()
         await session.close()
+        await client.close()
 
 
 async def main() -> None:

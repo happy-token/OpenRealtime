@@ -84,7 +84,7 @@ from server.brain.realtime_grounding import (
     RealtimeGroundingCoordinator,
     TurnGrounder,
 )
-from server.brain.role_model import role_model_id, role_tool_ids, role_record
+from server.brain.role_model import role_model_id, role_record, role_tool_ids
 from server.brain.session_memory import SessionMemory
 from server.brain.tool_calling_brain import ToolCallingBrain
 from server.cli.harness import run_app
@@ -93,6 +93,7 @@ from server.conversation_journal import (
     JournalScope,
     TextContent,
 )
+from server.conversation_journal.input_evidence import read_input_evidence
 from server.core.interaction_context import InteractionContext
 from server.endpoint_session.in_memory_session import InMemoryEndpointSession
 from server.endpoint_session.registry import EndpointSessionRegistry
@@ -209,6 +210,7 @@ from server.turn_policy.plugins.llm_semantic_interruption_classifier import (
     LlmSemanticInterruptionClassifier,
 )
 from server.turn_policy.policy import TurnPolicy
+from server.turn_policy.semantic_input import SemanticInputBudget
 from server.turn_policy.semantic_interruption import SemanticInterruptionClassifier
 from server.voice_session.context import (
     BudgetedConversationContextProjector,
@@ -236,6 +238,7 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 OPENAI_LLM_MODEL = "gpt-4.1-mini"
 
 _application_runtime: ApplicationRuntime | None = None
+_jev_clients: dict[tuple[str, str, float, int], JevClient] = {}
 _avatar_asset_runtime: AvatarAssetRuntime | None = None
 
 _DEMO_TOOLS_ENV_VAR = "VOICEAGENT_DEMO_TOOLS"
@@ -937,12 +940,14 @@ def _build_turn_coordination_policy() -> DefaultTurnCoordinationPolicy:
 
 
 def _build_jev_client() -> JevClient:
-    return JevClient(
-        api_key=os.environ.get("JEV_API_KEY", ""),
-        model=os.environ.get("VOICEAGENT_JEV_MODEL", "jev-1.13.0"),
-        timeout_s=float(os.environ.get("VOICEAGENT_JEV_TIMEOUT_MS", "2000")) / 1000,
-        max_concurrency=int(os.environ.get("VOICEAGENT_JEV_MAX_CONCURRENCY", "2")),
-    )
+    key = (os.environ.get("JEV_API_KEY", ""),
+           os.environ.get("VOICEAGENT_JEV_MODEL", "jev-1.13.0"),
+           float(os.environ.get("VOICEAGENT_JEV_TIMEOUT_MS", "2000")) / 1000,
+           int(os.environ.get("VOICEAGENT_JEV_MAX_CONCURRENCY", "2")))
+    if key not in _jev_clients:
+        _jev_clients[key] = JevClient(api_key=key[0], model=key[1], timeout_s=key[2],
+                                    max_concurrency=key[3], reuse_connections=True)
+    return _jev_clients[key]
 
 
 def _build_eot_classifier(llm_client: LlmClient) -> EotClassifier | None:
@@ -1207,6 +1212,11 @@ def _build_realtime_session(
         semantic_interruption_classifier = (
             _build_semantic_interruption_classifier(llm_client)
         )
+        def observe_prefetch(operation, turn, attributes):
+            telemetry.record("response.prefetch", generation=turn.generation,
+                             attributes={"operation": operation, **attributes})
+            debug_log.log("llm", "prefetch", operation,
+                          generation=turn.generation, detail=attributes)
         response_prefetcher = None
         tts_capability_engine = tts
         if tool_registry is None:
@@ -1219,7 +1229,7 @@ def _build_realtime_session(
                     binding=binding,
                 )
             )
-            if getattr(tts, "synthesize_duplex", None) is not None:
+            if os.environ.get("VOICEAGENT_RESPONSE_PREFETCH_TTS_ENABLED", "0").strip().lower() in {"1", "true", "yes"} and getattr(tts, "synthesize_duplex", None) is not None:
                 speculative_speech = SpeculativeSpeechPipeline(
                     brain=base_streaming_brain,
                     tts=tts,
@@ -1227,7 +1237,7 @@ def _build_realtime_session(
                 streaming_brain = speculative_speech
                 tts_capability_engine = speculative_speech
             else:
-                streaming_brain = SpeculativeStreamingBrain(base_streaming_brain)
+                streaming_brain = SpeculativeStreamingBrain(base_streaming_brain, observer=observe_prefetch)
             response_prefetcher = streaming_brain
         else:
             tool_brain = _build_brain(
@@ -1246,7 +1256,8 @@ def _build_realtime_session(
                         llm_client,
                         system_prompt_transform=lambda prompt: session_memory.apply(avatar_persona.apply(prompt)),
                     )
-                )
+                ),
+                observer=observe_prefetch,
             )
             streaming_brain = VoiceRuntimeBrainStreamingAdapter(
                 chat=speculative_chat,
@@ -1258,10 +1269,24 @@ def _build_realtime_session(
             )
             response_prefetcher = streaming_brain
         vad_provider = LegacyVadCapabilityAdapter(_build_vad)
-        asr_provider = LegacyAsrCapabilityAdapter(asr)
+        asr_provider = LegacyAsrCapabilityAdapter(asr, telemetry=telemetry)
         turn_manager_provider = CoordinatedTurnManagerCapabilityAdapter(
             TurnPolicy,
+            input_evidence_journal=_application_runtime.journal,
+            input_evidence_timeout_s=float(os.environ.get("VOICEAGENT_INPUT_EVIDENCE_TIMEOUT_MS", "1000")) / 1000,
+            input_budget=SemanticInputBudget(
+                max_text_bytes=int(os.environ.get("VOICEAGENT_INPUT_MAX_TEXT_BYTES", "16384")),
+                max_revisions=int(os.environ.get("VOICEAGENT_INPUT_MAX_REVISIONS", "2048")),
+                max_chunks=int(os.environ.get("VOICEAGENT_INPUT_MAX_CHUNKS", "2048")),
+                max_duration_ms=int(os.environ.get("VOICEAGENT_INPUT_MAX_DURATION_MS", "120000")),
+                max_evidence_bytes=int(os.environ.get("VOICEAGENT_INPUT_MAX_EVIDENCE_BYTES", "2097152")),
+            ),
             coordination_policy_factory=_build_turn_coordination_policy,
+            response_prefetch_enabled=os.environ.get("VOICEAGENT_RESPONSE_PREFETCH_ENABLED", "1").strip().lower() in {"1", "true", "yes"},
+            semantic_chunks_enabled=os.environ.get("VOICEAGENT_SEMANTIC_CHUNKS_ENABLED", "1").strip().lower() in {"1", "true", "yes"},
+            interruption_chunk_chars=int(os.environ.get("VOICEAGENT_INTERRUPTION_CHUNK_CHARS", "5")),
+            semantic_chunk_concurrency=int(os.environ.get("VOICEAGENT_SEMANTIC_CHUNK_CONCURRENCY", "2")),
+            chunk_stability_ms=float(os.environ.get("VOICEAGENT_CHUNK_STABILITY_MS", "120")),
             recovery_timeout_ms=float(
                 os.environ.get("VOICEAGENT_TURN_RECOVERY_TIMEOUT_MS", "10000")
             ),
@@ -1318,6 +1343,7 @@ def _build_realtime_session(
         speech_renderer = DeterministicSpeechRenderer()
         tts_provider = LegacyTtsCapabilityAdapter(
             tts_capability_engine,
+            telemetry=telemetry,
             cancel_timeout_s=float(
                 os.environ.get("VOICEAGENT_TTS_CANCEL_TIMEOUT_MS", "300")
             )
@@ -1584,7 +1610,9 @@ def _build_realtime_session(
             )
         )
 
+    from server.observability.session_connection import SessionConnectionObserver
     return VoiceSessionWebSocketSession(
+        diagnostic_observer=SessionConnectionObserver(telemetry),
         identity=identity,
         context=context,
         profile=profile,
@@ -1689,8 +1717,13 @@ async def _stop_application_runtime(state: object) -> None:
         if avatar_runtime is not None:
             await avatar_runtime.close()
     finally:
-        if isinstance(state, ApplicationRuntime):
-            await state.close()
+        try:
+            if isinstance(state, ApplicationRuntime):
+                await state.close()
+        finally:
+            clients = tuple(_jev_clients.values())
+            _jev_clients.clear()
+            await asyncio.gather(*(client.close() for client in clients))
 
 
 async def _handle_avatar_asset_request(
@@ -1747,6 +1780,25 @@ async def _read_session_conversation(session_id: str) -> list[dict]:
     return projected
 
 
+async def _read_session_input_evidence(session_id: str, after_sequence: int, limit: int) -> dict:
+    if _application_runtime is None:
+        raise RuntimeError("application runtime is not started")
+    await _application_runtime.telemetry.flush()
+    scope = await _application_runtime.session_history_scope(
+        session_id, tenant_id=os.environ.get("VOICEAGENT_TENANT_ID", "local"),
+        user_id=os.environ.get("VOICEAGENT_USER_ID", "local-user"),
+    )
+    context = InteractionContext(
+        tenant_id=scope.tenant_id, user_id=scope.user_id,
+        device_id="diagnostics", voice_session_id=session_id, thread_id=scope.thread_id,
+        turn_id="diagnostics", generation=0,
+    )
+    result = await read_input_evidence(_application_runtime.journal, context,
+                                      after_sequence=after_sequence, limit=limit)
+    result["status"] = "available" if result["last_sequence"] else "not_collected"
+    return result
+
+
 async def _delete_session_history(session_ids: list[str]) -> dict[str, int]:
     """Delete completed session telemetry and its scoped conversation thread."""
     if _application_runtime is None:
@@ -1780,6 +1832,7 @@ if __name__ == "__main__":
         diagnostics_health_reader=lambda: _application_runtime.diagnostics_health() if _application_runtime is not None else {"status": "unavailable"},
         voice_previewer=_preview_voice,
         session_conversation_reader=_read_session_conversation,
+        session_input_evidence_reader=_read_session_input_evidence,
         session_history_deleter=_delete_session_history,
         avatar_asset_handler=_handle_avatar_asset_request,
     )

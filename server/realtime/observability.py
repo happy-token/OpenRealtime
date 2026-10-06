@@ -53,6 +53,8 @@ class RealtimeTelemetryObserver:
         self._first_audio: set[str] = set()
         self._endpoint_committed_ns: dict[int, int] = {}
         self._playback_started: set[str] = set()
+        self._speech_ended_ns: dict[int, int] = {}
+        self._speech_started_ns: dict[str, int] = {}
         self._yield_requested_ns: dict[str, tuple[int, InteractionContext]] = {}
         self._speech_response_ids: dict[str, str] = {}
 
@@ -107,6 +109,8 @@ class RealtimeTelemetryObserver:
             return
         if isinstance(event, InputTranscriptCompleted):
             self._endpoint_committed_ns[context.generation] = now
+            if event.speech_ended_ns is not None:
+                self._speech_ended_ns[context.generation] = event.speech_ended_ns
             self._telemetry.record(
                 "asr.transcript_completed",
                 generation=context.generation,
@@ -171,6 +175,8 @@ class RealtimeTelemetryObserver:
             self._record_terminal(event, outcome, error=event.error)
             return
         if isinstance(event, AssistantYieldRequested):
+            if event.speech_started_ns is not None:
+                self._speech_started_ns[context.response_id or f"generation:{context.generation}"] = event.speech_started_ns
             self._yield_requested_ns[context.response_id or f"generation:{context.generation}"] = (now, context)
             self._telemetry.record(
                 "barge_in.detected",
@@ -208,6 +214,12 @@ class RealtimeTelemetryObserver:
         if isinstance(event, SpeechPlaybackProgress):
             if event.started and event.speech_id not in self._playback_started:
                 self._playback_started.add(event.speech_id)
+                speech_end = self._speech_ended_ns.pop(context.generation, None)
+                if speech_end is not None and now >= speech_end:
+                    self._telemetry.record("turn.speech_end_to_client_playback", generation=context.generation,
+                        kind=TelemetryKind.SPAN, duration_ms=(now-speech_end)/1_000_000,
+                        turn_id=context.turn_id, response_id=context.response_id,
+                        attributes={"measurement": "server_vad_to_playback_receipt", "estimated": True})
                 endpoint_ns = self._endpoint_committed_ns.pop(
                     context.generation,
                     None,
@@ -228,6 +240,12 @@ class RealtimeTelemetryObserver:
                 pending_yield = self._yield_requested_ns.pop(target, None)
                 if pending_yield is not None and now >= pending_yield[0]:
                     yield_ns, yield_context = pending_yield
+                    speech_start = self._speech_started_ns.pop(target, None)
+                    if speech_start is not None and now >= speech_start:
+                        self._telemetry.record("barge_in.speech_start_to_client_stop", generation=yield_context.generation,
+                            kind=TelemetryKind.SPAN, duration_ms=(now-speech_start)/1_000_000,
+                            turn_id=yield_context.turn_id, response_id=yield_context.response_id,
+                            attributes={"measurement": "server_vad_to_stop_receipt", "estimated": True})
                     duration_ms = (now - yield_ns) / 1_000_000
                     self._telemetry.record(
                         "barge_in.time_to_client_stop",

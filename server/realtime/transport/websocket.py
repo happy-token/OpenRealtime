@@ -40,7 +40,7 @@ from server.realtime.protocol import (
     SpeechAudioDelta,
     SpokenContentDelta,
 )
-from server.realtime.protocol.events import SpeechTextAlignment
+from server.realtime.protocol.events import RealtimeCapabilityFailed, SpeechTextAlignment
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
     AssistantAudioChunkFrame,
@@ -66,6 +66,7 @@ from server.voice_session.protocol import (
     InputEpochStarted,
     InputEpochTimeline,
     PlaybackProgressV2,
+    VoiceSessionFailureFrame,
 )
 
 InboundFallback = Callable[[InboundFrame], Awaitable[None]]
@@ -155,6 +156,13 @@ class RealtimeWebSocketFrameBridge:
             await self._inbound_fallback(frame)
 
     async def handle_event(self, event: RealtimeEvent) -> None:
+        if isinstance(event, RealtimeCapabilityFailed) and event.capability == "semantic_input":
+            await self._transport.send(VoiceSessionFailureFrame(
+                code="semantic_input_rejected", phase="input", retryable=True,
+                session_disposition="close", safe_message=event.error,
+            ))
+            await self._transport.close()
+            return
         if isinstance(event, ConfirmationRequested):
             await self._transport.send(
                 ConfirmationRequestedFrame(
@@ -168,8 +176,12 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, AssistantYieldRequested):
-            interrupted_generation = self._interrupted_generation(
-                event.context.generation
+            interrupted_generation = (
+                self._response_generation_by_id.get(event.context.response_id,
+                    next((generation for generation, playback in self._playback_by_generation.items()
+                          if playback.speech_id == f"response:{event.context.response_id}"), None))
+                if event.context.response_id is not None
+                else self._interrupted_generation(event.context.generation)
             )
             if interrupted_generation is not None:
                 self._locally_cancelled_generations.add(interrupted_generation)
@@ -481,6 +493,8 @@ class RealtimeWebSocketFrameBridge:
         sequence: int,
         is_final: bool,
     ) -> None:
+        if generation in self._locally_cancelled_generations:
+            return
         playback = self._playback_by_generation.setdefault(
             generation,
             _PlaybackState(speech_id=speech_id),

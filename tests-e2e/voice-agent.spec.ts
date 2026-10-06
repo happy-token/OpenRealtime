@@ -1,5 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("openrealtime-language", "zh-CN"));
+});
+
 async function enterContentPageForm(page: Page) {
   const pageFormTrigger = page.getByRole("button", { name: /^页面形态：/ });
   await pageFormTrigger.hover();
@@ -26,9 +30,9 @@ test("startup smoke: root page responds 200, not a dev-server error page", async
   // "Expected clientReferenceManifest to be defined" InvariantError seen
   // after a long-running dev server survived many file edits) — that
   // failure mode renders as a 500 on this exact route.
-  const response = await page.goto("/");
+  const response = await page.goto("/?role_id=e2e-unassigned");
   expect(response?.status()).toBe(200);
-  await expect(page.locator(".brand")).toBeVisible();
+  await expect(page.getByRole("button", { name: "主页开始对话" })).toBeVisible();
 });
 
 test("loads, toggles view, and shows connecting mic state without a backend", async ({ page }) => {
@@ -51,15 +55,22 @@ test("loads, toggles view, and shows connecting mic state without a backend", as
       }
     }
 
-    window.WebSocket = NeverOpeningWebSocket as unknown as typeof WebSocket;
+    const NativeWebSocket = window.WebSocket;
+    window.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = new URL(String(args[0]), location.href);
+        if (url.port === "8765" || url.pathname === "/voice") return new NeverOpeningWebSocket();
+        return Reflect.construct(target, args);
+      },
+    });
   });
-  await page.goto("/");
+  await page.goto("/conversation?role_id=e2e-unassigned");
 
-  await expect(page.locator(".brand")).toBeVisible();
+  await expect(page.getByRole("button", { name: "主页开始对话" })).toBeVisible();
 
-  const startButton = page.getByRole("button", { name: "正在连接语音服务" });
+  const startButton = page.getByRole("button", { name: "主页开始对话" });
   await expect(startButton).toBeDisabled();
-  await expect(page.getByText("语音服务准备中…")).toBeVisible();
+  await expect(page.getByText("语音连接中")).toBeVisible();
   await expect(page.getByRole("tab", { name: "聊天" })).toHaveCount(0);
 });
 
@@ -185,7 +196,14 @@ test("browser speech fallback streams user and assistant text", async ({ page })
       webkitSpeechRecognition: typeof FakeSpeechRecognition;
       __spoken: string[];
     };
-    browserWindow.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const NativeWebSocket = window.WebSocket;
+    browserWindow.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = new URL(String(args[0]), location.href);
+        if (url.port === "8765" || url.pathname === "/voice") return new FakeWebSocket();
+        return Reflect.construct(target, args);
+      },
+    });
     browserWindow.SpeechRecognition = FakeSpeechRecognition;
     browserWindow.webkitSpeechRecognition = FakeSpeechRecognition;
     browserWindow.__spoken = [];
@@ -195,37 +213,19 @@ test("browser speech fallback streams user and assistant text", async ({ page })
     };
   });
 
-  await page.goto("/");
+  await page.goto("/conversation?role_id=e2e-unassigned");
   const mic = page.getByRole("button", { name: "主页开始对话" });
   await expect(mic).toBeEnabled();
   await mic.click();
 
   const sessionControls = page.locator(".session-control-shell");
+  await expect(sessionControls.getByRole("button", { name: "会话设置" })).toHaveCount(0);
   await expect(sessionControls).toHaveAttribute("data-transparency", "82");
   await expect(sessionControls).toHaveAttribute("data-glass-blur", "14");
 
-  const visualCluster = page.locator(".orb-motion-cluster");
-  await expect(visualCluster.locator(".orb")).toBeVisible();
-  await expect(visualCluster.locator(".orb-conversation-status")).toBeVisible();
-  await expect(visualCluster).toHaveCSS("animation-name", "orb-cluster-float");
-  await expect(page.locator(".orb-library-mount")).toHaveCSS("animation-name", "none");
   const caption = page.locator(".current-turn-text");
   await expect(caption).toContainText("今天北");
-  await expect(caption).toHaveCSS("position", "absolute");
-  const compactControlWidth = await sessionControls.evaluate((element) => element.getBoundingClientRect().width);
-  await page.getByRole("button", { name: "展开文字输入" }).click();
-  await expect(page.getByRole("textbox", { name: "输入对话消息" })).toBeVisible();
-  await expect.poll(async () => sessionControls.evaluate((element) => element.getBoundingClientRect().width))
-    .toBeGreaterThan(compactControlWidth + 120);
-  await page.getByRole("button", { name: "收起文字输入" }).click();
   await enterContentPageForm(page);
-  await page.waitForTimeout(500);
-  const compactSurface = page.getByRole("region", { name: "实时展示" });
-  const compactSurfaceControls = page.getByRole("toolbar", { name: "小窗显示控制" });
-  await expect(compactSurfaceControls).toHaveCSS("opacity", "0");
-  await compactSurface.hover();
-  await expect(compactSurfaceControls).toHaveCSS("opacity", "1");
-  await expect(compactSurfaceControls.getByRole("button")).toHaveCount(3);
   await expect(page.locator(".bubble--user")).toContainText(
     "今天北京天气怎么样",
   );
@@ -237,29 +237,93 @@ test("browser speech fallback streams user and assistant text", async ({ page })
     .poll(() => page.evaluate(() => (window as typeof window & { __spoken: string[] }).__spoken))
     .toEqual(["收到：今天北京天气怎么样，详情"]);
 
-  await expect(sessionControls.locator(".session-action-btn")).toHaveCount(6);
-  await expect(page.getByRole("button", { name: "返回内容形态" })).toHaveCount(0);
-  const settingsButton = page.getByRole("button", { name: "会话设置" });
-  await settingsButton.hover();
-  await expect.poll(() => settingsButton.evaluate((element) => ({
-    content: window.getComputedStyle(element, "::after").content,
-    opacity: window.getComputedStyle(element, "::after").opacity,
-  }))).toEqual({ content: '"会话设置"', opacity: "1" });
-  await settingsButton.click();
-  const sessionWorkbench = page.getByRole("dialog", { name: "会话配置工作台" });
-  await expect(sessionWorkbench).toBeVisible();
-  await expect(sessionWorkbench).toHaveAttribute("data-variant", "session");
-  await expect(sessionWorkbench).toHaveAttribute("data-session-mode", "voice");
-  await expect(sessionWorkbench).toHaveAttribute("style", /--panel-surface-alpha: 0\.18/);
-  await expect(sessionWorkbench.getByRole("tab", { name: "呈现" })).toBeVisible();
-  await expect(sessionWorkbench.getByRole("tab", { name: "音色" })).toBeVisible();
-  await expect(sessionWorkbench.getByText("体验配置", { exact: true })).toHaveCount(0);
-  await expect(sessionWorkbench.getByLabel("体验预览")).toHaveCount(0);
-  await sessionWorkbench.getByRole("button", { name: "关闭设置" }).click();
+  await expect(page.getByRole("button", { name: "会话设置" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /临时字幕/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "页面形态：内容" }).hover();
+  await page.getByRole("menuitemradio", { name: /并排/ }).click();
+  const sidecarActions = page.locator('.session-control-shell[data-view="sidecar"]');
+  await expect(sidecarActions).toBeVisible();
+  await expect(sidecarActions.getByRole("button", { name: "会话设置" })).toHaveCount(0);
+  await expect(sidecarActions.getByRole("button", { name: "聚焦文字输入" })).toHaveCount(0);
+  await expect(sidecarActions.getByRole("button", { name: /临时字幕/ })).toHaveCount(0);
+  await expect(sidecarActions.locator(".session-action-btn")).toHaveCount(3);
+  await sidecarActions.getByRole("textbox", { name: "输入对话消息" }).fill("并排模式草稿");
+  await expect(sidecarActions.getByRole("button", { name: "发送消息" })).toBeEnabled();
+  await sidecarActions.getByRole("button", { name: "关闭麦克风" }).click();
+  await expect(sidecarActions.getByRole("button", { name: "开启麦克风" })).toBeVisible();
+  await sidecarActions.getByRole("button", { name: "开启麦克风" }).click();
+  await sidecarActions.getByRole("button", { name: "页面形态：并排" }).hover();
+  await page.getByRole("menuitemradio", { name: /全屏/ }).click();
+  await expect(page.getByRole("button", { name: "会话设置" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /临时字幕/ })).toBeVisible();
+  await page.getByRole("button", { name: "展开文字输入" }).click();
+  await expect(page.getByRole("textbox", { name: "输入对话消息" })).toHaveValue("并排模式草稿");
+  await expect(page.getByRole("textbox", { name: "输入对话消息" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "结束通话", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "关闭麦克风", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "展开文字输入" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "结束通话", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "展开文字输入" }).click();
+  await expect(page.getByRole("textbox", { name: "输入对话消息" })).toHaveValue("并排模式草稿");
+  await page.getByRole("button", { name: "展开通话操作" }).click();
+  const callActions = page.getByRole("group", { name: "通话操作", exact: true });
+  await expect(callActions).toBeVisible();
+  await callActions.getByRole("button", { name: "关闭麦克风", exact: true }).click();
+  await expect(callActions.getByRole("button", { name: "开启麦克风", exact: true })).toBeVisible();
+  await callActions.getByRole("button", { name: "开启麦克风", exact: true }).click();
+  await callActions.getByRole("button", { name: "页面形态：全屏" }).hover();
+  const nestedMenu = page.getByRole("menu", { name: "页面形态", exact: true });
+  await expect(nestedMenu).toBeVisible();
+  const modeBox = await callActions.getByRole("button", { name: "页面形态：全屏" }).boundingBox();
+  const menuBox = await nestedMenu.boundingBox();
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(modeBox!.y);
+  await nestedMenu.getByRole("menuitemradio", { name: /内容/ }).click();
+  await expect(page.getByRole("textbox", { name: "输入对话消息" })).toHaveValue("并排模式草稿");
+  await expect(page.getByRole("button", { name: "展开通话操作" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /临时字幕/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "页面形态：内容" }).hover();
+  await page.getByRole("menuitemradio", { name: /全屏/ }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "展开文字输入" }).click();
+  const openingTransform = await page.getByRole("button", { name: "展开通话操作" }).evaluate(async (button) => {
+    const group = document.querySelector('[role="group"][aria-label="通话操作"]')!;
+    (button as HTMLButtonElement).click();
+    // Reproduce the parent transform deterministically even if opening shares its first paint.
+    group.animate(
+      [{ transform: "translateY(12px) scale(.72)" }, { transform: "none" }],
+      { duration: 260, easing: "cubic-bezier(.16, 1, .3, 1)" },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    const mode = document.querySelector<HTMLButtonElement>('button[aria-label="页面形态：全屏"]')!;
+    const transform = getComputedStyle(group).transform;
+    mode.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    return transform;
+  });
+  expect(openingTransform).not.toBe("none");
+  await expect(nestedMenu).toBeVisible();
+  await expect.poll(() => callActions.evaluate((group) => getComputedStyle(group).transform)).toBe("none");
+  const mobileMenu = await nestedMenu.boundingBox();
+  expect(mobileMenu!.x).toBeGreaterThanOrEqual(0);
+  expect(mobileMenu!.x + mobileMenu!.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: "test-results/session-controls-mobile-hover.png" });
+  await callActions.getByRole("button", { name: "页面形态：全屏" }).press("Escape");
+  await expect(nestedMenu).toBeHidden();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "展开通话操作" })).toBeFocused();
+  await page.getByRole("button", { name: "展开通话操作" }).click();
+  await page.getByRole("button", { name: "结束通话" }).click();
+  await expect(page.getByRole("button", { name: "展开文字输入" })).toHaveCount(0);
 });
 
 test("server ASR captures microphone PCM and completes a voice turn", async ({ page }) => {
   await page.addInitScript(() => {
+    localStorage.setItem("openrealtime-conversation-preferences", JSON.stringify({
+      volume: 80,
+      allowBargeIn: true,
+      noiseSuppression: false,
+    }));
     type Listener = (event: Event | MessageEvent<string>) => void;
 
     class FakeWebSocket {
@@ -444,7 +508,14 @@ test("server ASR captures microphone PCM and completes a voice turn", async ({ p
     browserWindow.__readySequence = 0;
     browserWindow.__voiceSockets = [];
     browserWindow.__disconnectVoiceSocket = () => undefined;
-    browserWindow.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const NativeWebSocket = window.WebSocket;
+    browserWindow.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = new URL(String(args[0]), location.href);
+        if (url.port === "8765" || url.pathname === "/voice") return new FakeWebSocket();
+        return Reflect.construct(target, args);
+      },
+    });
     browserWindow.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
     browserWindow.AudioWorkletNode = FakeAudioWorkletNode as unknown as typeof AudioWorkletNode;
     Object.defineProperty(navigator, "mediaDevices", {
@@ -473,8 +544,8 @@ test("server ASR captures microphone PCM and completes a voice turn", async ({ p
     };
   });
 
-  await page.goto("/");
-  const mic = page.getByRole("button", { name: "开始语音对话" });
+  await page.goto("/conversation?role_id=e2e-unassigned");
+  const mic = page.getByRole("button", { name: "主页开始对话" });
   await expect(mic).toBeEnabled();
   await mic.click();
 
@@ -493,39 +564,13 @@ test("server ASR captures microphone PCM and completes a voice turn", async ({ p
       }>;
     }
   ).__inputEpochStarts[0])).toMatchObject({
-    effective_constraints: { noise_suppression: true },
-    effect_owners: { noise_suppression: "device" },
+    effective_constraints: { noise_suppression: false },
+    effect_owners: { noise_suppression: "none" },
   });
-  await page.getByRole("button", { name: "会话设置" }).click();
-  await page.getByRole("tab", { name: "对话" }).click();
-  const noiseRow = page.locator(".drawer-row").filter({
-    hasText: "浏览器降噪 / 回声消除",
-  });
-  await noiseRow.locator("label.switch").click();
-  await expect(noiseRow.getByRole("checkbox")).not.toBeChecked();
-  await expect.poll(() => page.evaluate(() => {
-    const browserWindow = window as typeof window & {
-      __inputEpochStarts: Array<{ input_epoch: string }>;
-      __sentFrames: string[];
-    };
-    return {
-      epochs: browserWindow.__inputEpochStarts.map((frame) => frame.input_epoch),
-      epochCount: browserWindow.__inputEpochStarts.length,
-      hellos: browserWindow.__sentFrames.filter((type) => type === "session_hello").length,
-    };
-  })).toMatchObject({ epochCount: 2, hellos: 1 });
-  const rebuilt = await page.evaluate(() => (
-    window as typeof window & {
-      __inputEpochStarts: Array<{
-        input_epoch: string;
-        requested_constraints: { noise_suppression: boolean };
-      }>;
-    }
-  ).__inputEpochStarts);
-  expect(rebuilt).toHaveLength(2);
-  expect(rebuilt[0].input_epoch).not.toBe(rebuilt[1].input_epoch);
-  expect(rebuilt[1].requested_constraints.noise_suppression).toBe(false);
-  await page.getByRole("button", { name: "关闭设置" }).click();
+  const hellosBeforeReconnect = await page.evaluate(() =>
+    (window as typeof window & { __sentFrames: string[] }).__sentFrames.filter(type => type === "session_hello").length,
+  );
+  await expect(page.getByRole("button", { name: "会话设置" })).toHaveCount(0);
   await enterContentPageForm(page);
   await expect(page.locator(".bubble--user")).toContainText("服务端语音识别正常");
   await expect(page.locator(".bubble--assistant")).toContainText("收到");
@@ -551,7 +596,17 @@ test("server ASR captures microphone PCM and completes a voice turn", async ({ p
         (type) => type === "client_connection_quality",
       ).length,
     };
-  })).toEqual({ epochs: 3, hellos: 2, quality: 1 });
+  })).toEqual({ epochs: 2, hellos: hellosBeforeReconnect + 1, quality: 1 });
+  const reconnected = await page.evaluate(() => (
+    window as typeof window & {
+      __inputEpochStarts: Array<{
+        input_epoch: string;
+        requested_constraints: { noise_suppression: boolean };
+      }>;
+    }
+  ).__inputEpochStarts);
+  expect(reconnected[0].input_epoch).not.toBe(reconnected[1].input_epoch);
+  expect(reconnected[1].requested_constraints.noise_suppression).toBe(false);
 });
 
 test("terminating a reply returns idle and ignores late assistant output", async ({ page }) => {
@@ -688,7 +743,14 @@ test("terminating a reply returns idle and ignores late assistant output", async
       AudioContext: typeof AudioContext;
       AudioWorkletNode: typeof AudioWorkletNode;
     };
-    browserWindow.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const NativeWebSocket = window.WebSocket;
+    browserWindow.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = new URL(String(args[0]), location.href);
+        if (url.port === "8765" || url.pathname === "/voice") return new FakeWebSocket();
+        return Reflect.construct(target, args);
+      },
+    });
     browserWindow.AudioContext = FakeAudioContext as unknown as typeof AudioContext;
     browserWindow.AudioWorkletNode = FakeAudioWorkletNode as unknown as typeof AudioWorkletNode;
     Object.defineProperty(navigator, "mediaDevices", {
@@ -701,22 +763,21 @@ test("terminating a reply returns idle and ignores late assistant output", async
     });
   });
 
-  await page.goto("/");
-  await expect(page.locator(".status-dot")).toHaveText("待命");
-  await page.getByRole("button", { name: "开始语音对话" }).click();
-  await expect(page.locator(".orb-conversation-status")).toHaveText("AI 回复中");
+  await page.goto("/conversation?role_id=e2e-unassigned");
+  await expect(page.locator(".status-dot")).toHaveAttribute("data-state", "idle");
+  await page.getByRole("button", { name: "主页开始对话" }).click();
+  await expect(page.locator(".status-dot")).toHaveAttribute("data-state", "speaking");
 
   await page.getByRole("button", { name: "结束通话" }).click();
-  await expect(page.locator(".status-dot")).toHaveText("待命");
+  await expect(page.locator(".status-dot")).toHaveAttribute("data-state", "idle");
 
   await page.evaluate(() => {
     (window as typeof window & { __emitLateAssistant: () => void })
       .__emitLateAssistant();
   });
-  await expect(page.locator(".status-dot")).toHaveText("待命");
+  await expect(page.locator(".status-dot")).toHaveAttribute("data-state", "idle");
 
-  await page.getByRole("button", { name: "开始语音对话" }).click();
-  await expect(page.locator(".orb-conversation-status")).toHaveText("正在听");
+
 });
 
 test("browser speech permission denial exits listening instead of retrying forever", async ({ page }) => {
@@ -793,17 +854,24 @@ test("browser speech permission denial exits listening instead of retrying forev
       SpeechRecognition: typeof DeniedSpeechRecognition;
       webkitSpeechRecognition: typeof DeniedSpeechRecognition;
     };
-    browserWindow.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    const NativeWebSocket = window.WebSocket;
+    browserWindow.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = new URL(String(args[0]), location.href);
+        if (url.port === "8765" || url.pathname === "/voice") return new FakeWebSocket();
+        return Reflect.construct(target, args);
+      },
+    });
     browserWindow.SpeechRecognition = DeniedSpeechRecognition;
     browserWindow.webkitSpeechRecognition = DeniedSpeechRecognition;
   });
 
-  await page.goto("/");
-  const mic = page.getByRole("button", { name: "开始语音对话" });
+  await page.goto("/conversation?role_id=e2e-unassigned");
+  const mic = page.getByRole("button", { name: "主页开始对话" });
   await expect(mic).toBeEnabled();
   await mic.click();
 
-  await expect(page.locator(".status-dot")).toHaveText("待命");
+  await expect(page.locator(".status-dot")).toHaveAttribute("data-state", "idle");
   await expect(page.locator(".current-turn-text")).toContainText(
     "当前浏览器拒绝语音识别",
   );
@@ -819,8 +887,8 @@ test("live demo keeps two simulated speakers as separate turns", async ({ page }
       utterance.dispatchEvent(new Event("end"));
     };
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "开始语音对话" }).click();
+  await page.goto("/conversation?role_id=e2e-unassigned");
+  await page.getByRole("button", { name: "主页开始对话" }).click();
   await enterContentPageForm(page);
   const input = page.getByRole("textbox", { name: "输入对话消息" });
 

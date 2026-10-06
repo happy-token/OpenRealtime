@@ -29,7 +29,7 @@ interface BrowserSocket {
     listener: (event: { data?: string }) => void,
   ): void;
   send(payload: string): void;
-  close(): void;
+  close(code?: number, reason?: string): void;
 }
 
 export interface BrowserVoiceSessionTransportOptions {
@@ -128,7 +128,7 @@ export class BrowserVoiceSessionTransport {
       this.cancelScheduled(this.reconnectHandle);
       this.reconnectHandle = null;
     }
-    this.socket?.close();
+    this.socket?.close(1000, "client_dispose");
     this.socket = null;
   }
 

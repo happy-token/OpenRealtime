@@ -113,3 +113,30 @@ turn_manager = LegacyTurnManagerCapabilityAdapter(
 新增 `tests/turn_policy/test_semantic_request_contract.py` 验证：上下文模型收到上一轮、无历史/纯文本兼容、组合模型完整转发、打断请求 revision 和边界、LLM 序列化，以及非法数值和合约版本拒绝。现有 Gate 测试继续覆盖过期结果、取消和超时。
 
 本次未下载新模型权重，也未验证某个外部新模型的判断准确率。新增服务商还需要确认模型全名、输入模态、标签/概率含义与延迟，再写薄适配器及真实语音评测。
+
+## 规则优先的打断插件
+
+实时协调器通过 `RuleFirstInterruptionClassifier` 统一执行本地规则与模型回退。它位于 `server/turn_policy/plugins/rule_first_interruption_classifier.py`；默认 `ExactInterruptionRules` 的附和词、立即停播词、需要稳定边界的短停播词，以及提问/跨 chunk 前文的保护均在同一插件内。未命中或存在歧义时才调用注入的模型，生产配置可以使用 JEV。
+
+`server/turn_policy/interruption_rules.py` 只定义不依赖供应商的规则输入、返回值和 `InterruptionRuleProvider` 接口。自定义规则实现 `match(context)`，明确命中返回分类，无法可靠判断返回 `None`。插件返回 `source=rule/model`；超时与异常由运行时记录为 fallback，不伪装成规则命中。
+
+协调器负责 chunk 队列、版本有效性、超时、遥测和停播动作，不维护规则词表。规则插件没有播放、ASR、Session、网络连接生命周期的副作用；JEV 的传输、并发和共享连接仍属于模型插件。
+
+规则可在装配时替换或扩展，例如保留默认附和词并增加“收到”：
+
+```python
+from server.turn_policy.plugins.rule_first_interruption_classifier import ExactInterruptionRules
+
+rules = ExactInterruptionRules(
+    backchannels=ExactInterruptionRules().backchannels | {"收到"},
+)
+turn_manager = CoordinatedTurnManagerCapabilityAdapter(
+    semantic_chunks_enabled=True,
+    interruption_rules=rules,
+    semantic_interruption_classifier=my_jev_classifier,
+)
+```
+
+旧 `match_interruption_rule` 入口保留兼容，只转发到规则插件的精确词面匹配；新协调器使用带完整上下文保护的插件接口。精确附和在 partial/助手提问等有歧义场景不会直接吞掉用户回答；已有前块时的停止词需要模型结合前文判断。
+
+回归覆盖：规则命中不调用模型、未命中仅调用一次模型且完整转发请求、提问/partial/跨块否定交给模型、规则替换生效、输入与规则上下文不匹配被拒绝，以及注入自定义停播规则后协调器直接停播。

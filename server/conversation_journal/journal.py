@@ -61,8 +61,15 @@ class ConversationHistoryRetention(Protocol):
     async def delete_threads(self, scopes: Sequence[JournalScope]) -> int: ...
 
 
+@runtime_checkable
+class SessionOwnedHistoryRetention(Protocol):
+    async def delete_session_owned_threads(self, scopes: Sequence[JournalScope], voice_session_ids: Sequence[str]) -> int: ...
+
+
 class InMemoryConversationJournal:
     """A concurrency-safe test conformer; it is deliberately not durable."""
+
+    durable = False
 
     def __init__(self) -> None:
         self._items_by_id: dict[str, ConversationItem] = {}
@@ -135,6 +142,16 @@ class InMemoryConversationJournal:
                 for item in items:
                     self._items_by_id.pop(item.item_id, None)
         return len(existing)
+
+    async def delete_session_owned_threads(self, scopes: Sequence[JournalScope], voice_session_ids: Sequence[str]) -> int:
+        allowed = frozenset(voice_session_ids)
+        async with self._lock:
+            owned = {scope for scope in scopes if scope in self._threads
+                     and all(item.context.voice_session_id in allowed for item in self._threads[scope])}
+            for scope in owned:
+                for item in self._threads.pop(scope):
+                    self._items_by_id.pop(item.item_id, None)
+        return len(owned)
 
     async def project_for_model(
         self,

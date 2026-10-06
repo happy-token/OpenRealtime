@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import AdminPage from "@/app/admin/page";
+import AdminPage from "@/app/settings/session-diagnostics/page";
+import { renderToStaticMarkup } from "react-dom/server";
 const mocks = vi.hoisted(() => ({ user: vi.fn(), admin: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
@@ -15,7 +16,7 @@ it("opens the dashboard directly using the existing administrator account sessio
   expect(mocks.admin).toHaveBeenCalledWith({ issuer: "issuer", subject: "account" });
 });
 it("uses the application login only when the application session is absent", async () => {
-  await expect(AdminPage()).rejects.toThrow("redirect:/api/user/login?next=%2Fadmin");
+  expect(renderToStaticMarkup(await AdminPage())).toContain('href="/api/user/login?next=%2Fsettings%2Fsession-diagnostics"');
 });
 it("does not prompt a logged-in non-admin to log in again", async () => {
   mocks.user.mockResolvedValue({ issuer: "issuer", subject: "user" });

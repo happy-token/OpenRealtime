@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from server.observability.telemetry import SessionTelemetry, TelemetryOutcome
+
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
@@ -108,14 +111,21 @@ class AsrCapabilityProvider(Protocol):
 
 
 class LegacyAsrCapabilityAdapter:
-    def __init__(self, engine: AsrEngine) -> None:
+    def __init__(self, engine: AsrEngine, *, telemetry: SessionTelemetry | None = None) -> None:
         self._engine = engine
+        self._telemetry = telemetry
 
     async def open(self, *, context: InteractionContext) -> LegacyAsrCapabilitySession:
+        if self._telemetry is None:
+            session = await self._engine.start_session()
+        else:
+            async with self._telemetry.provider_call(provider="asr", operation="connection_setup", generation=context.generation):
+                session = await self._engine.start_session()
         return LegacyAsrCapabilitySession(
             context=context,
             engine=self._engine,
-            session=await self._engine.start_session(),
+            session=session,
+            telemetry=self._telemetry,
         )
 
 
@@ -126,10 +136,14 @@ class LegacyAsrCapabilitySession:
         context: InteractionContext,
         engine: AsrEngine,
         session: AsrSession,
+        telemetry: SessionTelemetry | None = None,
     ) -> None:
         self._context = context
         self._engine = engine
         self._session = session
+        self._telemetry = telemetry
+        if telemetry is not None:
+            telemetry.record("asr.collection_ready")
         self._events: asyncio.Queue[AsrEvent | object] = asyncio.Queue(maxsize=64)
         self._last_text = ""
         self._last_revision = 0
@@ -186,6 +200,8 @@ class LegacyAsrCapabilitySession:
             # The provider can expire between the liveness check and the send.
             # Re-send this one frame so the first audio after a long-idle browser
             # session is not silently discarded.
+            if self._telemetry is not None:
+                self._telemetry.record("asr.connection_lost", generation=context.generation)
             await self._restart_session()
             await self._session.push_audio(
                 frame.data,
@@ -224,10 +240,20 @@ class LegacyAsrCapabilitySession:
             self._last_endpoint_revision = snapshot.sentence_end_revision
 
     async def _restart_session(self) -> None:
+        started = time.monotonic_ns()
+        if self._telemetry is not None:
+            self._telemetry.record("asr.session_restarted")
         previous = self._session
         with contextlib.suppress(Exception):
             await previous.close()
-        self._session = await self._engine.start_session()
+        try:
+            self._session = await self._engine.start_session()
+        except Exception as error:
+            if self._telemetry is not None:
+                self._telemetry.record("asr.restart_failed", outcome=TelemetryOutcome.ERROR, error=error)
+            raise
+        if self._telemetry is not None:
+            self._telemetry.record("asr.restart_completed", duration_ms=(time.monotonic_ns()-started)/1_000_000)
         self._last_text = ""
         self._last_revision = 0
         self._last_endpoint_revision = 0

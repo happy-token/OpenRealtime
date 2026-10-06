@@ -283,9 +283,43 @@ async def test_jev_backchannel_threshold_controls_actual_yield(threshold, discar
         await start(session)
         await text(session, "嗯，我在听，你继续讲")
         await stop(session)
-        await take(stream, AsrDiscardRequested if discard else AssistantYieldRequested)
         if discard:
-            assert session.snapshot().response_id == "old"
+            await take(stream, AsrDiscardRequested)
+        else:
+            await asyncio.sleep(0.03)
+            assert session._input is not None and not session._input.yield_pending
+        assert session.snapshot().response_id == "old"
     finally:
         await stream.aclose()
         await session.close()
+
+
+async def test_shared_transport_is_reused_and_closed_by_owner(monkeypatch):
+    _, closed, _ = sdk_stub(monkeypatch)
+    client = JevClient(api_key="test", reuse_connections=True)
+    try:
+        await client.choose(state={}, instructions="test", criteria=EOT_CRITERIA)
+        connection = client._client
+        await client.choose(state={}, instructions="test", criteria=EOT_CRITERIA)
+        assert client._client is connection
+        assert not closed.is_set()
+    finally:
+        await client.close()
+    assert closed.is_set()
+    with pytest.raises(RuntimeError, match="closed"):
+        await client.choose(state={}, instructions="test", criteria=EOT_CRITERIA)
+
+
+async def test_cancelled_shared_request_does_not_close_transport(monkeypatch):
+    entered, closed, _ = sdk_stub(monkeypatch, stall=True)
+    client = JevClient(api_key="test", reuse_connections=True)
+    task = asyncio.create_task(client.choose(state={}, instructions="test", criteria=EOT_CRITERIA))
+    try:
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not closed.is_set()
+    finally:
+        await client.close()
+    assert closed.is_set()

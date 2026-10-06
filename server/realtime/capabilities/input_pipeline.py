@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from server.conversation_journal import (
     ConversationItem,
-    ConversationItemKind,
-    TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AppendAsrAudio,
     AsrCapabilityProvider,
@@ -151,6 +150,11 @@ class CascadedInputPipeline:
             event_queue_size=event_queue_size,
             provider_timing=provider_timing,
         )
+
+    def set_prefetch_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
+        bind = getattr(self._turn_manager, "set_prefetch_turn_builder", None)
+        if bind is not None:
+            bind(builder)
 
     async def append_audio(
         self,

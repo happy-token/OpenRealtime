@@ -23,12 +23,13 @@ import os
 import re
 import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
@@ -70,6 +71,7 @@ _MAX_PROVIDER_PROBE_BODY_BYTES = 2_048
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 VoicePreviewer = Callable[[str, str, int, str], Awaitable[tuple[bytes, str]]]
 SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
+SessionInputEvidenceReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionHistoryDeleter = Callable[[list[str]], Awaitable[dict[str, int]]]
 AvatarAssetHandler = Callable[
     [str, str, str, dict[str, str], bytes],
@@ -212,6 +214,7 @@ def _build_handler(
     avatar_asset_handler: AvatarAssetHandler | None = None,
     debug_log_query: DebugLogQuery | None = None,
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
+    session_input_evidence_reader: SessionInputEvidenceReader | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -447,6 +450,29 @@ def _build_handler(
                     return
                 self._write_json(200, detail.to_dict())
                 return
+            if parsed.path.startswith("/observability/sessions/") and parsed.path.endswith("/input-evidence"):
+                if session_input_evidence_reader is None:
+                    self._write_json(404, {"error": "input evidence is not configured"})
+                    return
+                session_id = unquote(parsed.path.removeprefix("/observability/sessions/").removesuffix("/input-evidence"))
+                parameters = parse_qs(parsed.query, keep_blank_values=True)
+                try:
+                    after_sequence = int(parameters.get("after_sequence", ["0"])[0])
+                    limit = int(parameters.get("limit", ["100"])[0])
+                except ValueError:
+                    self._write_json(400, {"error": "invalid input evidence pagination"})
+                    return
+                if not session_id or len(session_id) > 128 or "/" in session_id:
+                    self._write_json(400, {"error": "invalid session id"})
+                    return
+                if after_sequence < 0 or not 1 <= limit <= 1000:
+                    self._write_json(400, {"error": "invalid input evidence pagination"})
+                    return
+                evidence_future = asyncio.run_coroutine_threadsafe(
+                    session_input_evidence_reader(session_id, after_sequence, limit), loop
+                )
+                self._write_json(200, evidence_future.result(timeout=_RPC_TIMEOUT_S))
+                return
             if parsed.path.startswith("/observability/sessions/") and parsed.path.endswith("/conversation"):
                 if session_conversation_reader is None:
                     self._write_json(404, {"error": "conversation replay is not configured"})
@@ -642,6 +668,7 @@ def start(
     avatar_asset_handler: AvatarAssetHandler | None = None,
     debug_log_query: DebugLogQuery | None = None,
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
+    session_input_evidence_reader: SessionInputEvidenceReader | None = None,
     host: str = "127.0.0.1",
     port: int = 8766,
 ) -> ControlPlaneServer:
@@ -667,6 +694,7 @@ def start(
             avatar_asset_handler,
             debug_log_query,
             diagnostics_health_reader,
+            session_input_evidence_reader,
         ),
         avatar_requests=avatar_requests,
     )

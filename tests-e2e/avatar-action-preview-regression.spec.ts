@@ -1,11 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("openrealtime-language", "zh-CN"));
+});
+
 test("plays an internal action preview and preserves the source aspect ratio", async ({ page }) => {
-  await page.goto("/avatars?scope=internal-preset");
-  const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "陪伴" }) });
-  await expect(card.getByRole("button", { name: /管理 陪伴 的/ })).toBeVisible();
-  await card.getByRole("button", { name: /管理 陪伴 的/ }).click();
-  const video = card.locator('video[data-playing="true"]');
+  const avatar = {
+    avatar_id: "preview-avatar", display_name: "陪伴",
+    source_image_url: "/digital-human/opentalking/companion/reference.png",
+    created_at: "2026-10-04T00:00:00Z", updated_at: "2026-10-04T00:00:00Z",
+    deleted_at: null, realtime_binding: null,
+    actions: [{ avatar_action_id: "preview-motion", display_name: "内置动作",
+      video_url: "/digital-human/opentalking/companion/motion.mp4", pending_model_count: 0,
+      created_at: "2026-10-04T00:00:00Z", deleted_at: null }],
+  };
+  await page.route("**/api/avatars", route => route.fulfill({ json: { avatars: [avatar] } }));
+  await page.route("**/api/avatars/preview-avatar", route => route.fulfill({ json: { avatar } }));
+  await page.goto("/avatars/preview-avatar");
+  await page.getByRole("button", { name: "查看动作：内置动作", exact: true }).click();
+  const video = page.getByLabel("陪伴 · 内置动作", { exact: true });
   await expect(video).toBeVisible();
   await expect.poll(() => video.evaluate((node) => {
     const element = node as HTMLVideoElement;

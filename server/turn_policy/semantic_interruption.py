@@ -23,7 +23,6 @@ import asyncio
 import inspect
 import json
 import math
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -149,6 +148,9 @@ class InterruptionRequest:
     interaction: InteractionContext | None = None
     language: str | None = None
     contract_version: int = 1
+    # The sealed chunk remains the scheduling unit. A cumulative snapshot, when
+    # supplied, defines the semantic scope of this candidate's model verdict.
+    cumulative_transcript: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -166,6 +168,11 @@ class InterruptionRequest:
             raise TypeError("invalid interruption input state")
         if not self.transcript.strip() or not isinstance(self.boundary, InterruptionBoundary):
             raise ValueError("invalid interruption request text or boundary")
+        if self.cumulative_transcript is not None and (
+            not isinstance(self.cumulative_transcript, str)
+            or not self.cumulative_transcript.strip()
+        ):
+            raise ValueError("interruption cumulative transcript must be a non-empty string")
         if self.interaction is not None and self.interaction.generation != self.generation:
             raise ValueError("interruption request generation does not match interaction")
 
@@ -189,7 +196,11 @@ async def classify_interruption(
     else:
         result = await classifier.classify(
             assistant_text=request.assistant_text,
-            transcript=request.transcript,
+            transcript=(
+                request.cumulative_transcript
+                if request.cumulative_transcript is not None
+                else request.transcript
+            ),
             boundary=request.boundary,
             generation=request.generation,
         )
@@ -198,75 +209,13 @@ async def classify_interruption(
     return result
 
 
-_IMMEDIATE_STOP_PHRASES = frozenset(
-    {
-        "别说了",
-        "不要说了",
-        "先别说了",
-        "闭嘴",
-        "够了",
-        "不用说了",
-        "别讲了",
-        "不要讲了",
-        "wait",
-        "holdon",
-        "hangon",
-    }
-)
-_BOUNDARY_STOP_PHRASES = frozenset({"停", "停止", "别说", "stop"})
-_BACKCHANNEL_PHRASES = frozenset(
-    {
-        "嗯",
-        "嗯嗯",
-        "啊",
-        "哦",
-        "噢",
-        "好",
-        "好的",
-        "行",
-        "可以",
-        "对",
-        "是的",
-        "没错",
-        "继续",
-        "你继续",
-        "哈哈",
-        "哈哈哈",
-        "mhm",
-        "mmhmm",
-        "okay",
-        "yes",
-    }
-)
-_TRAILING_PUNCTUATION = "。！？，；：.!?,;:"
-
-
-def _normalize_rule_text(text: str) -> str:
-    return re.sub(r"\s+", "", text).casefold().rstrip(_TRAILING_PUNCTUATION)
-
-
 def match_interruption_rule(
-    text: str,
-    *,
-    boundary: InterruptionBoundary,
-    stable: bool = False,
+    text: str, *, boundary: InterruptionBoundary, stable: bool = False,
 ) -> InterruptionClassification | None:
-    """Return only exact, deterministic rule matches.
+    """Compatibility entry point for legacy gates; rules live in the plugin."""
+    from server.turn_policy.plugins.rule_first_interruption_classifier import ExactInterruptionRules
 
-    Short boundary words such as ``停`` are delayed until stable input so a
-    partial prefix such as ``停电了吗`` cannot cut off the assistant.
-    """
-
-    normalized = _normalize_rule_text(text)
-    if normalized in _IMMEDIATE_STOP_PHRASES:
-        return InterruptionClassification(InterruptionLabel.STOP, 1.0)
-    if normalized in _BOUNDARY_STOP_PHRASES and (
-        stable or boundary is InterruptionBoundary.SENTENCE_END
-    ):
-        return InterruptionClassification(InterruptionLabel.STOP, 1.0)
-    if normalized in _BACKCHANNEL_PHRASES:
-        return InterruptionClassification(InterruptionLabel.BACKCHANNEL, 1.0)
-    return None
+    return ExactInterruptionRules().match_exact(text, boundary=boundary, stable=stable)
 
 
 def parse_interruption_classification(content: str) -> InterruptionClassification:

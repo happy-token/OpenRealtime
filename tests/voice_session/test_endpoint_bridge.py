@@ -14,6 +14,7 @@ from server.conversation_journal import (
     ConversationVisibility,
     InMemoryConversationJournal,
     StructuredContent,
+    TextContent,
 )
 from server.core.interaction_context import InteractionContext
 from server.realtime.registry import ActiveRealtimeConversations
@@ -600,3 +601,120 @@ async def test_quiesced_endpoint_reopens_conversation_without_ending_session() -
 
     run_task.cancel()
     await asyncio.gather(run_task, return_exceptions=True)
+
+
+async def test_input_budget_failure_closes_actual_engine_and_coordinator() -> None:
+    from server.realtime.capabilities.asr import AsrEndpointHint, AsrTranscriptDelta
+    from server.realtime.capabilities.coordinated_turn_manager import (
+        CoordinatedTurnManagerCapabilityAdapter,
+    )
+    from server.realtime.capabilities.turn_manager import ObserveAsrEvent
+    from server.realtime.runtime import RealtimeRuntimeFactory
+    from server.turn_policy.policy import TurnPolicy
+    from server.turn_policy.semantic_input import SemanticInputBudget
+    from tests.realtime.test_cascaded_engine import context, engine
+
+    class RecordingCoordinator(CoordinatedTurnManagerCapabilityAdapter):
+        async def open(self, *, context):
+            self.session = await super().open(context=context)
+            return self.session
+
+    from server.realtime import AppendItem, RequestResponse
+    from server.realtime.capabilities import (
+        LegacyBrainCapabilityAdapter,
+        LegacyTtsCapabilityAdapter,
+    )
+    from server.speech.tts import SynthesizedAudioChunk
+    from server.turn_policy.semantic_interruption import (
+        InterruptionClassification,
+        InterruptionLabel,
+    )
+
+    brain_started, brain_cancelled = asyncio.Event(), asyncio.Event()
+    tts_started, tts_cancelled = asyncio.Event(), asyncio.Event()
+    classifier_started, classifier_cancelled = asyncio.Event(), asyncio.Event()
+
+    class ActiveBrain:
+        async def stream(self, turn):
+            try:
+                brain_started.set()
+                yield "已经开始回答。"
+                await asyncio.Event().wait()
+            finally:
+                brain_cancelled.set()
+
+    class ActiveTts:
+        async def synthesize_duplex(self, text_stream):
+            try:
+                async for text in text_stream:
+                    tts_started.set()
+                    yield SynthesizedAudioChunk(pcm16=b"\x00\x00" * 160, sample_rate_hz=16000, is_final=False)
+                    await asyncio.Event().wait()
+            finally:
+                tts_cancelled.set()
+
+    class ActiveClassifier:
+        async def classify_request(self, request):
+            try:
+                classifier_started.set()
+                await asyncio.Event().wait()
+                return InterruptionClassification(InterruptionLabel.INTERRUPT, 1)
+            finally:
+                classifier_cancelled.set()
+
+    journal = InMemoryConversationJournal()
+    coordinator = RecordingCoordinator(TurnPolicy, input_evidence_journal=journal,
+                                       input_budget=SemanticInputBudget(max_text_bytes=6), semantic_interruption_classifier=ActiveClassifier())
+    cascaded = engine()
+    cascaded._turn_manager = coordinator
+    cascaded._brain = LegacyBrainCapabilityAdapter(ActiveBrain())
+    cascaded._tts = LegacyTtsCapabilityAdapter(ActiveTts())
+    active = ActiveRealtimeConversations()
+    factory = RealtimeRuntimeFactory(engine=cascaded, journal=journal, active_conversations=active)
+    ctx = context()
+    transport = EpochTransport()
+    endpoint = VoiceSessionWebSocketSession(
+        identity=VoiceSessionIdentity(tenant_id=ctx.tenant_id, user_id=ctx.user_id,
+                                     device_id=ctx.device_id, voice_session_id=ctx.voice_session_id, thread_id=ctx.thread_id),
+        context=ctx, profile=None, runtime_factory=factory, journal=journal,
+        transport=transport, admission=LocalVoiceSessionAdmissionController(),
+    )
+    running = asyncio.create_task(endpoint.run())
+    try:
+        async with asyncio.timeout(1):
+            while not any(isinstance(frame, VoiceSessionReadyFrame) for frame in transport.sent):
+                await asyncio.sleep(0)
+        await endpoint._conversation.send(AppendItem(
+            command_id="seed", idempotency_key="seed", context=ctx,
+            draft=ConversationItemDraft(item_id="user-seed", context=ctx, kind=ConversationItemKind.USER_INPUT,
+                                       status=ConversationItemStatus.COMMITTED, producer="test", content=(TextContent("seed"),))))
+        await endpoint._conversation.send(RequestResponse(command_id="start-response", idempotency_key="start-response",
+                                                          context=ctx, response_id="active-response", minimum_thread_sequence=1))
+        async with asyncio.timeout(1):
+            await brain_started.wait()
+            await tts_started.wait()
+        await coordinator.session.send(ObserveAsrEvent(event=AsrEndpointHint(context=ctx, revision=1, text="北京")))
+        async with asyncio.timeout(1):
+            await classifier_started.wait()
+        assert not classifier_cancelled.is_set()
+        assert coordinator.session._classifier_executor.pending_count > 0
+        assert not brain_cancelled.is_set() and not tts_cancelled.is_set()
+        await coordinator.session.send(ObserveAsrEvent(event=AsrTranscriptDelta(
+            context=ctx, revision=2, delta="北京上海", accumulated_text="北京上海", audio_timestamp_us=0)))
+        async with asyncio.timeout(2):
+            await running
+        failures = [frame for frame in transport.sent if isinstance(frame, VoiceSessionFailureFrame)]
+        assert len(failures) == 1
+        assert failures[0].code == "semantic_input_rejected"
+        assert failures[0].session_disposition == "close"
+        assert "未确认保存" in failures[0].safe_message
+        assert transport._closed.is_set()
+        assert coordinator.session._closed
+        assert coordinator.session._actor.done()
+        assert coordinator.session._input is None
+        assert coordinator.session._evidence._worker.done()
+        assert not coordinator.session._all_jobs
+        assert brain_cancelled.is_set() and tts_cancelled.is_set() and classifier_cancelled.is_set()
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)

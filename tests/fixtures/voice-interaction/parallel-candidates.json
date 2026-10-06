@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "scope": "Deterministic ASR and classifier event replay; no claim of model accuracy or physical audio",
+  "endpoint": {
+    "asr_updates": [["查北京，", 1], ["查北京，明天的天气。", 2]],
+    "expected_cumulative": ["查北京，", "查北京，明天的天气。"]
+  },
+  "negative_supersedes": [
+    {
+      "id": "two_revisions",
+      "asr_updates": [["电视里面说", 1], ["电视里面说明天会放晴", 2]],
+      "expected_stop_commands": 0
+    },
+    {
+      "id": "one_snapshot_two_chunks",
+      "asr_updates": [["电视里面说，明天会放晴。", 1]],
+      "expected_stop_commands": 0
+    }
+  ],
+  "rewrite": {
+    "interrupt": ["改查北京的", "改查上海的"],
+    "endpoint": ["查北京天气。", "查上海天气。"],
+    "expected_dispatches": 2
+  }
+}

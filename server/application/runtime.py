@@ -16,6 +16,8 @@ from server.conversation_journal import (
     ConversationJournal,
     JournalScope,
 )
+from server.conversation_journal.input_evidence import input_evidence_thread_id
+from server.conversation_journal.journal import SessionOwnedHistoryRetention
 from server.observability.telemetry import (
     DebugLogQuery,
     DiagnosticsQuery,
@@ -252,6 +254,16 @@ class ApplicationRuntime:
         debug_log = self.debug_log.collection_health()
         return {"status": "degraded" if telemetry["status"] != "ok" or debug_log["status"] != "ok" else "ok", "telemetry": telemetry, "debug_log": debug_log}
 
+    async def session_history_scope(self, voice_session_id: str, *, tenant_id: str, user_id: str) -> JournalScope:
+        """Resolve server-recorded identity, never reconstruct it from the admin account."""
+        detail = await self.diagnostics.session_detail(voice_session_id)
+        if detail is not None and detail.events:
+            scopes = {JournalScope(event.tenant_id, event.user_id, event.thread_id) for event in detail.events}
+            if len(scopes) != 1:
+                raise ValueError("session history identity is ambiguous")
+            return next(iter(scopes))
+        return JournalScope(tenant_id, user_id, voice_session_id)
+
     async def delete_session_history(
         self,
         voice_session_ids: Sequence[str],
@@ -267,29 +279,40 @@ class ApplicationRuntime:
         if not self.debug_log.supports_session_deletion:
             raise TypeError("configured debug log store does not support deletion")
         selected = tuple(dict.fromkeys(voice_session_ids))
-        scopes = tuple(
-            JournalScope(tenant_id=tenant_id, user_id=user_id, thread_id=session_id)
-            for session_id in selected
-        )
         await self.telemetry.flush()
-        if self._pool is not None:
-            await self.debug_log.flush()
-            async with (
-                self._pool.acquire() as connection,
-                connection.transaction(),
-            ):
-                await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
-                deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(scopes)
-                deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
-            return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads}
-        await self.debug_log.delete_sessions(selected)
-        deleted_threads = await journal.delete_threads(scopes)
-        deleted_sessions = await self.telemetry.delete_sessions(selected)
-        return {
-            "requested": len(selected),
-            "deleted_sessions": deleted_sessions,
-            "deleted_threads": deleted_threads,
-        }
+        resolved = [await self.session_history_scope(session_id, tenant_id=tenant_id, user_id=user_id)
+                    for session_id in selected]
+        # A conversation thread may be shared by several resumed sessions; never delete it wholesale.
+        evidence_scopes = tuple(
+            JournalScope(tenant_id=scope.tenant_id, user_id=scope.user_id,
+                         thread_id=input_evidence_thread_id(scope.thread_id, session_id))
+            for scope, session_id in zip(resolved, selected)
+        )
+        candidates = tuple((scope.tenant_id, scope.user_id, scope.thread_id)
+                           for scope, session_id in zip(resolved, selected) if scope.thread_id == session_id)
+        with self.active_realtime_conversations.thread_deletion_guard(candidates) as reserved:
+            scopes = tuple(scope for scope in resolved if (scope.tenant_id, scope.user_id, scope.thread_id) in reserved)
+            if self._pool is not None:
+                await self.debug_log.flush()
+                async with (
+                    self._pool.acquire() as connection,
+                    connection.transaction(),
+                ):
+                    await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
+                    deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_session_owned_threads(scopes, selected)
+                    deleted_evidence_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(evidence_scopes)
+                    deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
+                return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads}
+            await self.debug_log.delete_sessions(selected)
+            deleted_threads = await journal.delete_session_owned_threads(scopes, selected) if isinstance(journal, SessionOwnedHistoryRetention) else 0
+            deleted_evidence_threads = await journal.delete_threads(evidence_scopes)
+            deleted_sessions = await self.telemetry.delete_sessions(selected)
+            return {
+                "requested": len(selected),
+                "deleted_sessions": deleted_sessions,
+                "deleted_threads": deleted_threads,
+                "deleted_evidence_threads": deleted_evidence_threads,
+            }
 
     async def close(self) -> None:
         if self._closed:

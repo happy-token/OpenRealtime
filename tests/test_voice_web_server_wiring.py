@@ -728,12 +728,14 @@ async def test_application_shutdown_closes_main_runtime_when_avatar_close_fails(
     assert voice_web_server._application_runtime is None
 
 
+@pytest.mark.parametrize("prefetch_tts", [False, True])
 async def test_session_runtime_can_select_stateful_realtime_transport(
-    monkeypatch,
+    monkeypatch, prefetch_tts,
 ):
     runtime = await build_application_runtime(ApplicationRuntimeConfig())
     monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
     monkeypatch.setenv("VOICEAGENT_REALTIME_RUNTIME", "1")
+    monkeypatch.setenv("VOICEAGENT_RESPONSE_PREFETCH_TTS_ENABLED", "1" if prefetch_tts else "0")
     monkeypatch.setenv("VOICEAGENT_TURN_RESPONSE_TIMEOUT_S", "12")
     monkeypatch.setenv("VOICEAGENT_EOT_ASR_IDLE_MS", "750")
     monkeypatch.setenv("VOICEAGENT_LATE_ASR_RECOVERY_MS", "384")
@@ -803,16 +805,20 @@ async def test_session_runtime_can_select_stateful_realtime_transport(
     assert session_runtime._runtime_factory._engine._tts._cancel_timeout_s == 0.3
     assert isinstance(
         session_runtime._runtime_factory._engine._brain._brain,
-        SpeculativeSpeechPipeline,
+        SpeculativeSpeechPipeline if prefetch_tts else SpeculativeStreamingBrain,
     )
     assert (
         turn_manager._response_prefetcher
         is session_runtime._runtime_factory._engine._brain._brain
     )
-    assert (
-        session_runtime._runtime_factory._engine._tts._engine
-        is session_runtime._runtime_factory._engine._brain._brain
-    )
+    assert turn_manager.response_prefetch_enabled is True
+    assert turn_manager.input_evidence_journal is runtime.journal
+    assert turn_manager.input_budget.max_text_bytes == 16384
+    assert turn_manager.input_evidence_timeout_s == 1
+    if prefetch_tts:
+        assert session_runtime._runtime_factory._engine._tts._engine is session_runtime._runtime_factory._engine._brain._brain
+    else:
+        assert isinstance(session_runtime._runtime_factory._engine._tts._engine, DuplexTts)
     assert isinstance(
         session_runtime._runtime_factory._observer,
         RealtimeTelemetryObserver,
@@ -938,3 +944,47 @@ async def test_native_realtime_engine_is_not_a_phase1_production_selection(monke
         voice_web_server._build_session_runtime(Session())
 
     await runtime.close()
+
+
+async def test_input_evidence_reader_and_deletion_use_actual_session_identity(monkeypatch):
+    from server.conversation_journal import (
+        ConversationItemDraft,
+        ConversationItemKind,
+        ConversationItemStatus,
+        TextContent,
+    )
+    from server.conversation_journal.input_evidence import (
+        InputEvidenceRecorder,
+        input_evidence_scope,
+    )
+    from server.core.interaction_context import InteractionContext
+    from server.observability.telemetry import TelemetryIdentity
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
+    ctx = InteractionContext(tenant_id="ticket-tenant", user_id="public-user", device_id="device",
+                             voice_session_id="resumed-session", thread_id="existing-thread", turn_id="turn", generation=1)
+    recorder = InputEvidenceRecorder(runtime.journal, context=ctx, on_failure=lambda _: None)
+    try:
+        await runtime.journal.append(ConversationItemDraft(
+            item_id="keep-shared-thread", context=ctx, kind=ConversationItemKind.USER_INPUT,
+            status=ConversationItemStatus.COMMITTED, producer="test", content=(TextContent("shared conversation"),)))
+        await recorder.offer("input", "asr_revision", {"suffix": "后续问题"}).committed
+        runtime.telemetry.bind(TelemetryIdentity(tenant_id=ctx.tenant_id, user_id=ctx.user_id, device_id=ctx.device_id,
+                              voice_session_id=ctx.voice_session_id, thread_id=ctx.thread_id)).record("interaction.collection_ready")
+        result = await voice_web_server._read_session_input_evidence(ctx.voice_session_id, 0, 1)
+        assert result["status"] == "available"
+        assert result["records"][0]["detail"]["suffix"] == "后续问题"
+        empty_tail = await voice_web_server._read_session_input_evidence(ctx.voice_session_id, 1, 1)
+        assert empty_tail["status"] == "available" and empty_tail["records"] == []
+        missing = await voice_web_server._read_session_input_evidence("missing", 100, 1)
+        assert missing["status"] == "not_collected"
+        deleted = await voice_web_server._delete_session_history([ctx.voice_session_id])
+        assert deleted["deleted_evidence_threads"] == 1
+        assert deleted["deleted_threads"] == 0
+        assert await runtime.journal.read(input_evidence_scope(ctx)) == ()
+        from server.conversation_journal import JournalScope
+        assert len(await runtime.journal.read(JournalScope.from_context(ctx))) == 1
+    finally:
+        await recorder.close()
+        await runtime.close()

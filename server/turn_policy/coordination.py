@@ -65,6 +65,8 @@ class DefaultTurnCoordinationPolicy:
         # Provider errors preserve input but do not masquerade as confident stops.
         if verdict.source == "fallback":
             return InterruptionDisposition(False, True)
+        if verdict.label is InterruptionLabel.IGNORE:
+            return InterruptionDisposition(False, False)
         if verdict.label is InterruptionLabel.STOP:
             return InterruptionDisposition(True, False)
         if verdict.label in {InterruptionLabel.CORRECTION, InterruptionLabel.INTERRUPT}:

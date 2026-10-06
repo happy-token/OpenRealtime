@@ -16,6 +16,11 @@ from server.turn_policy.semantic_interruption import (
 DEFAULT_SYSTEM_PROMPT = (
     "你是实时语音助手的语义打断分类器。只判断助手正在播报时，当前用户累计文本"
     "是否要求立即停播；不要判断用户是否已经说完。"
+    "有 cumulative_transcript 时，判断其截至该候选边界的整段累计意图；"
+    "transcript 保留此次封口的独立新块，input_state.previous_chunks 只是辅助上下文。"
+    "尾部附和不能覆盖前面仍有效的停止、纠正或新任务；只有明确撤回或纠正此前要求时才改变整段意图。"
+    "没有 cumulative_transcript 时，判断 transcript，并用 input_state.previous_chunks "
+    "理解未完句法与跨块否定。"
     "stop 表示只要求停止、没有新任务；correction 表示纠正当前回答依赖的信息；"
     "interrupt 表示以新任务、补充信息或新话题取得话轮；backchannel 表示附和并让"
     "助手继续；ignore 表示不应采取动作；证据不足用 uncertain。"
@@ -46,6 +51,11 @@ class LlmSemanticInterruptionClassifier:
         payload = {
             "assistant_playback": request.assistant_text,
             "transcript": request.transcript,
+            **(
+                {"cumulative_transcript": request.cumulative_transcript}
+                if request.cumulative_transcript is not None
+                else {}
+            ),
             "boundary": request.boundary.value,
             "history": [
                 {"role": message.role, "content": message.content} for message in request.history

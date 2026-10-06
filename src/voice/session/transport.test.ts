@@ -14,7 +14,9 @@ class FakeSocket {
     this.sent.push(payload);
   }
 
-  close(): void {
+  closeCode: number | undefined;
+  close(code?: number): void {
+    this.closeCode = code;
     this.readyState = 3;
   }
 
@@ -220,4 +222,13 @@ describe("BrowserVoiceSessionTransport", () => {
     expect(states.at(-1)).toBe("error");
     expect(scheduled).toHaveLength(0);
   });
+});
+
+it("marks intentional disposal as a normal WebSocket close", () => {
+  const socket = new FakeSocket();
+  const transport = new BrowserVoiceSessionTransport({ url: "ws://test", controller: { createHello: () => ({ type: "session_hello", protocol_version: 2 } as never), disconnected: () => {} }, onConnectionState: () => {}, onFrame: () => {}, createSocket: () => socket });
+  transport.start();
+  socket.emit("open");
+  transport.dispose();
+  expect(socket.closeCode).toBe(1000);
 });

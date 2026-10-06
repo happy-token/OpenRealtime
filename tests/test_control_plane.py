@@ -742,3 +742,24 @@ async def test_diagnostics_health_reports_collection_degradation() -> None:
         assert body == snapshot
     finally:
         server.shutdown()
+
+
+async def test_input_evidence_pagination_and_invalid_requests() -> None:
+    calls = []
+
+    async def read_evidence(session_id: str, after: int, limit: int) -> dict:
+        calls.append((session_id, after, limit))
+        return {"records": [{"sequence": after + 1}], "next_sequence": after + 1, "has_more": True}
+
+    server = control_plane_http.start(EndpointSessionRegistry(), session_input_evidence_reader=read_evidence, port=0)
+    base = f"http://127.0.0.1:{server.server_address[1]}/observability/sessions/voice-replay/input-evidence"
+    try:
+        status, body = await asyncio.to_thread(_get, base + "?after_sequence=12&limit=3")
+        assert status == 200 and body["next_sequence"] == 13
+        assert calls == [("voice-replay", 12, 3)]
+        for query in ["limit=0", "limit=1001", "after_sequence=-1", "after_sequence=oops", "limit="]:
+            assert (await asyncio.to_thread(_get, base + "?" + query))[0] == 400
+        assert len(calls) == 1
+        assert (await asyncio.to_thread(_get, base.replace("voice-replay", "bad%2Fscope")))[0] == 400
+    finally:
+        await asyncio.to_thread(server.shutdown)

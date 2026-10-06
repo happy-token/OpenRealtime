@@ -120,7 +120,8 @@ class PostgresTelemetryStore:
                               'user_barge_in'
                           )
                     ) AS interrupted_count,
-                    count(*) FILTER (WHERE outcome = 'degraded') AS degraded_count
+                    count(*) FILTER (WHERE outcome = 'degraded') AS degraded_count,
+                    count(DISTINCT (voice_session_id, coalesce(response_id, turn_id, generation::text))) FILTER (WHERE kind='terminal' AND outcome IN ('error','timeout','no_response')) AS failed_turn_count
                 FROM {self._records}
                 WHERE occurred_at >= $1
                   AND ($2::timestamptz IS NULL OR occurred_at <= $2)
@@ -168,6 +169,10 @@ class PostgresTelemetryStore:
                     AND name LIKE 'realtime.capability.%' AND outcome IN ('error','timeout')
                 GROUP BY name ORDER BY name""", window.since, window.until,
             )
+            health_rows = await connection.fetch(f"""SELECT name, outcome, error_type, count(*) AS count, count(DISTINCT voice_session_id) AS session_count
+                FROM {self._records} WHERE occurred_at >= $1 AND ($2::timestamptz IS NULL OR occurred_at <= $2)
+                GROUP BY name, outcome, error_type""", window.since, window.until)
+        from server.observability.module_health import module_health
         resolved_summary = summary or {}
         return DiagnosticsOverview(
             since=window.since,
@@ -184,6 +189,9 @@ class PostgresTelemetryStore:
             interrupted_count=int(resolved_summary.get("interrupted_count") or 0),
             degraded_count=int(resolved_summary.get("degraded_count") or 0),
             metrics=tuple(_metric(row) for row in metric_rows),
+            module_health=module_health(health_rows),
+            latency_collection_ready=any(row["name"] == "interaction.collection_ready" for row in health_rows),
+            failed_turn_count=int(resolved_summary.get("failed_turn_count") or 0),
             capability_failures=tuple({"capability": str(row["capability"]), "error_count": int(row["error_count"]), "timeout_count": int(row["timeout_count"])} for row in failure_rows),
         )
 
@@ -208,7 +216,9 @@ class PostgresTelemetryStore:
                     count(*) FILTER (
                         WHERE kind = 'terminal' AND outcome = 'no_response'
                     ) AS no_response_count,
-                    count(*) AS event_count
+                    count(*) AS event_count,
+                    count(*) FILTER (WHERE name='transport.disconnected') AS disconnect_count,
+                    array_agg(DISTINCT name) FILTER (WHERE outcome IN ('error','timeout') OR name='transport.disconnected') AS failure_names
                 FROM {self._records}
                 WHERE occurred_at >= $1
                   AND ($2::timestamptz IS NULL OR occurred_at <= $2)
@@ -291,6 +301,8 @@ def _session_summary(row: Mapping[str, Any]) -> SessionSummary:
         error_count=int(row["error_count"]),
         no_response_count=int(row["no_response_count"]),
         event_count=int(row["event_count"]),
+        disconnect_count=int(row.get("disconnect_count") or 0),
+        failure_names=tuple(row.get("failure_names") or ()) ,
     )
 
 

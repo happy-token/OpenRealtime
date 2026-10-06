@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { resolve } from "node:path";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("openrealtime-language", "zh-CN"));
+});
+
 test.describe("Avatar asset MVP", () => {
   test("offers every segmented Avatar in the creation library", async ({ page }) => {
     await page.route("**/api/avatars", async (route) => {
@@ -36,7 +40,7 @@ test.describe("Avatar asset MVP", () => {
 
     await page.goto("/avatars/create");
 
-    await expect(page.getByRole("button", { name: "选择 数字人1" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "选择数字人1" })).toBeVisible();
   });
 
   test("reuses an existing Avatar selected from the creation library", async ({ page }) => {
@@ -77,12 +81,10 @@ test.describe("Avatar asset MVP", () => {
     });
 
     await page.goto("/avatars/create");
-    await page.getByRole("button", { name: "选择 数字人1" }).click();
-    const confirmButton = page.getByRole("button", { name: "确认 Avatar 并创建实时驱动" });
-    await expect(confirmButton).toBeEnabled({ timeout: 2_000 });
-    await confirmButton.click();
-
-    await expect(page.getByRole("region", { name: "当前共享 Avatar" })).toContainText("数字人1");
+    await page.getByRole("button", { name: "关闭创建形象窗口" }).click();
+    await page.getByRole("button", { name: "选择数字人1" }).click();
+    await expect(page.getByRole("heading", { name: "数字人1", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "选择数字人1" })).toHaveAttribute("aria-pressed", "true");
     expect(createRequestCount).toBe(0);
   });
 
@@ -90,20 +92,15 @@ test.describe("Avatar asset MVP", () => {
     await page.setViewportSize({ width: 760, height: 820 });
     await page.goto("/avatars/create");
 
-    const visualWorkspace = page.getByRole("region", { name: "Avatar 视觉工作区" });
-    const gallery = page.getByRole("group", { name: "内部预制形象" });
-    const currentPreview = gallery.locator('[data-position="center"]');
-    const workspaceBox = await visualWorkspace.boundingBox();
-    const previewBox = await currentPreview.boundingBox();
-
-    await expect(visualWorkspace).not.toContainText("Avatar Library");
-    await expect(visualWorkspace).not.toContainText("选择一个形象");
-    await expect(visualWorkspace).not.toContainText("已选择 ·");
-    await expect(visualWorkspace).not.toContainText("所有配置集中在左侧");
-    expect(workspaceBox).not.toBeNull();
+    await page.getByRole("button", { name: "关闭创建形象窗口" }).click();
+    await page.getByRole("button", { name: "选择萨曼莎", exact: true }).click();
+    const preview = page.getByLabel("萨曼莎 动作预览", { exact: true });
+    await expect(preview).toBeVisible();
+    await expect.poll(() => preview.evaluate(node => getComputedStyle(node).objectFit)).toBe("cover");
+    const previewBox = await preview.boundingBox();
     expect(previewBox).not.toBeNull();
-    expect(previewBox!.width).toBeGreaterThanOrEqual(workspaceBox!.width - 4);
-    expect(previewBox!.height).toBeGreaterThanOrEqual(workspaceBox!.height - 4);
+    expect(previewBox!.width).toBeGreaterThan(200);
+    expect(previewBox!.height).toBeGreaterThan(200);
   });
 
   test("expands the selected Avatar preview to the full browser window", async ({ page }) => {

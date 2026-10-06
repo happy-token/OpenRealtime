@@ -956,3 +956,59 @@ async def test_playing_progress_includes_only_fully_played_aligned_segments():
         command = conversation.commands[-1]
         assert command.delivered_text_end == expected
         assert command.precision is PlaybackPrecision.SEGMENT
+
+
+async def test_targeted_yield_stops_same_generation_and_rejects_late_audio() -> None:
+    transport = RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=RecordingConversation(), transport=transport)
+    now = datetime.now(UTC)
+    await bridge.handle_event(ResponseStarted(event_id="start", context=event_context(), conversation_sequence=1, occurred_at=now, response_id="response-1", response_sequence=1))
+    await bridge.handle_event(AssistantYieldRequested(event_id="yield", context=event_context(), conversation_sequence=2, occurred_at=now, reason="barge_in_floor_claim"))
+    await bridge.handle_event(AudioDelta(event_id="late-audio", context=event_context(), conversation_sequence=3, occurred_at=now, response_id="response-1", response_sequence=2, speech_id="response:response-1", frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100_000, encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio"), segment_index=0))
+    assert transport.frames == [AssistantSpeechCancelledFrame(generation=1)]
+
+
+async def test_stale_targeted_yield_does_not_stop_replacement_response() -> None:
+    transport = RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=RecordingConversation(), transport=transport)
+    now = datetime.now(UTC)
+    await bridge.handle_event(ResponseStarted(event_id="start", context=replace(event_context(response_id="response-2"), generation=2), conversation_sequence=1, occurred_at=now, response_id="response-2", response_sequence=1))
+    await bridge.handle_event(AssistantYieldRequested(event_id="yield", context=replace(event_context(), generation=3), conversation_sequence=2, occurred_at=now, reason="barge_in_floor_claim"))
+    assert transport.frames == []
+
+
+async def test_targeted_yield_after_generation_complete_still_stops_buffered_audio():
+    transport = RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=RecordingConversation(), transport=transport)
+    now = datetime.now(UTC)
+    ctx = event_context()
+    await bridge.handle_event(ResponseStarted(event_id="start", context=ctx, conversation_sequence=1, occurred_at=now, response_id="response-1", response_sequence=1))
+    await bridge.handle_event(AudioDelta(event_id="audio", context=ctx, conversation_sequence=2, occurred_at=now, response_id="response-1", response_sequence=2, speech_id="response:response-1", frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100_000, encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio"), segment_index=0))
+    await bridge.handle_event(ResponseCompleted(event_id="done", context=ctx, conversation_sequence=3, occurred_at=now, response_id="response-1", response_sequence=3))
+    transport.frames.clear()
+    await bridge.handle_event(AssistantYieldRequested(event_id="yield", context=replace(ctx, generation=2), conversation_sequence=4, occurred_at=now, reason="barge_in_floor_claim"))
+    assert transport.frames == [AssistantSpeechCancelledFrame(generation=1)]
+
+
+async def test_semantic_input_failure_sends_safe_error_and_closes_transport() -> None:
+    from server.realtime.protocol.events import RealtimeCapabilityFailed
+    from server.transport.frames import VoiceSessionFailureFrame
+
+    class ClosingTransport(RecordingTransport):
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    transport = ClosingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=RecordingConversation(), transport=transport)
+    await bridge.handle_event(RealtimeCapabilityFailed(
+        event_id="failed-input", context=context(), conversation_sequence=1, occurred_at=datetime.now(UTC),
+        capability="semantic_input", error="输入证据未确认保存，请重新开始会话。"))
+    assert transport.closed
+    assert len(transport.frames) == 1
+    frame = transport.frames[0]
+    assert isinstance(frame, VoiceSessionFailureFrame)
+    assert frame.code == "semantic_input_rejected" and frame.phase == "input"
+    assert frame.retryable and frame.session_disposition == "close"
+    assert frame.safe_message == "输入证据未确认保存，请重新开始会话。"

@@ -302,7 +302,7 @@ export function WorkspaceShell({
       <NavLink href="/settings/permissions" active={pathname === "/settings/permissions"} icon={<ShieldCheck />} label={t("工具权限")} />
       <NavLink href="/settings/advanced" active={pathname === "/settings/advanced"} icon={<Settings2 />} label={t("高级配置")} />
       <div className={styles.settingsGroupLabel}>{t("数据管理")}</div>
-      <NavLink href="/admin" active={pathname === "/admin" || pathname.startsWith("/admin/")} icon={<ScrollText />} label={t("数据日志后台")} />
+      <NavLink href="/settings/session-diagnostics" active={pathname === "/settings/session-diagnostics" || pathname.startsWith("/settings/session-diagnostics/")} icon={<ScrollText />} label={t("会话诊断")} />
       {currentAppAdmin.status === "admin" ? <>
         <div className={styles.settingsGroupLabel}>{t("管理员")}</div>
         <NavLink href="/settings/diagnostics" active={pathname === "/settings/diagnostics"} icon={<ScrollText />} label={t("决策日志")} />

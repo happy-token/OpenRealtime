@@ -4,7 +4,7 @@ import { readLimitedJson, RequestBodyTooLarge } from "@/lib/request-body";
 import { loadUserLipsyncService, normalizePersonalLipsyncToken, normalizePersonalLipsyncUrl } from "@/lib/user-lipsync-service";
 import { loadUserTalkingService } from "@/lib/user-talking-model-services";
 import { userFromRequest } from "@/lib/user-session";
-import { isPersonalModelKind } from "../route";
+import { isPersonalModelKind } from "@/lib/personal-model-kind";
 
 export const runtime = "nodejs";
 const json = (body: object, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });

@@ -439,3 +439,37 @@ async def test_stop_for_another_response_does_not_consume_pending_yield() -> Non
         assert metrics[0].response_id == "response-1"
     finally:
         await runtime.close()
+
+
+def test_vad_boundaries_measure_complete_response_and_only_confirmed_interruption(monkeypatch):
+    from unittest.mock import Mock
+    from dataclasses import replace
+    telemetry = Mock()
+    observer = RealtimeTelemetryObserver(telemetry)
+    clock = [2_000_000_000]
+    monkeypatch.setattr("server.realtime.observability.time.monotonic_ns", lambda: clock[0])
+    now = datetime.now(UTC)
+    ctx = context()
+    observer.observe_event(InputTranscriptCompleted(event_id="input", context=ctx,
+        conversation_sequence=1, occurred_at=now, text="你好", transcript_revision=1,
+        provider_endpoint_observed=True, speech_ended_ns=1_000_000_000))
+    clock[0] = 3_000_000_000
+    playback = SpeechPlaybackProgress(event_id="started", context=ctx, conversation_sequence=2,
+        occurred_at=now, speech_id="response:response-1", delivered_text_end=0,
+        played_audio_end_us=0, precision=PlaybackPrecision.SEGMENT, started=True,
+        delivered_speech_transcript="", completed=False)
+    observer.observe_event(playback)
+    observer.observe_event(playback)
+    response_calls = [call for call in telemetry.record.call_args_list if call.args[0] == "turn.speech_end_to_client_playback"]
+    assert len(response_calls) == 1
+    assert response_calls[0].kwargs["duration_ms"] == 2000
+    assert response_calls[0].kwargs["attributes"]["estimated"] is True
+    stopped = replace(playback, event_id="stopped", started=False, stopped=True)
+    observer.observe_event(stopped)
+    assert not any(call.args[0] == "barge_in.speech_start_to_client_stop" for call in telemetry.record.call_args_list)
+    observer.observe_event(AssistantYieldRequested(event_id="yield", context=ctx, conversation_sequence=3,
+        occurred_at=now, reason="barge_in_floor_claim", speech_started_ns=2_500_000_000))
+    clock[0] = 3_500_000_000
+    observer.observe_event(stopped)
+    calls = [call for call in telemetry.record.call_args_list if call.args[0] == "barge_in.speech_start_to_client_stop"]
+    assert len(calls) == 1 and calls[0].kwargs["duration_ms"] == 1000

@@ -25,6 +25,12 @@ describe("SessionRecoveryNotice", () => {
     expect(renderToStaticMarkup(<SessionRecoveryNotice connection="open" micError={null} micAvailable sessionError={null} {...handlers} />)).toBe("");
   });
 
+  it("preserves the server failure reason after the connection is closed", () => {
+    const reason = "输入证据未确认保存，请重新开始会话。";
+    const issue = resolveSessionRecoveryIssue({ connection: "error", micError: null, micAvailable: true, sessionError: reason });
+    expect(issue).toMatchObject({ kind: "connection", message: reason });
+  });
+
   it("keeps a public voice capacity failure in the voice retry flow", () => {
     const html = renderToStaticMarkup(<SessionRecoveryNotice connection="connecting" micError="平台语音服务当前满员" micAvailable={false} sessionError={null} voiceOnly {...handlers} />);
     expect(html).toContain("平台语音服务当前满员");

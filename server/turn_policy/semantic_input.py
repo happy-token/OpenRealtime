@@ -14,6 +14,33 @@ class TextBoundary(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class SemanticInputBudget:
+    """Accepted logical-input limits; overflow is rejected, never silently sliced."""
+
+    max_text_bytes: int = 16 * 1024
+    max_revisions: int = 2048
+    max_chunks: int = 2048
+    max_duration_ms: int = 120000
+    max_evidence_bytes: int = 2 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 1
+               for value in (self.max_text_bytes, self.max_revisions, self.max_chunks,
+                             self.max_duration_ms, self.max_evidence_bytes)):
+            raise ValueError("semantic input budgets must be positive integers")
+
+    def violation(self, text: str, *, revisions: int, elapsed_ms: float) -> str | None:
+        # Bound UTF-8 allocation even if a provider sends an unexpectedly huge snapshot.
+        if len(text) > self.max_text_bytes or len(text.encode("utf-8")) > self.max_text_bytes:
+            return "input_text_bytes"
+        if revisions > self.max_revisions:
+            return "input_revisions"
+        if elapsed_ms >= self.max_duration_ms:
+            return "input_duration"
+        return None
+
+
+@dataclass(frozen=True, slots=True)
 class SemanticInputState:
     """Missing observations are unknown, never inferred from a model result."""
 
@@ -23,6 +50,9 @@ class SemanticInputState:
     speech_active: bool | None = None
     silence_duration_ms: float | None = None
     audio_timestamp_us: int | None = None
+    chunk_id: str | None = None
+    chunk_trigger: str | None = None
+    previous_chunks: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for value in (self.transcript_revision, self.audio_timestamp_us):

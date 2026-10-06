@@ -50,6 +50,7 @@ class AssistantYieldRequested:
     occurred_at: datetime
     reason: str
     schema_version: int = 1
+    speech_started_ns: int | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.reason:
@@ -105,6 +106,7 @@ class InputTranscriptCompleted:
     provider_endpoint_observed: bool
     continuation_of_turn_id: str | None = None
     schema_version: int = 1
+    speech_ended_ns: int | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.text:

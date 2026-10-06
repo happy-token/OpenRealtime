@@ -22,6 +22,7 @@ export type { TranscriptEntry, AssistantMessageStatus, AssistantOutputText, User
 import type { AvatarPersonaConfigFrame, ServerToClientFrame, ToolConfigFrame, TtsConfigFrame } from "@/lib/frames";
 import { BrowserAudioInput } from "@/voice/audio/browser-input";
 import { BrowserAudioOutput } from "@/voice/audio/browser-output";
+import { PlaybackOutputController } from "@/voice/audio/playback-output-controller";
 import { PlaybackTextTimeline } from "@/voice/session/playback-text";
 import type { AvatarAudioChunk, AvatarAudioSink } from "@/voice/audio/avatar-output";
 import { DeviceAudioInputRuntime } from "@/voice/audio/input-runtime";
@@ -487,6 +488,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
         if (speakingGenerationRef.current === generation) setPlaybackActive(true);
       },
     });
+    const playbackOutput = new PlaybackOutputController(outputGraph, () => avatarAudioSinkRef.current);
     const avatarProgressTimer = window.setInterval(() => {
       const generation = speakingGenerationRef.current;
       if (generation !== null) reportAvatarPlaybackPosition(generation);
@@ -571,7 +573,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
       if (!sessionOutputEnabledRef.current
         || shouldDropAudioFrame(chunk.generation, cancelledGenerationRef.current)
         || speakingGenerationRef.current !== chunk.generation) return;
-      outputGraph.play({
+      playbackOutput.playBrowser({
         ...chunk,
         isFinal,
         onEnded: () => {
@@ -673,13 +675,23 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
             transportRef.current?.reconnect();
           }
           if (frame.session_disposition === "close") {
+            sessionOutputEnabledRef.current = false;
+            stopMic();
+            if (fallbackTimerRef.current) {
+              clearTimeout(fallbackTimerRef.current);
+              fallbackTimerRef.current = null;
+            }
+            clearPlaybackInactivityFallback();
+            clearThinkingFallback();
+            window.speechSynthesis?.cancel();
+            playbackOutput.reset();
+            setPlaybackActive(false);
+            speakingGenerationRef.current = null;
+            setMicActive(false);
+            setState("idle");
             if (publicVoiceEnabled) {
-              sessionOutputEnabledRef.current = false;
               trialDeadlineRef.current = null;
               setTrialSecondsRemaining(null);
-              stopMic();
-              setMicActive(false);
-              setState("idle");
             }
             setConnection("error");
           }
@@ -845,11 +857,9 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
               reportPlaybackFinished(frame.generation as number);
             },
           };
-          const avatarSink = avatarAudioSinkRef.current;
-          const renderedByAvatar = avatarSink?.enqueue(audioChunk) ?? false;
-          if (renderedByAvatar) avatarSink?.completeGeneration(frame.generation as number);
+          const renderedByAvatar = playbackOutput.enqueue(audioChunk);
+          if (renderedByAvatar) playbackOutput.completeGeneration(frame.generation as number);
           else {
-            outputGraph.play(audioChunk);
             reportPlaybackQuality(frame.generation as number);
           }
           break;
@@ -888,8 +898,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
               armPlaybackInactivityFallback(frame.generation as number);
             },
           };
-          const renderedByAvatar = avatarAudioSinkRef.current?.enqueue(audioChunk) ?? false;
-          if (!renderedByAvatar) outputGraph.play(audioChunk);
+          const renderedByAvatar = playbackOutput.enqueue(audioChunk);
           if (frame.is_final && !renderedByAvatar) {
             reportPlaybackQuality(frame.generation as number);
           }
@@ -905,9 +914,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           ));
           }
           const avatarSink = avatarAudioSinkRef.current;
-          const avatarPlaybackStarted = avatarSink?.completeGeneration(
-            frame.generation as number,
-          ) ?? false;
+          const avatarPlaybackStarted = playbackOutput.completeGeneration(frame.generation as number);
           const browserSpeechText = browserSpeechTextForResponse(
             assistantOutputTextRef.current,
             frame.generation as number,
@@ -963,8 +970,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
             showUnplayedText(frame.generation as number);
           }
           reportPlaybackQuality(frame.generation as number);
-          const v2Progress = outputGraph.cancelGeneration(frame.generation as number);
-          avatarAudioSinkRef.current?.cancelGeneration(frame.generation as number);
+          const v2Progress = playbackOutput.cancelGeneration(frame.generation as number);
           if (avatarProgress) transportRef.current?.send({
             ...playbackProgressPayload(frame.generation as number, "stopped"),
             played_audio_end_us: avatarProgress.playedAudioEndUs,
@@ -1281,8 +1287,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
       clearPlaybackInactivityFallback();
       clearThinkingFallback();
       window.speechSynthesis?.cancel();
-      outputGraph.reset();
-      avatarAudioSinkRef.current?.reset();
+      playbackOutput.reset();
       setPlaybackActive(false);
       speakingGenerationRef.current = null;
       assistantOutputTextRef.current = { generation: null, display: "", spoken: "" };
@@ -1359,8 +1364,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
 
     setVolumeRef.current = (volume: number) => {
       outputVolumeRef.current = volume;
-      outputGraph.setVolume(volume);
-      avatarAudioSinkRef.current?.setVolume(volume);
+      playbackOutput.setVolume(volume);
     };
     const preferences = readConversationPreferences();
     setVolumeRef.current(preferences.volume / 100);
@@ -1445,8 +1449,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
         // Recovery must re-emit any still-authoritative confirmation.
         pendingConfirmationRef.current = null;
         setPendingConfirmation(null);
-        outputGraph.reset();
-        avatarAudioSinkRef.current?.reset();
+        playbackOutput.reset();
         inputGraph.resetForDisconnect();
       },
       });

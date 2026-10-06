@@ -67,7 +67,7 @@ export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; 
   };
   return <WorkspaceShell><div className={styles.page}>
     {preview ? <p className={styles.muted}>主题预览 · 示例数据 · 复用真实后台组件</p> : null}
-    <Link className={styles.button} href={preview ? "/demos/diagnostics" : "/admin"}>← {t("返回运行总览")}</Link>
+    <Link className={styles.button} href={preview ? "/demos/diagnostics" : "/settings/session-diagnostics"}>← {t("返回运行总览")}</Link>
     <header className={styles.heading} style={{ marginTop: 20 }}><div><h1>{t("会话详情")}</h1><span className={styles.muted}>{sessionId}</span></div><div className={styles.toolbar} style={{ margin: 0 }}><button onClick={() => setRevision(value => value + 1)} disabled={loading || Boolean(preview)}>{t("刷新")}</button><button onClick={exportReport} disabled={!report}>{t("导出诊断 JSON")}</button></div></header>
     {loading ? <p className={styles.busy}>{t("正在读取会话数据…")}</p> : null}
     {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}

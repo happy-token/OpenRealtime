@@ -23,21 +23,21 @@ describe("WorkspaceShell", () => {
   it.each(["/settings", "/settings/appearance"])("provides direct backend access in settings for the logged-in administrator on %s", (pathname) => {
     navigation.pathname = pathname;
     const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
-    expect(html).toContain('href="/admin"');
-    expect(html).toContain("数据日志后台");
+    expect(html).toContain('href="/settings/session-diagnostics"');
+    expect(html).toContain("会话诊断");
   });
 
   it("keeps the backend entry out of the home sidebar even for administrators", () => {
     navigation.pathname = "/conversation";
     const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
-    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain('href="/settings/session-diagnostics"');
   });
 
   it.each(["loading", "not-admin", "unavailable"])("keeps the settings entry discoverable when admin status is %s", (status) => {
     adminState.status = status;
     navigation.pathname = "/settings/appearance";
     const html = renderToStaticMarkup(<WorkspaceShell><div>页面</div></WorkspaceShell>);
-    expect(html).toContain('href="/admin"');
+    expect(html).toContain('href="/settings/session-diagnostics"');
   });
 
   it("opens a configured realtime avatar through the resource-library conversation entry", () => {
@@ -114,12 +114,12 @@ describe("WorkspaceShell", () => {
     expect(html).not.toContain('data-compact="true"');
   });
 
-  it.each(["/admin", "/admin/sessions/session-123", "/demos/diagnostics"])("keeps diagnostics in the settings sidebar on %s", pathname => {
+  it.each(["/settings/session-diagnostics", "/settings/session-diagnostics/sessions/session-123", "/demos/diagnostics"])("keeps diagnostics in the settings sidebar on %s", pathname => {
     navigation.pathname = pathname;
     const html = renderToStaticMarkup(<WorkspaceShell><div>诊断</div></WorkspaceShell>);
     expect(html).toContain('aria-label="设置导航"');
-    expect(html).toContain('href="/admin"');
-    expect(html).toContain('>数据日志后台</span>');
+    expect(html).toContain('href="/settings/session-diagnostics"');
+    expect(html).toContain('>会话诊断</span>');
   });
 
   it("keeps the resource library beside roles in primary navigation", () => {

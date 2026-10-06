@@ -298,6 +298,7 @@ class VoiceSessionWebSocketSession:
         agent_work_registry: AgentWorkRegistryRebuilder | None = None,
         initial_frames: tuple[OutboundFrame, ...] = (),
         provider_credential_sources: dict[str, str] | None = None,
+        diagnostic_observer: Callable[[object], None] | None = None,
     ) -> None:
         self._identity = identity
         self._context = context
@@ -312,6 +313,7 @@ class VoiceSessionWebSocketSession:
         self._confirmation_decision_handler = confirmation_decision_handler
         self._initial_frames = initial_frames
         self._provider_credential_sources = provider_credential_sources
+        self._diagnostic_observer = diagnostic_observer
         self._journal_recovery = _JournalRecovery(
             journal=journal,
             scope=JournalScope.from_context(context),
@@ -429,6 +431,9 @@ class VoiceSessionWebSocketSession:
                 start_task.cancel()
             await asyncio.gather(*tasks, start_task, return_exceptions=True)
             await runtime.stop(reason="endpoint_closed")
+            finalize_diagnostics = getattr(self._diagnostic_observer, "close", None)
+            if finalize_diagnostics is not None:
+                finalize_diagnostics()
 
     async def detached(self) -> None:
         runtime = self._runtime
@@ -643,6 +648,8 @@ class VoiceSessionWebSocketSession:
 
     async def _pump_voice_events(self, runtime: VoiceSessionRuntime) -> None:
         async for event in runtime.events():
+            if self._diagnostic_observer is not None:
+                self._diagnostic_observer(event)
             if isinstance(event, VoiceSessionPhaseChanged):
                 await self._transport.send(
                     VoiceSessionPhaseChangedFrame(

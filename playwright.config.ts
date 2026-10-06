@@ -44,6 +44,7 @@ export default defineConfig({
     ? undefined
     : {
         command: `OPENREALTIME_NEXT_DIST_DIR=.next-e2e-${webServerPort} next dev --port ${webServerPort}`,
+        env: { VOICEAGENT_PUBLIC_VOICE_ENABLED: process.env.VOICEAGENT_PUBLIC_VOICE_ENABLED ?? "false" },
         url: baseURL,
         reuseExistingServer: false,
         timeout: 30_000,

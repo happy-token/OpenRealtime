@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol, cast
 
+from server.observability.telemetry import SessionTelemetry
 from server.core.interaction_context import InteractionContext
 from server.realtime.protocol.audio import AudioEncoding, AudioFrame
 from server.speech.tts import DuplexStreamingTtsEngine, StreamingTtsEngine
@@ -134,17 +135,19 @@ class LegacyTtsCapabilityAdapter:
         engine: StreamingTtsEngine | DuplexStreamingTtsEngine,
         *,
         cancel_timeout_s: float = 0.3,
+        telemetry: SessionTelemetry | None = None,
     ) -> None:
         if cancel_timeout_s <= 0:
             raise ValueError("cancel_timeout_s must be positive")
         self._engine = engine
+        self._telemetry = telemetry
         self._cancel_timeout_s = cancel_timeout_s
 
     async def open(self, *, context: InteractionContext) -> LegacyTtsCapabilitySession:
         warmup = getattr(self._engine, "warmup", None)
         warmup_task = (
             asyncio.create_task(
-                _warm_tts_engine(warmup),
+                _warm_tts_engine(warmup, self._telemetry, context),
                 name=f"tts-warmup-{context.voice_session_id}",
             )
             if warmup is not None
@@ -468,9 +471,13 @@ class LegacyTtsCapabilitySession:
         await self._warmup_task
 
 
-async def _warm_tts_engine(warmup) -> None:
+async def _warm_tts_engine(warmup, telemetry: SessionTelemetry | None = None, context: InteractionContext | None = None) -> None:
     try:
-        await warmup()
+        if telemetry is None:
+            await warmup()
+        else:
+            async with telemetry.provider_call(provider="tts", operation="connection_setup", generation=context.generation if context else None, attributes={"mode": "preconnect"}):
+                await warmup()
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001 - first synthesis remains authoritative

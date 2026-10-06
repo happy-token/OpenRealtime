@@ -112,7 +112,6 @@ describe("presentation mode display", () => {
         onPageFormChange={() => {}}
         onCaptionsChange={() => {}}
         onPauseToggle={() => {}}
-        onOpenSettings={() => {}}
         onTerminate={() => {}}
         onSendText={() => true}
         assistantBusy={false}

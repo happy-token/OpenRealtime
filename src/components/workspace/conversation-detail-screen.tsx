@@ -13,7 +13,12 @@ import styles from "./conversation-history-screen.module.css";
 import Link from "next/link";
 import { conversationContinuationUrl } from "@/lib/conversation-continuation";
 
-export function ConversationDetailScreen({ id }: { id: string }) {
+export function ConversationSessionLink({ sessionId, canViewDiagnostics }: { sessionId?: string | null; canViewDiagnostics: boolean }) {
+  if (!canViewDiagnostics || !sessionId) return null;
+  return <p>Session ID：<Link className={styles.continueButton} href={`/settings/session-diagnostics/sessions/${encodeURIComponent(sessionId)}`}>{sessionId}</Link></p>;
+}
+
+export function ConversationDetailScreen({ id, canViewDiagnostics = false }: { id: string; canViewDiagnostics?: boolean }) {
   const { t } = useLanguage();
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
@@ -43,6 +48,7 @@ export function ConversationDetailScreen({ id }: { id: string }) {
     {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
     {!item && !error ? <p className={styles.empty}>{t("正在读取对话…")}</p> : null}
     {item ? <div className={styles.detailActions}><span>{item.entries.length}{t(" 条消息")}</span>{continuationUrl ? <Link className={styles.continueButton} href={continuationUrl}>{t("继续此对话")}</Link> : null}</div> : null}
+    <ConversationSessionLink sessionId={item?.voice_session_id} canViewDiagnostics={canViewDiagnostics} />
     {item ? <div className={styles.transcript}><ChatView entries={item.entries} /></div> : null}
   </div>;
 }
