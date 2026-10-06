@@ -642,7 +642,9 @@ async def test_old_final_cannot_finish_deferred_turn_in_same_generation(rejected
         await session.send(ObserveAsrEvent(event=AsrTranscriptFinal(
             context=new, revision=1, text="新请求", reason="final")))
         committed = await take(stream, UserTurnCommitted)
-        assert committed.text == "旧请求\n新请求"
+        assert committed.text == "新请求"
+        assert committed.input_relation == "unresolved"
+        assert committed.related_turn_id == old.turn_id
         assert committed.context.turn_id == "new"
     finally:
         await stream.aclose()

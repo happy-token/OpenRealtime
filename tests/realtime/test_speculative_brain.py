@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 import pytest
 
@@ -18,6 +19,25 @@ class EmptyOnceBrain:
         if self.calls == 1:
             return
         yield "重试后的有效回复"
+
+
+async def test_association_hint_change_misses_text_cache():
+    class EchoBrain:
+        def __init__(self):
+            self.turns = []
+
+        async def stream(self, turn):
+            self.turns.append(turn)
+            yield turn.model_text
+
+    provider = EchoBrain()
+    brain = SpeculativeStreamingBrain(provider)
+    original = TurnContent(text="上海呢", generation=2, conversation_context="北京晴")
+    await brain.prepare(original)
+    await brain._state.task
+    revised = replace(original, input_relation_unresolved=True)
+    assert [delta async for delta in brain.stream(revised)] == [revised.model_text]
+    assert provider.turns == [original, revised]
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 import pytest
 
@@ -40,6 +41,33 @@ class GatedDuplexTts:
 
     async def close(self) -> None:
         return None
+
+
+async def test_association_hint_change_misses_text_and_audio_cache():
+    class EchoBrain:
+        def __init__(self):
+            self.turns = []
+
+        async def stream(self, turn):
+            self.turns.append(turn)
+            yield turn.model_text
+
+    brain, tts = EchoBrain(), GatedDuplexTts()
+    pipeline = SpeculativeSpeechPipeline(brain=brain, tts=tts)
+    original = TurnContent(text="上海呢", generation=2, conversation_context="北京晴")
+    await pipeline.prepare(original)
+    await asyncio.wait_for(tts.audio_buffered.wait(), .5)
+    revised = replace(original, input_relation_unresolved=True)
+    text = [delta async for delta in pipeline.stream(revised)]
+    assert text == [revised.model_text]
+
+    async def committed_text():
+        for delta in text:
+            yield delta
+
+    audio = [chunk async for chunk in pipeline.synthesize_duplex(committed_text())]
+    assert b"".join(chunk.pcm16 for chunk in audio) == revised.model_text.encode()
+    assert brain.turns == [original, revised]
 
 
 @pytest.mark.asyncio

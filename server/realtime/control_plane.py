@@ -210,6 +210,10 @@ class RealtimeTurnController:
                 "admission_reason": event.admission_reason,
                 "endpoint_decision": event.endpoint_decision,
                 "endpoint_source": event.endpoint_source,
+                "input_relation": event.input_relation,
+                "input_relation_source": event.input_relation_source,
+                "related_turn_id": event.related_turn_id,
+                "supersedes_unplayed_reply": event.supersedes_unplayed_reply,
             },
         )
         await self._send_internal(

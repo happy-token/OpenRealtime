@@ -88,6 +88,13 @@ from server.turn_policy.eot_classifier import (
     EotRequest,
     classify_eot,
 )
+from server.turn_policy.input_association import (
+    ConservativeInputAssociationPolicy,
+    InputAssociation,
+    InputAssociationPolicy,
+    InputAssociationRequest,
+    InputRelation,
+)
 from server.turn_policy.interruption_rules import InterruptionRuleContext, InterruptionRuleProvider
 from server.turn_policy.plugins.rule_first_interruption_classifier import (
     ExactInterruptionRules,
@@ -226,6 +233,7 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         input_budget: SemanticInputBudget | None = None,
         input_evidence_journal: ConversationJournal | None = None,
         input_evidence_timeout_s: float = 1,
+        input_association_policy: InputAssociationPolicy | None = None,
         **kwargs: Any,
     ) -> None:
         if args and (len(args) != 1 or args[0] is not TurnPolicy):
@@ -236,6 +244,8 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         self.input_budget = input_budget or SemanticInputBudget()
         self.input_evidence_journal = input_evidence_journal
         self.input_evidence_timeout_s = input_evidence_timeout_s
+        self.input_association_policy = (input_association_policy if input_association_policy is not None
+                                         else ConservativeInputAssociationPolicy())
         if not math.isfinite(recovery_timeout_ms) or recovery_timeout_ms <= 0:
             raise ValueError("recovery_timeout_ms must be finite and positive")
         for value in (
@@ -318,7 +328,7 @@ class CoordinatedTurnManagerSession:
 
     def response_delivery_allowed(self, response_id: str) -> bool:
         """Read-only permission, also checked when queued output is drained."""
-        return (not self._closed and not self._evidence_fault_reported
+        return (not self._closed and self._failure is None and not self._evidence_fault_reported
                 and self._revision_evidence_failure is None
                 and (self._evidence is None or self._evidence.failure is None)
                 and self._revisions.delivery_allowed(response_id))
@@ -882,15 +892,22 @@ class CoordinatedTurnManagerSession:
             await self._project(event.context or self._context)
             return
         if isinstance(event, ObserveAssistantSpokenText):
+            reply = self._revisions.reply
+            if (event.playback_started and reply is not None
+                    and event.context.response_id == reply.response_id
+                    and event.context.turn_id == reply.turn_id
+                    and event.context.generation == reply.generation):
+                # Generation completion can precede the renderer's first playback
+                # receipt. Keep the fact even after _response_id was released.
+                self._revisions.observe_playback(reply.response_id)
             if (
-                self._response_context is None
-                or (event.context.generation == self._response_context.generation
-                    and event.context.response_id == self._response_id)
+                self._response_id is not None
+                and event.context.generation == (self._response_context or self._context).generation
+                and event.context.turn_id == (self._response_context or self._context).turn_id
+                and event.context.response_id == self._response_id
             ):
                 self._assistant_text = event.text
                 self._response_playback_started |= event.playback_started
-                if event.playback_started and event.context.response_id is not None:
-                    self._revisions.observe_playback(event.context.response_id)
             return
         if isinstance(event, ObserveAssistantYielded):
             item = self._input
@@ -958,6 +975,45 @@ class CoordinatedTurnManagerSession:
             ):
                 return
             if isinstance(event, AsrTranscriptFinal):
+                violation = self._provider.input_budget.violation(
+                    event.text, revisions=item.observations + 1,
+                    elapsed_ms=(time.monotonic_ns() - item.created_ns) / 1e6,
+                )
+                if violation:
+                    self._begin_input_rejection(item, violation, event.text, observed_revision=event.revision)
+                    return
+                self._record_input_evidence(item, "asr_final", {
+                    "text": event.text, "revision": event.revision,
+                }, snapshot=event.text)
+                if item.blocked:
+                    return
+                parent = self._last_committed
+                association_error: str | None = None
+                try:
+                    association = self._provider.input_association_policy.associate(InputAssociationRequest(
+                        text=event.text, previous_turn_id=parent[0] if parent else None,
+                        verdict=item.verdict,
+                    ))
+                    if not isinstance(association, InputAssociation):
+                        raise TypeError("association policy returned an unsupported result")
+                    if association.related_turn_id is not None and (
+                        parent is None or association.related_turn_id != parent[0]
+                    ):
+                        raise ValueError("input association must reference the current committed parent")
+                    if association.continues_input and (parent is None or association.related_turn_id is None):
+                        raise ValueError("input continuation requires an identified parent")
+                except Exception as error:
+                    association_error = type(error).__name__
+                    logger.warning("Input association failed; retaining separate final input", exc_info=True)
+                    association = InputAssociation(
+                        InputRelation.UNRESOLVED if parent else InputRelation.NEW_TOPIC,
+                        parent[0] if parent else None, "association_error",
+                    )
+                item.continuation_of_turn_id = association.related_turn_id if association.continues_input else None
+                item.continuation_text = parent[1] if parent and association.continues_input else ""
+                reply = self._revisions.reply
+                supersedes_unplayed_reply = bool(association.continues_input and reply is not None
+                    and parent is not None and reply.turn_id == parent[0] and not reply.playback_started)
                 committed_text = (
                     item.continuation_text + "\n" + event.text
                     if item.continuation_text else event.text
@@ -969,14 +1025,23 @@ class CoordinatedTurnManagerSession:
                 if violation:
                     self._begin_input_rejection(item, violation, committed_text, observed_revision=event.revision)
                     return
-                self._record_input_evidence(item, "asr_final", {"text": event.text, "revision": event.revision}, snapshot=committed_text)
+                self._record_input_evidence(item, "input_associated", {
+                    "relation": association.relation.value, "source": association.source,
+                    "related_turn_id": association.related_turn_id,
+                    "supersedes_unplayed_reply": supersedes_unplayed_reply,
+                    "final_transcript_revision": event.revision,
+                    "revision": event.revision,
+                    "error_type": association_error,
+                }, snapshot=committed_text)
                 if item.blocked:
                     return
                 committed_context = event.context
-                if item.continuation_of_turn_id == event.context.turn_id:
+                if parent is not None and parent[0] == event.context.turn_id:
                     committed_context = replace(
                         event.context, turn_id=str(uuid.uuid4()), generation=event.context.generation + 1,
                     )
+                if association.relation is not InputRelation.NEW_TOPIC:
+                    self._prefetch.invalidate("input_association_finalized")
                 self._prefetch.finalize(committed_text, committed_context.generation)
                 version = self._revisions.commit_input(
                     input_id=item.identity, context=committed_context, text=committed_text,
@@ -988,9 +1053,10 @@ class CoordinatedTurnManagerSession:
                     **asdict(version),
                     "input_revision": asdict(version),
                     "logical_input_id": version.input_id,
+                    "revision": event.revision,
                     "endpoint_decision": item.endpoint.decision.value if item.endpoint else None,
                     "endpoint_source": item.endpoint.source if item.endpoint else None,
-                })
+                }, snapshot=committed_text)
                 if item.blocked:
                     return
                 self._last_committed = (committed_context.turn_id, committed_text)
@@ -1009,6 +1075,10 @@ class CoordinatedTurnManagerSession:
                         admission_reason=version.admission_reason,
                         endpoint_decision=item.endpoint.decision.value if item.endpoint else None,
                         endpoint_source=item.endpoint.source if item.endpoint else None,
+                        input_relation=association.relation.value,
+                        input_relation_source=association.source,
+                        related_turn_id=association.related_turn_id,
+                        supersedes_unplayed_reply=supersedes_unplayed_reply,
                     )
                 )
             if isinstance(event, AsrCommitRejected):
@@ -1344,9 +1414,6 @@ class CoordinatedTurnManagerSession:
         candidate = InterruptionCandidate(
             item.text, item.context.generation, item.revision, boundary
         )
-        if item.before_playback and item.text.strip().startswith(("换个问题", "另一个问题", "新的问题", "重新开始")):
-            item.continuation_text = ""
-            item.continuation_of_turn_id = None
         rule = self._interruption_decider.match_rule(self._rule_context(item, boundary))
         if (
             boundary is InterruptionBoundary.PARTIAL

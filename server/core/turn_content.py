@@ -48,15 +48,22 @@ class TurnContent:
     vision_text: str | None = None
     voiceprint: VoiceprintResult | None = None
     conversation_context: str | None = None
+    input_relation_unresolved: bool = False
 
     @property
     def model_text(self) -> str:
         """Current utterance plus bounded Journal context for model input."""
 
-        if not self.conversation_context:
-            return self.text
-        return (
+        text = self.text if not self.conversation_context else (
             "最近对话上下文：\n"
             f"{self.conversation_context}\n\n"
             f"当前用户输入：{self.text}"
         )
+        if self.input_relation_unresolved:
+            return (
+                "本轮输入与上一轮的关联尚未确认。请结合上下文理解原意；"
+                "不要擅自把它合并为纠正或补充。如果独立回答所需的信息完整，可以直接回答；"
+                "否则先简短询问它是在补充上一轮还是提出新问题，确认前不要执行依赖该关联的操作。\n\n"
+                + text
+            )
+        return text

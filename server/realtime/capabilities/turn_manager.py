@@ -177,6 +177,10 @@ class UserTurnCommitted:
     admission_reason: str | None = None
     endpoint_decision: str | None = None
     endpoint_source: str | None = None
+    input_relation: str | None = None
+    input_relation_source: str | None = None
+    related_turn_id: str | None = None
+    supersedes_unplayed_reply: bool = False
 
     def __post_init__(self) -> None:
         if not self.text or self.transcript_revision < 1:

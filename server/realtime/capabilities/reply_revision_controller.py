@@ -122,7 +122,7 @@ class ReplyRevisionController:
         return self.reply
 
     def observe_playback(self, response_id: str) -> None:
-        if self.reply is not None and self.delivery_allowed(response_id):
+        if not self._closed and self.reply is not None and self.reply.response_id == response_id:
             self.reply = replace(self.reply, playback_started=True)
 
     def finish(self, response_id: str) -> None:

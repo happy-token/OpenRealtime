@@ -18,6 +18,7 @@ flowchart TB
   Tasks[SemanticTaskRegistry：任务 / 请求令牌 / 取消 / 结果一次接受]
   Exec[classifier_execution：截止时间 / 通用分段观察]
   Policy[TurnCoordinationPolicy：判停与打断规则]
+  Association[InputAssociationPolicy：最终ASR同步关联 / 规则与已有证据 / 未确定出口]
   Plugins[规则插件 / JEV / 其他分类器]
  end
  Actor --> Chunk
@@ -25,6 +26,8 @@ flowchart TB
  Tasks --> Exec --> Plugins
  Plugins -->|带候选身份的结果| Actor
  Actor --> Policy
+ Actor --> Association
+ Association -->|关联结果 / 无异步动作| Actor
  Policy -->|提交 / 停止 / 等待决定| Actor
  subgraph Reply[回复与交付]
   Revision[ReplyRevisionController：actor命令驱动的当前版本账本 / 纯验证，已实施]
@@ -73,6 +76,7 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 |异步任务、取消、请求令牌|TaskRegistry|actor请求启动/取消/一次接受|
 |输入话轮、已执行打断、提交决定|Turn actor|向capability发送动作|
 |分类含义与策略|classifier插件/CoordinationPolicy|不直接操控音频或提交|
+|最终输入关联|InputAssociationPolicy纯同步策略；actor校验并应用|未播时机不是关联依据，未知保留原文及父引用；不自行控制播放|
 |预生成候选生命周期|PrefetchController|回复提交时复用或失效|
 |当前输入/回复版本、替代关系、整回复交付许可|actor驱动的ReplyRevisionController，已实施|既有输出边界复验；精确当前句许可与跨Session重建仍待实现|
 |实际播放位置、队列与句末确认|renderer/PlaybackOutputController|通过带ID回执向服务端报告|
@@ -97,11 +101,11 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 
 当前yield_ack来自服务端取消完成，不是客户端实际stopped；现有PlaybackOutputController只能整generation取消，尚无当前句保留/未来队列清理/恢复已取消generation接口。协议能力审计前移到阶段0，功能实现仍扩展原输出边界。
 
-2026-10-06版本接线后主协调器1592行，新版本账本135行，回复状态已迁入同步辅助模块。原有输入actor依然是决策入口，不新增业务actor；后续不继续往_Input增加一组纠正/恢复布尔字段，不让控制器自行裁决语义。
+2026-10-06关联接线后主协调器1659行，版本账本135行，关联策略86行。版本状态已迁入账本，关联含义进入可替换的纯策略；原有输入actor依然是决策入口，不新增业务actor或任务队列。后续不继续往_Input增加纠正/恢复布尔字段。
 
 ## 模块增量约束
 
-前批新增2个执行辅助模块，本批再新增1个同步版本账本；它们是本进程内模块，不是新服务或网络调用。交付校验扩展既有engine、装饰链和WebSocket，没有新增一套队列。后续句末与恢复继续扩展现有Prefetch/Output，先证明状态归属和契约，不按异常类型建立控制器。
+前批新增2个执行辅助模块、1个同步版本账本，本批新增1个86行的纯关联策略seam；均不是新服务或网络调用。交付校验扩展既有engine、装饰链和WebSocket，已听历史复用原交付投影，没有新增一套队列。后续句末与恢复继续扩展现有Prefetch/Output，先证明状态归属和契约，不按异常类型建立控制器。
 
 
 输入证据与逻辑预算的存储边界见[ADR0140](../adr/0140-input-evidence-and-resource-boundaries.md)。存储worker不维护语义状态或输出许可；预算拒绝仍由同一actor裁决。诊断回读与Session保留策略在ApplicationRuntime/控制平面，删除与活动thread注册使用进程内生命周期排他保护。0136已接入当前版本账本，完整关联与后续交付规划仍未完成，不继续新增异常业务actor。

@@ -477,11 +477,17 @@ class CascadedRealtimeConversation:
             completed=command.completed,
         )
         response = self._response_by_model_speech_id.get(command.speech_id)
+        if response is None and record.context.response_id is not None:
+            # Cancellation removes the routing map, not the persisted playback
+            # identity. Late renderer facts still refine the interrupted record.
+            response = (record.context.response_id, record.context)
         if response is not None:
             response_id, response_context = response
             await self._input_pipeline.assistant_spoken_text(
                 record.delivered_speech_transcript,
                 context=replace(response_context, response_id=response_id),
+                playback_started=(command.started or command.played_audio_end_us > 0
+                                  or command.delivered_text_end > 0),
             )
         if command.completed:
             self._unsettled_model_speech_ids.discard(command.speech_id)
@@ -1076,7 +1082,12 @@ class CascadedRealtimeConversation:
             for sequence in sorted(self._projected_items)
             if sequence < before_sequence and not (
                 self._projected_items[sequence].context.turn_id in superseded_turns
-                and self._projected_items[sequence].kind in {ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT}
+                and self._projected_items[sequence].kind is ConversationItemKind.USER_INPUT
+            ) and not (
+                # Assistant content has already been projected from delivery
+                # facts. A commit-time flag must not erase late confirmed speech.
+                self._projected_items[sequence].kind is ConversationItemKind.ASSISTANT_OUTPUT
+                and not self._projected_items[sequence].content
             )
         )
 
@@ -1110,6 +1121,7 @@ class CascadedRealtimeConversation:
                 return TurnContent(
                     text=text,
                     generation=generation,
+                    input_relation_unresolved=item.provider_metadata.get("input_relation") == "unresolved",
                     conversation_context=await self._context_projector.project_text(
                         prior_items
                     ),
@@ -1724,6 +1736,10 @@ class CascadedRealtimeConversation:
                         admission_reason=event.admission_reason,
                         endpoint_decision=event.endpoint_decision,
                         endpoint_source=event.endpoint_source,
+                        input_relation=event.input_relation,
+                        input_relation_source=event.input_relation_source,
+                        related_turn_id=event.related_turn_id,
+                        supersedes_unplayed_reply=event.supersedes_unplayed_reply,
                     )
                 )
             elif isinstance(event, CapabilityAssistantYieldRequested):
