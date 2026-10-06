@@ -97,6 +97,19 @@ export interface PlaybackProgressV2 {
   played_position_samples: number;
 }
 
+export interface OutputStopTarget {
+  output_epoch: string;
+  speech_id: string;
+  generation: number;
+  stop_command_id: string;
+}
+
+export interface OutputStopResult extends OutputStopTarget {
+  type: "output_stop_result";
+  outcome: "queue_stopped" | "unknown" | "stale";
+  played_position_samples: number | null;
+}
+
 export interface SessionHelloV2 {
   type: "session_hello";
   supported_protocol_versions: [2];

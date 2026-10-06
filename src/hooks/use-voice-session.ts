@@ -626,8 +626,9 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           sessionIdRef.current = frame.session_id ?? null;
           setSessionId(sessionIdRef.current);
-          outputEpochRef.current = frame.output_epoch ?? undefined;
-          outputGraph.beginEpoch(outputEpochRef.current ?? crypto.randomUUID());
+          outputEpochRef.current = frame.output_epoch ?? crypto.randomUUID();
+          playbackOutput.beginEpoch(outputEpochRef.current);
+          outputGraph.beginEpoch(outputEpochRef.current);
           if (
             frame.protocol_version === 2
             && typeof frame.resume_token === "string"
@@ -867,7 +868,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           break;
         }
         case "assistant_audio_chunk": {
-          if (!outputGraph.canPlay({ generation: frame.generation,
+          if (!playbackOutput.canEnqueue({ generation: frame.generation,
             speechId: frame.speech_id ?? `response:${frame.generation}` })) break;
           clearThinkingFallback();
           clearPlaybackInactivityFallback();
@@ -947,6 +948,37 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           break;
         }
         case "assistant_speech_cancelled": {
+          if (frame.output_epoch && frame.speech_id && frame.stop_command_id) {
+            const target = { output_epoch: frame.output_epoch, speech_id: frame.speech_id,
+              generation: frame.generation, stop_command_id: frame.stop_command_id };
+            const current = frame.output_epoch === outputEpochRef.current
+              && playbackOutput.isCurrentSpeech(frame.generation, frame.speech_id);
+            const playedUs = current ? outputGraph.playedAudioEndUs : 0;
+            let result;
+            try {
+              result = playbackOutput.stopOutput(target);
+            } catch {
+              result = { ...target, type: "output_stop_result" as const,
+                outcome: "unknown" as const, played_position_samples: null };
+            }
+            transportRef.current?.send(result);
+            if (result.outcome === "unknown") {
+              setCaption("无法确认音频已经停止，请重新打开页面后开始会话。");
+            }
+            if (result.outcome === "queue_stopped" && current) {
+              clearThinkingFallback();
+              clearPlaybackInactivityFallback();
+              playbackTextRef.current.advance(frame.generation, frame.speech_id, playedUs);
+              const text = playbackTextRef.current.stop(frame.generation);
+              if (text !== null) setCaption(text);
+              setTranscript(previous => settleAssistantTranscript(previous, frame.generation,
+                frame.reason === "failed" ? "failed" : "interrupted"));
+              reportPlaybackQuality(frame.generation);
+              if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+              if (speakingGenerationRef.current === frame.generation) leaveSpeaking();
+            }
+            break;
+          }
           const targetGeneration = frame.generation;
           const playingGeneration = speakingGenerationRef.current;
           if (playingGeneration !== null && targetGeneration < playingGeneration) {

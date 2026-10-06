@@ -5,7 +5,7 @@ import {
   readAnalyserLevel,
   type PlaybackQuality,
 } from "@/lib/audio";
-import type { PlaybackProgressV2 } from "../protocol/v2";
+import type { OutputStopResult, OutputStopTarget, PlaybackProgressV2 } from "../protocol/v2";
 import { DeviceAudioOutputRuntime } from "./output-runtime";
 
 const LEVEL_FFT_SIZE = 256;
@@ -64,6 +64,7 @@ export class BrowserAudioOutput {
   private sampleRate = 24_000;
   private quality: PlaybackQuality | null = null;
   private readonly reportedQuality = new Set<number>();
+  private outputUnsafe = false;
 
   constructor(options: BrowserAudioOutputOptions) {
     this.runtime = options.runtime;
@@ -111,7 +112,7 @@ export class BrowserAudioOutput {
   }
 
   canPlay(chunk: Pick<BrowserAudioChunk, "speechId" | "generation">): boolean {
-    return this.runtime.canEnqueue(chunk);
+    return !this.outputUnsafe && this.runtime.canEnqueue(chunk);
   }
 
   play(chunk: BrowserAudioChunk): boolean {
@@ -137,6 +138,7 @@ export class BrowserAudioOutput {
     const { generation } = outputChunk;
     if (generation !== this.generation || outputChunk.speechId !== this.speechId) {
       this.stopScheduledSources();
+      if (this.outputUnsafe) return false;
       this.nextPlayTime = context.currentTime;
       this.startedAt = null;
       this.playedSegments = [];
@@ -235,6 +237,28 @@ export class BrowserAudioOutput {
     return progress;
   }
 
+  stopOutput(target: OutputStopTarget): OutputStopResult {
+    const result = (outcome: OutputStopResult["outcome"], position: number | null): OutputStopResult => ({
+      ...target, type: "output_stop_result", outcome, played_position_samples: position,
+    });
+    if (target.output_epoch !== this.runtime.currentEpoch) return result("stale", null);
+    const current = target.generation === this.generation && target.speech_id === this.speechId;
+    const position = this.runtime.cancelSpeech(target.speech_id, target.generation,
+      current ? this.playedPositionSamples() : 0);
+    if (position === null) return result("stale", null);
+    if (current) {
+      this.stopScheduledSources();
+      this.generation = null;
+      this.speechId = null;
+      this.startedGeneration = null;
+      this.startedAt = null;
+      this.playedSegments = [];
+      this.scheduledEnd = 0;
+      this.nextPlayTime = 0;
+    }
+    return this.outputUnsafe ? result("unknown", null) : result("queue_stopped", position);
+  }
+
   takeQuality(generation: number): PlaybackQualityFrame | null {
     const quality = this.quality;
     if (
@@ -257,7 +281,7 @@ export class BrowserAudioOutput {
 
   setVolume(volume: number): void {
     this.volume = volume;
-    if (this.gainNode) this.gainNode.gain.value = volume;
+    if (this.gainNode) this.gainNode.gain.value = this.outputUnsafe ? 0 : volume;
   }
 
   readLevel(): number {
@@ -322,7 +346,10 @@ export class BrowserAudioOutput {
       try {
         source.stop();
       } catch {
-        // The source already reached its natural end.
+        // Without a successful stop we cannot certify the output queue.
+        // Keep this graph blocked; an epoch reset is not stop evidence.
+        this.outputUnsafe = true;
+        if (this.gainNode) this.gainNode.gain.value = 0;
       }
     }
   }

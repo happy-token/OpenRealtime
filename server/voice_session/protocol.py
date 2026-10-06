@@ -139,6 +139,25 @@ class PlaybackProgressV2(BaseModel):
     played_position_samples: int = Field(ge=0)
 
 
+class OutputStopResult(BaseModel):
+    """Local output-queue evidence, never a physical DAC acknowledgement."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal["output_stop_result"] = "output_stop_result"
+    output_epoch: str = Field(min_length=1)
+    speech_id: str = Field(min_length=1)
+    generation: int = Field(ge=0, strict=True)
+    stop_command_id: str = Field(min_length=1)
+    outcome: Literal["queue_stopped", "unknown", "stale"]
+    played_position_samples: int | None = Field(default=None, ge=0, strict=True)
+
+    @model_validator(mode="after")
+    def validate_position(self) -> OutputStopResult:
+        if (self.outcome == "queue_stopped") != (self.played_position_samples is not None):
+            raise ValueError("only a confirmed browser queue stop has a sample position")
+        return self
+
+
 class VoiceSessionFailureFrame(BaseModel):
     model_config = ConfigDict(frozen=True)
 

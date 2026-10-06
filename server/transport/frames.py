@@ -19,6 +19,7 @@ from server.voice_session.protocol import (
     InputAudioFrame,
     InputCaptureDiagnostic,
     InputEpochStarted,
+    OutputStopResult,
     PlaybackProgressV2,
     VoiceSessionFailureFrame,
 )
@@ -276,6 +277,16 @@ class AssistantSpeechCancelledFrame(BaseModel):
     type: Literal["assistant_speech_cancelled"] = "assistant_speech_cancelled"
     generation: int
     reason: Literal["interrupted", "failed", "cancelled"] = "interrupted"
+    output_epoch: str | None = Field(default=None, min_length=1)
+    speech_id: str | None = Field(default=None, min_length=1)
+    stop_command_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_stop_identity(self) -> Self:
+        fields = (self.output_epoch, self.speech_id, self.stop_command_id)
+        if any(value is not None for value in fields) and any(value is None for value in fields):
+            raise ValueError("precise stop requires epoch, speech and operation identity")
+        return self
 
 
 class AssistantResponseCompletedFrame(BaseModel):
@@ -427,6 +438,7 @@ InboundFrame = (
     | InputEpochStarted
     | InputCaptureDiagnostic
     | PlaybackProgressV2
+    | OutputStopResult
     | UserTextFrame
     | CancelAssistantResponseFrame
     | SessionHelloFrame

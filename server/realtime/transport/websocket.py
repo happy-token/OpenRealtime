@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
+from typing import Literal
 
 from server.conversation_journal import (
     ConversationItemDraft,
@@ -58,6 +60,7 @@ from server.transport.frames import (
     ConfirmationDecisionFrame,
     ConfirmationRequestedFrame,
     InboundFrame,
+    OutboundFrame,
     PlaybackProgressFrame,
     UserTextFrame,
     UserTranscriptFrame,
@@ -70,6 +73,7 @@ from server.voice_session.protocol import (
     InputAudioFrame,
     InputEpochStarted,
     InputEpochTimeline,
+    OutputStopResult,
     PlaybackProgressV2,
     VoiceSessionFailureFrame,
 )
@@ -77,6 +81,24 @@ from server.voice_session.protocol import (
 InboundFallback = Callable[[InboundFrame], Awaitable[None]]
 InputEpochStartedHandler = Callable[[InputEpochStarted], Awaitable[None]]
 ConfirmationDecisionHandler = Callable[[ConfirmationDecisionFrame], Awaitable[None]]
+logger = logging.getLogger(__name__)
+_OUTPUT_FAILURE_IO_TIMEOUT_S = .25
+
+
+@dataclass(frozen=True, slots=True)
+class OutputStopSnapshot:
+    request: AssistantSpeechCancelledFrame
+    state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"]
+    reason: str | None
+
+
+@dataclass(slots=True)
+class _OutputStop:
+    request: AssistantSpeechCancelledFrame
+    ready: asyncio.Future[bool]
+    state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"] = "STOP_REQUESTED"
+    reason: str | None = None
+    deadline: asyncio.TimerHandle | None = None
 
 
 @dataclass(slots=True)
@@ -112,11 +134,25 @@ class RealtimeWebSocketFrameBridge:
         input_epoch_started: InputEpochStartedHandler | None = None,
         confirmation_decision_handler: ConfirmationDecisionHandler | None = None,
         output_epoch: str | None = None,
+        precise_output_stop: bool = False,
+        output_stop_timeout_ms: int = 1500,
     ) -> None:
         self._base_context = context
         if output_epoch == "":
             raise ValueError("output epoch must be non-empty")
         self._output_epoch = output_epoch or str(uuid.uuid4())
+        if output_stop_timeout_ms <= 0:
+            raise ValueError("output stop timeout must be positive")
+        self._precise_output_stop = precise_output_stop
+        self._output_stop_timeout_s = output_stop_timeout_ms / 1000
+        self._output_stops: dict[str, _OutputStop] = {}
+        self._stop_by_target: dict[tuple[str, int, str], str] = {}
+        self._stop_tasks: set[asyncio.Task[None]] = set()
+        self._stop_output_failed = False
+        self._closed = False
+        self._output_failure = asyncio.Event()
+        self._failure_notification_started = False
+        self._locally_cancelled_speech: set[str] = set()
         self._conversation = conversation
         self._transport = transport
         self._inbound_fallback = inbound_fallback
@@ -145,12 +181,14 @@ class RealtimeWebSocketFrameBridge:
         return getattr(self._transport, "output_epoch", self._output_epoch)
 
     async def handle_inbound(self, frame: InboundFrame) -> None:
+        if self._closed:
+            return
         if isinstance(frame, InputEpochStarted):
             self._input_timeline.start(frame)
             self._input_format = frame.format
             if self._input_epoch_started is None:
                 self._voice_session_sequence += 1
-                await self._transport.send(
+                await self._send_frame(
                     VoiceSessionReadyFrame(
                         session_sequence=self._voice_session_sequence,
                         input_epoch=frame.input_epoch,
@@ -168,6 +206,8 @@ class RealtimeWebSocketFrameBridge:
             await self._report_playback(frame)
         elif isinstance(frame, PlaybackProgressV2):
             await self._report_playback_v2(frame)
+        elif isinstance(frame, OutputStopResult):
+            await self._report_output_stop(frame)
         elif (
             isinstance(frame, ConfirmationDecisionFrame)
             and self._confirmation_decision_handler is not None
@@ -177,17 +217,19 @@ class RealtimeWebSocketFrameBridge:
             await self._inbound_fallback(frame)
 
     async def handle_event(self, event: RealtimeEvent) -> None:
+        if self._closed:
+            return
         if not is_output_deliverable(self._conversation, event):
             return
         if isinstance(event, RealtimeCapabilityFailed) and event.capability == "semantic_input":
-            await self._transport.send(VoiceSessionFailureFrame(
+            await self._send_frame(VoiceSessionFailureFrame(
                 code="semantic_input_rejected", phase="input", retryable=True,
                 session_disposition="close", safe_message=event.error,
             ))
             await self._transport.close()
             return
         if isinstance(event, ConfirmationRequested):
-            await self._transport.send(
+            await self._send_frame(
                 ConfirmationRequestedFrame(
                     confirmation_id=event.confirmation_id,
                     action_digest=event.action_digest,
@@ -210,10 +252,9 @@ class RealtimeWebSocketFrameBridge:
                     and not self._response_is_current(interrupted_generation, event.context.response_id)):
                 return
             if interrupted_generation is not None:
-                self._locally_cancelled_generations.add(interrupted_generation)
-                await self._transport.send(
-                    AssistantSpeechCancelledFrame(generation=interrupted_generation)
-                )
+                playback = self._playback_by_generation.get(interrupted_generation)
+                await self._request_output_stop(interrupted_generation,
+                    playback.speech_id if playback else None)
             return
         if isinstance(event, ItemProjected):
             waiter = self._projection_waiters.pop(event.item_id, None)
@@ -221,7 +262,7 @@ class RealtimeWebSocketFrameBridge:
                 waiter.set_result(event)
             return
         if isinstance(event, InputTranscriptDelta):
-            await self._transport.send(
+            await self._send_frame(
                 UserTranscriptFrame(
                     text=event.text,
                     generation=event.context.generation,
@@ -232,7 +273,7 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, InputTranscriptCompleted):
-            await self._transport.send(
+            await self._send_frame(
                 UserTranscriptFrame(
                     text=event.text,
                     generation=event.context.generation,
@@ -259,7 +300,7 @@ class RealtimeWebSocketFrameBridge:
                 return
             text = self._response_text.get(event.response_id, "") + event.delta
             self._response_text[event.response_id] = text
-            await self._transport.send(
+            await self._send_frame(
                 AssistantTextFrame(text=text, generation=event.context.generation)
             )
             return
@@ -269,7 +310,7 @@ class RealtimeWebSocketFrameBridge:
                 return
             spoken = self._response_spoken.get(event.response_id, "") + event.delta
             self._response_spoken[event.response_id] = spoken
-            await self._transport.send(
+            await self._send_frame(
                 AssistantSpeechTextFrame(
                     text=spoken,
                     generation=event.context.generation,
@@ -284,7 +325,7 @@ class RealtimeWebSocketFrameBridge:
                 if start_us is None:
                     start_us = playback.text_boundaries[-1][0] if playback.text_boundaries else 0
                 playback.text_boundaries.append((event.audio_end_us, event.text_end))
-                await self._transport.send(AssistantTextAlignmentFrame(
+                await self._send_frame(AssistantTextAlignmentFrame(
                     generation=event.context.generation, speech_id=event.speech_id,
                     text=playback.intended_text[:event.text_end],
                     audio_start_us=start_us, audio_end_us=event.audio_end_us,
@@ -292,6 +333,7 @@ class RealtimeWebSocketFrameBridge:
             return
         if isinstance(event, AudioDelta):
             await self._send_audio(
+                source=event,
                 generation=event.context.generation,
                 speech_id=event.speech_id or f"response:{event.response_id}",
                 frame=event.frame,
@@ -300,6 +342,7 @@ class RealtimeWebSocketFrameBridge:
             return
         if isinstance(event, SpeechAudioDelta):
             await self._send_audio(
+                source=event,
                 generation=event.context.generation,
                 speech_id=event.speech_id,
                 frame=event.frame,
@@ -324,12 +367,12 @@ class RealtimeWebSocketFrameBridge:
                 # A provider without word timings still has one real utterance
                 # span. Display that span on the client playback clock.
                 playback.text_boundaries.append((playback.audio_end_us, len(playback.intended_text)))
-                await self._transport.send(AssistantTextAlignmentFrame(
+                await self._send_frame(AssistantTextAlignmentFrame(
                     generation=event.context.generation, speech_id=playback.speech_id,
                     text=playback.intended_text, audio_start_us=0, audio_end_us=playback.audio_end_us,
                 ))
             await self._send_terminal_audio(event.context.generation, f"response:{event.response_id}")
-            await self._transport.send(
+            await self._send_frame(
                 AssistantResponseCompletedFrame(generation=event.context.generation)
             )
             self._clear_response_draft(event.response_id)
@@ -341,18 +384,13 @@ class RealtimeWebSocketFrameBridge:
                 self._response_generation_by_id.pop(event.response_id, None)
                 return
             if not self._response_text.get(event.response_id):
-                await self._transport.send(
+                await self._send_frame(
                     AssistantTextFrame(
                         text="刚才没有及时响应，请再说一次。",
                         generation=event.context.generation,
                     )
                 )
-            await self._transport.send(
-                AssistantSpeechCancelledFrame(
-                    generation=event.context.generation,
-                    reason="failed",
-                )
-            )
+            await self._request_output_stop(event.context.generation, f"response:{event.response_id}", "failed")
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
             return
@@ -366,9 +404,7 @@ class RealtimeWebSocketFrameBridge:
                 self._response_generation_by_id.pop(event.response_id, None)
                 return
             if cancelled_generation not in self._locally_cancelled_generations:
-                await self._transport.send(
-                    AssistantSpeechCancelledFrame(generation=cancelled_generation)
-                )
+                await self._request_output_stop(cancelled_generation, f"response:{event.response_id}")
             self._locally_cancelled_generations.discard(cancelled_generation)
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
@@ -376,6 +412,12 @@ class RealtimeWebSocketFrameBridge:
     async def handle_detached(self) -> None:
         """Settle live response work before semantic v2 recovery."""
 
+        for stop in self._output_stops.values():
+            if not stop.ready.done():
+                self._fail_stop_handoff(stop, "transport_detached")
+        if self._stop_output_failed:
+            await self._notify_stop_failure("transport_detached")
+            return
         response_id = self._active_response_id
         response_context = self._active_response_context
         if response_id is None or response_context is None:
@@ -411,7 +453,7 @@ class RealtimeWebSocketFrameBridge:
         if result is None:
             return
         if isinstance(result, AudioGap):
-            await self._transport.send(result)
+            await self._send_frame(result)
             return
         assert isinstance(result, InputAudioAck)
         duration_us = round(frame.sample_count * 1_000_000 / audio_format.sample_rate_hz)
@@ -436,7 +478,7 @@ class RealtimeWebSocketFrameBridge:
                 frame=audio,
             )
         )
-        await self._transport.send(result)
+        await self._send_frame(result)
 
     async def _append_user_text(self, text: str) -> None:
         normalized = text.strip()
@@ -477,7 +519,7 @@ class RealtimeWebSocketFrameBridge:
             )
             self._active_response_id = response_id
             self._active_response_context = replace(context, response_id=response_id)
-            await self._transport.send(
+            await self._send_frame(
                 UserTranscriptFrame(
                     text=normalized,
                     generation=context.generation,
@@ -516,12 +558,19 @@ class RealtimeWebSocketFrameBridge:
     async def _send_audio(
         self,
         *,
+        source: AudioDelta | SpeechAudioDelta,
         generation: int,
         speech_id: str,
         frame: AudioFrame,
         sequence: int,
     ) -> None:
-        if generation in self._locally_cancelled_generations:
+        if generation in self._locally_cancelled_generations or speech_id in self._locally_cancelled_speech:
+            return
+        if not await self._wait_output_stops():
+            return
+        if not is_output_deliverable(self._conversation, source):
+            return
+        if self._closed or generation in self._locally_cancelled_generations or speech_id in self._locally_cancelled_speech:
             return
         playback = self._begin_playback(generation, speech_id)
         if playback is None or playback.generation_complete:
@@ -532,7 +581,7 @@ class RealtimeWebSocketFrameBridge:
         playback.audio_samples += len(frame.data) // (2 * frame.channels)
         playback.sample_rate_hz = frame.sample_rate_hz
         playback.next_sequence = max(playback.next_sequence, sequence + 1)
-        await self._transport.send(
+        await self._send_frame(
             AssistantAudioChunkFrame(
                 pcm16_base64=base64.b64encode(frame.data).decode("ascii"),
                 sample_rate_hz=frame.sample_rate_hz,
@@ -545,6 +594,8 @@ class RealtimeWebSocketFrameBridge:
         )
 
     async def _send_terminal_audio(self, generation: int, speech_id: str) -> None:
+        if self._closed or speech_id in self._locally_cancelled_speech:
+            return
         playback = self._playback_by_speech.get(speech_id)
         if playback is None or playback.generation != generation:
             return
@@ -555,7 +606,7 @@ class RealtimeWebSocketFrameBridge:
         # Publish terminal state before an awaited send can expose its frame
         # and interleave the client's completion receipt.
         playback.terminal_audio_sent = True
-        await self._transport.send(AssistantAudioChunkFrame(
+        await self._send_frame(AssistantAudioChunkFrame(
             pcm16_base64="", sample_rate_hz=playback.sample_rate_hz,
             generation=generation, speech_id=playback.speech_id,
             sequence=playback.next_sequence, is_final=True,
@@ -567,6 +618,188 @@ class RealtimeWebSocketFrameBridge:
             return False
         latest = self._latest_speech_by_generation.get(generation)
         return latest is None or latest == speech_id
+
+    def output_stop_snapshot(self) -> tuple[OutputStopSnapshot, ...]:
+        return tuple(OutputStopSnapshot(stop.request, stop.state, stop.reason)
+                     for stop in self._output_stops.values())
+
+    async def wait_for_output_failure(self) -> None:
+        """Wake the owning endpoint even if graceful transport close stalls."""
+        await self._output_failure.wait()
+
+    async def _send_frame(self, frame: OutboundFrame) -> None:
+        if not self._closed:
+            await self._transport.send(frame)
+
+    async def _request_output_stop(self, generation: int, speech_id: str | None,
+                                   reason: Literal["interrupted", "failed", "cancelled"] = "interrupted") -> None:
+        if self._closed:
+            return
+        if not self._precise_output_stop or speech_id is None:
+            self._locally_cancelled_generations.add(generation)
+            try:
+                await asyncio.wait_for(self._send_frame(
+                    AssistantSpeechCancelledFrame(generation=generation, reason=reason)),
+                    timeout=self._output_stop_timeout_s)
+            except Exception:
+                logger.warning("Legacy output stop command could not reach client", exc_info=True)
+                self._stop_output_failed = True
+                await self._notify_stop_failure("stop_request_send_failed")
+            return
+        self._locally_cancelled_speech.add(speech_id)
+        key = (self.output_epoch, generation, speech_id)
+        if key in self._stop_by_target:
+            return
+        if len(self._output_stops) >= 512:
+            self._stop_output_failed = True
+            await self._notify_stop_failure("stop_operation_budget")
+            return
+        loop = asyncio.get_running_loop()
+        request = AssistantSpeechCancelledFrame(generation=generation, reason=reason,
+            output_epoch=self.output_epoch, speech_id=speech_id, stop_command_id=str(uuid.uuid4()))
+        assert request.stop_command_id is not None
+        stop = _OutputStop(request=request, ready=loop.create_future())
+        self._output_stops[request.stop_command_id] = stop
+        self._stop_by_target[key] = request.stop_command_id
+        stop.deadline = loop.call_later(self._output_stop_timeout_s, self._expire_output_stop, stop)
+        try:
+            await asyncio.wait_for(self._send_frame(request), timeout=self._output_stop_timeout_s)
+        except asyncio.CancelledError:
+            if not self._closed:
+                self._fail_stop_handoff(stop, "stop_request_send_cancelled")
+                self._schedule_stop_failure("stop_request_send_cancelled")
+            raise
+        except Exception:
+            logger.warning("Output stop command could not reach client", exc_info=True)
+            self._fail_stop_handoff(stop, "stop_request_send_failed")
+            await self._notify_stop_failure("stop_request_send_failed")
+
+    def _expire_output_stop(self, stop: _OutputStop) -> None:
+        if stop.state != "STOP_REQUESTED":
+            return
+        self._settle_stop_unknown(stop, "receipt_deadline")
+        self._schedule_stop_failure("receipt_deadline")
+
+    def _schedule_stop_failure(self, reason: str) -> None:
+        if self._failure_notification_started or self._stop_tasks:
+            return
+        task = asyncio.create_task(self._notify_stop_failure(reason))
+        self._stop_tasks.add(task)
+        task.add_done_callback(self._stop_task_done)
+
+    def _stop_task_done(self, task: asyncio.Task[None]) -> None:
+        self._stop_tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Output stop failure notification failed", exc_info=task.exception())
+
+    def _settle_stop_unknown(self, stop: _OutputStop, reason: str) -> None:
+        self._fail_stop_handoff(stop, reason)
+
+    def _fail_stop_handoff(self, stop: _OutputStop, reason: str) -> None:
+        # A received queue-stop acknowledgement remains a historical fact;
+        # failure revokes the separate permission to deliver subsequent audio.
+        if stop.state == "STOP_REQUESTED":
+            stop.state = "STOP_UNKNOWN"
+        if stop.reason is None:
+            stop.reason = reason
+        self._stop_output_failed = True
+        if stop.deadline is not None:
+            stop.deadline.cancel()
+        if not stop.ready.done():
+            stop.ready.set_result(False)
+
+    async def _notify_stop_failure(self, reason: str) -> None:
+        if self._failure_notification_started:
+            return
+        self._failure_notification_started = True
+        self._closed = True
+        try:
+            # One failure notice may cross the closed latch; ordinary frames
+            # all use _send_frame and cannot start another send after closure.
+            await asyncio.wait_for(self._transport.send(VoiceSessionFailureFrame(
+                code="output_stop_unconfirmed", phase="output", retryable=True,
+                session_disposition="close", safe_message="无法确认音频已经停止，请重新打开页面后开始会话。")),
+                timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
+        except Exception:
+            logger.warning("Stop failure could not reach client: %s", reason, exc_info=True)
+        finally:
+            try:
+                await asyncio.wait_for(self._transport.close(), timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
+            except Exception:
+                logger.warning("Stop failure transport close did not finish: %s", reason, exc_info=True)
+            finally:
+                # Endpoint pumps must be cancelled by their owner even when
+                # cancelling a graceful close didn't wake transport.receive.
+                self._output_failure.set()
+
+    async def _wait_output_stops(self) -> bool:
+        while True:
+            if self._closed or self._stop_output_failed:
+                return False
+            stops = tuple(self._output_stops.values())
+            for stop in stops:
+                if not stop.ready.done() and stop.request.output_epoch != self.output_epoch:
+                    self._fail_stop_handoff(stop, "output_epoch_changed")
+                    self._schedule_stop_failure("output_epoch_changed")
+                if not await asyncio.shield(stop.ready):
+                    return False
+            if self._closed or self._stop_output_failed:
+                return False
+            if all(stop.ready.done() for stop in self._output_stops.values()):
+                return True
+
+    async def _report_output_stop(self, result: OutputStopResult) -> None:
+        stop = self._output_stops.get(result.stop_command_id)
+        if stop is None or stop.state != "STOP_REQUESTED" or result.output_epoch != self.output_epoch:
+            return
+        request = stop.request
+        if (result.output_epoch, result.speech_id, result.generation) != (
+                request.output_epoch, request.speech_id, request.generation):
+            return
+        if result.outcome != "queue_stopped":
+            self._settle_stop_unknown(stop, result.outcome)
+            await self._notify_stop_failure(result.outcome)
+            return
+        stop.state = "STOP_CONFIRMED"
+        if stop.deadline is not None:
+            stop.deadline.cancel()
+        assert result.played_position_samples is not None
+        try:
+            await asyncio.wait_for(self._report_playback_v2(PlaybackProgressV2(
+                output_epoch=result.output_epoch, speech_id=result.speech_id, generation=result.generation,
+                phase="stopped", played_position_samples=result.played_position_samples)),
+                timeout=self._output_stop_timeout_s)
+        except asyncio.CancelledError:
+            self._fail_stop_handoff(stop, "playback_projection_cancelled")
+            if not self._closed:
+                self._schedule_stop_failure("playback_projection_cancelled")
+            raise
+        except Exception:
+            self._fail_stop_handoff(stop, "playback_projection_failed")
+            await self._notify_stop_failure("playback_projection_failed")
+            raise
+        if stop.ready.done():
+            return
+        if self._closed or stop.request.output_epoch != self.output_epoch:
+            self._fail_stop_handoff(stop, "session_closed" if self._closed else "output_epoch_changed")
+            if not self._closed:
+                self._schedule_stop_failure("output_epoch_changed")
+            return
+        if not stop.ready.done():
+            stop.ready.set_result(True)
+
+    async def close(self) -> None:
+        self._closed = True
+        self._output_failure.set()
+        for stop in self._output_stops.values():
+            if stop.deadline is not None:
+                stop.deadline.cancel()
+            if not stop.ready.done():
+                self._fail_stop_handoff(stop, "session_closed")
+        tasks = tuple(self._stop_tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def _begin_playback(self, generation: int, speech_id: str) -> _PlaybackState | None:
         if speech_id in self._retired_speech_ids:

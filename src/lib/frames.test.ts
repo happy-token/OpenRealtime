@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { parseServerFrame } from "./frames";
 
 describe("parseServerFrame", () => {
+  it("requires all precise stop identities and preserves legacy cancellation", () => {
+    const frame = { type: "assistant_speech_cancelled", generation: 1,
+      output_epoch: "epoch", speech_id: "speech", stop_command_id: "stop" };
+    expect(parseServerFrame(frame)).toEqual(frame);
+    for (const field of ["output_epoch", "speech_id", "stop_command_id"]) {
+      expect(parseServerFrame({ ...frame, [field]: null })).toBeNull();
+      expect(parseServerFrame({ ...frame, [field]: "" })).toBeNull();
+    }
+    for (const generation of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(parseServerFrame({ ...frame, generation })).toBeNull();
+    }
+    expect(parseServerFrame({ type: frame.type, generation: 1 })).not.toBeNull();
+  });
+
   it("accepts a complete assistant text frame", () => {
     expect(parseServerFrame({
       type: "assistant_text",

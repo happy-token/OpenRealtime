@@ -381,6 +381,7 @@ class VoiceSessionWebSocketSession:
             context=self._context,
             conversation=conversation,
             transport=self._transport,
+            precise_output_stop=True,
             inbound_fallback=self._inbound_fallback,
             input_epoch_started=self._accept_input_epoch,
             confirmation_decision_handler=(
@@ -399,6 +400,7 @@ class VoiceSessionWebSocketSession:
                 name="voice-session-realtime-events",
             ),
             voice_events,
+            asyncio.create_task(bridge.wait_for_output_failure(), name="voice-session-output-failure"),
         )
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -434,6 +436,7 @@ class VoiceSessionWebSocketSession:
             if not start_task.done():
                 start_task.cancel()
             await asyncio.gather(*tasks, start_task, return_exceptions=True)
+            await bridge.close()
             await runtime.stop(reason="endpoint_closed")
             finalize_diagnostics = getattr(self._diagnostic_observer, "close", None)
             if finalize_diagnostics is not None:

@@ -17,6 +17,7 @@ export class DeviceAudioOutputRuntime {
   private readonly positions = new Map<string, number>();
   private readonly finishedSpeech = new Set<string>();
   private readonly replacedSpeech = new Set<string>();
+  private readonly cancelledSpeech = new Set<string>();
   private readonly generationBySpeech = new Map<string, number>();
   private highestGeneration = -1;
 
@@ -27,6 +28,8 @@ export class DeviceAudioOutputRuntime {
   get isActive(): boolean {
     return this.outputEpoch !== null;
   }
+
+  get currentEpoch(): string | null { return this.outputEpoch; }
 
   beginEpoch(outputEpoch: string): void {
     if (!outputEpoch) throw new Error("output epoch must be non-empty");
@@ -39,6 +42,7 @@ export class DeviceAudioOutputRuntime {
     if (chunk.generation < this.highestGeneration
       || this.cancelledGenerations.has(chunk.generation)
       || this.finishedSpeech.has(chunk.speechId)
+      || this.cancelledSpeech.has(chunk.speechId)
       || this.replacedSpeech.has(chunk.speechId)) return false;
     const boundGeneration = this.generationBySpeech.get(chunk.speechId);
     if (boundGeneration !== undefined && boundGeneration !== chunk.generation) return false;
@@ -87,6 +91,22 @@ export class DeviceAudioOutputRuntime {
     return this.buildProgress(generation, speechId, "stopped", playedPositionSamples);
   }
 
+  cancelSpeech(speechId: string, generation: number, playedPositionSamples: number): number | null {
+    if (this.outputEpoch === null) return null;
+    const bound = this.generationBySpeech.get(speechId);
+    if (bound !== undefined && bound !== generation) return null;
+    this.generationBySpeech.set(speechId, generation);
+    this.cancelledSpeech.add(speechId);
+    this.queue = this.queue.filter(chunk => {
+      if (chunk.speechId !== speechId) return true;
+      chunk.pcm16.fill(0);
+      return false;
+    });
+    const position = Math.max(0, this.positions.get(speechId) ?? 0, playedPositionSamples);
+    this.positions.set(speechId, position);
+    return position;
+  }
+
   playbackProgress(
     generation: number,
     phase: PlaybackProgressV2["phase"],
@@ -96,6 +116,7 @@ export class DeviceAudioOutputRuntime {
     const speechId = this.speechByGeneration.get(generation);
     if (speechId === undefined) return null;
     if (this.cancelledGenerations.has(generation) && phase !== "stopped") return null;
+    if (this.cancelledSpeech.has(speechId) && phase !== "stopped") return null;
     if (this.replacedSpeech.has(speechId) && phase !== "stopped") return null;
     if (this.finishedSpeech.has(speechId) && phase !== "finished") return null;
     if (phase === "finished") this.finishedSpeech.add(speechId);
@@ -134,6 +155,7 @@ export class DeviceAudioOutputRuntime {
     this.positions.clear();
     this.finishedSpeech.clear();
     this.replacedSpeech.clear();
+    this.cancelledSpeech.clear();
     this.generationBySpeech.clear();
     this.highestGeneration = -1;
   }

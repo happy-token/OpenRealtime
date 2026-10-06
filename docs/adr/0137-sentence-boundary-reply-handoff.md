@@ -25,3 +25,5 @@ actor签发许可，版本账本保存引用，既有输出边界执行并上报
 ## 2026-10-07前置实施
 
 已补服务端签发并验证attach输出epoch、浏览器旧取消/ended隔离、独立speech样本时钟、引擎生成终态与实际PCM完成判定，以及同代旧失败/取消/yield/文本隔离。详见[播放事实报告](../reports/2026-10-07-playback-fact-isolation.md)。这只建立后续许可/交接所需事实边界；本ADR仍Proposed，精确句段许可、停播命令与确认、heard_frontier重验及真实数字人验收未完成。
+
+同日继续补[精确停播操作](../reports/2026-10-07-precise-output-stop.md)：请求和回执绑定epoch/speech/generation/operation；浏览器本地队列确认与数字人未知结果分开；重复命令不停止替换speech，新音频在既有出队边界等待匹配回执和投影，失败有界并撤销交付许可。已观察的停止事实与后续交付许可分别维护。此为live桥接前置，尚未建立持久停止事实/actor句段许可，不能关闭本ADR或G3。

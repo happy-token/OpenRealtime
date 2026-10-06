@@ -12,7 +12,6 @@ from pydantic import ValidationError
 
 from server.transport.frames import (
     AvatarPersonaConfigFrame,
-    ToolConfigFrame,
     CancelAssistantResponseFrame,
     ClientConnectionQualityFrame,
     ConfirmationDecisionFrame,
@@ -21,6 +20,7 @@ from server.transport.frames import (
     PlaybackQualityFrame,
     SessionHeartbeatFrame,
     SessionHelloFrame,
+    ToolConfigFrame,
     TtsConfigFrame,
     UserTextFrame,
 )
@@ -28,6 +28,7 @@ from server.voice_session.protocol import (
     InputAudioFrame,
     InputCaptureDiagnostic,
     InputEpochStarted,
+    OutputStopResult,
     PlaybackProgressV2,
 )
 
@@ -61,6 +62,8 @@ def parse_inbound_frame(raw_message: str | bytes) -> InboundFrame | None:
             return PlaybackProgressFrame.model_validate(payload)
         if frame_type == "playback_progress_v2":
             return PlaybackProgressV2.model_validate(payload)
+        if frame_type == "output_stop_result":
+            return OutputStopResult.model_validate(payload)
         if frame_type == "playback_quality":
             return PlaybackQualityFrame.model_validate(payload)
         if frame_type == "client_connection_quality":

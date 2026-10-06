@@ -1,7 +1,7 @@
 // Browser-side mirror of server/transport/frames.py's WebSocket schema.
 // Keep transport direction explicit: names are always from the browser's view.
 
-import type { InputCaptureDiagnostic, VoiceSessionPhase } from "@/voice/protocol/v2";
+import type { InputCaptureDiagnostic, OutputStopResult, VoiceSessionPhase } from "@/voice/protocol/v2";
 
 export interface UserTextFrame {
   type: "user_text";
@@ -87,7 +87,8 @@ export type ClientToServerFrame =
   | AvatarPersonaConfigFrame
   | ToolConfigFrame
   | ConfirmationDecisionFrame
-  | InputCaptureDiagnostic;
+  | InputCaptureDiagnostic
+  | OutputStopResult;
 
 export interface UserTranscriptFrame {
   type: "user_transcript";
@@ -149,6 +150,9 @@ export interface AssistantSpeechCancelledFrame {
   type: "assistant_speech_cancelled";
   generation: number;
   reason?: AssistantCancellationReason;
+  output_epoch?: string | null;
+  speech_id?: string | null;
+  stop_command_id?: string | null;
 }
 
 export interface SessionAckFrame {
@@ -500,6 +504,11 @@ export function parseServerFrame(value: unknown): ServerToClientFrame | null {
     case "assistant_speech_cancelled":
       return (
         isNumber(value.generation)
+        && (
+          ([value.output_epoch, value.speech_id, value.stop_command_id].every(field => field === undefined || field === null))
+          || (Number.isSafeInteger(value.generation) && value.generation >= 0
+            && [value.output_epoch, value.speech_id, value.stop_command_id].every(field => typeof field === "string" && field.length > 0))
+        )
         && (
           value.reason === undefined
           || value.reason === "interrupted"

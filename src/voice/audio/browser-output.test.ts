@@ -48,6 +48,74 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it("precisely stops one speech without poisoning a replacement on the same generation", () => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: false };
+    output.play(chunk);
+    fake.context.currentTime = 1.0000625;
+    const target = { output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "stop" };
+    expect(output.stopOutput(target)).toMatchObject({ outcome: "queue_stopped", played_position_samples: 1 });
+    expect(output.play({ ...chunk, speechId: "new" })).toBe(true);
+    output.stopOutput(target);
+    expect(fake.sources[1].stop).not.toHaveBeenCalled();
+    expect(output.play(chunk)).toBe(false);
+    output.close();
+  });
+
+  it("cannot certify a queue when source.stop fails, even after changing epoch", () => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: true };
+    output.play(chunk);
+    fake.sources[0].stop.mockImplementation(() => { throw new Error("cannot stop"); });
+    expect(output.stopOutput({ output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "stop" }))
+      .toMatchObject({ outcome: "unknown", played_position_samples: null });
+    expect(fake.gain.gain.value).toBe(0);
+    output.setVolume(0.7);
+    expect(fake.gain.gain.value).toBe(0);
+    output.beginEpoch("replacement");
+    expect(output.play({ ...chunk, speechId: "new" })).toBe(false);
+    output.close();
+  });
+
+  it("stops a not-yet-received speech without closing its generation", () => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    expect(output.stopOutput({ output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "stop" }))
+      .toMatchObject({ outcome: "queue_stopped", played_position_samples: 0 });
+    const chunk = { pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: true };
+    expect(output.play(chunk)).toBe(false);
+    expect(output.play({ ...chunk, speechId: "new" })).toBe(true);
+    output.close();
+  });
+
+  it("does not start replacement audio when stopping the old source fails", () => {
+    const fake = fakeContext();
+    const started = vi.fn();
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext, onStarted: started });
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: false };
+    output.play(chunk);
+    fake.sources[0].stop.mockImplementation(() => { throw new Error("cannot stop"); });
+    expect(output.play({ ...chunk, generation: 2, speechId: "replacement" })).toBe(false);
+    expect(fake.sources).toHaveLength(1);
+    expect(started).toHaveBeenCalledExactlyOnceWith(1);
+    expect(output.canPlay({ generation: 2, speechId: "replacement" })).toBe(false);
+    output.close();
+  });
+
   it.each([1, 2])("ignores old speech audio after a replacement on generation %i", (generation) => {
     const fake = fakeContext();
     const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
