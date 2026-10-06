@@ -210,7 +210,7 @@ async def test_cancelling_complete_closes_the_http_response(monkeypatch):
     assert response.closed.wait(timeout=0.2)
 
 
-async def test_cancelling_stream_does_not_wait_for_blocking_http_close(monkeypatch):
+async def test_cancellation_does_not_confirm_before_blocking_http_close_finishes(monkeypatch):
     response = _SlowCloseStreamResponse()
     monkeypatch.setattr(
         module.urllib.request,
@@ -224,7 +224,11 @@ async def test_cancelling_stream_does_not_wait_for_blocking_http_close(monkeypat
     assert await asyncio.to_thread(response.waiting.wait, 0.5)
 
     pending.cancel()
-    await asyncio.wait_for(asyncio.gather(pending, return_exceptions=True), timeout=0.1)
+    done, _ = await asyncio.wait({pending}, timeout=0.1)
+    assert not done
+    assert not response.closed.is_set()
+    await asyncio.wait_for(asyncio.gather(pending, return_exceptions=True), timeout=1)
+    assert response.closed.is_set()
 
 
 async def test_sends_expected_system_and_user_messages(monkeypatch):

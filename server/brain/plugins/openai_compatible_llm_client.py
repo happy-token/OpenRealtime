@@ -22,6 +22,7 @@ from http.client import HTTPResponse
 from typing import TYPE_CHECKING, Any, Literal
 
 from server.brain.llm_clients import ChatMessage
+from server.core.async_stream import owned_async_iterator
 from server.observability.telemetry import TelemetryKind
 
 if TYPE_CHECKING:
@@ -126,13 +127,14 @@ class OpenAiCompatibleLlmClient:
         system_prompt: str,
         user_text: str,
     ) -> AsyncIterator[str]:
-        async for chunk in self.stream_messages(
+        async with owned_async_iterator(self.stream_messages(
             messages=(
                 ChatMessage(role="system", content=system_prompt),
                 ChatMessage(role="user", content=user_text),
             )
-        ):
-            yield chunk
+        )) as iterator:
+            async for chunk in iterator:
+                yield chunk
 
     async def stream_messages(
         self,
@@ -191,7 +193,9 @@ class OpenAiCompatibleLlmClient:
                     emit(_StreamFailure(error))
                 return
             finally:
-                iterator.close()
+                close_iterator = getattr(iterator, "close", None)
+                if close_iterator is not None:
+                    close_iterator()
             if not stopped.is_set():
                 emit(_STREAM_END)
 
@@ -216,7 +220,7 @@ class OpenAiCompatibleLlmClient:
                 while True:
                     item = await queue.get()
                     if item is _STREAM_END:
-                        await producer
+                        await asyncio.shield(producer)
                         return
                     if isinstance(item, _StreamFailure):
                         raise item.error
@@ -240,13 +244,16 @@ class OpenAiCompatibleLlmClient:
                 with response_lock:
                     response = response_holder[-1] if response_holder else None
                 close = getattr(response, "close", None)
+                cleanup: list[asyncio.Future[Any]] = [producer]
                 if close is not None:
-                    # HTTPResponse.close() may block on a provider socket. It
-                    # must never extend the caller's cancellation deadline.
-                    loop.run_in_executor(None, close)
-                if not producer.done():
-                    producer.cancel()
-                await asyncio.gather(producer, return_exceptions=True)
+                    cleanup.append(loop.run_in_executor(None, close))
+                # Cancelling to_thread only cancels its Future, not the worker.
+                # Keep ownership until the HTTP close and worker really finish;
+                # the Core bounds caller waiting and quarantines unconfirmed cleanup.
+                results = await asyncio.shield(asyncio.gather(*cleanup, return_exceptions=True))
+                for result in results:
+                    if isinstance(result, Exception):
+                        raise result
 
     def _stream_sync(
         self,

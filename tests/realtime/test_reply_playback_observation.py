@@ -45,11 +45,11 @@ class Provider:
                 yield chunk
 
 
-async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False):
+async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False, tts=None):
     core = await open_core(
         brain=brain or Brain(),
         asr=asr, turn_manager=turn_manager,
-        tts=Provider(),
+        tts=tts or Provider(),
         interaction_context=context(),
         speech_deliveries=speech_deliveries,
     )

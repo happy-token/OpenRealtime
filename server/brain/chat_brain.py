@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from server.brain.base import BrainResponse
 from server.brain.llm_clients import LlmClient
 from server.brain.realtime_grounding import TurnGrounder
+from server.core.async_stream import owned_async_iterator
 from server.core.turn_content import TurnContent
 from server.tools.clock_source import localize
 
@@ -85,14 +86,15 @@ class ChatBrain:
             yield _sanitize_response_language(text, input_text=content.model_text)
             return
         language_guard = _LeadingForeignPreambleGuard(input_text=content.model_text)
-        async for delta in stream(
+        async with owned_async_iterator(stream(
             system_prompt=grounded_prompt,
             user_text=user_text,
-        ):
-            if delta:
-                filtered = language_guard.feed(delta)
-                if filtered:
-                    yield filtered
+        )) as iterator:
+            async for delta in iterator:
+                if delta:
+                    filtered = language_guard.feed(delta)
+                    if filtered:
+                        yield filtered
         final = language_guard.finish()
         if final:
             yield final

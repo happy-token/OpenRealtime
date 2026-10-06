@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator, Callable
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from datetime import UTC, datetime
 from typing import cast
 
@@ -145,6 +145,20 @@ class CascadedCapabilityError(RuntimeError):
 
 class _FirstResponseTextDeadlineExceeded(RuntimeError):
     pass
+
+
+class _BrainRequestProtocolError(RuntimeError):
+    pass
+
+
+@dataclass(slots=True)
+class _BrainAttempt:
+    turn: TurnContent
+    request_token: str
+    count: int = 1
+    semantic_published: bool = False
+    cleanup_error: str | None = None
+    cancel_task: asyncio.Task[None] | None = None
 
 
 class CascadedRealtimeEngine:
@@ -327,6 +341,10 @@ class CascadedRealtimeConversation:
         self._terminal_response_ids: set[str] = set()
         self._cancel_reason_by_response_id: dict[str, str] = {}
         self._response_admitted_by_id: dict[str, asyncio.Event] = {}
+        self._brain_attempts: dict[str, _BrainAttempt] = {}
+        self._brain_protocol_failed = False
+        self._revoked_brain_response_ids: set[str] = set()
+        self._brain_protocol_close_task: asyncio.Task[None] | None = None
         self._tts_task_by_response_id: dict[str, asyncio.Task[None]] = {}
         self._pending_deliveries: deque[DeliverItem] = deque()
         self._delivery_by_response_id: dict[str, DeliverItem] = {}
@@ -675,12 +693,14 @@ class CascadedRealtimeConversation:
             # A cancelled response may finish persisting its tool outcome after
             # a user barge-in.  Keep that durable fact in projected history,
             # but never resume a Brain response that no longer owns the turn.
-            if response_id != self._active_response_id:
+            if response_id != self._active_response_id or self._brain_protocol_failed:
                 return
             error_code = item.provider_metadata.get("error_code")
             await self._brain.send(
                 SubmitBrainToolResult(
                     response_id=response_id,
+                    request_token=(self._brain_attempts[response_id].request_token
+                        if response_id in self._brain_attempts else None),
                     call_id=call_id,
                     success=item.status is ConversationItemStatus.COMPLETED,
                     model_output=model_output,
@@ -1159,39 +1179,43 @@ class CascadedRealtimeConversation:
         failure: str | None = None
         cancelled_reason: str | None = None
         brain_requested = False
+        attempt = _BrainAttempt(turn=turn, request_token=str(uuid.uuid4()))
+        self._brain_attempts[command.response_id] = attempt
         deadline = asyncio.timeout(self._response_timeout_s)
         try:
             async with deadline:
                 await ready.wait()
                 if not self._input_pipeline.response_delivery_allowed(command.response_id):
                     raise asyncio.CancelledError
-                items, source_item = self._response_projection_snapshot(command.minimum_thread_sequence)
-                if (digest_source_items(items) != turn.context_projection_digest
-                    or "\n".join(part.text for part in source_item.content if isinstance(part, TextContent)) != turn.text
-                    or (source_item.provider_metadata.get("input_relation") == "unresolved") != turn.input_relation_unresolved):
+                if self._brain_protocol_failed:
+                    raise RuntimeError("Brain capability is quarantined; requires a new capability session")
+                if not self._brain_turn_matches(command, turn):
                     turn = await self._turn_from_projection(command.minimum_thread_sequence, generation=command.context.generation)
                 if not self._input_pipeline.response_delivery_allowed(command.response_id):
                     raise asyncio.CancelledError
                 brain_requested = True
-                await self._brain.send(
-                    RequestBrainResponse(
-                        response_id=command.response_id,
-                        turn=turn,
-                        context=command.context,
-                    )
-                )
-                failure = await self._route_response(command)
+                attempt.turn = turn
+                first_text_deadline = asyncio.get_running_loop().time() + self._response_first_text_timeout_s
+                admission_deadline = asyncio.timeout_at(first_text_deadline)
+                try:
+                    async with admission_deadline:
+                        await self._brain.send(RequestBrainResponse(
+                            response_id=command.response_id, turn=turn,
+                            context=command.context, request_token=attempt.request_token))
+                except TimeoutError as error:
+                    if admission_deadline.expired():
+                        raise _FirstResponseTextDeadlineExceeded from error
+                    raise
+                failure = await self._route_response(command, attempt, first_text_deadline=first_text_deadline)
         except _FirstResponseTextDeadlineExceeded:
+            await self._revoke_brain_output(command)
             failure = (
                 "first response text deadline exceeded after "
                 f"{self._response_first_text_timeout_s:.3f}s"
             )
-            await self._brain.send(
-                CancelBrainResponse(
-                    response_id=command.response_id,
-                    reason="response_first_text_deadline_exceeded",
-                )
-            )
+            await self._cancel_brain_attempt(command, attempt, reason="response_first_text_deadline_exceeded")
+            if attempt.cleanup_error:
+                failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
             await self._emit_capability_failure(
                 context=command.context,
                 capability="response_first_text_deadline",
@@ -1199,17 +1223,15 @@ class CascadedRealtimeConversation:
             )
             failure = await self._record_response_failure(command, failure)
         except TimeoutError as error:
+            await self._revoke_brain_output(command)
             if deadline.expired():
                 failure = (
                     "response deadline exceeded after "
                     f"{self._response_timeout_s:.3f}s"
                 )
-                await self._brain.send(
-                    CancelBrainResponse(
-                        response_id=command.response_id,
-                        reason="response_deadline_exceeded",
-                    )
-                )
+                await self._cancel_brain_attempt(command, attempt, reason="response_deadline_exceeded")
+                if attempt.cleanup_error:
+                    failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
                 tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
                 if tts_task is not None:
                     await self._tts.send(
@@ -1226,6 +1248,10 @@ class CascadedRealtimeConversation:
                 )
             else:
                 failure = str(error)
+                if brain_requested:
+                    await self._cancel_brain_attempt(command, attempt, reason="response_failed")
+                    if attempt.cleanup_error:
+                        failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
             failure = await self._record_response_failure(command, failure)
         except asyncio.CancelledError:
             cancelled_reason = self._cancel_reason_by_response_id.pop(
@@ -1233,12 +1259,10 @@ class CascadedRealtimeConversation:
                 "cancelled",
             )
             if brain_requested:
-                await self._brain.send(
-                    CancelBrainResponse(
-                        response_id=command.response_id,
-                        reason=cancelled_reason,
-                    )
-                )
+                await self._cancel_brain_attempt(command, attempt, reason=cancelled_reason)
+                if attempt.cleanup_error:
+                    await self._emit_capability_failure(context=command.context,
+                        capability="response_cancel_cleanup", error=attempt.cleanup_error)
             tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
             if tts_task is not None:
                 await self._tts.send(
@@ -1260,7 +1284,16 @@ class CascadedRealtimeConversation:
                 if settlement_error is not None:
                     cancelled_reason = f"{cancelled_reason}; {settlement_error}"
         except Exception as error:  # noqa: BLE001 - provider failure becomes protocol event
-            failure = await self._record_response_failure(command, str(error))
+            failure = str(error)
+            await self._revoke_brain_output(command)
+            if brain_requested:
+                if isinstance(error, _BrainRequestProtocolError):
+                    attempt.cleanup_error = await self._quarantine_brain()
+                else:
+                    await self._cancel_brain_attempt(command, attempt, reason="response_failed")
+                if attempt.cleanup_error:
+                    failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
+            failure = await self._record_response_failure(command, failure)
         finally:
             if cancelled_reason is not None:
                 await self._emit_response(
@@ -1275,6 +1308,8 @@ class CascadedRealtimeConversation:
             if self._active_response_id == command.response_id:
                 self._active_response_id = None
             self._response_admitted_by_id.pop(command.response_id, None)
+            if self._brain_attempts.get(command.response_id) is attempt:
+                self._brain_attempts.pop(command.response_id)
             delivery = self._delivery_by_response_id.pop(command.response_id, None)
             if delivery is not None:
                 if cancelled_reason is not None:
@@ -1290,6 +1325,7 @@ class CascadedRealtimeConversation:
         command: RequestResponse,
         failure: str,
     ) -> str:
+        await self._revoke_brain_output(command)
         speech_id = f"response:{command.response_id}"
         tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
         if tts_task is not None:
@@ -1325,47 +1361,157 @@ class CascadedRealtimeConversation:
         )
         return failure
 
-    async def _route_response(self, command: RequestResponse) -> str | None:
+    def _brain_turn_matches(self, command: RequestResponse, turn: TurnContent) -> bool:
+        items, current = self._response_projection_snapshot(command.minimum_thread_sequence)
+        return (digest_source_items(items) == turn.context_projection_digest
+            and "\n".join(part.text for part in current.content if isinstance(part, TextContent)) == turn.text
+            and (current.provider_metadata.get("input_relation") == "unresolved") == turn.input_relation_unresolved)
+
+    async def _revoke_brain_output(self, command: RequestResponse) -> None:
+        if command.response_id in self._revoked_brain_response_ids:
+            return
+        # The Core fence takes effect before the actor mailbox or stop queue can
+        # await. It also protects conformers without a reply-version ledger.
+        self._revoked_brain_response_ids.add(command.response_id)
+        await self._input_pipeline.invalidate_response(command.response_id,
+            context=command.context, reason="response_invalidated")
+        if f"response:{command.response_id}" in self._model_speech_ids:
+            await self._notify_cancelled_playback(CancelResponse(
+                command_id=str(uuid.uuid4()), idempotency_key=str(uuid.uuid4()),
+                context=command.context, response_id=command.response_id,
+                reason="response_invalidated"), response_context=command.context)
+
+    async def _cancel_brain_attempt(self, command: RequestResponse, attempt: _BrainAttempt, *, reason: str) -> bool:
+        # asyncio.wait gives the caller a real time bound even when provider
+        # cleanup swallows cancellation. Do not reuse an unconfirmed owner.
+        if attempt.cancel_task is None:
+            attempt.cancel_task = asyncio.create_task(self._brain.send(CancelBrainResponse(
+                response_id=command.response_id, request_token=attempt.request_token, reason=reason)))
+        task = attempt.cancel_task
+        try:
+            done, _ = await asyncio.wait({task}, timeout=self._response_cancel_timeout_s)
+            if done:
+                if task.cancelled():
+                    attempt.cleanup_error = "Brain cancellation was cancelled before confirmation"
+                    await self._quarantine_brain()
+                    return False
+                await task
+                return True
+            logger.warning("Brain attempt cancellation timed out for %s; retaining cleanup", command.response_id)
+            await self._quarantine_brain()
+            return False
+        except Exception as error:  # noqa: BLE001 - terminal cleanup must preserve its original failure
+            attempt.cleanup_error = str(error).strip() or type(error).__name__
+            close_error = await self._quarantine_brain()
+            if close_error:
+                attempt.cleanup_error = f"{attempt.cleanup_error}; {close_error}"
+            return False
+        finally:
+            if not task.done() and task not in self._detached_response_tasks:
+                self._detached_response_tasks.add(task)
+                task.add_done_callback(self._observe_detached_response_task)
+
+    async def _quarantine_brain(self) -> str | None:
+        # A delegate which fails identity/cancellation cannot retain admission.
+        # Closing all its owners is safe; using an unversioned cancel is not.
+        self._brain_protocol_failed = True
+        if self._brain_protocol_close_task is None:
+            self._brain_protocol_close_task = asyncio.create_task(self._brain.close())
+        task = self._brain_protocol_close_task
+        try:
+            done, _ = await asyncio.wait({task}, timeout=self._response_cancel_timeout_s)
+            if not done:
+                return "Brain capability close deadline exceeded; cleanup retained"
+            if task.cancelled():
+                return "Brain capability close was cancelled before confirmation"
+            error = task.exception()
+            if error is not None:
+                return str(error).strip() or type(error).__name__
+            return None
+        finally:
+            if not task.done() and task not in self._detached_response_tasks:
+                self._detached_response_tasks.add(task)
+                task.add_done_callback(self._observe_detached_response_task)
+
+    async def _retry_brain_attempt(self, command: RequestResponse, attempt: _BrainAttempt) -> None:
+        if attempt.semantic_published or attempt.count >= 3:
+            raise ContextVisibilityError("heard context changed; Brain attempt retry budget exhausted")
+        if not await self._cancel_brain_attempt(command, attempt, reason="heard_context_changed"):
+            raise RuntimeError("Brain cancellation deadline exceeded; cannot safely retry the request")
+        turn = await self._turn_from_projection(command.minimum_thread_sequence, generation=command.context.generation)
+        if not self._input_pipeline.response_delivery_allowed(command.response_id):
+            raise asyncio.CancelledError
+        attempt.turn = turn
+        attempt.request_token = str(uuid.uuid4())
+        attempt.cancel_task = None
+        attempt.count += 1
+        await self._brain.send(RequestBrainResponse(response_id=command.response_id,
+            request_token=attempt.request_token, turn=turn, context=command.context))
+
+    async def _route_response(self, command: RequestResponse, attempt: _BrainAttempt, *, first_text_deadline: float) -> str | None:
         response_context = replace(command.context, response_id=command.response_id)
         speech_id = f"response:{command.response_id}"
         text_sequence = 0
         tts_task: asyncio.Task[None] | None = None
         brain_events = self._brain.events().__aiter__()
-        first_text_deadline = (
-            asyncio.get_running_loop().time() + self._response_first_text_timeout_s
-        )
         waiting_for_tool = False
+        delegation_published = False
+        started = False
         while True:
+            event_deadline = None
             try:
                 if text_sequence == 0 and not waiting_for_tool:
                     remaining = first_text_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         raise _FirstResponseTextDeadlineExceeded
-                    event = await asyncio.wait_for(anext(brain_events), timeout=remaining)
+                    event_deadline = asyncio.timeout_at(first_text_deadline)
+                    async with event_deadline:
+                        event = await anext(brain_events)
                 else:
                     event = await anext(brain_events)
             except StopAsyncIteration:
                 break
             except TimeoutError as error:
-                raise _FirstResponseTextDeadlineExceeded from error
+                if event_deadline is not None and event_deadline.expired():
+                    raise _FirstResponseTextDeadlineExceeded from error
+                raise
             if event.response_id != command.response_id:
+                continue
+            if event.request_token is None:
+                raise _BrainRequestProtocolError("Brain capability did not echo the request token")
+            if event.request_token != attempt.request_token:
                 continue
             if not isinstance(event, (BrainResponseCompleted, BrainResponseFailed)) and not self._input_pipeline.response_delivery_allowed(command.response_id):
                 continue
             if isinstance(event, BrainResponseStarted):
-                await self._input_pipeline.response_started(command.response_id, context=command.context)
-                await self._start_model_speech(
-                    command,
-                    context=response_context,
-                    speech_id=speech_id,
-                )
-                await self._emit_response(
-                    ResponseStarted,
-                    context=response_context,
-                    response_id=command.response_id,
-                )
-            elif isinstance(event, BrainTextDelta):
+                started = True
+                continue
+            if isinstance(event, (BrainTextDelta, BrainToolRequested, BrainDelegationRequested)):
+                if not started:
+                    raise RuntimeError("Brain output arrived before its attempt started")
+                if not attempt.semantic_published and not self._brain_turn_matches(command, attempt.turn):
+                    retry_deadline = asyncio.timeout_at(first_text_deadline)
+                    try:
+                        async with retry_deadline:
+                            await self._retry_brain_attempt(command, attempt)
+                    except TimeoutError as error:
+                        if retry_deadline.expired():
+                            raise _FirstResponseTextDeadlineExceeded from error
+                        raise
+                    started = False
+                    continue
+                if not attempt.semantic_published:
+                    # Lock before the first publication side effect can await.
+                    # Tools/delegations must never be replayed under this ID.
+                    attempt.semantic_published = True
+                    await self._input_pipeline.response_started(command.response_id, context=command.context)
+                    await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id)
+                if not self._brain_turn_matches(command, attempt.turn):
+                    await self._revoke_brain_output(command)
+                    raise ContextVisibilityError("heard context changed after response publication; requires a new reply version")
+            if isinstance(event, BrainTextDelta):
                 if tts_task is None:
+                    await self._start_model_speech(command, context=response_context, speech_id=speech_id)
                     await self._tts.send(
                         StartTts(speech_id=speech_id, context=command.context)
                     )
@@ -1411,6 +1557,7 @@ class CascadedRealtimeConversation:
                     latency=event.latency,
                 )
             elif isinstance(event, BrainDelegationRequested):
+                delegation_published = True
                 await self._emit_response(
                     AgentDelegationRequestProposed,
                     context=response_context,
@@ -1420,10 +1567,16 @@ class CascadedRealtimeConversation:
                     agent_name=event.agent_name,
                 )
             elif isinstance(event, BrainResponseCompleted):
+                if tts_task is None:
+                    if delegation_published:
+                        settlement_error = await self._settle_input_response(command.response_id, context=command.context)
+                        if settlement_error:
+                            raise RuntimeError(settlement_error)
+                        await self._emit_response(ResponseCompleted, context=response_context, response_id=command.response_id)
+                        return None
+                    raise RuntimeError("Brain completed before starting the response: no accepted text")
                 await self._speech_deliveries.commit_text(speech_id)
                 await self._tts.send(CommitTts(speech_id=speech_id))
-                if tts_task is None:
-                    raise RuntimeError("Brain completed before starting the response")
                 try:
                     await tts_task
                 except Exception as error:  # noqa: BLE001 - capability error becomes event
@@ -1471,6 +1624,8 @@ class CascadedRealtimeConversation:
                 )
                 return None
             elif isinstance(event, BrainResponseFailed):
+                await self._revoke_brain_output(command)
+                await self._cancel_brain_attempt(command, attempt, reason="brain_response_failed")
                 if tts_task is not None:
                     tts_task.cancel()
                     await asyncio.gather(tts_task, return_exceptions=True)
@@ -1479,6 +1634,8 @@ class CascadedRealtimeConversation:
                         CancelTts(speech_id=speech_id, reason="brain_response_failed")
                     )
                 failure = event.error
+                if attempt.cleanup_error:
+                    failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
                 await self._emit_capability_failure(
                     context=command.context,
                     capability="brain",
@@ -1914,7 +2071,8 @@ class CascadedRealtimeConversation:
         else:
             response_id = (event.context.response_id or getattr(event, "response_id", None)
                            or getattr(event, "speech_id", None))
-        return response_id is None or self._input_pipeline.response_delivery_allowed(response_id)
+        return response_id is None or (response_id not in self._revoked_brain_response_ids
+            and self._input_pipeline.response_delivery_allowed(response_id))
 
     def _next_sequence(self) -> int:
         self._sequence += 1

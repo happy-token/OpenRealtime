@@ -42,6 +42,7 @@ from http.client import HTTPResponse
 from typing import TYPE_CHECKING, Any
 
 from server.brain.llm_clients import FinalText, LlmTurnResult, ToolCallRequest
+from server.core.async_stream import OwnedStreamCleanupError
 from server.tools.canonical import CanonicalTool
 
 if TYPE_CHECKING:
@@ -165,8 +166,7 @@ class OpenAiCompatibleToolCallingLlmClient:
                 "complete() called with tool_result but no pending tool turn exists"
             )
         if self._telemetry is None:
-            return await asyncio.to_thread(
-                self._complete_sync,
+            return await self._complete_owned(
                 system_prompt,
                 user_text,
                 tools,
@@ -183,14 +183,35 @@ class OpenAiCompatibleToolCallingLlmClient:
                 "tool_count": len(tools),
             },
         ):
-            return await asyncio.to_thread(
-                self._complete_sync,
+            return await self._complete_owned(
                 system_prompt,
                 user_text,
                 tools,
                 tool_result,
                 turn_state,
             )
+
+    async def _complete_owned(
+        self,
+        system_prompt: str,
+        user_text: str,
+        tools: list[CanonicalTool],
+        tool_result: str | None,
+        turn_state: _ToolTurnState,
+    ) -> LlmTurnResult:
+        worker = asyncio.create_task(asyncio.to_thread(
+            self._complete_sync, system_prompt, user_text, tools, tool_result, turn_state,
+        ))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # Cancelling the await cannot stop this HTTP worker. Keep ownership
+            # until it exits; the Core bounds waiting and quarantines this session.
+            results = await asyncio.shield(asyncio.gather(worker, return_exceptions=True))
+            for result in results:
+                if isinstance(result, Exception):
+                    raise OwnedStreamCleanupError(f"tool provider cleanup failed: {result}") from result
+            raise
 
     def _complete_sync(
         self,

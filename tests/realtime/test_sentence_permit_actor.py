@@ -488,3 +488,87 @@ async def test_a_new_sentence_permit_does_not_inherit_a_previous_targets_revoked
         assert not session.snapshot().commit_pending
     finally:
         await session.close()
+
+
+async def test_active_generation_cancellation_preserves_actor_current_sentence_permit():
+    from datetime import UTC, datetime
+
+    from server.conversation_journal import (
+        ConversationItemDraft,
+        ConversationItemKind,
+        ConversationItemStatus,
+        TextContent,
+    )
+    from server.conversation_journal.models import item_from_draft
+    from server.realtime import AssistantYieldRequested as CanonicalYield
+    from server.realtime import ProjectCommittedItem, RequestResponse, SpeechTextAlignment
+    from server.realtime.capabilities.coordinated_turn_manager import (
+        CoordinatedTurnManagerCapabilityAdapter,
+    )
+    from server.realtime.transport import RealtimeWebSocketFrameBridge
+    from server.turn_policy.policy import TurnPolicy
+    from server.voice_session.protocol import PlaybackProgressV2
+    from tests.realtime.test_coordinated_turn_manager import Interrupt
+    from tests.realtime.test_input_association_production import wait_for
+    from tests.realtime.test_realtime_websocket_bridge import RecordingTransport
+    from tests.realtime.test_realtime_websocket_bridge import context as bridge_context
+    from tests.realtime.test_reply_playback_observation import Provider
+    from tests.realtime.test_reply_revision_production_delivery import open_core
+
+    class ActiveBrain:
+        async def stream(self, turn):
+            yield "第一句。第二句。"
+            await asyncio.Event().wait()
+
+    class Duplex:
+        async def synthesize_duplex(self, texts):
+            async for value in texts:
+                async for chunk in Provider().synthesize_stream(value):
+                    yield chunk
+
+    first = bridge_context()
+    second = replace(first, turn_id="supplement", generation=first.generation+1)
+    manager = CoordinatedTurnManagerCapabilityAdapter(TurnPolicy, semantic_interruption_classifier=Interrupt(),
+        asr_idle_stop_ms=15, semantic_interruption_idle_ms=5, recovery_timeout_ms=1000)
+    core = await open_core(brain=ActiveBrain(), tts=Duplex(), asr=ControlledAsr(),
+        turn_manager=manager, interaction_context=first)
+    bridge = RealtimeWebSocketFrameBridge(context=first, conversation=core, transport=RecordingTransport(),
+        output_epoch="epoch", precise_output_stop=True)
+    stream = core.events()
+    try:
+        draft = ConversationItemDraft(item_id="user", context=first, kind=ConversationItemKind.USER_INPUT,
+            status=ConversationItemStatus.COMPLETED, producer="test", content=(TextContent("说两句"),))
+        await core.send(ProjectCommittedItem(command_id="user", idempotency_key="user", context=first,
+            item=item_from_draft(draft, sequence=1, recorded_at=datetime.now(UTC))))
+        await core.send(RequestResponse(command_id="request", idempotency_key="request", context=first,
+            response_id="reply", minimum_thread_sequence=1))
+        async with asyncio.timeout(1):
+            async for event in stream:
+                await bridge.handle_event(event)
+                if isinstance(event, SpeechTextAlignment) and event.sentence is not None:
+                    break
+        assert core._response_task is not None and not core._response_task.done()
+        await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:reply",
+            generation=1, phase="playing", played_position_samples=500))
+        session = core._input_pipeline._turn_manager
+        await start(session, second)
+        await text(session, "补充一下，明天也要看。", ctx=second)
+        async with asyncio.timeout(1):
+            async for event in stream:
+                await bridge.handle_event(event)
+                if isinstance(event, CanonicalYield) and event.sentence_permit is not None:
+                    permit = event.sentence_permit
+                    break
+        await wait_for(lambda: core._response_task is None)
+        assert session.sentence_playback_permit_current(permit)
+        assert not session._input.sentence_revoked
+        assert not [event for event in core._events._queue if isinstance(event, CanonicalYield)]
+        assert len(bridge._output_stops) == 1
+        wire = next(iter(bridge._output_stops.values())).request.sentence_permit
+        assert wire is not None and wire.permit_id == permit.permit_id
+        assert wire.audio_end_samples == permit.audio_end_samples
+        assert 0 < wire.max_wait_ms <= 750
+    finally:
+        await stream.aclose()
+        await bridge.close()
+        await core.close()

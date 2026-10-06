@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.core.async_stream import OwnedStreamCleanupError, owned_async_iterator
 from server.core.turn_content import TurnContent, same_asr_utterance
 from server.realtime.capabilities.brain_streaming import StreamingTextBrain
 
@@ -33,6 +34,7 @@ class _PrefetchState:
     done: bool = False
     invalidated: bool = False
     error: Exception | None = None
+    cleanup_error: Exception | None = None
 
 
 class SpeculativeStreamingBrain:
@@ -48,6 +50,7 @@ class SpeculativeStreamingBrain:
         self._observer = observer
         self._state: _PrefetchState | None = None
         self._lock = asyncio.Lock()
+        self._pending_cleanup: set[asyncio.Task[None]] = set()
 
     def _observe(self, operation: str, turn: TurnContent, **attributes: Any) -> None:
         if self._observer is not None:
@@ -95,9 +98,10 @@ class SpeculativeStreamingBrain:
             self._observe("miss", turn, reason="candidate_mismatch" if stale else "not_prepared")
             if stale is not None:
                 await self._discard(stale)
-            async for delta in self._brain.stream(turn):
-                if delta:
-                    yield delta
+            async with owned_async_iterator(self._brain.stream(turn)) as iterator:
+                async for delta in iterator:
+                    if delta:
+                        yield delta
             return
 
         self._observe(
@@ -118,29 +122,34 @@ class SpeculativeStreamingBrain:
             async with self._lock:
                 if self._state is state:
                     self._state = None
-            if not completed:
-                await self._discard(state)
+            if not completed or state.invalidated:
+                await self._discard(state, require_confirmation=True)
         if not yielded_text and not state.invalidated:
-            async for delta in self._brain.stream(turn):
-                if delta:
-                    yield delta
+            async with owned_async_iterator(self._brain.stream(turn)) as iterator:
+                async for delta in iterator:
+                    if delta:
+                        yield delta
 
     async def _produce(self, state: _PrefetchState) -> None:
         try:
-            async for delta in self._brain.stream(state.turn):
-                if not delta:
-                    continue
-                async with state.condition:
-                    if state.invalidated:
-                        break
-                    if state.first_delta_ns is None:
-                        state.first_delta_ns = time.monotonic_ns()
-                    state.chunks.append(delta)
-                    state.condition.notify_all()
+            async with owned_async_iterator(self._brain.stream(state.turn)) as iterator:
+                async for delta in iterator:
+                    if not delta:
+                        continue
+                    async with state.condition:
+                        if state.invalidated:
+                            break
+                        if state.first_delta_ns is None:
+                            state.first_delta_ns = time.monotonic_ns()
+                        state.chunks.append(delta)
+                        state.condition.notify_all()
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - replayed at the consumer boundary
             state.error = error
+            current = asyncio.current_task()
+            if isinstance(error, OwnedStreamCleanupError) or (current is not None and current.cancelling()):
+                state.cleanup_error = error
         finally:
             async with state.condition:
                 state.done = True
@@ -167,22 +176,29 @@ class SpeculativeStreamingBrain:
                     raise error
                 return
 
-    async def _discard(self, state: _PrefetchState) -> None:
+    async def _discard(self, state: _PrefetchState, *, require_confirmation: bool = False) -> None:
         state.invalidated = True
         async with state.condition:
             state.condition.notify_all()
         task = state.task
-        if task is not None and not task.done():
+        if task is not None and not task.done() and not task.cancelling():
             task.cancel()
         if task is not None:
-            done, pending = await asyncio.wait({task}, timeout=0.1)
-            if done and not task.cancelled():
-                task.exception()
-            if pending:
-                logger.warning("Speculative producer did not stop within cleanup budget")
-                task.add_done_callback(
-                    lambda finished: None if finished.cancelled() else finished.exception()
-                )
+            self._pending_cleanup.add(task)
+            task.add_done_callback(self._cleanup_finished)
+            if require_confirmation:
+                await asyncio.shield(asyncio.gather(task, return_exceptions=True))
+                if state.cleanup_error is not None:
+                    raise OwnedStreamCleanupError(f"speculative provider cleanup failed: {state.cleanup_error}") from state.cleanup_error
+            else:
+                _, pending = await asyncio.wait({task}, timeout=0.1)
+                if pending:
+                    logger.warning("Speculative producer did not stop within cleanup budget")
+
+    def _cleanup_finished(self, task: asyncio.Task[None]) -> None:
+        self._pending_cleanup.discard(task)
+        if not task.cancelled():
+            task.exception()
 
 
 def _same_turn(left: TurnContent, right: TurnContent) -> bool:

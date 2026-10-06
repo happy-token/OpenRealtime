@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
+from server.core.async_stream import OwnedStreamCleanupError, owned_async_iterator
 from server.core.turn_content import TurnContent, same_asr_utterance
 from server.realtime.capabilities.brain_streaming import StreamingTextBrain
 from server.speech.tts import DuplexStreamingTtsEngine, SynthesizedAudioChunk
@@ -29,6 +30,7 @@ class _SpeculativeSpeechState:
     done: bool = False
     invalidated: bool = False
     error: Exception | None = None
+    cleanup_error: Exception | None = None
 
 
 class SpeculativeSpeechPipeline:
@@ -73,9 +75,10 @@ class SpeculativeSpeechPipeline:
     async def stream(self, turn: TurnContent) -> AsyncIterator[str]:
         state = await self._matching_state(turn)
         if state is None:
-            async for delta in self._brain.stream(turn):
-                if delta:
-                    yield delta
+            async with owned_async_iterator(self._brain.stream(turn)) as iterator:
+                async for delta in iterator:
+                    if delta:
+                        yield delta
             return
         completed = False
         try:
@@ -106,16 +109,24 @@ class SpeculativeSpeechPipeline:
         async with self._lock:
             state = self._state
         if state is None or state.invalidated:
-            async for chunk in self._tts.synthesize_duplex(text_stream):
-                yield chunk
+            async with owned_async_iterator(self._tts.synthesize_duplex(text_stream)) as iterator:
+                async for chunk in iterator:
+                    yield chunk
             return
 
         committed_text: list[str] = []
 
         async def drain_committed_text() -> None:
-            async for delta in text_stream:
-                if delta:
-                    committed_text.append(delta)
+            try:
+                async with owned_async_iterator(text_stream) as iterator:
+                    async for delta in iterator:
+                        if delta:
+                            committed_text.append(delta)
+            except Exception as error:
+                current = asyncio.current_task()
+                if isinstance(error, OwnedStreamCleanupError) or (current is not None and current.cancelling()):
+                    state.cleanup_error = error
+                raise
 
         drain_task = asyncio.create_task(
             drain_committed_text(),
@@ -146,7 +157,10 @@ class SpeculativeSpeechPipeline:
         finally:
             if not drain_task.done():
                 drain_task.cancel()
-            await asyncio.gather(drain_task, return_exceptions=True)
+            results = await asyncio.gather(drain_task, return_exceptions=True)
+            for result in results:
+                if isinstance(result, OwnedStreamCleanupError):
+                    state.cleanup_error = result
             if completed:
                 async with self._lock:
                     if self._state is state:
@@ -196,10 +210,17 @@ class SpeculativeSpeechPipeline:
                 yield item
 
         async def produce_audio() -> None:
-            async for chunk in self._tts.synthesize_duplex(speculative_text()):
-                async with state.condition:
-                    state.audio_chunks.append(chunk)
-                    state.condition.notify_all()
+            try:
+                async with owned_async_iterator(self._tts.synthesize_duplex(speculative_text())) as iterator:
+                    async for chunk in iterator:
+                        async with state.condition:
+                            state.audio_chunks.append(chunk)
+                            state.condition.notify_all()
+            except Exception as error:
+                current = asyncio.current_task()
+                if isinstance(error, OwnedStreamCleanupError) or (current is not None and current.cancelling()):
+                    state.cleanup_error = error
+                raise
 
         audio_task = asyncio.create_task(
             produce_audio(),
@@ -208,14 +229,15 @@ class SpeculativeSpeechPipeline:
         try:
             produced_text = False
             for _ in range(2):
-                async for delta in self._brain.stream(state.turn):
-                    if not delta:
-                        continue
-                    produced_text = True
-                    async with state.condition:
-                        state.text_chunks.append(delta)
-                        state.condition.notify_all()
-                    await text_queue.put(delta)
+                async with owned_async_iterator(self._brain.stream(state.turn)) as iterator:
+                    async for delta in iterator:
+                        if not delta:
+                            continue
+                        produced_text = True
+                        async with state.condition:
+                            state.text_chunks.append(delta)
+                            state.condition.notify_all()
+                        await text_queue.put(delta)
                 if produced_text:
                     break
             await text_queue.put(_TEXT_END)
@@ -224,10 +246,19 @@ class SpeculativeSpeechPipeline:
             raise
         except Exception as error:  # noqa: BLE001 - replayed at consumer boundary
             state.error = error
+            current = asyncio.current_task()
+            if isinstance(error, OwnedStreamCleanupError) or (current is not None and current.cancelling()):
+                state.cleanup_error = error
         finally:
-            if not audio_task.done():
+            if not audio_task.done() and not audio_task.cancelling():
                 audio_task.cancel()
-            await asyncio.gather(audio_task, return_exceptions=True)
+            results = await asyncio.gather(audio_task, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    if isinstance(result, OwnedStreamCleanupError):
+                        state.cleanup_error = result
+                    if state.error is None:
+                        state.error = result
             async with state.condition:
                 state.done = True
                 state.condition.notify_all()
@@ -241,10 +272,12 @@ class SpeculativeSpeechPipeline:
     async def _discard(self, state: _SpeculativeSpeechState) -> None:
         state.invalidated = True
         task = state.task
-        if task is not None and not task.done():
+        if task is not None and not task.done() and not task.cancelling():
             task.cancel()
         if task is not None:
-            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.shield(asyncio.gather(task, return_exceptions=True))
+            if state.cleanup_error is not None:
+                raise OwnedStreamCleanupError(f"speculative provider cleanup failed: {state.cleanup_error}") from state.cleanup_error
 
 
 def _same_turn(left: TurnContent, right: TurnContent) -> bool:

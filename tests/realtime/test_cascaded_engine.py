@@ -285,6 +285,7 @@ class CancellationPropagatingBrainSession:
                 context=response_context,
                 response_id=command.response_id,
                 response_sequence=1,
+                request_token=command.request_token,
             )
         )
         await self._events.put(
@@ -293,6 +294,7 @@ class CancellationPropagatingBrainSession:
                 response_id=command.response_id,
                 response_sequence=2,
                 delta="正在回复",
+                request_token=command.request_token,
             )
         )
 
@@ -3119,7 +3121,9 @@ async def test_continuation_projection_replaces_user_text_without_losing_tool_fa
         await core.close()
 
 async def test_immediate_preparing_yield_cancels_the_admitted_response(monkeypatch):
-    from server.realtime.capabilities.coordinated_turn_manager import CoordinatedTurnManagerCapabilityAdapter
+    from server.realtime.capabilities.coordinated_turn_manager import (
+        CoordinatedTurnManagerCapabilityAdapter,
+    )
     from server.realtime.capabilities.turn_manager import AssistantYieldRequested as CapabilityYield
     core = await CascadedRealtimeEngine(
         vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig(energy_threshold=500, silence_duration_ms=32))),

@@ -141,8 +141,11 @@ async def test_invalidation_wakes_consumer_without_restarting_old_reply():
         await entered.wait()
         await asyncio.sleep(0)
         await brain.invalidate(1, reason="new_input")
-        assert await asyncio.wait_for(follower, 0.2) == []
+        done, _ = await asyncio.wait({follower}, timeout=0.12)
+        assert not done, "committed consumer must not confirm cleanup while its producer still runs"
         assert len(calls) == 1
+        release.set()
+        assert await asyncio.wait_for(follower, 0.2) == []
     finally:
         release.set()
         await producer

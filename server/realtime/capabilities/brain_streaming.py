@@ -14,6 +14,7 @@ from typing import Any, ClassVar, Protocol
 from server.brain.base import Brain
 from server.brain.llm_clients import ToolCallRequest
 from server.brain.tool_calling_brain import ToolCallingBrain
+from server.core.async_stream import OwnedStreamCleanupError, owned_async_iterator
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.tool_results import ToolResultChannel
 from server.tools.canonical import LatencyClass
@@ -34,9 +35,10 @@ class BrainStreamingAdapter:
     async def stream(self, content: TurnContent) -> AsyncIterator[str]:
         stream = getattr(self._brain, "stream", None)
         if stream is not None:
-            async for delta in stream(content):
-                if delta:
-                    yield delta
+            async with owned_async_iterator(stream(content)) as iterator:
+                async for delta in iterator:
+                    if delta:
+                        yield delta
             return
         response = await self._brain.respond(content)
         if response.text:
@@ -317,18 +319,19 @@ class VoiceRuntimeBrainStreamingAdapter:
                     content,
                     tool_results=tool_results,
                 )
-                if acknowledged:
-                    async for event in self._stream_with_delayed_acknowledgement(
+                events = (
+                    self._stream_with_delayed_acknowledgement(
                         tool_stream,
                         acknowledgement_text=acknowledgement_text,
                         content=content,
-                    ):
-                        yield event
-                else:
-                    async for event in tool_stream:
+                    )
+                    if acknowledged else tool_stream
+                )
+                async with owned_async_iterator(events) as iterator:
+                    async for event in iterator:
                         yield event
             except Exception as error:
-                if not acknowledged:
+                if not acknowledged or isinstance(error, OwnedStreamCleanupError):
                     raise
                 logger.exception(
                     "slow realtime tool turn failed: generation=%s error_type=%s",
@@ -337,8 +340,9 @@ class VoiceRuntimeBrainStreamingAdapter:
                 )
                 yield self._SLOW_TOOL_FAILURE
             return
-        async for delta in self._chat.stream(content):
-            yield delta
+        async with owned_async_iterator(self._chat.stream(content)) as iterator:
+            async for delta in iterator:
+                yield delta
 
     async def _stream_with_delayed_acknowledgement(
         self,
@@ -352,11 +356,17 @@ class VoiceRuntimeBrainStreamingAdapter:
         iterator = stream.__aiter__()
         relayed: asyncio.Queue[object] = asyncio.Queue(maxsize=1)
 
+        relay_cleanup_error: Exception | None = None
+
         async def relay_stream() -> None:
+            nonlocal relay_cleanup_error
             try:
                 async for event in iterator:
                     await relayed.put(event)
             except Exception as error:  # noqa: BLE001 - async stream relay boundary
+                current = asyncio.current_task()
+                if current is not None and current.cancelling():
+                    relay_cleanup_error = error
                 await relayed.put(_RelayedStreamFailure(error))
             else:
                 await relayed.put(_RELAYED_STREAM_COMPLETED)
@@ -393,11 +403,16 @@ class VoiceRuntimeBrainStreamingAdapter:
             if pending is not None:
                 pending.cancel()
                 await asyncio.gather(pending, return_exceptions=True)
-            producer.cancel()
-            await asyncio.gather(producer, return_exceptions=True)
-            close = getattr(iterator, "aclose", None)
-            if close is not None:
-                await close()
+            if not producer.done() and not producer.cancelling():
+                producer.cancel()
+            results = await asyncio.gather(producer, return_exceptions=True)
+            async with owned_async_iterator(iterator):
+                pass
+            if relay_cleanup_error is not None:
+                raise OwnedStreamCleanupError(f"tool stream cleanup failed: {relay_cleanup_error}") from relay_cleanup_error
+            for result in results:
+                if isinstance(result, Exception):
+                    raise OwnedStreamCleanupError(f"tool relay cleanup failed: {result}") from result
 
     def _next_slow_tool_ack(self, transcript: str) -> str:
         normalized = transcript.strip().lower()
