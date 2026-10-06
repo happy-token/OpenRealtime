@@ -123,8 +123,10 @@ def _alignment_chunks(message: dict[str, Any], sample_rate_hz: int):
         ):
             continue
         valid_words.append((text, begin_ms, end_ms))
+    sentence_start_us = round(min(begin for _, begin, _ in valid_words) * 1000) if valid_words else None
     sentence_duration_us = (
-        round(max(end for _, _, end in valid_words) * 1000) if valid_words else None
+        round(max(end for _, _, end in valid_words) * 1000) - sentence_start_us
+        if sentence_start_us is not None else None
     )
     timed_words = False
     for text, begin_ms, end_ms in valid_words:
@@ -135,6 +137,9 @@ def _alignment_chunks(message: dict[str, Any], sample_rate_hz: int):
             spoken_start_us=round(begin_ms * 1000),
             spoken_end_us=round(end_ms * 1000),
             sentence_text=sentence_text, sentence_duration_us=sentence_duration_us,
+            sentence_start_us=sentence_start_us,
+            # Caption origin is known; the provider's whole-task PCM clock
+            # still needs independent validation before precise sentence use.
         )
     if timed_words:
         logger.debug("Bailian TTS sentence-end resolved per-word timing (words=%d)", len(words))

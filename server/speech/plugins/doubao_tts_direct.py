@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import logging
+import math
 import os
 import re
 import struct
@@ -262,8 +262,14 @@ def _alignment_chunks(payload: object, sample_rate_hz: int, *, event: int | None
             if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end < start:
                 continue
             valid_words.append((text, start, end))
+    sentence_start_us = round(min(start for _, start, _ in valid_words) * 1_000_000) if valid_words else None
     sentence_duration_us = (
-        round(max(end for _, _, end in valid_words) * 1_000_000) if valid_words else None
+        round(max(end for _, _, end in valid_words) * 1_000_000) - sentence_start_us
+        if sentence_start_us is not None else None
+    )
+    complete_timing = bool(valid_words) and word_count == len(valid_words) and all(
+        end > start and (index == 0 or start >= valid_words[index - 1][2])
+        for index, (_, start, end) in enumerate(valid_words)
     )
     for text, start, end in valid_words:
         timed_words = True
@@ -271,6 +277,9 @@ def _alignment_chunks(payload: object, sample_rate_hz: int, *, event: int | None
             pcm16=b"", sample_rate_hz=sample_rate_hz, is_final=False,
             spoken_text=text, spoken_start_us=round(start * 1_000_000), spoken_end_us=round(end * 1_000_000),
             sentence_text=sentence_text, sentence_duration_us=sentence_duration_us,
+            sentence_start_us=sentence_start_us,
+            # Filtering malformed/overlapping words cannot prove the whole sentence end.
+            sentence_timebase="speech" if complete_timing else None,
         )
     if timed_words:
         logger.debug(

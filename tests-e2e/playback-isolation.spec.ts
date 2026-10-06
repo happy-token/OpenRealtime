@@ -101,6 +101,13 @@ test(`late audio preserves generation ${newGeneration} replacement (${scenario.p
     const stop = { type: "assistant_speech_cancelled", generation: 1,
       output_epoch: "server-output", speech_id: "old", stop_command_id: "stop-old" };
     if (preciseStop) state.inject(stop);
+    state.inject({ type: "assistant_speech_text", generation, text: "新句字幕" });
+    state.inject({ type: "assistant_text_alignment", generation: 999, speech_id: "expired",
+      output_epoch: "expired", text: "旧会话字幕", audio_start_us: 0, audio_end_us: 100_000 });
+    state.inject({ type: "assistant_text_alignment", generation, speech_id: "new",
+      output_epoch: "server-output", text: "新句", audio_start_us: 0, audio_end_us: 400_000,
+      text_end_precision: "estimated", sentence: { sentence_id: "new-sentence", text: "新句字幕",
+        text_start: 0, text_end: 4, audio_start_us: 0, audio_end_us: 800_000 } });
     state.inject({ type: "assistant_audio_chunk", generation, speech_id: "new", sequence: 0,
       sample_rate_hz: 16000, pcm16_base64: btoa("\0".repeat(25600)), is_final: true });
     state.inject({ type: "assistant_audio_chunk", generation: 1, speech_id: "old", sequence: 1,
@@ -110,6 +117,9 @@ test(`late audio preserves generation ${newGeneration} replacement (${scenario.p
       state.inject({ ...stop, output_epoch: "expired", stop_command_id: "expired-stop" });
     } else if (generation > 1) state.inject({ type: "assistant_speech_cancelled", generation: 1 });
   }, scenario);
+  // The old epoch's generation 999 must not poison this response's real audio clock.
+  await expect(page.getByText("新句", { exact: true }).first()).toBeVisible({ timeout: 700 });
+  await expect(page.getByText("旧会话字幕", { exact: true })).toHaveCount(0);
   const frames = () => page.evaluate(() => (window as typeof window & {
     __playbackIsolation: { sent: Record<string, unknown>[] }
   }).__playbackIsolation.sent.filter(frame => frame.type === "playback_progress_v2"));

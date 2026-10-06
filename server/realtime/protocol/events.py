@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from server.core.interaction_context import InteractionContext
 from server.realtime.protocol.audio import AudioFrame
@@ -17,6 +17,7 @@ from server.realtime.protocol.commands import (
     PlaybackPrecision,
     SpeechContextPolicy,
 )
+from server.realtime.protocol.playback import SentenceSpan
 from server.tools.canonical import LatencyClass
 from server.tools.policy_gateway import ConfirmationChannel, ToolOrigin
 from server.turn_policy.states import DialogueState
@@ -266,10 +267,20 @@ class SpeechTextAlignment:
     text_end: int
     audio_start_us: int | None = None
     schema_version: int = 1
+    text_end_precision: Literal["exact", "estimated"] = "exact"
+    sentence: SentenceSpan | None = None
 
     def __post_init__(self) -> None:
-        if not self.event_id or not self.speech_id or self.audio_end_us < 0 or self.text_end < 0:
+        if (not self.event_id or not self.speech_id or self.audio_end_us < 0 or self.text_end < 0
+                or self.text_end_precision not in {"exact", "estimated"}
+                or self.audio_start_us is not None and not 0 <= self.audio_start_us <= self.audio_end_us):
             raise ValueError("invalid speech text alignment")
+
+        if self.sentence is not None and not (
+            self.sentence.text_start <= self.text_end <= self.sentence.text_end
+            and self.sentence.audio_start_us <= self.audio_end_us <= self.sentence.audio_end_us
+        ):
+            raise ValueError("alignment lies outside its sentence range")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

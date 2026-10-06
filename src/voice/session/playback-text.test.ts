@@ -38,3 +38,37 @@ describe("PlaybackTextTimeline", () => {
     expect(timeline.finish(2, "新回复")).toBe("新回复");
   });
 });
+
+it("rejects an old epoch before it can advance the current generation", () => {
+  const timeline = new PlaybackTextTimeline();
+  timeline.beginEpoch("current");
+  expect(timeline.add({ ...cue("旧字幕", 0, 100_000, 9), output_epoch: "old" })).toBeNull();
+  expect(timeline.add({ ...cue("当前字幕", 0, 100_000), output_epoch: "current" })).toBe("");
+  expect(timeline.advance(1, "s-1", 100_000)).toBe("当前字幕");
+  timeline.beginEpoch("next");
+  expect(timeline.add({ ...cue("旧字幕", 0, 100_000), output_epoch: "current" })).toBeNull();
+  expect(timeline.add({ ...cue("新字幕", 0, 100_000), output_epoch: "next" })).toBe("");
+});
+
+it("clears display content without losing the acknowledged attachment on call start or private-call reuse", () => {
+  const timeline = new PlaybackTextTimeline();
+  timeline.beginEpoch("acknowledged");
+  timeline.reset(); // clearConversationDisplay after session_ack
+  expect(timeline.add({ ...cue("第一轮", 0, 100_000), output_epoch: "acknowledged" })).toBe("");
+  expect(timeline.advance(1, "s-1", 100_000)).toBe("第一轮");
+  timeline.reset(); // private terminate/continue on the same socket
+  expect(timeline.add({ ...cue("续谈", 0, 100_000, 2), output_epoch: "acknowledged" })).toBe("");
+  expect(timeline.advance(2, "s-2", 100_000)).toBe("续谈");
+  expect(timeline.add({ ...cue("旧连接", 0, 100_000, 99), output_epoch: "expired" })).toBeNull();
+});
+
+it("accepts an admitted replacement speech in the same generation after a precise stop", () => {
+  const timeline = new PlaybackTextTimeline();
+  timeline.beginEpoch("current");
+  timeline.add({ ...cue("旧句", 0, 100_000), speech_id: "old", output_epoch: "current" });
+  timeline.advance(1, "old", 50_000);
+  timeline.stop(1);
+  expect(timeline.add({ ...cue("新句", 0, 100_000), speech_id: "new", output_epoch: "current" })).toBe("");
+  expect(timeline.advance(1, "new", 50_000)).toBe("新句");
+  expect(timeline.advance(1, "old", 100_000)).toBeNull();
+});

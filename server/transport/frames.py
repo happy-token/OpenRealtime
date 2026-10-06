@@ -13,6 +13,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from server.realtime.protocol.playback import SentenceSpan
 from server.voice_session.protocol import (
     AudioGap,
     InputAudioAck,
@@ -237,8 +238,41 @@ class AssistantTextAlignmentFrame(BaseModel):
     text: str
     audio_start_us: int = Field(ge=0)
     audio_end_us: int = Field(ge=0)
+    output_epoch: str | None = None
+    text_end_precision: Literal["exact", "estimated"] = "exact"
+    sentence: SentenceSpan | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_sentence_wire_types(cls, value: object) -> object:
+        # Pydantic otherwise coerces booleans/strings before the dataclass sees them.
+        if isinstance(value, dict) and value.get("sentence") is not None:
+            for name in ("generation", "audio_start_us", "audio_end_us"):
+                if type(value.get(name)) is not int or not 0 <= value[name] <= 2**53 - 1:
+                    raise ValueError("sentence target counters must be integers")
+            for name in ("output_epoch", "speech_id"):
+                if not isinstance(value.get(name), str) or not value[name]:
+                    raise ValueError("sentence requires complete output target")
+            sentence = value["sentence"]
+            if isinstance(sentence, dict):
+                try:
+                    SentenceSpan(**sentence)
+                except TypeError as error:
+                    raise ValueError("sentence must contain exactly its complete fields") from error
+            elif not isinstance(sentence, SentenceSpan):
+                raise ValueError("sentence must be a complete sentence span")
+        return value
 
+    @model_validator(mode="after")
+    def validate_sentence_target(self) -> Self:
+        if self.audio_end_us < self.audio_start_us:
+            raise ValueError("alignment audio range is reversed")
+        if self.sentence is not None:
+            if not self.output_epoch or not self.speech_id or self.generation < 0:
+                raise ValueError("sentence requires complete output target")
+            if not self.sentence.audio_start_us <= self.audio_start_us <= self.audio_end_us <= self.sentence.audio_end_us:
+                raise ValueError("cue lies outside its sentence range")
+        return self
 
 
 class AssistantAudioFrame(BaseModel):

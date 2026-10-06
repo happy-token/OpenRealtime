@@ -113,8 +113,20 @@ export interface AssistantSpeechTextFrame {
   generation: number;
 }
 
+export interface SentenceSpan {
+  sentence_id: string;
+  text: string;
+  text_start: number;
+  text_end: number;
+  audio_start_us: number;
+  audio_end_us: number;
+}
+
 export interface AssistantTextAlignmentFrame {
   type: "assistant_text_alignment";
+  output_epoch?: string | null;
+  text_end_precision?: "exact" | "estimated";
+  sentence?: SentenceSpan | null;
   generation: number;
   speech_id: string;
   text: string;
@@ -477,12 +489,28 @@ export function parseServerFrame(value: unknown): ServerToClientFrame | null {
       return typeof value.text === "string" && isNumber(value.generation)
         ? value as unknown as AssistantSpeechTextFrame
         : null;
-    case "assistant_text_alignment":
-      return typeof value.text === "string" && isNumber(value.generation)
-        && typeof value.speech_id === "string" && value.speech_id.length > 0
-        && isNumber(value.audio_start_us) && value.audio_start_us >= 0
-        && isNumber(value.audio_end_us) && value.audio_end_us >= value.audio_start_us
-        ? value as unknown as AssistantTextAlignmentFrame : null;
+    case "assistant_text_alignment": {
+      if (typeof value.text !== "string" || !isNumber(value.generation)
+        || typeof value.speech_id !== "string" || value.speech_id.length === 0
+        || !isNumber(value.audio_start_us) || value.audio_start_us < 0
+        || !isNumber(value.audio_end_us) || value.audio_end_us < value.audio_start_us
+        || (value.output_epoch != null && (typeof value.output_epoch !== "string" || !value.output_epoch))
+        || (value.text_end_precision !== undefined && value.text_end_precision !== "exact" && value.text_end_precision !== "estimated")) return null;
+      if (value.sentence != null) {
+        const span = value.sentence as Record<string, unknown>;
+        const counter = (item: unknown): item is number => typeof item === "number" && Number.isSafeInteger(item) && item >= 0;
+        if (typeof span !== "object" || Array.isArray(span)
+          || typeof span.sentence_id !== "string" || !span.sentence_id
+          || typeof span.text !== "string" || !span.text
+          || !counter(span.text_start) || !counter(span.text_end)
+          || span.text_end - span.text_start !== Array.from(span.text).length
+          || !counter(span.audio_start_us) || !counter(span.audio_end_us) || span.audio_end_us <= span.audio_start_us
+          || !counter(value.generation) || !counter(value.audio_start_us) || !counter(value.audio_end_us)
+          || typeof value.output_epoch !== "string" || !value.output_epoch
+          || value.audio_start_us < span.audio_start_us || value.audio_end_us > span.audio_end_us) return null;
+      }
+      return value as unknown as AssistantTextAlignmentFrame;
+    }
     case "assistant_audio":
       return (
         typeof value.pcm16_base64 === "string"

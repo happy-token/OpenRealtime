@@ -7,7 +7,7 @@
 |0|0139及实验基线|状态/测量契约、renderer能力表、输入样本与已知缺陷回归|G0；不新增生产控制器|播放能力表、固定事件回放已建立；真实标注基线未完成|
 |1补强|0135|统一并发1/2判停语义、执行前最新有效证据、并行取消与资源边界|AC01/02/03/10/13；G1|判停语义、结果取舍、取消/关闭/令牌、线性前缀表示与普通长输入扫描已补强；逻辑输入/证据预算、回读及句点边界扫描已补，真实验收与共享槽位公平性未闭环|
 |2|0136|独立输入/回复版本；重要未决输入归属、未播纠正、截止与结论分离|0/1；AC04/09/11/14；G2|当前版本账本、交付隔离、最终ASR关联、已听历史及已归档版本跨Session恢复已补；完整语义关联、未归档动作持久幂等与G2未完成|
-|3|0137|实际停播/句末协议、当前句许可、未来队列清理、衔接时重验已播事实|2与播放能力基线；AC05/06/12；G3|输出epoch、speech事实、迟到隔离及live精确停播/有界等待与持久停止事实已补；稳定句段、句段许可/交接重验/G3未完成|
+|3|0137|实际停播/句末协议、当前句许可、未来队列清理、衔接时重验已播事实|2与播放能力基线；AC05/06/12；G3|输出epoch、speech事实、迟到隔离及live精确停播/有界等待与持久停止事实及完整provider句子证据已补；真实renderer句段、句段许可/交接重验/G3未完成|
 |4|0138|误打断恢复、未知位置续答、新epoch再次打断、幂等与异常出口|3；AC07/08/12；G4|待实现|
 |5|后续评估ADR|综合真实异常、多会话负载、配对延迟与灰度|实验贯穿前4阶段；全部AC/G5|待执行，不能代替每阶段验证|
 
@@ -61,7 +61,7 @@
 
 同日继续补[迟到音频入队屏障](../reports/2026-10-07-late-audio-admission.md)：旧speech/旧generation不能重新占用浏览器输出；主hook在拒绝旧包时也不回滚speaking/timer。新增5项单测及主页面失败回归，最后同代/跨代Chrome各5轮通过。精确停播协议及其有限等待仍是下一项；阶段3完整验收不变。
 
-随后已补[live精确停播与有界交接](../reports/2026-10-07-precise-output-stop.md)：绑定epoch/speech/generation/stop操作，新音频等待匹配确认和投影；未知停止静音并持续封锁，断连/关闭不让旧epoch投影放行。已补[统一停播诊断](../reports/2026-10-07-output-stop-diagnostics.md)，成功计时与失败结果分离并关联原回复；异步诊断不等于actor持久停止账本。播放回执已[保留原目标上下文](../reports/2026-10-07-playback-target-context.md)。已补[持久停播操作事实及关闭写入归属](../reports/2026-10-07-output-stop-persistence.md)，复用应用级SpeechDeliveryStore；普通关闭和重配置双失败在写入结算前保留删除保护。下一步补稳定句段identity，再落实actor句段许可与heard_frontier交接。Chrome间歇首轮finished缺失仍未定位，数字人只有void取消没有真实stop确认；这些限制继续阻止G3关闭。
+随后已补[live精确停播与有界交接](../reports/2026-10-07-precise-output-stop.md)：绑定epoch/speech/generation/stop操作，新音频等待匹配确认和投影；未知停止静音并持续封锁，断连/关闭不让旧epoch投影放行。已补[统一停播诊断](../reports/2026-10-07-output-stop-diagnostics.md)，成功计时与失败结果分离并关联原回复；异步诊断不等于actor持久停止账本。播放回执已[保留原目标上下文](../reports/2026-10-07-playback-target-context.md)。已补[持久停播操作事实及关闭写入归属](../reports/2026-10-07-output-stop-persistence.md)，复用应用级SpeechDeliveryStore；普通关闭和重配置双失败在写入结算前保留删除保护。已补[完整provider句子identity与精度分离](../reports/2026-10-07-sentence-playback-evidence.md)，实际当前句发现/队列切分仍待实施；下一步落实actor句段许可与heard_frontier交接。Chrome间歇首轮finished缺失仍未定位，数字人只有void取消没有真实stop确认；这些限制继续阻止G3关闭。
 
 ## 阶段4
 
@@ -115,3 +115,5 @@
 
 
 2026-10-07持久停播批次：新增0034迁移、原目标不可变停播账本、事实写入与交接屏障、生产包装层独立共享存储、在途写入关闭归属和精确会话删除。最终Python1883 passed/69 skipped/3 subtests；自建隔离PG实测7项通过并清理集群。两位独立审查批准；当前用户服务未重启/数据库未迁移。详见[持久停播报告](../reports/2026-10-07-output-stop-persistence.md)。本批关闭该前置任务，未关闭阶段3/G3；完整句段许可、真实renderer、0136/G2、0138/G4、真实音频/并发公平/配对实验与横向交付继续按全量计划推进。
+
+2026-10-07句子证据批次：完整Doubao字幕产生不可变原文/音频区间，重复句独立、estimated字幕不进入exact已播前沿，直接播报透传句子证据；旧epoch/清屏/同代替换字幕隔离通过真实Chrome4场景。最终Python1895 passed/69 skipped/3 subtests、前端59 passed；详见[句子证据报告](../reports/2026-10-07-sentence-playback-evidence.md)。本批完成provider事实前置，未实现actor句段许可、未来队列清理或交接重验；阶段3/G3与其余全量计划保持开放。

@@ -50,8 +50,12 @@ from server.realtime.protocol.engine import is_output_deliverable
 from server.realtime.protocol.events import (
     RealtimeCapabilityFailed,
     SpeechAudioCompleted,
+    SpeechStarted,
+    SpeechTextAccepted,
     SpeechTextAlignment,
+    SpeechTextCommitted,
 )
+from server.realtime.protocol.playback import SentenceSpan, sentence_identity
 from server.realtime.transport.output_stop import OutputStopObservation
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
@@ -137,6 +141,9 @@ class _PlaybackState:
     delivered_text_end: int = 0
     played_audio_end_us: int = 0
     text_boundaries: list[tuple[int, int]] = field(default_factory=list)
+    sentences: dict[str, SentenceSpan] = field(default_factory=dict)
+    has_text_alignment: bool = False
+    last_alignment_end_us: int = 0
 
 
 class RealtimeWebSocketFrameBridge:
@@ -345,17 +352,37 @@ class RealtimeWebSocketFrameBridge:
             )
             playback.intended_text = spoken
             return
+        if isinstance(event, SpeechStarted):
+            self._begin_playback(event.context.generation, event.speech_id, context=event.context)
+            return
+        if isinstance(event, (SpeechTextAccepted, SpeechTextCommitted)):
+            playback = self._begin_playback(event.context.generation, event.speech_id, context=event.context)
+            if playback is not None:
+                playback.intended_text = (playback.intended_text + event.delta
+                    if isinstance(event, SpeechTextAccepted) else event.spoken_text)
+                await self._send_frame(AssistantSpeechTextFrame(
+                    text=playback.intended_text, generation=event.context.generation))
+            return
         if isinstance(event, SpeechTextAlignment):
             playback = self._playback_by_generation.get(event.context.generation)
             if playback and playback.speech_id == event.speech_id:
                 start_us = event.audio_start_us
+                if event.text_end > len(playback.intended_text):
+                    raise ValueError("alignment exceeds accepted speech text")
                 if start_us is None:
-                    start_us = playback.text_boundaries[-1][0] if playback.text_boundaries else 0
-                playback.text_boundaries.append((event.audio_end_us, event.text_end))
+                    origin_us = event.sentence.audio_start_us if event.sentence else 0
+                    start_us = min(max(playback.last_alignment_end_us, origin_us), event.audio_end_us)
+                playback.has_text_alignment = True
+                playback.last_alignment_end_us = max(playback.last_alignment_end_us, event.audio_end_us)
+                if event.sentence is not None:
+                    self._register_sentence(playback, event.sentence)
+                elif event.text_end_precision == "exact":
+                    playback.text_boundaries.append((event.audio_end_us, event.text_end))
                 await self._send_frame(AssistantTextAlignmentFrame(
                     generation=event.context.generation, speech_id=event.speech_id,
-                    text=playback.intended_text[:event.text_end],
+                    text=playback.intended_text[:event.text_end], output_epoch=self.output_epoch,
                     audio_start_us=start_us, audio_end_us=event.audio_end_us,
+                    text_end_precision=event.text_end_precision, sentence=event.sentence,
                 ))
             return
         if isinstance(event, AudioDelta):
@@ -390,13 +417,14 @@ class RealtimeWebSocketFrameBridge:
                 self._clear_response_draft(event.response_id)
                 self._response_generation_by_id.pop(event.response_id, None)
                 return
-            if playback and playback.intended_text and playback.audio_end_us > 0 and not playback.text_boundaries:
+            if playback and playback.intended_text and playback.audio_end_us > 0 and not playback.has_text_alignment:
                 # A provider without word timings still has one real utterance
                 # span. Display that span on the client playback clock.
                 playback.text_boundaries.append((playback.audio_end_us, len(playback.intended_text)))
                 await self._send_frame(AssistantTextAlignmentFrame(
                     generation=event.context.generation, speech_id=playback.speech_id,
                     text=playback.intended_text, audio_start_us=0, audio_end_us=playback.audio_end_us,
+                    output_epoch=self.output_epoch,
                 ))
             await self._send_terminal_audio(event.context.generation, f"response:{event.response_id}")
             await self._send_frame(
@@ -1015,10 +1043,7 @@ class RealtimeWebSocketFrameBridge:
                 frame.played_audio_end_us or 0,
                 playback.audio_end_us,
             )
-            delivered_text_end = max(
-                (text_end for audio_end, text_end in playback.text_boundaries
-                 if audio_end <= played_audio_end_us), default=0,
-            )
+            delivered_text_end = self._confirmed_text_end(playback, played_audio_end_us)
             precision = (
                 PlaybackPrecision.ESTIMATED
                 if frame.played_audio_end_us is not None
@@ -1059,10 +1084,7 @@ class RealtimeWebSocketFrameBridge:
             round(frame.played_position_samples * 1_000_000 / sample_rate_hz),
             playback.audio_end_us,
         )
-        delivered_text_end = max(
-            (text_end for audio_end, text_end in playback.text_boundaries
-             if audio_end <= played_audio_end_us), default=0,
-        )
+        delivered_text_end = self._confirmed_text_end(playback, played_audio_end_us)
         completed = (frame.phase == "finished" and playback.generation_complete
                      and frame.played_position_samples >= playback.audio_samples)
         if completed:
@@ -1092,6 +1114,30 @@ class RealtimeWebSocketFrameBridge:
         )
         if completed or frame.phase == "stopped":
             self._retire_playback(playback)
+
+    @staticmethod
+    def _register_sentence(playback: _PlaybackState, sentence: SentenceSpan) -> None:
+        if (playback.intended_text[sentence.text_start:sentence.text_end] != sentence.text
+            or sentence.sentence_id != sentence_identity(playback.context, playback.speech_id, sentence.text, sentence.text_start)):
+            raise ValueError("sentence does not belong to accepted speech text")
+        previous = playback.sentences.get(sentence.sentence_id)
+        if previous is not None:
+            if previous != sentence:
+                raise ValueError("sentence identity was reused with different boundaries")
+            return
+        if any(sentence.text_start < other.text_end and other.text_start < sentence.text_end
+               or sentence.audio_start_us < other.audio_end_us and other.audio_start_us < sentence.audio_end_us
+               for other in playback.sentences.values()):
+            raise ValueError("sentence ranges overlap")
+        playback.sentences[sentence.sentence_id] = sentence
+
+    @staticmethod
+    def _confirmed_text_end(playback: _PlaybackState, position_us: int) -> int:
+        end = max((text_end for audio_end, text_end in playback.text_boundaries if audio_end <= position_us), default=0)
+        for sentence in sorted(playback.sentences.values(), key=lambda item: item.text_start):
+            if sentence.text_start <= end < sentence.text_end and sentence.audio_end_us <= position_us:
+                end = sentence.text_end
+        return end
 
     def _turn_context(self, generation: int) -> InteractionContext:
         return replace(

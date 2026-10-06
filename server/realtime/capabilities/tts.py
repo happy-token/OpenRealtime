@@ -7,11 +7,12 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
-from server.observability.telemetry import SessionTelemetry
 from server.core.interaction_context import InteractionContext
+from server.observability.telemetry import SessionTelemetry
 from server.realtime.protocol.audio import AudioEncoding, AudioFrame
+from server.realtime.protocol.playback import SentenceSpan, sentence_identity
 from server.speech.tts import DuplexStreamingTtsEngine, StreamingTtsEngine
 
 _TEXT_END = object()
@@ -79,6 +80,8 @@ class TtsTextAlignment:
     audio_end_us: int
     text_end: int
     audio_start_us: int | None = None
+    text_end_precision: Literal["exact", "estimated"] = "exact"
+    sentence: SentenceSpan | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -358,48 +361,49 @@ class LegacyTtsCapabilitySession:
         sequence = 0
         timestamp_us = 0
         aligned_text_end = 0
-        seen_timings: set[tuple[str, int, int]] = set()
-        # (sentence_text, its start offset within the accumulated accepted
-        # text) — re-anchored whenever a chunk's sentence_text changes.
-        sentence_anchor: tuple[str, int] | None = None
+        seen_timings: set[tuple[str, int, int, str | None, int | None, int | None, str | None]] = set()
+        sentence_anchor: tuple[tuple[str, int], int] | None = None
         async for chunk in chunks:
             aligned = None
-            if chunk.spoken_text:
-                has_timing = chunk.spoken_start_us is not None and chunk.spoken_end_us is not None
-                if has_timing:
-                    timing = (chunk.spoken_text, chunk.spoken_start_us, chunk.spoken_end_us)
-                    if timing in seen_timings:
-                        continue
-                    seen_timings.add(timing)
+            sentence = None
+            precision: Literal["exact", "estimated"] = "estimated"
+            has_timing = chunk.spoken_start_us is not None and chunk.spoken_end_us is not None
+            duplicate = False
+            if has_timing and chunk.spoken_text:
+                assert chunk.spoken_start_us is not None and chunk.spoken_end_us is not None
+                # A repeated word can carry newly complete sentence evidence.
+                timing = (chunk.spoken_text, chunk.spoken_start_us, chunk.spoken_end_us,
+                          chunk.sentence_text, chunk.sentence_start_us,
+                          chunk.sentence_duration_us, chunk.sentence_timebase)
+                duplicate = timing in seen_timings
+                seen_timings.add(timing)
+            if chunk.spoken_text and not duplicate:
                 accepted = "".join(self._text_parts)
-                if (
-                    has_timing
-                    and chunk.sentence_text
-                    and chunk.sentence_duration_us is not None
-                    and chunk.sentence_duration_us > 0
-                ):
-                    # Real timing plus a reliable sentence-level anchor
-                    # (confirmed against real Doubao/Bailian sessions to
-                    # always equal the real original text — see
-                    # ADR-0132/0133). Map elapsed time within the sentence
-                    # to a proportional position in that original text,
-                    # instead of matching the provider's pronunciation
-                    # rendering of this word (e.g. "123" -> "一百二十三")
-                    # against original text character by character — that
-                    # match fails permanently the moment a number,
-                    # currency symbol, or casing/spacing change appears,
-                    # stalling every caption update after it.
-                    if sentence_anchor is None or sentence_anchor[0] != chunk.sentence_text:
+                if (has_timing and chunk.sentence_text and chunk.sentence_duration_us is not None
+                        and chunk.sentence_duration_us > 0):
+                    # Provider word positions are on the entire session clock.
+                    # The numerator must subtract this sentence's origin.
+                    audio_start = chunk.sentence_start_us or 0
+                    # A later complete subtitle may upgrade an estimated duration.
+                    # Keep its original-text offset; the caption cursor is not evidence.
+                    anchor_key = (chunk.sentence_text, audio_start)
+                    if sentence_anchor is None or sentence_anchor[0] != anchor_key:
                         found = accepted.find(chunk.sentence_text, aligned_text_end)
-                        sentence_anchor = (chunk.sentence_text, found) if found >= 0 else None
+                        sentence_anchor = (anchor_key, found) if found >= 0 else None
                     if sentence_anchor is not None:
-                        _, sentence_start = sentence_anchor
-                        ratio = min(1.0, chunk.spoken_end_us / chunk.sentence_duration_us)
-                        candidate = min(
-                            sentence_start + round(ratio * len(chunk.sentence_text)),
-                            len(accepted),
-                        )
-                        if candidate > aligned_text_end:
+                        _, text_start = sentence_anchor
+                        assert chunk.spoken_end_us is not None
+                        ratio = max(0.0, min(1.0, (chunk.spoken_end_us - audio_start) / chunk.sentence_duration_us))
+                        candidate = text_start + round(ratio * len(chunk.sentence_text))
+                        if chunk.sentence_timebase == "speech" and chunk.sentence_start_us is not None:
+                            sentence = SentenceSpan(
+                                sentence_id=sentence_identity(self._speech_context, speech_id, chunk.sentence_text, text_start),
+                                text=chunk.sentence_text, text_start=text_start,
+                                text_end=text_start + len(chunk.sentence_text), audio_start_us=audio_start,
+                                audio_end_us=audio_start + chunk.sentence_duration_us)
+                            if chunk.spoken_end_us >= sentence.audio_end_us:
+                                precision = "exact"
+                        if candidate > aligned_text_end or precision == "exact" and candidate == aligned_text_end:
                             aligned = candidate
                 elif accepted[aligned_text_end:].startswith(chunk.spoken_text):
                     aligned = aligned_text_end + len(chunk.spoken_text)
@@ -409,7 +413,10 @@ class LegacyTtsCapabilitySession:
                     context=self._speech_context, speech_id=speech_id,
                     audio_end_us=chunk.spoken_end_us if chunk.spoken_end_us is not None else timestamp_us,
                     audio_start_us=chunk.spoken_start_us, text_end=aligned,
+                    text_end_precision=precision, sentence=sentence,
                 ))
+            # Alignment duplicates can still carry new PCM; never drop audio
+            # merely because a caption/timing tuple has already been seen.
             if not chunk.pcm16:
                 continue
             duration_us = max(
@@ -480,5 +487,5 @@ async def _warm_tts_engine(warmup, telemetry: SessionTelemetry | None = None, co
                 await warmup()
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001 - first synthesis remains authoritative
+    except Exception:  # first synthesis remains authoritative
         logger.warning("TTS provider warmup failed; synthesis will retry", exc_info=True)

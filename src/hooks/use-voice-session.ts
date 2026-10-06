@@ -627,6 +627,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           sessionIdRef.current = frame.session_id ?? null;
           setSessionId(sessionIdRef.current);
           outputEpochRef.current = frame.output_epoch ?? crypto.randomUUID();
+          playbackTextRef.current.beginEpoch(outputEpochRef.current);
           playbackOutput.beginEpoch(outputEpochRef.current);
           outputGraph.beginEpoch(outputEpochRef.current);
           if (
@@ -833,7 +834,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           break;
         case "assistant_text_alignment":
-          if (!shouldDropAudioFrame(frame.generation, cancelledGenerationRef.current)) {
+          if (!shouldDropAudioFrame(frame.generation, cancelledGenerationRef.current)
+            && playbackOutput.canEnqueue({ generation: frame.generation, speechId: frame.speech_id })) {
             showPlaybackText(frame.generation, playbackTextRef.current.add(frame));
           }
           break;

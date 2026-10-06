@@ -567,7 +567,15 @@ class CascadedRealtimeConversation:
             async for event in self._tts.events():
                 if event.speech_id != command.speech_id:
                     continue
-                if isinstance(event, TtsAudioFrame):
+                if isinstance(event, TtsTextAlignment):
+                    await self._emit(SpeechTextAlignment(
+                        event_id=str(uuid.uuid4()), context=command.context,
+                        conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
+                        speech_id=command.speech_id, audio_end_us=event.audio_end_us, text_end=event.text_end,
+                        audio_start_us=event.audio_start_us, text_end_precision=event.text_end_precision,
+                        sentence=event.sentence,
+                    ))
+                elif isinstance(event, TtsAudioFrame):
                     await self._emit(
                         SpeechAudioDelta(
                             event_id=str(uuid.uuid4()),
@@ -1590,7 +1598,8 @@ class CascadedRealtimeConversation:
                     event_id=str(uuid.uuid4()), context=replace(command.context, response_id=command.response_id),
                     conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC),
                     speech_id=speech_id, audio_end_us=event.audio_end_us, text_end=event.text_end,
-                    audio_start_us=event.audio_start_us,
+                    audio_start_us=event.audio_start_us, text_end_precision=event.text_end_precision,
+                    sentence=event.sentence,
                 ))
             elif isinstance(event, TtsAudioFrame):
                 if event.frame.data:

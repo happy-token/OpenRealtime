@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 
 @dataclass(frozen=True)
@@ -32,19 +32,13 @@ class SynthesizedAudioChunk:
     spoken_text: str | None = None
     spoken_start_us: int | None = None
     spoken_end_us: int | None = None
-    # The provider's own word/char text (`spoken_text`) is a pronunciation
-    # rendering — "123" becomes "一百二十三", "Hello World" can lose its
-    # space — and is not reliably a literal substring of the original
-    # text, so it must never be matched against original text character
-    # by character (confirmed against real Doubao and Bailian sessions:
-    # both diverge on numbers, currency, punctuation normalization, or
-    # English casing/spacing). `sentence_text`/`sentence_duration_us`
-    # carry the sentence-level original text and that sentence's total
-    # spoken duration — both confirmed to exactly match the real original
-    # text — so a consumer can map real elapsed time within the sentence
-    # to a proportional position in the real original text instead.
+    # Words may be pronunciation renderings; original sentence text is an
+    # anchor for captions. Its time range must be explicitly on the whole
+    # speech clock before it can be used as sentence playback evidence.
     sentence_text: str | None = None
     sentence_duration_us: int | None = None
+    sentence_start_us: int | None = None
+    sentence_timebase: Literal["speech"] | None = None
 
 
 class TtsEngine(Protocol):

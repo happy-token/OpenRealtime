@@ -147,3 +147,24 @@ describe("parseServerFrame", () => {
     })).not.toBeNull();
   });
 });
+
+describe("sentence alignment evidence", () => {
+  const frame = { type: "assistant_text_alignment", generation: 1, speech_id: "speech", output_epoch: "epoch",
+    text: "好😀。", audio_start_us: 0, audio_end_us: 100_000, text_end_precision: "estimated",
+    sentence: { sentence_id: "sentence", text: "好😀。", text_start: 0, text_end: 3, audio_start_us: 0, audio_end_us: 200_000 } };
+  it("preserves sentence ranges using Unicode code points", () => {
+    expect(parseServerFrame(frame)).toEqual(frame);
+  });
+  it("rejects incomplete identities, coerced counters and ranges outside the sentence", () => {
+    for (const field of ["output_epoch", "speech_id", "generation"]) {
+      expect(parseServerFrame({ ...frame, [field]: undefined })).toBeNull();
+    }
+    for (const value of [true, "0", -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(parseServerFrame({ ...frame, sentence: { ...frame.sentence, text_start: value } })).toBeNull();
+    }
+    expect(parseServerFrame({ ...frame, sentence: {} })).toBeNull();
+    expect(parseServerFrame({ ...frame, sentence: "sentence" })).toBeNull();
+    expect(parseServerFrame({ ...frame, audio_end_us: 300_000 })).toBeNull();
+    expect(parseServerFrame({ ...frame, text_end_precision: "unknown" })).toBeNull();
+  });
+});

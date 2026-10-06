@@ -2,6 +2,7 @@ import type { AssistantTextAlignmentFrame } from "@/lib/frames";
 
 /** Provider text cues advance only on the device playback timeline. */
 export class PlaybackTextTimeline {
+  private outputEpoch: string | null = null;
   private generation = -1;
   private speechId: string | null = null;
   private positionUs = 0;
@@ -10,7 +11,9 @@ export class PlaybackTextTimeline {
 
   private select(generation: number, speechId: string): boolean {
     if (generation < this.generation) return false;
-    if (generation > this.generation) {
+    // The output controller admits replacement speech after a precise stop.
+    // Generation alone does not identify one output lifecycle.
+    if (generation > this.generation || (generation === this.generation && this.settled && speechId !== this.speechId)) {
       this.generation = generation;
       this.speechId = speechId;
       this.positionUs = 0;
@@ -20,7 +23,15 @@ export class PlaybackTextTimeline {
     return !this.settled && this.speechId === speechId;
   }
 
+  beginEpoch(epoch: string): void {
+    if (!epoch) throw new Error("playback text requires an output epoch");
+    this.reset();
+    this.outputEpoch = epoch;
+  }
+
   add(cue: AssistantTextAlignmentFrame): string | null {
+    // Reject before select: an old epoch must never advance the current generation.
+    if (cue.output_epoch != null && cue.output_epoch !== this.outputEpoch) return null;
     if (!this.select(cue.generation, cue.speech_id)) return null;
     if (!this.cues.some(item => item.audio_start_us === cue.audio_start_us && item.text === cue.text)) {
       this.cues.push(cue);
@@ -56,6 +67,8 @@ export class PlaybackTextTimeline {
   }
 
   reset(): void {
+    // Display clearing and private-call end can reuse an acknowledged socket.
+    // The attachment epoch changes only when beginEpoch accepts a new ack.
     this.generation = -1;
     this.speechId = null;
     this.positionUs = 0;
