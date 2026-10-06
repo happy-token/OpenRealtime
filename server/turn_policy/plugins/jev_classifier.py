@@ -116,8 +116,9 @@ class JevClient:
         self._closed = False
 
     async def close(self) -> None:
+        # Revoke admission before waiting for any in-flight connection setup.
+        self._closed = True
         async with self._client_lock:
-            self._closed = True
             await self._client_stack.aclose()
             self._client = None
 
@@ -152,6 +153,9 @@ class JevClient:
             with _timed_stage("slot_wait"):
                 await self._slots.acquire()
             try:
+                # The owner can close while this call waits behind another session.
+                if self._closed:
+                    raise RuntimeError("Jev client is closed")
                 async with AsyncExitStack() as stack:
                     with _timed_stage("client_ready"):
                         client = (
@@ -159,6 +163,9 @@ class JevClient:
                             if self._reuse_connections
                             else await stack.enter_async_context(create_client())
                         )
+                    # Fresh-client setup can also suspend across owner shutdown.
+                    if self._closed:
+                        raise RuntimeError("Jev client is closed")
                     with _timed_stage("request"):
                         response = await client.system_one(
                             state=state,

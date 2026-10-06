@@ -119,3 +119,5 @@
 2026-10-07句子证据批次：完整Doubao字幕产生不可变原文/音频区间，重复句独立、estimated字幕不进入exact已播前沿，直接播报透传句子证据；旧epoch/清屏/同代替换字幕隔离通过真实Chrome4场景。最终Python1895 passed/69 skipped/3 subtests、前端59 passed；详见[句子证据报告](../reports/2026-10-07-sentence-playback-evidence.md)。本批完成provider事实前置，未实现actor句段许可、未来队列清理或交接重验；阶段3/G3与其余全量计划保持开放。
 
 2026-10-07 actor播放事实批次：V2精确位置、当前句、epoch和原接收时刻经真实生产链进入现有回复版本账本；停播/晚处理playing两种持久化竞争顺序、外部speech源response与交付租约区分、长句诊断预算与重复幂等均有回归。新增11项；最终Python1906 passed/69 skipped/3 subtests，核心7模块Mypy/限定Ruff与独立review通过，详见[actor播放事实报告](../reports/2026-10-07-actor-playback-observation.md)。本批仅补许可前置，未实现句段许可、清未来队列、交接重验或真实renderer/G3；全量其他阶段与横向需求继续开放。
+
+同日共享JEV边界继续批次：关闭意图立即撤销准入，等待共享槽位/SDK准备后重新检查；新增7项受控SDK回归覆盖混合适配器等待顺序/取消/容量和实际双会话关闭与最终提交隔离。最终Python1913 passed/69 skipped/3 subtests，详情见[共享JEV报告](../reports/2026-10-07-jev-shared-capacity-lifecycle.md)。本批不改变并发或引入轮转策略，真实负载公平、全局等待资源预算及E01/E02/G1继续开放；0137/0138和横向需求不关闭。

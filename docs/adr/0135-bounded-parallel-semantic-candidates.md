@@ -52,3 +52,5 @@ SemanticChunkScheduler维护有界inflight映射，产品装配默认2，局部A
 2026-10-06继续：逻辑输入的文本字节、revision、候选历史、绝对时长和证据总字节设预算，超额取消分类/预生成并进入明确会话关闭出口。完整拒绝证据durable确认后才能清理ASR；缺失不可伪装已保存。候选与ASR修订可从独立Journal scope回读。边界、突发暂态和测试限制见[输入证据报告](../reports/2026-10-06-input-evidence-and-resource-budgets.md)。真实G1与ASCII句点特殊扫描上界仍开放。
 
 2026-10-07已补[句点边界索引与尾串复制](../reports/2026-10-07-semantic-boundary-index.md)，保留切块后URL/小数规则，边界扫描O(N)、堆操作O(P log P)。这是单次构建CPU补强，不替代共享槽位公平性、真实语义准确率或G1配对实验。
+
+同日已补[共享JEV容量和关闭验证](../reports/2026-10-07-jev-shared-capacity-lifecycle.md)：排队/连接准备后重新检查关闭，关闭意图在等待连接锁前撤销准入。受控实际适配器验证共享2槽位等待顺序、取消跳过和容量，两个独立会话actor验证关闭A释放槽位给B且结果上下文隔离。这不新增轮转公平调度、不改变容量或模型语义；真实多会话负载、全局等待内存预算、E01/E02配对与G1继续开放。
