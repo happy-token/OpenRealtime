@@ -62,6 +62,7 @@ from server.realtime.capabilities import (
     DialogueStateChanged as CapabilityDialogueStateChanged,
 )
 from server.realtime.capabilities.asr import AsrCapabilityProvider
+from server.realtime.capabilities.brain import BrainEvent
 from server.realtime.capabilities.turn_manager import (
     SemanticInputRejected,
     TurnManagerCapabilityProvider,
@@ -343,6 +344,8 @@ class CascadedRealtimeConversation:
         self._response_admitted_by_id: dict[str, asyncio.Event] = {}
         self._brain_attempts: dict[str, _BrainAttempt] = {}
         self._brain_protocol_failed = False
+        self._tts_cleanup_unconfirmed = False
+        self._tts_stop_tasks: dict[str, asyncio.Task[None]] = {}
         self._revoked_brain_response_ids: set[str] = set()
         self._brain_protocol_close_task: asyncio.Task[None] | None = None
         self._tts_task_by_response_id: dict[str, asyncio.Task[None]] = {}
@@ -555,7 +558,12 @@ class CascadedRealtimeConversation:
             stopped=command.stopped,
         )
 
+    def _require_tts_available(self) -> None:
+        if self._tts_cleanup_unconfirmed:
+            raise RuntimeError("TTS cleanup was not confirmed; requires a new capability session")
+
     async def _start_external_speech(self, command: StartSpeech) -> None:
+        self._require_tts_available()
         if self._response_task is not None or self._external_speech_id is not None:
             raise ValueError("realtime conversation already has active output")
         started = await self._speech_lifecycle.start(
@@ -567,6 +575,7 @@ class CascadedRealtimeConversation:
                 command.speech_id,
                 context=command.context,
             )
+            self._require_tts_available()
             await self._tts.send(
                 StartTts(speech_id=command.speech_id, context=command.context)
             )
@@ -628,8 +637,14 @@ class CascadedRealtimeConversation:
                     )
                     return
                 elif isinstance(event, TtsCancelled):
+                    if event.cleanup_timed_out:
+                        self._tts_cleanup_unconfirmed = True
+                        await self._emit_capability_failure(context=command.context, capability="tts_cancel_cleanup",
+                            error="TTS provider cleanup exceeded its cancellation deadline")
                     return
                 elif isinstance(event, TtsFailed):
+                    if event.cleanup_failed:
+                        self._tts_cleanup_unconfirmed = True
                     await self._speech_lifecycle.fail(
                         command.speech_id,
                         reason=event.error,
@@ -709,6 +724,8 @@ class CascadedRealtimeConversation:
             )
 
     async def _queue_delivery(self, command: DeliverItem) -> None:
+        if command.mode is not DeliveryMode.DISPLAY_ONLY:
+            self._require_tts_available()
         thread_sequence = self._projected_sequence_by_item_id.get(command.item_id)
         if thread_sequence is None:
             raise ContextVisibilityError(
@@ -740,6 +757,10 @@ class CascadedRealtimeConversation:
         ):
             return
         command = self._pending_deliveries.popleft()
+        if command.mode is not DeliveryMode.DISPLAY_ONLY and self._tts_cleanup_unconfirmed:
+            await self._fail_delivery(command, error="TTS cleanup was not confirmed; requires a new capability session")
+            await self._dispatch_next_delivery()
+            return
         thread_sequence = self._projected_sequence_by_item_id[command.item_id]
         await self._emit(
             ItemDeliveryStarted(
@@ -804,6 +825,7 @@ class CascadedRealtimeConversation:
         speech_id = f"response:{response_id}"
         tts_task: asyncio.Task[None] | None = None
         try:
+            self._require_tts_available()
             item = self._item_by_id(command.item_id)
             spoken = await resolve_spoken_content(
                 AssistantContent(
@@ -841,6 +863,7 @@ class CascadedRealtimeConversation:
             self._unsettled_model_speech_ids.add(speech_id)
             await self._speech_deliveries.append_text(speech_id, spoken.text)
             await self._speech_deliveries.commit_text(speech_id)
+            self._require_tts_available()
             await self._tts.send(StartTts(speech_id=speech_id, context=command.context))
             tts_task = asyncio.create_task(
                 self._pump_tts(
@@ -856,6 +879,7 @@ class CascadedRealtimeConversation:
                     speech_id=speech_id,
                 )
             )
+            self._tts_task_by_response_id[response_id] = tts_task
             await self._tts.send(
                 AppendTtsText(speech_id=speech_id, text_sequence=1, delta=spoken.text)
             )
@@ -874,14 +898,10 @@ class CascadedRealtimeConversation:
             )
             await self._complete_delivery(command)
         except asyncio.CancelledError:
-            if tts_task is not None and not tts_task.done():
-                tts_task.cancel()
-                await asyncio.gather(tts_task, return_exceptions=True)
             reason = self._direct_delivery_cancel_reason or "cancelled"
-            try:
-                await self._tts.send(CancelTts(speech_id=speech_id, reason=reason))
-            except ValueError:
-                pass
+            cleanup_error = await self._stop_response_tts(response_id, reason=reason)
+            if cleanup_error:
+                await self._emit_capability_failure(context=command.context, capability="tts_cancel_cleanup", error=cleanup_error)
             await self._cancel_model_speech(speech_id, reason=reason)
             await self._emit_response(
                 ResponseCancelled,
@@ -891,10 +911,11 @@ class CascadedRealtimeConversation:
             )
             await self._cancel_delivery(command, reason=reason)
         except Exception as error:  # noqa: BLE001 - provider failure becomes protocol event
-            if tts_task is not None and not tts_task.done():
-                tts_task.cancel()
-                await asyncio.gather(tts_task, return_exceptions=True)
             failure = str(error)
+            cleanup_error = await self._stop_response_tts(response_id, reason="delivery_failed")
+            if cleanup_error:
+                failure = f"{failure}; TTS cleanup failed: {cleanup_error}"
+                await self._emit_capability_failure(context=command.context, capability="tts_cancel_cleanup", error=cleanup_error)
             if isinstance(error, CascadedCapabilityError):
                 await self._emit_capability_failure(
                     context=command.context,
@@ -1187,6 +1208,7 @@ class CascadedRealtimeConversation:
                 await ready.wait()
                 if not self._input_pipeline.response_delivery_allowed(command.response_id):
                     raise asyncio.CancelledError
+                self._require_tts_available()
                 if self._brain_protocol_failed:
                     raise RuntimeError("Brain capability is quarantined; requires a new capability session")
                 if not self._brain_turn_matches(command, turn):
@@ -1232,15 +1254,9 @@ class CascadedRealtimeConversation:
                 await self._cancel_brain_attempt(command, attempt, reason="response_deadline_exceeded")
                 if attempt.cleanup_error:
                     failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
-                tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
-                if tts_task is not None:
-                    await self._tts.send(
-                        CancelTts(
-                            speech_id=f"response:{command.response_id}",
-                            reason="response_deadline_exceeded",
-                        )
-                    )
-                    await asyncio.gather(tts_task, return_exceptions=True)
+                tts_cleanup_error = await self._stop_response_tts(command.response_id, reason="response_deadline_exceeded")
+                if tts_cleanup_error:
+                    failure = f"{failure}; TTS cleanup failed: {tts_cleanup_error}"
                 await self._emit_capability_failure(
                     context=command.context,
                     capability="response_deadline",
@@ -1263,15 +1279,9 @@ class CascadedRealtimeConversation:
                 if attempt.cleanup_error:
                     await self._emit_capability_failure(context=command.context,
                         capability="response_cancel_cleanup", error=attempt.cleanup_error)
-            tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
-            if tts_task is not None:
-                await self._tts.send(
-                    CancelTts(
-                        speech_id=f"response:{command.response_id}",
-                        reason=cancelled_reason,
-                    )
-                )
-                await tts_task
+            tts_cleanup_error = await self._stop_response_tts(command.response_id, reason=cancelled_reason)
+            if tts_cleanup_error:
+                await self._emit_capability_failure(context=command.context, capability="tts_cancel_cleanup", error=tts_cleanup_error)
             await self._cancel_model_speech(
                 f"response:{command.response_id}",
                 reason=cancelled_reason,
@@ -1308,6 +1318,7 @@ class CascadedRealtimeConversation:
             if self._active_response_id == command.response_id:
                 self._active_response_id = None
             self._response_admitted_by_id.pop(command.response_id, None)
+            self._cancel_reason_by_response_id.pop(command.response_id, None)
             if self._brain_attempts.get(command.response_id) is attempt:
                 self._brain_attempts.pop(command.response_id)
             delivery = self._delivery_by_response_id.pop(command.response_id, None)
@@ -1327,18 +1338,10 @@ class CascadedRealtimeConversation:
     ) -> str:
         await self._revoke_brain_output(command)
         speech_id = f"response:{command.response_id}"
-        tts_task = self._tts_task_by_response_id.pop(command.response_id, None)
-        if tts_task is not None:
-            try:
-                await self._tts.send(
-                    CancelTts(
-                        speech_id=speech_id,
-                        reason="response_failed",
-                    )
-                )
-            except Exception as cleanup_error:  # noqa: BLE001 - preserve root failure
-                failure = f"{failure}; TTS cleanup failed: {cleanup_error}"
-            await asyncio.gather(tts_task, return_exceptions=True)
+        cleanup_error = await self._stop_response_tts(command.response_id, reason="response_failed")
+        if cleanup_error is not None:
+            failure = f"{failure}; TTS cleanup failed: {cleanup_error}"
+            await self._emit_capability_failure(context=command.context, capability="tts_cancel_cleanup", error=cleanup_error)
         await self._fail_model_speech(
             speech_id,
             reason=failure,
@@ -1361,11 +1364,121 @@ class CascadedRealtimeConversation:
         )
         return failure
 
+    async def _stop_response_tts(self, response_id: str, *, reason: str) -> str | None:
+        operation = self._tts_stop_tasks.get(response_id)
+        if operation is None:
+            pump = self._tts_task_by_response_id.pop(response_id, None)
+            if pump is None:
+                return None
+            self._tts_cleanup_unconfirmed = True
+
+            async def stop_owned() -> None:
+                if not pump.done():
+                    pump.cancel()
+                await asyncio.gather(pump, return_exceptions=True)
+                error = await self._cancel_failed_tts(f"response:{response_id}", reason=reason)
+                if error is not None:
+                    raise RuntimeError(error)
+
+            operation = asyncio.create_task(stop_owned())
+            self._tts_stop_tasks[response_id] = operation
+
+            def finished(task: asyncio.Task[None]) -> None:
+                if (not task.cancelled() and task.exception() is None
+                    and self._tts_stop_tasks.get(response_id) is task):
+                    self._tts_stop_tasks.pop(response_id)
+
+            operation.add_done_callback(finished)
+        try:
+            await asyncio.shield(operation)
+            return None
+        except asyncio.CancelledError:
+            return "TTS cleanup waiter was cancelled; cleanup retained"
+        except Exception as error:  # noqa: BLE001 - report the owned cleanup failure
+            return str(error).strip() or type(error).__name__
+        finally:
+            if not operation.done() and operation not in self._detached_response_tasks:
+                self._detached_response_tasks.add(operation)
+                operation.add_done_callback(self._observe_detached_response_task)
+
+    async def _cancel_failed_tts(self, speech_id: str, *, reason: str) -> str | None:
+        # The failed output pump has stopped. Continue consuming provider events
+        # privately so a full queue cannot block the cancellation acknowledgement.
+        self._tts_cleanup_unconfirmed = True
+        receipts: list[TtsCompleted | TtsFailed | TtsCancelled] = []
+
+        async def drain_terminal() -> None:
+            iterator = self._tts.events().__aiter__()
+            try:
+                async for event in iterator:
+                    if event.speech_id == speech_id and isinstance(event, (TtsCompleted, TtsFailed, TtsCancelled)):
+                        receipts.append(event)
+                        return
+                raise RuntimeError("TTS event stream ended before cleanup acknowledgement")
+            finally:
+                close = getattr(iterator, "aclose", None)
+                if close is not None:
+                    await close()
+
+        cancel = asyncio.create_task(self._tts.send(CancelTts(speech_id=speech_id, reason=reason)))
+        drain = asyncio.create_task(drain_terminal())
+        tasks = {cancel, drain}
+        try:
+            _, pending = await asyncio.wait(tasks, timeout=self._response_cancel_timeout_s)
+            cancel_error = (
+                cancel.exception() if cancel.done() and not cancel.cancelled()
+                else RuntimeError("TTS cancellation waiter was cancelled") if cancel.cancelled()
+                else None
+            )
+            if cancel_error is not None and not isinstance(cancel_error, ValueError):
+                if not drain.done():
+                    drain.cancel()
+                await asyncio.gather(drain, return_exceptions=True)
+                raise cancel_error
+            if pending:
+                self._tts_cleanup_unconfirmed = True
+                return "TTS cancellation deadline exceeded; cleanup retained"
+            await drain
+            terminal = receipts[0]
+            # A matching terminal can race before Cancel reaches a capability
+            # which has already released this speech. It needs no second cancel.
+            if cancel_error is not None and not (isinstance(cancel_error, ValueError)
+                and isinstance(terminal, (TtsCompleted, TtsFailed))):
+                raise cancel_error
+            if isinstance(terminal, TtsCancelled) and terminal.cleanup_timed_out:
+                raise RuntimeError("TTS provider cleanup exceeded its cancellation deadline")
+            if isinstance(terminal, TtsFailed) and terminal.cleanup_failed:
+                raise RuntimeError(terminal.error)
+            self._tts_cleanup_unconfirmed = False
+            return None
+        except asyncio.CancelledError:
+            return "TTS cancellation was interrupted; cleanup retained"
+        except Exception as error:  # noqa: BLE001 - preserve the original response failure
+            self._tts_cleanup_unconfirmed = True
+            return str(error).strip() or type(error).__name__
+        finally:
+            for task in tasks:
+                if task.done():
+                    if not task.cancelled():
+                        task.exception()
+                else:
+                    self._detached_response_tasks.add(task)
+                    task.add_done_callback(self._observe_detached_response_task)
+
     def _brain_turn_matches(self, command: RequestResponse, turn: TurnContent) -> bool:
         items, current = self._response_projection_snapshot(command.minimum_thread_sequence)
         return (digest_source_items(items) == turn.context_projection_digest
             and "\n".join(part.text for part in current.content if isinstance(part, TextContent)) == turn.text
             and (current.provider_metadata.get("input_relation") == "unresolved") == turn.input_relation_unresolved)
+
+    async def _require_brain_context_current(
+        self, command: RequestResponse, attempt: _BrainAttempt, *, stage: str,
+    ) -> None:
+        if attempt.semantic_published and not self._brain_turn_matches(command, attempt.turn):
+            await self._revoke_brain_output(command)
+            raise ContextVisibilityError(
+                f"heard context changed {stage}; requires a new reply version"
+            )
 
     async def _revoke_brain_output(self, command: RequestResponse) -> None:
         if command.response_id in self._revoked_brain_response_ids:
@@ -1448,6 +1561,29 @@ class CascadedRealtimeConversation:
         await self._brain.send(RequestBrainResponse(response_id=command.response_id,
             request_token=attempt.request_token, turn=turn, context=command.context))
 
+    async def _next_brain_output(
+        self, command: RequestResponse, brain_events: AsyncIterator[BrainEvent],
+        tts_task: asyncio.Task[None] | None,
+    ) -> BrainEvent:
+        if tts_task is None:
+            return await anext(brain_events)
+        pending = asyncio.ensure_future(anext(brain_events))
+        try:
+            await asyncio.wait({pending, tts_task}, return_when=asyncio.FIRST_COMPLETED)
+            if tts_task.done():
+                try:
+                    await tts_task
+                except Exception as error:
+                    await self._revoke_brain_output(command)
+                    if not isinstance(error, ContextVisibilityError):
+                        await self._emit_capability_failure(context=command.context, capability="tts", error=str(error))
+                    raise
+            return await pending
+        finally:
+            if not pending.done():
+                pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+
     async def _route_response(self, command: RequestResponse, attempt: _BrainAttempt, *, first_text_deadline: float) -> str | None:
         response_context = replace(command.context, response_id=command.response_id)
         speech_id = f"response:{command.response_id}"
@@ -1466,9 +1602,9 @@ class CascadedRealtimeConversation:
                         raise _FirstResponseTextDeadlineExceeded
                     event_deadline = asyncio.timeout_at(first_text_deadline)
                     async with event_deadline:
-                        event = await anext(brain_events)
+                        event = await self._next_brain_output(command, brain_events, tts_task)
                 else:
-                    event = await anext(brain_events)
+                    event = await self._next_brain_output(command, brain_events, tts_task)
             except StopAsyncIteration:
                 break
             except TimeoutError as error:
@@ -1506,12 +1642,11 @@ class CascadedRealtimeConversation:
                     attempt.semantic_published = True
                     await self._input_pipeline.response_started(command.response_id, context=command.context)
                     await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id)
-                if not self._brain_turn_matches(command, attempt.turn):
-                    await self._revoke_brain_output(command)
-                    raise ContextVisibilityError("heard context changed after response publication; requires a new reply version")
+                await self._require_brain_context_current(command, attempt, stage="after response publication")
             if isinstance(event, BrainTextDelta):
                 if tts_task is None:
                     await self._start_model_speech(command, context=response_context, speech_id=speech_id)
+                    self._require_tts_available()
                     await self._tts.send(
                         StartTts(speech_id=speech_id, context=command.context)
                     )
@@ -1567,11 +1702,13 @@ class CascadedRealtimeConversation:
                     agent_name=event.agent_name,
                 )
             elif isinstance(event, BrainResponseCompleted):
+                await self._require_brain_context_current(command, attempt, stage="at model completion")
                 if tts_task is None:
                     if delegation_published:
                         settlement_error = await self._settle_input_response(command.response_id, context=command.context)
                         if settlement_error:
                             raise RuntimeError(settlement_error)
+                        await self._require_brain_context_current(command, attempt, stage="after delegation settlement")
                         await self._emit_response(ResponseCompleted, context=response_context, response_id=command.response_id)
                         return None
                     raise RuntimeError("Brain completed before starting the response: no accepted text")
@@ -1581,25 +1718,15 @@ class CascadedRealtimeConversation:
                     await tts_task
                 except Exception as error:  # noqa: BLE001 - capability error becomes event
                     failure = str(error)
-                    await self._emit_capability_failure(
-                        context=command.context,
-                        capability="tts",
-                        error=failure,
-                    )
-                    await self._fail_model_speech(speech_id, reason=failure)
-                    settlement_error = await self._settle_input_response(
-                        command.response_id,
-                        context=command.context,
-                    )
-                    if settlement_error is not None:
-                        failure = f"{failure}; {settlement_error}"
-                    await self._emit_response(
-                        ResponseFailed,
-                        context=response_context,
-                        response_id=command.response_id,
-                        error=failure,
-                    )
-                    return failure
+                    await self._revoke_brain_output(command)
+                    if not isinstance(error, ContextVisibilityError):
+                        await self._emit_capability_failure(
+                            context=command.context,
+                            capability="tts",
+                            error=failure,
+                        )
+                    return await self._record_response_failure(command, failure)
+                await self._require_brain_context_current(command, attempt, stage="after TTS completion")
                 self._tts_task_by_response_id.pop(command.response_id, None)
                 settlement_error = None
                 if speech_id in self._model_speech_with_audio_ids:
@@ -1617,6 +1744,7 @@ class CascadedRealtimeConversation:
                         error=settlement_error,
                     )
                     return settlement_error
+                await self._require_brain_context_current(command, attempt, stage="before response completion")
                 await self._emit_response(
                     ResponseCompleted,
                     context=response_context,
@@ -1626,14 +1754,10 @@ class CascadedRealtimeConversation:
             elif isinstance(event, BrainResponseFailed):
                 await self._revoke_brain_output(command)
                 await self._cancel_brain_attempt(command, attempt, reason="brain_response_failed")
-                if tts_task is not None:
-                    tts_task.cancel()
-                    await asyncio.gather(tts_task, return_exceptions=True)
-                    self._tts_task_by_response_id.pop(command.response_id, None)
-                    await self._tts.send(
-                        CancelTts(speech_id=speech_id, reason="brain_response_failed")
-                    )
+                tts_cleanup_error = await self._stop_response_tts(command.response_id, reason="brain_response_failed")
                 failure = event.error
+                if tts_cleanup_error:
+                    failure = f"{failure}; TTS cleanup failed: {tts_cleanup_error}"
                 if attempt.cleanup_error:
                     failure = f"{failure}; Brain cleanup failed: {attempt.cleanup_error}"
                 await self._emit_capability_failure(
@@ -1655,14 +1779,10 @@ class CascadedRealtimeConversation:
                     error=failure,
                 )
                 return failure
-        if tts_task is not None:
-            tts_task.cancel()
-            await asyncio.gather(tts_task, return_exceptions=True)
-            await self._tts.send(
-                CancelTts(speech_id=speech_id, reason="brain_event_stream_ended")
-            )
-            self._tts_task_by_response_id.pop(command.response_id, None)
+        tts_cleanup_error = await self._stop_response_tts(command.response_id, reason="brain_event_stream_ended")
         failure = "Brain event stream ended before a terminal response event"
+        if tts_cleanup_error:
+            failure = f"{failure}; TTS cleanup failed: {tts_cleanup_error}"
         await self._emit_capability_failure(
             context=command.context,
             capability="brain",
@@ -1770,6 +1890,13 @@ class CascadedRealtimeConversation:
                 continue
             if isinstance(event, (TtsTextAlignment, TtsAudioFrame)) and not self._input_pipeline.response_delivery_allowed(command.response_id):
                 continue
+            if (isinstance(event, (TtsCompleted, TtsFailed, TtsCancelled))
+                and self._tts_task_by_response_id.get(command.response_id) is asyncio.current_task()):
+                self._tts_task_by_response_id.pop(command.response_id)
+            if isinstance(event, (TtsTextAlignment, TtsAudioFrame, TtsCompleted)) and self._input_pipeline.response_delivery_allowed(command.response_id):
+                attempt = self._brain_attempts.get(command.response_id)
+                if attempt is not None:
+                    await self._require_brain_context_current(command, attempt, stage="during TTS delivery")
             if isinstance(event, TtsTextAlignment):
                 await self._emit(SpeechTextAlignment(
                     event_id=str(uuid.uuid4()), context=replace(command.context, response_id=command.response_id),
@@ -1794,6 +1921,7 @@ class CascadedRealtimeConversation:
                     segment_index += 1
             elif isinstance(event, TtsCancelled):
                 if event.cleanup_timed_out:
+                    self._tts_cleanup_unconfirmed = True
                     await self._emit_capability_failure(
                         context=command.context,
                         capability="tts_cancel_cleanup",
@@ -1806,6 +1934,8 @@ class CascadedRealtimeConversation:
             elif isinstance(event, TtsCompleted):
                 return
             elif isinstance(event, TtsFailed):
+                if event.cleanup_failed:
+                    self._tts_cleanup_unconfirmed = True
                 raise CascadedCapabilityError(event.error)
 
     def _arm_playback_watchdog(self, speech_id: str) -> None:
@@ -2103,6 +2233,9 @@ class CascadedRealtimeConversation:
             task.cancel()
             tasks.append(task)
         self._detached_response_tasks.clear()
+        for task in self._tts_stop_tasks.values():
+            if task not in tasks:
+                tasks.append(task)
         if self._external_tts_task is not None:
             self._external_tts_task.cancel()
             tasks.append(self._external_tts_task)

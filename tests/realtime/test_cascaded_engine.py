@@ -2015,11 +2015,15 @@ async def test_floor_claim_commits_new_turn_when_duplex_tts_cleanup_stalls() -> 
         assert transcript.text == "我来补充一句"
 
         next_response = []
-        while not any(isinstance(event, DisplayContentDelta) for event in next_response):
+        while not any(isinstance(event, ResponseFailed) for event in next_response):
             next_response.append(
                 await asyncio.wait_for(anext(events), timeout=0.2)
             )
-        assert any(isinstance(event, ResponseStarted) for event in next_response)
+        failure = next(event for event in next_response if isinstance(event, ResponseFailed))
+        assert "requires a new capability session" in failure.error
+        assert not any(isinstance(event, (ResponseStarted, DisplayContentDelta, AudioDelta)) for event in next_response)
+        assert core._tts_cleanup_unconfirmed
+        assert core._projected_items[max(core._projected_items)].content == (TextContent("我来补充一句"),)
     finally:
         tts.cleanup_release.set()
         await conversation.close()

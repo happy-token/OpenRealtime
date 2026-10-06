@@ -42,6 +42,9 @@ async def test_actual_managed_queue_and_bridge_revoke_pcm_before_blocked_cleanup
                 yield "有效响应。"
                 await self.tail.wait()
                 yield "过期内容。"
+                # Keep provider cleanup tied to owner cancellation, rather than
+                # natural generator exhaustion racing the new event-reader task.
+                await asyncio.Event().wait()
             finally:
                 self.cleanup_entered.set()
                 await self.cleanup_release.wait()
