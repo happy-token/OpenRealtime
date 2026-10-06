@@ -889,7 +889,7 @@ class RealtimeWebSocketFrameBridge:
                 ReportPlaybackProgress(
                     command_id=f"playback:{frame.generation}:{playback.speech_id}:started",
                     idempotency_key=f"playback:{frame.generation}:{playback.speech_id}:started",
-                    context=self._turn_context(frame.generation),
+                    context=playback.context,
                     speech_id=playback.speech_id,
                     delivered_text_end=0,
                     played_audio_end_us=0,
@@ -929,7 +929,7 @@ class RealtimeWebSocketFrameBridge:
                 idempotency_key=(
                     f"playback:{frame.generation}:{playback.speech_id}:{'done' if frame.finished else 'stop' if frame.stopped else f'progress:{played_audio_end_us}'}"
                 ),
-                context=self._turn_context(frame.generation),
+                context=playback.context,
                 speech_id=playback.speech_id,
                 delivered_text_end=delivered_text_end,
                 played_audio_end_us=played_audio_end_us,
@@ -975,7 +975,7 @@ class RealtimeWebSocketFrameBridge:
                 idempotency_key=(
                     f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}"
                 ),
-                context=self._turn_context(frame.generation),
+                context=playback.context,
                 speech_id=frame.speech_id,
                 delivered_text_end=delivered_text_end,
                 played_audio_end_us=played_audio_end_us,
