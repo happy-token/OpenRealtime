@@ -59,6 +59,7 @@ from server.realtime.capabilities.turn_manager import (
     DialogueStateChanged,
     LegacyTurnManagerCapabilityAdapter,
     ObserveAsrEvent,
+    ObserveAssistantPlayback,
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
     ObserveConversationItem,
@@ -341,6 +342,14 @@ class CoordinatedTurnManagerSession:
         await self.send(ObserveResponseInvalidated(context=context, response_id=response_id, reason=reason))
 
     def _record_revision(self, event: str, context: InteractionContext, detail: dict[str, Any]) -> None:
+        # Output sentence text already lives in speech/Journal records. Do not
+        # duplicate it into the input-evidence budget on every identity transition.
+        playback = detail.get("playback", detail)
+        if isinstance(playback, dict) and isinstance(playback.get("current_sentence"), dict):
+            sentence = playback["current_sentence"]
+            text = sentence.pop("text")
+            sentence["text_sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            sentence["text_length"] = len(text)
         if self._provider._telemetry is not None:
             self._provider._telemetry.record("response.revision", generation=context.generation,
                 attributes={"operation": event, **detail})
@@ -892,6 +901,20 @@ class CoordinatedTurnManagerSession:
                 self._input.yield_pending = False
                 await self._advance(self._input)
             await self._project(event.context or self._context)
+            return
+        if isinstance(event, ObserveAssistantPlayback):
+            before = self._revisions.reply.playback if self._revisions.reply else None
+            if self._revisions.observe_playback_fact(event.response_id, event.context, event.fact):
+                if self._response_id == event.response_id:
+                    self._response_playback_started |= event.fact.played_audio_end_us > 0
+                assert self._revisions.reply is not None
+                after = self._revisions.reply.playback
+                assert after is not None
+                # Record identity/precision transitions, not every sample tick.
+                if (before is None or before.current_sentence != after.current_sentence
+                    or before.terminal != after.terminal
+                    or before.position_precision != after.position_precision):
+                    self._record_revision("reply_playback_observed", event.context, asdict(after))
             return
         if isinstance(event, ObserveAssistantSpokenText):
             reply = self._revisions.reply

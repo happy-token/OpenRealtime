@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -10,6 +10,7 @@ from typing import Literal
 from server.conversation_journal import ConversationItem, ConversationItemDraft, JournalScope
 from server.core.interaction_context import InteractionContext
 from server.realtime.protocol.audio import AudioFrame
+from server.realtime.protocol.playback import SentenceSpan
 from server.realtime.scope import conversation_scope
 
 
@@ -135,8 +136,22 @@ class ReportPlaybackProgress:
     completed: bool = False
     started: bool = False
     stopped: bool = False
+    output_epoch: str | None = None
+    current_sentence: SentenceSpan | None = None
+    # Transport replay time is not part of a playback command's semantic identity.
+    observed_at_ns: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
+        if self.output_epoch is not None and (
+            not isinstance(self.output_epoch, str) or not self.output_epoch
+            or type(self.observed_at_ns) is not int or self.observed_at_ns <= 0
+        ):
+            raise ValueError("precise playback requires epoch and server observation clock")
+        if self.current_sentence is not None and (
+            self.output_epoch is None or self.stopped or self.completed
+            or not self.current_sentence.audio_start_us < self.played_audio_end_us < self.current_sentence.audio_end_us
+        ):
+            raise ValueError("current sentence does not match active playback")
         if sum((self.started, self.stopped, self.completed)) > 1:
             raise ValueError("playback phase flags are mutually exclusive")
         if not self.command_id or not self.idempotency_key or not self.speech_id:

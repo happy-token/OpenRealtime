@@ -838,7 +838,8 @@ class RealtimeWebSocketFrameBridge:
         assert result.played_position_samples is not None
         await self._report_playback_v2(PlaybackProgressV2(
             output_epoch=result.output_epoch, speech_id=result.speech_id, generation=result.generation,
-            phase="stopped", played_position_samples=result.played_position_samples))
+            phase="stopped", played_position_samples=result.played_position_samples),
+            observed_at_ns=stop.received_ns)
 
     async def _join_stop_fact_write(self, task: asyncio.Task[None]) -> bool:
         try:
@@ -1071,7 +1072,7 @@ class RealtimeWebSocketFrameBridge:
         if frame.finished or frame.stopped:
             self._retire_playback(playback)
 
-    async def _report_playback_v2(self, frame: PlaybackProgressV2) -> None:
+    async def _report_playback_v2(self, frame: PlaybackProgressV2, *, observed_at_ns: int | None = None) -> None:
         if frame.output_epoch != self.output_epoch:
             return
         playback = self._playback_by_speech.get(frame.speech_id)
@@ -1080,6 +1081,7 @@ class RealtimeWebSocketFrameBridge:
         sample_rate_hz = playback.sample_rate_hz
         if sample_rate_hz is None:
             return
+        observed_at_ns = observed_at_ns or time.monotonic_ns()
         played_audio_end_us = min(
             round(frame.played_position_samples * 1_000_000 / sample_rate_hz),
             playback.audio_end_us,
@@ -1094,13 +1096,18 @@ class RealtimeWebSocketFrameBridge:
         playback.delivered_text_end = delivered_text_end
         played_audio_end_us = max(playback.played_audio_end_us, played_audio_end_us)
         playback.played_audio_end_us = played_audio_end_us
+        current_sentence = next((sentence for sentence in playback.sentences.values()
+            if sentence.audio_start_us < played_audio_end_us < sentence.audio_end_us), None)
+        if completed or frame.phase in {"stopped", "finished"}:
+            current_sentence = None
+        sentence_key = current_sentence.sentence_id if current_sentence is not None else "unknown"
         await self._conversation.send(
             ReportPlaybackProgress(
                 command_id=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}:{sentence_key}"
                 ),
                 idempotency_key=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}:{sentence_key}"
                 ),
                 context=playback.context,
                 speech_id=frame.speech_id,
@@ -1110,6 +1117,9 @@ class RealtimeWebSocketFrameBridge:
                 completed=completed,
                 started=frame.phase == "started",
                 stopped=frame.phase == "stopped",
+                output_epoch=frame.output_epoch,
+                observed_at_ns=observed_at_ns,
+                current_sentence=current_sentence,
             )
         )
         if completed or frame.phase == "stopped":

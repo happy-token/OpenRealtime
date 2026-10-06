@@ -26,6 +26,7 @@ from server.realtime.capabilities.asr import (
 )
 from server.realtime.capabilities.assistant_echo import project_assistant_echo
 from server.realtime.capabilities.vad import VadEvent, VadSpeechStarted, VadSpeechStopped
+from server.realtime.protocol.playback import ReplyPlayback
 from server.turn_policy.dual_intent import (
     DefaultDualIntentClassifier,
     DualIntent,
@@ -114,6 +115,13 @@ class ObserveAssistantSpokenText:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ObserveAssistantPlayback:
+    context: InteractionContext
+    response_id: str
+    fact: ReplyPlayback
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ObserveConversationItem:
     item: ConversationItem
 
@@ -197,6 +205,7 @@ TurnManagerCommand = (
     | ObserveSystemResponseStarted
     | ObserveAssistantYielded
     | ObserveAssistantSpokenText
+    | ObserveAssistantPlayback
     | ObserveConversationItem
     | ObserveResponseInvalidated
 )
@@ -410,6 +419,8 @@ class LegacyTurnManagerCapabilitySession:
         if isinstance(command, ObserveAssistantSpokenText):
             self._latest_assistant_text = command.text
             return
+        if isinstance(command, ObserveAssistantPlayback):
+            return  # Legacy policy has no versioned sentence-delivery authority.
         if isinstance(command, ObserveConversationItem):
             self._observe_conversation_item(command.item)
             return

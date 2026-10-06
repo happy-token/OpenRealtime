@@ -117,3 +117,5 @@
 2026-10-07持久停播批次：新增0034迁移、原目标不可变停播账本、事实写入与交接屏障、生产包装层独立共享存储、在途写入关闭归属和精确会话删除。最终Python1883 passed/69 skipped/3 subtests；自建隔离PG实测7项通过并清理集群。两位独立审查批准；当前用户服务未重启/数据库未迁移。详见[持久停播报告](../reports/2026-10-07-output-stop-persistence.md)。本批关闭该前置任务，未关闭阶段3/G3；完整句段许可、真实renderer、0136/G2、0138/G4、真实音频/并发公平/配对实验与横向交付继续按全量计划推进。
 
 2026-10-07句子证据批次：完整Doubao字幕产生不可变原文/音频区间，重复句独立、estimated字幕不进入exact已播前沿，直接播报透传句子证据；旧epoch/清屏/同代替换字幕隔离通过真实Chrome4场景。最终Python1895 passed/69 skipped/3 subtests、前端59 passed；详见[句子证据报告](../reports/2026-10-07-sentence-playback-evidence.md)。本批完成provider事实前置，未实现actor句段许可、未来队列清理或交接重验；阶段3/G3与其余全量计划保持开放。
+
+2026-10-07 actor播放事实批次：V2精确位置、当前句、epoch和原接收时刻经真实生产链进入现有回复版本账本；停播/晚处理playing两种持久化竞争顺序、外部speech源response与交付租约区分、长句诊断预算与重复幂等均有回归。新增11项；最终Python1906 passed/69 skipped/3 subtests，核心7模块Mypy/限定Ruff与独立review通过，详见[actor播放事实报告](../reports/2026-10-07-actor-playback-observation.md)。本批仅补许可前置，未实现句段许可、清未来队列、交接重验或真实renderer/G3；全量其他阶段与横向需求继续开放。

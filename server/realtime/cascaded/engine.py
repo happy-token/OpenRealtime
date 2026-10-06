@@ -436,6 +436,11 @@ class CascadedRealtimeConversation:
                 )
             )
             if progress is not None:
+                # The speech route owns this lease. External speech may retain
+                # a source item's response_id in its original context.
+                response_id = (command.speech_id.removeprefix("response:")
+                    if command.speech_id in self._model_speech_ids else command.speech_id)
+                await self._input_pipeline.assistant_playback(command, response_id=response_id)
                 await self._emit(progress)
             self._commands_by_idempotency_key[command.idempotency_key] = command
             return

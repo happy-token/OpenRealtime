@@ -16,6 +16,8 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.realtime.protocol.playback import ReplyPlayback, sentence_identity
+from server.realtime.scope import conversation_scope
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,12 +46,14 @@ class ReplyRevision:
     playback_started: bool = False
     completed: bool = False
     invalidation_reason: str | None = None
+    playback: ReplyPlayback | None = None
 
 
 class ReplyRevisionController:
     def __init__(self) -> None:
         self.input: InputRevision | None = None
         self.reply: ReplyRevision | None = None
+        self._reply_context: InteractionContext | None = None
         self._closed = False
         self._live_started = False
         self._history_sequence = 0
@@ -194,6 +198,7 @@ class ReplyRevisionController:
             current = None
         ancestor = (previous if current is not None and previous is not None
                     and previous.input_id == current.input_id else None)
+        self._reply_context = context
         self.reply = ReplyRevision(
             response_id=response_id, turn_id=context.turn_id, generation=context.generation,
             input_id=current.input_id if current is not None else None,
@@ -219,6 +224,45 @@ class ReplyRevisionController:
     def observe_playback(self, response_id: str) -> None:
         if not self._closed and self.reply is not None and self.reply.response_id == response_id:
             self.reply = replace(self.reply, playback_started=True)
+
+    def observe_playback_fact(self, response_id: str, context: InteractionContext, fact: ReplyPlayback) -> bool:
+        """Only the actor calls this mutation; observations cannot restore permission."""
+        reply, owner = self.reply, self._reply_context
+        if (self._closed or reply is None or owner is None or reply.response_id != response_id
+            or conversation_scope(context) != conversation_scope(owner)
+            or (context.turn_id, context.generation) != (reply.turn_id, reply.generation)
+            or context.response_id not in {owner.response_id, response_id}
+            or fact.speech_id not in {response_id, f"response:{response_id}"}):
+            return False
+        previous = reply.playback
+        if fact.current_sentence is not None and (previous is None or previous.current_sentence != fact.current_sentence):
+            if (previous is not None and previous.current_sentence is not None
+                and previous.current_sentence.sentence_id == fact.current_sentence.sentence_id):
+                raise ValueError("playback sentence identity was reused with different boundaries")
+            if fact.current_sentence.sentence_id != sentence_identity(
+                context, fact.speech_id, fact.current_sentence.text, fact.current_sentence.text_start,
+            ):
+                raise ValueError("playback sentence belongs to another output")
+        if previous is not None:
+            if (fact.observed_at_ns < previous.observed_at_ns and not fact.terminal
+                or fact.played_audio_end_us < previous.played_audio_end_us
+                or fact.confirmed_text_end < previous.confirmed_text_end
+                or previous.output_epoch is not None and fact.output_epoch not in {None, previous.output_epoch}):
+                return False
+            if previous.terminal:
+                # A late in-flight progress report may refine the heard frontier,
+                # but cannot change when this output first became terminal.
+                fact = replace(fact, terminal=True, current_sentence=None,
+                               observed_at_ns=previous.observed_at_ns)
+            if fact.output_epoch is None:
+                # An estimated/legacy receipt invalidates current-sentence certainty.
+                # Keep the attachment identity and monotonic heard frontier separately.
+                fact = replace(fact, output_epoch=previous.output_epoch, current_sentence=None)
+            if fact.played_audio_end_us == previous.played_audio_end_us and not fact.terminal:
+                fact = replace(fact, observed_at_ns=previous.observed_at_ns)
+        self.reply = replace(reply, playback=fact,
+            playback_started=reply.playback_started or fact.played_audio_end_us > 0)
+        return self.reply != reply
 
     def finish(self, response_id: str) -> None:
         if self.reply is not None and self.reply.response_id == response_id:

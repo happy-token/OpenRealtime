@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
@@ -27,6 +28,7 @@ from server.realtime.capabilities.turn_manager import (
     AsrCommitRequested,
     AsrDiscardRequested,
     ObserveAsrEvent,
+    ObserveAssistantPlayback,
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
     ObserveConversationItem,
@@ -44,6 +46,8 @@ from server.realtime.capabilities.vad import (
     VadSpeechStarted,
 )
 from server.realtime.protocol.audio import AudioFrame
+from server.realtime.protocol.commands import ReportPlaybackProgress
+from server.realtime.protocol.playback import ReplyPlayback
 
 if TYPE_CHECKING:
     from server.realtime.provider_latency import ProviderLatencyObserver
@@ -223,6 +227,16 @@ class CascadedInputPipeline:
         await self._turn_manager.send(
             ObserveAssistantSpokenText(context=context, text=text, playback_started=playback_started)
         )
+
+    async def assistant_playback(self, command: ReportPlaybackProgress, *, response_id: str) -> None:
+        await self._turn_manager.send(ObserveAssistantPlayback(
+            context=command.context, response_id=response_id,
+            fact=ReplyPlayback(output_epoch=command.output_epoch, speech_id=command.speech_id,
+                played_audio_end_us=command.played_audio_end_us, confirmed_text_end=command.delivered_text_end,
+                observed_at_ns=command.observed_at_ns or time.monotonic_ns(),
+                position_precision="sample" if command.output_epoch else "unknown",
+                current_sentence=command.current_sentence, terminal=command.completed or command.stopped),
+        ))
 
     async def assistant_yielded(self, *, context: InteractionContext) -> None:
         if self._closed:
