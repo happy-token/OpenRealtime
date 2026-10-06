@@ -368,3 +368,135 @@ def make_item(sequence: int, text: str):
         sequence=sequence,
         recorded_at=datetime.now(UTC),
     )
+
+
+def checkpoint_for(items, narrative="旧的已听摘要"):
+    return SummaryCheckpoint(checkpoint_id="heard-summary", narrative=narrative,
+        source_sequence_start=items[0].sequence, source_sequence_end=items[-1].sequence,
+        source_digest=digest_source_items(items), compressor_model="test", compressor_version="1",
+        prompt_version="1", compression_policy_version="heard-v1", input_tokens=0, output_tokens=0)
+
+
+def heard_projector(*, history_budget=900, trigger_ratio=.7, compressor=None):
+    validator = SummaryCheckpointValidator()
+    store = InMemorySummaryCheckpointStore(validator)
+    projector = BudgetedConversationContextProjector(
+        policy=ContextPolicy(policy_version="heard-v1", context_window_tokens=history_budget,
+            max_output_tokens=0, tool_schema_tokens=0, governing_instruction_tokens=0,
+            current_input_tokens=0, safety_margin_tokens=0, compression_trigger_ratio=trigger_ratio),
+        token_counter=ConservativeTokenCounter(), checkpoint_store=store,
+        checkpoint_validator=validator, compressor=compressor)
+    return projector, store
+
+
+async def test_updated_heard_content_invalidates_summary_without_changing_journal_digest():
+    from dataclasses import replace
+
+    source = make_item(1, "只听到第一句")
+    latest = replace(source, content=(TextContent("也听到了第二句"),))
+    projector, store = heard_projector()
+    store.publish(checkpoint_for((source,)), source_items=(source,))
+    assert latest.item_digest == source.item_digest
+    assert digest_source_items((latest,)) != digest_source_items((source,))
+    rendered = await projector.project_text((latest, make_item(2, "当前问题")))
+    assert "也听到了第二句" in rendered
+    assert "旧的已听摘要" not in rendered
+
+
+def test_recent_projection_digest_changes_with_actual_model_visibility_and_content():
+    from dataclasses import replace
+
+    from server.conversation_journal import ConversationVisibility
+
+    source = make_item(1, "第一句")
+    policy = ContextPolicy(policy_version="heard-v1", context_window_tokens=900,
+        max_output_tokens=0, tool_schema_tokens=0, governing_instruction_tokens=0,
+        current_input_tokens=0, safety_margin_tokens=0)
+    projector = ConversationProjector(policy=policy, token_counter=ConservativeTokenCounter(),
+        checkpoint_validator=SummaryCheckpointValidator())
+    original = projector.project(items=(source,), checkpoint=None)
+    changed = projector.project(items=(replace(source, content=(TextContent("第二句"),)),), checkpoint=None)
+    hidden = projector.project(items=(replace(source, visibility=frozenset({ConversationVisibility.USER})),), checkpoint=None)
+    relation = projector.project(items=(replace(source, provider_metadata={"input_relation": "unresolved"}),), checkpoint=None)
+    assert len({original.projection_digest, changed.projection_digest, hidden.projection_digest, relation.projection_digest}) == 4
+    assert source.item_digest == replace(source, content=(TextContent("第二句"),)).item_digest
+
+
+async def test_old_in_flight_compression_cannot_supply_a_new_heard_frontier():
+    import asyncio
+    from dataclasses import replace
+
+    class Model:
+        def __init__(self):
+            self.entered, self.release = asyncio.Event(), asyncio.Event()
+            self.requests = []
+
+        async def summarize(self, items):
+            self.requests.append(items)
+            if len(self.requests) == 1:
+                self.entered.set()
+                await self.release.wait()
+            return SummaryNarrative(narrative=items[0].content[0].text)
+
+    model = Model()
+    compressor = HybridContextCompressor(model=model, compressor_model="test", compressor_version="1",
+        prompt_version="1", compression_policy_version="heard-v1", token_counter=ConservativeTokenCounter())
+    projector, store = heard_projector(history_budget=80, trigger_ratio=.1, compressor=compressor)
+    source = tuple(make_item(i, "第一句" if i == 1 else "普通记录"*4) for i in range(1, 7))
+    latest = (replace(source[0], content=(TextContent("第二句已确认"),)), *source[1:])
+    store.publish(checkpoint_for(source[:4], "第一句"), source_items=source[:4])
+    task = None
+    try:
+        await projector.project_text(source)
+        await asyncio.wait_for(model.entered.wait(), .5)
+        task = asyncio.create_task(projector.project_text(latest))
+        await asyncio.sleep(0)
+        model.release.set()
+        rendered = await asyncio.wait_for(task, 1)
+        assert "第二句已确认" in rendered
+        assert "第一句" not in rendered
+        assert any(request[0].content[0].text == "第二句已确认" for request in model.requests)
+    finally:
+        model.release.set()
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        if projector._compression_task is not None:
+            await asyncio.gather(projector._compression_task, return_exceptions=True)
+
+
+async def test_hidden_superseded_records_keep_compression_source_contiguous_without_model_leak():
+    import asyncio
+    from dataclasses import replace
+
+    from server.conversation_journal import ConversationVisibility
+
+    requests = []
+
+    class Model:
+        async def summarize(self, items):
+            requests.append(items)
+            assert all(ConversationVisibility.MODEL in item.visibility for item in items)
+            assert not {"item-2", "item-3"} & {item.item_id for item in items}
+            return SummaryNarrative(narrative="可见历史摘要")
+
+    compressor = HybridContextCompressor(model=Model(), compressor_model="test", compressor_version="1",
+        prompt_version="1", compression_policy_version="heard-v1", token_counter=ConservativeTokenCounter())
+    projector, store = heard_projector(history_budget=120, compressor=compressor)
+    source = tuple(make_item(i, "需要保留的历史" * 4) for i in range(1, 21))
+    source = tuple(replace(item, visibility=item.visibility - {ConversationVisibility.MODEL},
+                          content=(TextContent("已经替换的秘密内容"),)) if item.sequence in {2, 3} else item
+                   for item in source)
+    try:
+        rendered = await projector.project_text(source)
+        assert "可见历史摘要" in rendered
+        assert "已经替换的秘密内容" not in rendered
+        assert requests
+        checkpoint = store.latest_valid("heard-v1")
+        assert checkpoint.source_sequence_start == 1
+        assert checkpoint.source_sequence_end > 3
+        covered = tuple(item for item in source if item.sequence <= checkpoint.source_sequence_end)
+        SummaryCheckpointValidator().validate(checkpoint, source_items=covered)
+        assert [item.sequence for item in covered] == list(range(1, checkpoint.source_sequence_end + 1))
+    finally:
+        if projector._compression_task is not None:
+            await asyncio.gather(projector._compression_task, return_exceptions=True)

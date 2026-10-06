@@ -10,6 +10,7 @@ import pytest
 
 from server.conversation_journal import (
     ConversationItemKind,
+    ConversationVisibility,
     InMemoryConversationJournal,
     JournalScope,
 )
@@ -228,7 +229,8 @@ async def test_final_association_reaches_journal_and_brain_without_extra_classif
             # delivery facts, never permanently deletes all assistants in a turn.
             rebuilt = await core._turn_from_projection(users[-1].sequence, generation=2)
             assert "北京今天晴。" in rebuilt.conversation_context
-        prior_ids = {item.item_id for item in core._prior_model_items(users[-1].sequence)}
+        prior_ids = {item.item_id for item in core._prior_model_items(users[-1].sequence)
+                     if ConversationVisibility.MODEL in item.visibility}
         if case == "unresolved":
             assert metadata["input_relation"] == "unresolved"
             assert metadata["related_turn_id"] == users[0].context.turn_id
@@ -246,6 +248,8 @@ async def test_final_association_reaches_journal_and_brain_without_extra_classif
             assert metadata["supersedes_unplayed_reply"] is not played_before_commit
             assert (old_assistant.item_id in prior_ids) is (played_before_commit or case in {
                 "played_after_correction_commit", "multi_reply_same_turn"})
+            if case == "correction_unplayed":
+                assert "北京今天晴。" not in (turn.conversation_context or "")
             if played_before_commit or case == "multi_reply_same_turn":
                 assert "北京今天晴。" in turn.conversation_context
         assert len(endpoint.requests) == (2 if case == "correction_played" or cancelled else 1)

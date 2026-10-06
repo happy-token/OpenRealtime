@@ -49,6 +49,7 @@ class TurnContent:
     voiceprint: VoiceprintResult | None = None
     conversation_context: str | None = None
     input_relation_unresolved: bool = False
+    context_projection_digest: str | None = None
 
     @property
     def model_text(self) -> str:

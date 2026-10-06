@@ -117,11 +117,32 @@ class SummaryCheckpoint:
             raise ValueError("Summary Checkpoint token counts must not be negative")
 
 
+def digest_projected_item(item: ConversationItem) -> str:
+    """Fingerprint model projection without rewriting the immutable Journal digest."""
+    payload = {
+        "projection_schema": 1,
+        "item_id": item.item_id,
+        "sequence": item.sequence,
+        "journal_digest": item.item_digest,
+        "kind": item.kind.value,
+        "status": item.status.value,
+        "visibility": sorted(value.value for value in item.visibility),
+        "content": [part.to_payload() for part in item.content],
+        "provider_metadata": item.provider_metadata,
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
 def digest_source_items(items: tuple[ConversationItem, ...]) -> str:
     digest = hashlib.sha256()
     for item in sorted(items, key=lambda candidate: candidate.sequence):
-        digest.update(f"{item.sequence}:{item.item_digest}\n".encode())
+        digest.update(f"{item.sequence}:{digest_projected_item(item)}\n".encode())
     return digest.hexdigest()
+
+
+class SummarySourceChangedError(ValueError):
+    """The checkpoint covered a different projection, not the current heard facts."""
 
 
 class SummaryCheckpointValidator:
@@ -136,9 +157,9 @@ class SummaryCheckpointValidator:
             range(checkpoint.source_sequence_start, checkpoint.source_sequence_end + 1)
         )
         if sequences != expected_sequences:
-            raise ValueError("Summary Checkpoint source range is incomplete")
+            raise SummarySourceChangedError("Summary Checkpoint source range is incomplete")
         if digest_source_items(source_items) != checkpoint.source_digest:
-            raise ValueError("Summary Checkpoint source digest does not match")
+            raise SummarySourceChangedError("Summary Checkpoint source digest does not match")
         source_ids = {item.item_id for item in source_items}
         unresolved_refs = set(checkpoint.active_work_refs) - source_ids
         if unresolved_refs:
@@ -251,7 +272,7 @@ class ConversationProjector:
                 f"{checkpoint.checkpoint_id}:{checkpoint.source_digest}\n".encode()
             )
         for item in recent_items:
-            digest.update(f"{item.sequence}:{item.item_digest}\n".encode())
+            digest.update(f"{item.sequence}:{digest_projected_item(item)}\n".encode())
         return ContextProjection(
             checkpoint=checkpoint,
             recent_items=recent_items,
@@ -513,7 +534,12 @@ class BudgetedConversationContextProjector:
             self._policy.policy_version
         )
         try:
-            projection = self._projector.project(items=items, checkpoint=checkpoint)
+            try:
+                projection = self._projector.project(items=items, checkpoint=checkpoint)
+            except SummarySourceChangedError:
+                # A once-valid summary is not valid for updated heard history.
+                # Reproject all current source; recompress below if it no longer fits.
+                projection = self._projector.project(items=items, checkpoint=None)
         except ValueError as error:
             if "does not fit" not in str(error) or self._compressor is None:
                 raise
@@ -551,7 +577,14 @@ class BudgetedConversationContextProjector:
         if self._compression_task is not None:
             task = self._compression_task
             self._compression_task = None
-            return await task
+            checkpoint = await task
+            try:
+                self._projector.project(items=items, checkpoint=checkpoint)
+            except ValueError as error:
+                if not isinstance(error, SummarySourceChangedError) and "does not fit" not in str(error):
+                    raise
+            else:
+                return checkpoint
         source = self._compression_source(items)
         if not source:
             raise ValueError("model-visible context cannot be compressed safely")

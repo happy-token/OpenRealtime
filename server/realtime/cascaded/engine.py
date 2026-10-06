@@ -133,6 +133,8 @@ from server.realtime.speech import (
 from server.voice_session.context import (
     FullConversationContextProjector,
     ModelContextProjector,
+    SummarySourceChangedError,
+    digest_source_items,
 )
 
 _CLOSED = object()
@@ -1096,56 +1098,61 @@ class CascadedRealtimeConversation:
             item.provider_metadata.get("continuation_of_turn_id")
             for item in self._projected_items.values() if item.sequence <= before_sequence
         }
-        return tuple(
-            self._projected_items[sequence]
-            for sequence in sorted(self._projected_items)
-            if sequence < before_sequence and not (
-                self._projected_items[sequence].context.turn_id in superseded_turns
-                and self._projected_items[sequence].kind is ConversationItemKind.USER_INPUT
-            ) and not (
-                # Assistant content has already been projected from delivery
-                # facts. A commit-time flag must not erase late confirmed speech.
-                self._projected_items[sequence].kind is ConversationItemKind.ASSISTANT_OUTPUT
-                and not self._projected_items[sequence].content
-            )
-        )
+        items = []
+        for sequence in sorted(self._projected_items):
+            if sequence >= before_sequence:
+                continue
+            item = self._projected_items[sequence]
+            if ((item.context.turn_id in superseded_turns and item.kind is ConversationItemKind.USER_INPUT)
+                or item.kind is ConversationItemKind.ASSISTANT_OUTPUT and not item.content):
+                # Keep contiguous source identities for validated compression,
+                # while omitting superseded/empty content from the model view.
+                item = replace(item, visibility=item.visibility - {ConversationVisibility.MODEL})
+            items.append(item)
+        return tuple(items)
 
-    async def _turn_for_prefetch(self, text: str, generation: int) -> TurnContent:
-        items = self._prior_model_items(max(self._projected_items, default=0) + 1)
-        return TurnContent(text=text, generation=generation,
-            conversation_context=await self._context_projector.project_text(items))
-
-    async def _turn_from_projection(
-        self,
-        minimum_thread_sequence: int,
-        *,
-        generation: int,
-    ) -> TurnContent:
+    def _response_projection_snapshot(self, minimum_thread_sequence: int) -> tuple[tuple[ConversationItem, ...], ConversationItem]:
         for sequence in range(minimum_thread_sequence, 0, -1):
             item = self._projected_items.get(sequence)
-            if (
-                item is None
-                or item.kind
-                not in {
-                    ConversationItemKind.USER_INPUT,
-                    ConversationItemKind.TOOL_RESULT,
-                    ConversationItemKind.DELEGATION_RESULT,
-                }
-                or ConversationVisibility.MODEL not in item.visibility
-            ):
-                continue
-            text = "\n".join(part.text for part in item.content if isinstance(part, TextContent))
-            if text:
-                prior_items = self._prior_model_items(sequence)
-                return TurnContent(
-                    text=text,
-                    generation=generation,
-                    input_relation_unresolved=item.provider_metadata.get("input_relation") == "unresolved",
-                    conversation_context=await self._context_projector.project_text(
-                        prior_items
-                    ),
-                )
+            if (item is not None and item.kind in {ConversationItemKind.USER_INPUT,
+                ConversationItemKind.TOOL_RESULT, ConversationItemKind.DELEGATION_RESULT}
+                and ConversationVisibility.MODEL in item.visibility
+                and any(isinstance(part, TextContent) and part.text for part in item.content)):
+                return self._prior_model_items(sequence), item
         raise ValueError("projected context has no model-visible text input")
+
+    async def _project_stable_context(self, snapshot: Callable[[], tuple[tuple[ConversationItem, ...], ConversationItem | None]]) -> tuple[str | None, str, ConversationItem | None]:
+        for _ in range(3):
+            items, current = snapshot()
+            source = (*items, current) if current is not None else items
+            source_digest = digest_source_items(source)
+            try:
+                projected = await self._context_projector.project_text(items)
+            except SummarySourceChangedError:
+                latest, latest_current = snapshot()
+                if digest_source_items((*latest, latest_current) if latest_current is not None else latest) != source_digest:
+                    continue
+                raise
+            latest, latest_current = snapshot()
+            if digest_source_items((*latest, latest_current) if latest_current is not None else latest) == source_digest:
+                # The speculative key covers only prior context. The current
+                # input already has text/relation keys and does not exist in
+                # Journal until commit; including it would make every hit miss.
+                return projected, digest_source_items(items), current
+        raise ContextVisibilityError("model-visible playback context changed during projection; retry budget exhausted")
+
+    async def _turn_for_prefetch(self, text: str, generation: int) -> TurnContent:
+        context, digest, _ = await self._project_stable_context(lambda: (
+            self._prior_model_items(max(self._projected_items, default=0) + 1), None))
+        return TurnContent(text=text, generation=generation,
+            conversation_context=context, context_projection_digest=digest)
+
+    async def _turn_from_projection(self, minimum_thread_sequence: int, *, generation: int) -> TurnContent:
+        context, digest, item = await self._project_stable_context(lambda: self._response_projection_snapshot(minimum_thread_sequence))
+        assert item is not None
+        return TurnContent(text="\n".join(part.text for part in item.content if isinstance(part, TextContent)),
+            generation=generation, input_relation_unresolved=item.provider_metadata.get("input_relation") == "unresolved",
+            conversation_context=context, context_projection_digest=digest)
 
     async def _start_response(self, command: RequestResponse, turn: TurnContent, *, ready: asyncio.Event) -> None:
         self._response_admitted_by_id[command.response_id].set()
@@ -1156,6 +1163,13 @@ class CascadedRealtimeConversation:
         try:
             async with deadline:
                 await ready.wait()
+                if not self._input_pipeline.response_delivery_allowed(command.response_id):
+                    raise asyncio.CancelledError
+                items, source_item = self._response_projection_snapshot(command.minimum_thread_sequence)
+                if (digest_source_items(items) != turn.context_projection_digest
+                    or "\n".join(part.text for part in source_item.content if isinstance(part, TextContent)) != turn.text
+                    or (source_item.provider_metadata.get("input_relation") == "unresolved") != turn.input_relation_unresolved):
+                    turn = await self._turn_from_projection(command.minimum_thread_sequence, generation=command.context.generation)
                 if not self._input_pipeline.response_delivery_allowed(command.response_id):
                     raise asyncio.CancelledError
                 brain_requested = True

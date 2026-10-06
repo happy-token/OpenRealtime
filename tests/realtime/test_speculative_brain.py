@@ -21,7 +21,8 @@ class EmptyOnceBrain:
         yield "重试后的有效回复"
 
 
-async def test_association_hint_change_misses_text_cache():
+@pytest.mark.parametrize("changed", ["association", "projection"])
+async def test_changed_model_input_misses_text_cache(changed):
     class EchoBrain:
         def __init__(self):
             self.turns = []
@@ -35,7 +36,8 @@ async def test_association_hint_change_misses_text_cache():
     original = TurnContent(text="上海呢", generation=2, conversation_context="北京晴")
     await brain.prepare(original)
     await brain._state.task
-    revised = replace(original, input_relation_unresolved=True)
+    revised = replace(original, **({"input_relation_unresolved": True} if changed == "association"
+                                 else {"context_projection_digest": "updated-heard-frontier"}))
     assert [delta async for delta in brain.stream(revised)] == [revised.model_text]
     assert provider.turns == [original, revised]
 

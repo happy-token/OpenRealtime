@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.coordinated_turn_manager import (
     CoordinatedTurnManagerCapabilityAdapter,
@@ -156,7 +158,9 @@ async def test_interruption_chunks_never_prepare_a_reply():
         await session.close()
 
 
-async def test_engine_prefetch_uses_same_journal_context_as_final_response():
+@pytest.mark.parametrize("cache", ["text", "text_audio"])
+@pytest.mark.parametrize("projection", ["full", "budgeted"])
+async def test_engine_prefetch_uses_same_journal_context_as_final_response(cache, projection):
     from server.conversation_journal import (
         ConversationItemDraft,
         ConversationItemKind,
@@ -172,6 +176,15 @@ async def test_engine_prefetch_uses_same_journal_context_as_final_response():
         ResponseCompleted,
     )
     from server.realtime.capabilities.speculative_brain import SpeculativeStreamingBrain
+    from server.realtime.capabilities.speculative_speech import SpeculativeSpeechPipeline
+    from server.voice_session.context import (
+        BudgetedConversationContextProjector,
+        ConservativeTokenCounter,
+        ContextPolicy,
+        FullConversationContextProjector,
+        InMemorySummaryCheckpointStore,
+        SummaryCheckpointValidator,
+    )
     from tests.realtime import test_cascaded_engine as fixtures
 
     class Brain:
@@ -183,7 +196,17 @@ async def test_engine_prefetch_uses_same_journal_context_as_final_response():
             yield "上海是一座城市。"
 
     provider = Brain()
-    brain = SpeculativeStreamingBrain(provider)
+    tts = fixtures.EchoDuplexTts()
+    brain = (SpeculativeSpeechPipeline(brain=provider, tts=tts) if cache == "text_audio"
+             else SpeculativeStreamingBrain(provider))
+    validator = SummaryCheckpointValidator()
+    projector = (FullConversationContextProjector() if projection == "full" else
+        BudgetedConversationContextProjector(policy=ContextPolicy(
+            policy_version="test", context_window_tokens=1000, max_output_tokens=20,
+            tool_schema_tokens=0, governing_instruction_tokens=0, current_input_tokens=20,
+            safety_margin_tokens=20), token_counter=ConservativeTokenCounter(),
+            checkpoint_store=InMemorySummaryCheckpointStore(validator),
+            checkpoint_validator=validator, compressor=None))
     ctx = fixtures.context()
     core = await fixtures.CascadedRealtimeEngine(
         vad=fixtures.LegacyVadCapabilityAdapter(
@@ -197,7 +220,8 @@ async def test_engine_prefetch_uses_same_journal_context_as_final_response():
         ),
         brain=fixtures.LegacyBrainCapabilityAdapter(brain),
         speech_renderer=fixtures.DeterministicSpeechRenderer(),
-        tts=fixtures.LegacyTtsCapabilityAdapter(fixtures.EchoDuplexTts()),
+        tts=fixtures.LegacyTtsCapabilityAdapter(brain if cache == "text_audio" else tts),
+        context_projector_factory=lambda: projector,
     ).open(context=ctx, profile=None)
     conversation = JournaledRealtimeConversation(
         context=ctx, journal=InMemoryConversationJournal(), engine_conversation=core
@@ -240,6 +264,8 @@ async def test_engine_prefetch_uses_same_journal_context_as_final_response():
                     break
         assert len(provider.turns) == 1
         assert provider.turns[0].conversation_context == turn.conversation_context
+        formal = await core._turn_from_projection(2, generation=ctx.generation)
+        assert formal.context_projection_digest == turn.context_projection_digest
     finally:
         await events.aclose()
         await conversation.close()

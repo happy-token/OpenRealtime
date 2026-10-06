@@ -43,7 +43,8 @@ class GatedDuplexTts:
         return None
 
 
-async def test_association_hint_change_misses_text_and_audio_cache():
+@pytest.mark.parametrize("changed", ["association", "projection"])
+async def test_changed_model_input_misses_text_and_audio_cache(changed):
     class EchoBrain:
         def __init__(self):
             self.turns = []
@@ -57,7 +58,8 @@ async def test_association_hint_change_misses_text_and_audio_cache():
     original = TurnContent(text="上海呢", generation=2, conversation_context="北京晴")
     await pipeline.prepare(original)
     await asyncio.wait_for(tts.audio_buffered.wait(), .5)
-    revised = replace(original, input_relation_unresolved=True)
+    revised = replace(original, **({"input_relation_unresolved": True} if changed == "association"
+                                 else {"context_projection_digest": "updated-heard-frontier"}))
     text = [delta async for delta in pipeline.stream(revised)]
     assert text == [revised.model_text]
 

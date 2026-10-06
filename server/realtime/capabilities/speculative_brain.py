@@ -190,6 +190,7 @@ def _same_turn(left: TurnContent, right: TurnContent) -> bool:
         left.generation == right.generation
         and same_asr_utterance(left.text, right.text)
         and left.conversation_context == right.conversation_context
+        and left.context_projection_digest == right.context_projection_digest
         and left.input_relation_unresolved == right.input_relation_unresolved
         and left.vision_text == right.vision_text
         and left.audio == right.audio
