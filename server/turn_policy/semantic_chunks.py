@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import heapq
 import re
 import unicodedata
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from itertools import islice
 
@@ -12,22 +14,45 @@ _BOUNDARIES = frozenset("，,；;。？！?!\n")
 _UNITS = re.compile(r"[\u3400-\u9fff]|[A-Za-z]+(?:'[A-Za-z]+)?|\d+(?:\.\d+)?|[^\s\w]", re.UNICODE)
 
 
-def _is_boundary(text: str, index: int) -> bool:
-    character = text[index]
-    if character in _BOUNDARIES:
-        return True
-    if character != ".":
-        return False
-    if (
-        index > 0
-        and index + 1 < len(text)
-        and text[index - 1].isalnum()
-        and text[index + 1].isalnum()
-    ):
-        return False  # Decimal numbers and domain names.
-    # A URL can contain periods within its path; its trailing period is ambiguous.
-    word = text[: index + 1].split()[-1] if text[: index + 1].split() else ""
-    return "://" not in word
+def _boundary_candidates(text: str) -> Iterator[tuple[int, int]]:
+    """Yield (earliest suffix start, position) without scanning any prefix twice."""
+    scheme_start = -1
+    for index, character in enumerate(text):
+        if character.isspace():
+            scheme_start = -1
+        if character == "/" and index >= 2 and text[index - 2 : index + 1] == "://":
+            scheme_start = index - 2
+        if character in _BOUNDARIES:
+            yield 0, index
+        elif character == ".":
+            if (
+                index > 0
+                and index + 1 < len(text)
+                and text[index - 1].isalnum()
+                and text[index + 1].isalnum()
+            ):
+                # A decimal/domain dot becomes punctuation only if a cut starts at it.
+                yield index, index
+            else:
+                # A cut after the colon removes the complete :// from this word.
+                yield scheme_start + 1 if scheme_start >= 0 else 0, index
+
+
+class _BoundaryIndex:
+    """Monotone suffix queries preserve URL/decimal rules with bounded total work."""
+
+    def __init__(self, text: str) -> None:
+        self._pending = list(_boundary_candidates(text))
+        heapq.heapify(self._pending)
+        self._eligible: list[int] = []
+
+    def next(self, cursor: int) -> int | None:
+        while self._pending and self._pending[0][0] <= cursor:
+            _, position = heapq.heappop(self._pending)
+            heapq.heappush(self._eligible, position)
+        while self._eligible and self._eligible[0] < cursor:
+            heapq.heappop(self._eligible)
+        return self._eligible[0] + 1 if self._eligible else None
 
 
 def semantic_text(text: str) -> str:
@@ -140,9 +165,12 @@ class SemanticChunkBuffer:
     def pending_boundary(self) -> str | None:
         consumed = self._chunks[-1].semantic_end if self._chunks else 0
         count = 0
+        boundaries = {
+            position for activation, position in _boundary_candidates(self._text) if activation == 0
+        }
         for index, character in enumerate(self._text):
             count += len(semantic_text(character))
-            if count > consumed and _is_boundary(self._text, index):
+            if count > consumed and index in boundaries:
                 return semantic_text(self._text[: index + 1])
         return None
 
@@ -171,40 +199,35 @@ class SemanticChunkBuffer:
         while cursor < len(text) and not semantic_text(text[cursor]):
             cursor += 1
         emitted = []
-        boundary_checked = False
-        boundary = None
-        # Cutting a URL/domain can change how a period is interpreted in the new suffix.
-        # Keep those exact legacy rules; other punctuation is independent of the cut.
-        suffix_sensitive = "." in text
+        boundaries = _BoundaryIndex(text)
         while cursor < len(text):
-            remainder = text[cursor:]
-            if not boundary_checked:
-                boundary = next(
-                    (i + 1 for i in range(len(remainder)) if _is_boundary(remainder, i)), None
-                )
-                boundary_checked = True
+            boundary = boundaries.next(cursor)
             if boundary is not None and (stable or force):
                 end, trigger = boundary, "punctuation"
             elif boundary is not None and not force:
                 break  # Tentative punctuation waits for the stability callback.
             else:
-                units = list(islice(
-                    (match for match in _UNITS.finditer(remainder) if semantic_text(match.group())),
-                    65 if force else self.character_limit,
-                ))
+                units = list(
+                    islice(
+                        (
+                            match
+                            for match in _UNITS.finditer(text, cursor)
+                            if semantic_text(match.group())
+                        ),
+                        65 if force else self.character_limit,
+                    )
+                )
                 if force:
                     if len(units) > 64:
                         end, trigger = units[63].end(), "upper_bound"
                     else:
-                        end, trigger = len(remainder), "speech_stop"
+                        end, trigger = len(text), "speech_stop"
                 elif len(units) >= self.character_limit:
                     end, trigger = units[self.character_limit - 1].end(), "character_threshold"
                 else:
                     break
-            chunk_text = remainder[:end]
-            cursor += end
-            if boundary is not None or suffix_sensitive:
-                boundary_checked = False
+            chunk_text = text[cursor:end]
+            cursor = end
             chunk_semantic = semantic_text(chunk_text)
             if not chunk_semantic:
                 continue

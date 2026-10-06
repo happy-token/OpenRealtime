@@ -50,3 +50,5 @@ SemanticChunkScheduler维护有界inflight映射，产品装配默认2，局部A
 ## 输入证据与预算补强
 
 2026-10-06继续：逻辑输入的文本字节、revision、候选历史、绝对时长和证据总字节设预算，超额取消分类/预生成并进入明确会话关闭出口。完整拒绝证据durable确认后才能清理ASR；缺失不可伪装已保存。候选与ASR修订可从独立Journal scope回读。边界、突发暂态和测试限制见[输入证据报告](../reports/2026-10-06-input-evidence-and-resource-budgets.md)。真实G1与ASCII句点特殊扫描上界仍开放。
+
+2026-10-07已补[句点边界索引与尾串复制](../reports/2026-10-07-semantic-boundary-index.md)，保留切块后URL/小数规则，边界扫描O(N)、堆操作O(P log P)。这是单次构建CPU补强，不替代共享槽位公平性、真实语义准确率或G1配对实验。
