@@ -80,6 +80,7 @@ from server.realtime.protocol.commands import (
     InterruptedContextPolicy,
     ProjectCommittedItem,
     RealtimeCommand,
+    RecordOutputStop,
     ReportPlaybackProgress,
     RequestResponse,
     SpeechContextPolicy,
@@ -419,6 +420,10 @@ class CascadedRealtimeConversation:
                     command.speech_id,
                     context=command.context,
                 )
+            self._commands_by_idempotency_key[command.idempotency_key] = command
+            return
+        if isinstance(command, RecordOutputStop):
+            await self._speech_lifecycle.record_output_stop(command.fact)
             self._commands_by_idempotency_key[command.idempotency_key] = command
             return
         if isinstance(command, ReportPlaybackProgress):

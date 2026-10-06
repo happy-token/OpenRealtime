@@ -1,7 +1,7 @@
 """Provider-neutral, stateful realtime conversation contract."""
 
-from server.realtime.control_plane import RealtimeTurnController
 from server.realtime.confirmation_controller import RealtimeConfirmationController
+from server.realtime.control_plane import RealtimeTurnController
 from server.realtime.delegation_controller import RealtimeDelegationController
 from server.realtime.errors import ContextVisibilityError
 from server.realtime.in_memory import InMemoryRealtimeConversation
@@ -39,6 +39,7 @@ from server.realtime.protocol import (
     ItemDeliveryStarted,
     ItemDisplayPresented,
     ItemProjected,
+    OutputStopFact,
     PlaybackPrecision,
     ProjectCommittedItem,
     RealtimeCapabilityFailed,
@@ -46,6 +47,7 @@ from server.realtime.protocol import (
     RealtimeConversation,
     RealtimeEngine,
     RealtimeEvent,
+    RecordOutputStop,
     ReportPlaybackProgress,
     RequestResponse,
     ResponseCancelled,
@@ -58,9 +60,9 @@ from server.realtime.protocol import (
     SpeechCancelled,
     SpeechContextPolicy,
     SpeechPlaybackProgress,
-    SpeechTextAlignment,
     SpeechStarted,
     SpeechTextAccepted,
+    SpeechTextAlignment,
     SpeechTextCommitted,
     SpokenContent,
     SpokenContentDelta,
@@ -119,6 +121,7 @@ __all__ = [
     "ItemProjected",
     "JournaledRealtimeConversation",
     "ManagedRealtimeConversation",
+    "OutputStopFact",
     "PlaybackPrecision",
     "ProfileFailureRecovery",
     "ProjectCommittedItem",
@@ -133,6 +136,7 @@ __all__ = [
     "RealtimeRuntimeFactory",
     "RealtimeToolController",
     "RealtimeTurnController",
+    "RecordOutputStop",
     "ReportPlaybackProgress",
     "RequestResponse",
     "ResponseCancelled",
@@ -145,9 +149,9 @@ __all__ = [
     "SpeechCancelled",
     "SpeechContextPolicy",
     "SpeechPlaybackProgress",
-    "SpeechTextAlignment",
     "SpeechStarted",
     "SpeechTextAccepted",
+    "SpeechTextAlignment",
     "SpeechTextCommitted",
     "SpokenContent",
     "SpokenContentDelta",

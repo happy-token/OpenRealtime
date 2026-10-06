@@ -65,7 +65,7 @@ class Transport:
         self.frames.append(frame)
 
 
-async def open_core(*, brain=None, tts=None):
+async def open_core(*, brain=None, tts=None, speech_deliveries=None, interaction_context=None):
     return await CascadedRealtimeEngine(
         vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig())),
         asr=LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
@@ -73,7 +73,8 @@ async def open_core(*, brain=None, tts=None):
         brain=LegacyBrainCapabilityAdapter(brain or GatedStreamingBrain()),
         speech_renderer=DeterministicSpeechRenderer(),
         tts=LegacyTtsCapabilityAdapter(tts or EchoDuplexTts()),
-    ).open(context=context(), profile=None)
+        speech_deliveries=speech_deliveries,
+    ).open(context=interaction_context or context(), profile=None)
 
 
 async def append_user(conversation, *, spoken=None):

@@ -27,6 +27,7 @@ from server.realtime.protocol import (
     RealtimeCommand,
     RealtimeConversation,
     RealtimeEvent,
+    RecordOutputStop,
     ResponseCancelled,
     ResponseCompleted,
     ResponseFailed,
@@ -79,6 +80,10 @@ class RealtimeToolController:
             raise RuntimeError("realtime tool controller is closed")
         if conversation_scope(command.context) != conversation_scope(self._context):
             raise ValueError("command belongs to a different realtime conversation scope")
+        if isinstance(command, RecordOutputStop):
+            # Saving a fenced fact does not mutate tool or actor control state.
+            await self._conversation.send(command)
+            return
         async with self._send_lock:
             await self._conversation.send(command)
 

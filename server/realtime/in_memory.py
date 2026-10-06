@@ -20,6 +20,7 @@ from server.realtime.protocol.commands import (
     DeliveryMode,
     ProjectCommittedItem,
     RealtimeCommand,
+    RecordOutputStop,
     ReportPlaybackProgress,
     RequestResponse,
     StartSpeech,
@@ -82,6 +83,10 @@ class InMemoryRealtimeConversation:
         if previous is not None:
             if previous != command:
                 raise ValueError("idempotency key was reused with different command content")
+            return
+        if isinstance(command, RecordOutputStop):
+            await self._speech_lifecycle.record_output_stop(command.fact)
+            self._commands_by_idempotency_key[command.idempotency_key] = command
             return
         if isinstance(command, StartSpeech):
             await self._emit(

@@ -30,6 +30,7 @@ from server.realtime.protocol.commands import (
     DeliveryMode,
     ProjectCommittedItem,
     RealtimeCommand,
+    RecordOutputStop,
     RequestResponse,
     StartSpeech,
 )
@@ -53,10 +54,12 @@ from server.realtime.protocol.events import (
 )
 from server.realtime.recovery import ProfileFailureRecovery, RealtimeFailureRecovery
 from server.realtime.registry import ActiveRealtimeConversations
+from server.realtime.scope import conversation_scope
 from server.realtime.speech import (
     SpeechDeliveryStore,
     project_assistant_context,
 )
+from server.realtime.speech.lifecycle import SpeechLifecycle
 from server.realtime.tool_controller import RealtimeToolController
 from server.tools.control import ToolControlHandler
 
@@ -225,9 +228,10 @@ class RealtimeRuntimeFactory:
 class ManagedRealtimeConversation:
     """Stable public handle around a replaceable stateful engine session.
 
-    Reconfiguration is a barrier: public sends are serialized, active output is
+    Reconfiguration is a barrier: actor commands are serialized, active output is
     cancelled, the old capability sessions are closed, and the Journal is
-    replayed before the replacement accepts commands.
+    replayed before the replacement accepts commands. App-owned immutable stop
+    facts use the shared store independently and retain shutdown ownership.
     """
 
     def __init__(
@@ -247,11 +251,14 @@ class ManagedRealtimeConversation:
         self._conversation = conversation
         self._replayed_item_ids = replayed_item_ids
         self._factory = factory
+        self._stop_lifecycle = SpeechLifecycle(factory._speech_deliveries) if factory._speech_deliveries is not None else None
         self._failure_recovery = failure_recovery
         self._active_conversations = active_conversations
         self._observer = observer
         self._events: asyncio.Queue[RealtimeEvent | object] = asyncio.Queue()
         self._send_lock = asyncio.Lock()
+        self._stop_fact_writes: set[asyncio.Task[None]] = set()
+        self._close_completed = False
         self._active_response_ids: set[str] = set()
         self._active_speech_ids: set[str] = set()
         self._outputs_quiet = asyncio.Event()
@@ -262,6 +269,19 @@ class ManagedRealtimeConversation:
         self._event_pump = self._start_event_pump(conversation)
 
     async def send(self, command: RealtimeCommand) -> None:
+        if isinstance(command, RecordOutputStop) and self._stop_lifecycle is not None:
+            # App-owned immutable facts survive replacement of the actor delegate.
+            # The shared store fences transitions; these writes do not own actor state.
+            if self._closed:
+                raise RuntimeError("managed realtime conversation is closed")
+            if conversation_scope(command.context) != conversation_scope(self._context):
+                raise ValueError("command belongs to a different realtime conversation scope")
+            write = asyncio.create_task(self._stop_lifecycle.record_output_stop(command.fact),
+                                        name=f"managed-stop-fact:{command.fact.stop_command_id}:{command.fact.state}")
+            self._stop_fact_writes.add(write)
+            write.add_done_callback(self._stop_fact_write_done)
+            await write
+            return
         async with self._send_lock:
             if self._closed:
                 raise RuntimeError("managed realtime conversation is closed")
@@ -278,6 +298,29 @@ class ManagedRealtimeConversation:
                     self._observer.observe_command(command)
                 except Exception:
                     logger.exception("Realtime command diagnostics projection failed")
+
+    def _stop_fact_write_done(self, task: asyncio.Task[None]) -> None:
+        self._stop_fact_writes.discard(task)
+        if self._close_completed and not self._stop_fact_writes:
+            self._active_conversations.unregister(context=self._context, conversation=self)
+
+    def _finish_close_ownership(self) -> None:
+        self._close_completed = True
+        if any(not task.done() for task in self._stop_fact_writes):
+            self._active_conversations.suspend(context=self._context, conversation=self)
+        else:
+            self._active_conversations.unregister(context=self._context, conversation=self)
+
+    async def _settle_stop_fact_writes(self) -> None:
+        writes = tuple(self._stop_fact_writes)
+        for write in writes:
+            write.cancel()
+        if writes:
+            _, pending = await asyncio.wait(writes, timeout=0.25)
+            if pending:
+                # A storage adapter may not cancel promptly. Keep its session
+                # reserved against deletion until the final write settles.
+                logger.warning("Stop fact writes remain owned during shutdown: %s", len(pending))
 
     async def reconfigure(self, *, profile) -> None:
         """Replace all stateful capability sessions behind one atomic barrier."""
@@ -306,11 +349,11 @@ class ManagedRealtimeConversation:
                     )
                 except Exception as rollback_error:  # noqa: BLE001 - preserve both failures
                     self._closed = True
-                    self._active_conversations.unregister(
-                        context=self._context,
-                        conversation=self,
-                    )
-                    await self._events.put(_CLOSED)
+                    try:
+                        await self._settle_stop_fact_writes()
+                    finally:
+                        self._finish_close_ownership()
+                        await self._events.put(_CLOSED)
                     raise ExceptionGroup(
                         "Realtime reconfiguration and rollback both failed",
                         [reconfiguration_error, rollback_error],
@@ -508,6 +551,7 @@ class ManagedRealtimeConversation:
                 return
             self._closed = True
             try:
+                await self._settle_stop_fact_writes()
                 recovery_task = self._recovery_task
                 current_task = asyncio.current_task()
                 if (
@@ -520,8 +564,5 @@ class ManagedRealtimeConversation:
                 await self._conversation.close()
                 await self._event_pump
             finally:
-                self._active_conversations.unregister(
-                    context=self._context,
-                    conversation=self,
-                )
+                self._finish_close_ownership()
                 await self._events.put(_CLOSED)

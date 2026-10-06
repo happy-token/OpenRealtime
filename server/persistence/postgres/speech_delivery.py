@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,16 +13,95 @@ from server.persistence.postgres._connection import connection_scope
 from server.persistence.postgres.schema import validate_schema_name
 from server.realtime.protocol.commands import (
     InterruptedContextPolicy,
+    OutputStopFact,
     PlaybackPrecision,
     SpeechContextPolicy,
 )
+from server.realtime.scope import conversation_scope
 from server.realtime.speech import SpeechDeliveryRecord, SpeechDeliveryStatus
+from server.realtime.speech.delivery import (
+    transition_output_stop_fact,
+    validate_output_stop_deletion_scope,
+)
 
 
 class PostgresSpeechDeliveryStore:
     def __init__(self, executor: Any, *, schema: str = "voiceagent") -> None:
         self._executor = executor
         self._table = f'"{validate_schema_name(schema)}".speech_delivery_records'
+        self._stops = f'"{validate_schema_name(schema)}".speech_output_stop_records'
+
+    @property
+    def output_stop_durable(self) -> bool:
+        return True
+
+    async def record_output_stop(self, fact: OutputStopFact) -> OutputStopFact:
+        key = (*conversation_scope(fact.context), fact.stop_command_id)
+        async with connection_scope(self._executor) as connection, connection.transaction():
+            row = await connection.fetchrow(
+                f"""INSERT INTO {self._stops}
+                    (tenant_id, user_id, device_id, voice_session_id, thread_id, stop_command_id,
+                     state, payload, revision)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 1)
+                    ON CONFLICT (tenant_id, user_id, device_id, voice_session_id, thread_id, stop_command_id)
+                    DO NOTHING RETURNING *""",
+                *key,
+                fact.state,
+                _stop_json(fact),
+            )
+            if row is not None:
+                return _stop_fact(row)
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self._stops} WHERE {_STOP_SCOPE_SQL} FOR UPDATE", *key
+            )
+            if row is None:
+                raise RuntimeError("stop operation disappeared after conflicting insert")
+            current = _stop_fact(row)
+            candidate = transition_output_stop_fact(current, fact)
+            if candidate is current:
+                return current
+            updated = await connection.fetchrow(
+                f"""UPDATE {self._stops} SET state = $7, payload = $8::jsonb, revision = revision + 1
+                    WHERE {_STOP_SCOPE_SQL} AND revision = $9 RETURNING *""",
+                *key,
+                candidate.state,
+                _stop_json(candidate),
+                row["revision"],
+            )
+            if updated is None:
+                raise RuntimeError("stop operation revision changed during locked transition")
+            return _stop_fact(updated)
+
+    async def get_output_stop(
+        self, context: InteractionContext, stop_command_id: str
+    ) -> OutputStopFact | None:
+        if not stop_command_id:
+            raise ValueError("stop operation identity must be non-empty")
+        async with connection_scope(self._executor) as connection:
+            row = await connection.fetchrow(
+                f"SELECT * FROM {self._stops} WHERE {_STOP_SCOPE_SQL}",
+                *conversation_scope(context),
+                stop_command_id,
+            )
+        return _stop_fact(row) if row is not None else None
+
+    async def delete_output_stop_facts(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        voice_session_id: str,
+    ) -> int:
+        scope = (tenant_id, user_id, thread_id, voice_session_id)
+        validate_output_stop_deletion_scope(scope)
+        async with connection_scope(self._executor) as connection:
+            deleted = await connection.fetch(
+                f"DELETE FROM {self._stops} WHERE tenant_id = $1 AND user_id = $2 "
+                "AND thread_id = $3 AND voice_session_id = $4 RETURNING stop_command_id",
+                *scope,
+            )
+        return len(deleted)
 
     async def start(self, record: SpeechDeliveryRecord) -> SpeechDeliveryRecord:
         now = datetime.now(UTC)
@@ -122,11 +201,7 @@ class PostgresSpeechDeliveryStore:
                 delivered_speech_transcript=record.intended_spoken_content[:delivered_text_end],
                 played_audio_end_us=played_audio_end_us,
                 precision=precision,
-                status=(
-                    SpeechDeliveryStatus.COMPLETED
-                    if completed
-                    else record.status
-                ),
+                status=(SpeechDeliveryStatus.COMPLETED if completed else record.status),
             )
 
         return await self._mutate(speech_id, transition)
@@ -241,9 +316,7 @@ class PostgresSpeechDeliveryStore:
             context=InteractionContext(**context),
             source_item_id=row["source_item_id"],
             context_policy=SpeechContextPolicy(row["context_policy"]),
-            interrupted_context_policy=InterruptedContextPolicy(
-                row["interrupted_context_policy"]
-            ),
+            interrupted_context_policy=InterruptedContextPolicy(row["interrupted_context_policy"]),
             intended_spoken_content=row["intended_spoken_content"],
             delivered_speech_transcript=row["delivered_speech_transcript"],
             played_audio_end_us=row["played_audio_end_us"],
@@ -287,10 +360,7 @@ def _same_identity(left: SpeechDeliveryRecord, right: SpeechDeliveryRecord) -> b
 
 
 def _context_payload(context: InteractionContext) -> dict[str, object]:
-    return {
-        field: getattr(context, field)
-        for field in InteractionContext.__dataclass_fields__
-    }
+    return {field: getattr(context, field) for field in InteractionContext.__dataclass_fields__}
 
 
 def _decoded_json(value: Any) -> dict[str, Any]:
@@ -302,3 +372,44 @@ def _decoded_json(value: Any) -> dict[str, Any]:
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+_STOP_SCOPE_SQL = (
+    "tenant_id = $1 AND user_id = $2 AND device_id = $3 "
+    "AND voice_session_id = $4 AND thread_id = $5 AND stop_command_id = $6"
+)
+
+
+def _stop_json(fact: OutputStopFact) -> str:
+    payload = asdict(fact)
+    for key in ("requested_at", "observed_at", "received_at"):
+        value = payload[key]
+        payload[key] = value.isoformat() if value is not None else None
+    return _json(payload)
+
+
+def _stop_fact(row: Mapping[str, Any]) -> OutputStopFact:
+    payload = dict(_decoded_json(row["payload"]))
+    payload["context"] = InteractionContext(**payload["context"])
+    for key in ("requested_at", "observed_at", "received_at"):
+        value = payload[key]
+        payload[key] = datetime.fromisoformat(value) if value is not None else None
+    fact = OutputStopFact(**payload)
+    storage_key = (*conversation_scope(fact.context), fact.stop_command_id)
+    if (
+        storage_key
+        != tuple(
+            row[name]
+            for name in (
+                "tenant_id",
+                "user_id",
+                "device_id",
+                "voice_session_id",
+                "thread_id",
+                "stop_command_id",
+            )
+        )
+        or fact.state != row["state"]
+    ):
+        raise ValueError("persisted stop fact does not match its storage identity")
+    return fact

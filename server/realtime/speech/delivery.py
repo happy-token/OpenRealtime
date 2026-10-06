@@ -6,14 +6,16 @@ import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, TypedDict, Unpack
 
 from server.core.interaction_context import InteractionContext
 from server.realtime.protocol.commands import (
     InterruptedContextPolicy,
+    OutputStopFact,
     PlaybackPrecision,
     SpeechContextPolicy,
 )
+from server.realtime.scope import conversation_scope
 
 
 class SpeechDeliveryStatus(StrEnum):
@@ -26,6 +28,16 @@ class SpeechDeliveryStatus(StrEnum):
     @property
     def terminal(self) -> bool:
         return self is not SpeechDeliveryStatus.ACTIVE
+
+
+class _DeliveryChanges(TypedDict, total=False):
+    intended_spoken_content: str
+    delivered_speech_transcript: str
+    played_audio_end_us: int
+    status: SpeechDeliveryStatus
+    precision: PlaybackPrecision
+    text_committed: bool
+    reason: str
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -59,6 +71,24 @@ class SpeechDeliveryRecord:
 
 
 class SpeechDeliveryStore(Protocol):
+    @property
+    def output_stop_durable(self) -> bool: ...
+
+    async def record_output_stop(self, fact: OutputStopFact) -> OutputStopFact: ...
+
+    async def get_output_stop(
+        self, context: InteractionContext, stop_command_id: str
+    ) -> OutputStopFact | None: ...
+
+    async def delete_output_stop_facts(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        voice_session_id: str,
+    ) -> int: ...
+
     async def start(self, record: SpeechDeliveryRecord) -> SpeechDeliveryRecord: ...
 
     async def append_text(self, speech_id: str, delta: str) -> SpeechDeliveryRecord: ...
@@ -90,6 +120,43 @@ class InMemorySpeechDeliveryStore:
     def __init__(self) -> None:
         self._records: dict[str, SpeechDeliveryRecord] = {}
         self._lock = asyncio.Lock()
+        self._output_stops: dict[tuple[str, ...], OutputStopFact] = {}
+
+    @property
+    def output_stop_durable(self) -> bool:
+        return False
+
+    async def record_output_stop(self, fact: OutputStopFact) -> OutputStopFact:
+        key = (*conversation_scope(fact.context), fact.stop_command_id)
+        async with self._lock:
+            existing = self._output_stops.get(key)
+            saved = transition_output_stop_fact(existing, fact)
+            self._output_stops[key] = saved
+            return saved
+
+    async def get_output_stop(
+        self, context: InteractionContext, stop_command_id: str
+    ) -> OutputStopFact | None:
+        if not stop_command_id:
+            raise ValueError("stop operation identity must be non-empty")
+        async with self._lock:
+            return self._output_stops.get((*conversation_scope(context), stop_command_id))
+
+    async def delete_output_stop_facts(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        voice_session_id: str,
+    ) -> int:
+        scope = (tenant_id, user_id, thread_id, voice_session_id)
+        validate_output_stop_deletion_scope(scope)
+        async with self._lock:
+            keys = [key for key in self._output_stops if (key[0], key[1], key[4], key[3]) == scope]
+            for key in keys:
+                del self._output_stops[key]
+            return len(keys)
 
     async def start(self, record: SpeechDeliveryRecord) -> SpeechDeliveryRecord:
         async with self._lock:
@@ -156,16 +223,10 @@ class InMemorySpeechDeliveryStore:
                 raise ValueError("completed playback must include all committed speech text")
             return self._save(
                 record,
-                delivered_speech_transcript=record.intended_spoken_content[
-                    :delivered_text_end
-                ],
+                delivered_speech_transcript=record.intended_spoken_content[:delivered_text_end],
                 played_audio_end_us=played_audio_end_us,
                 precision=precision,
-                status=(
-                    SpeechDeliveryStatus.COMPLETED
-                    if completed
-                    else record.status
-                ),
+                status=(SpeechDeliveryStatus.COMPLETED if completed else record.status),
             )
 
     async def cancel(self, speech_id: str, *, reason: str) -> SpeechDeliveryRecord:
@@ -210,9 +271,7 @@ class InMemorySpeechDeliveryStore:
             raise ValueError("Conversation Item identity must be non-empty")
         async with self._lock:
             matches = (
-                record
-                for record in self._records.values()
-                if record.source_item_id == item_id
+                record for record in self._records.values() if record.source_item_id == item_id
             )
             return max(matches, key=lambda record: record.updated_at, default=None)
 
@@ -224,7 +283,9 @@ class InMemorySpeechDeliveryStore:
             raise ValueError("speech delivery is already terminal")
         return record
 
-    def _save(self, record: SpeechDeliveryRecord, **changes: object) -> SpeechDeliveryRecord:
+    def _save(
+        self, record: SpeechDeliveryRecord, **changes: Unpack[_DeliveryChanges]
+    ) -> SpeechDeliveryRecord:
         updated = replace(
             record,
             **changes,
@@ -252,3 +313,49 @@ def _same_delivery_identity(
         right.context_policy,
         right.interrupted_context_policy,
     )
+
+
+def transition_output_stop_fact(
+    current: OutputStopFact | None, candidate: OutputStopFact
+) -> OutputStopFact:
+    """Preserve first terminal evidence and fence every operation's immutable target."""
+    if current is None:
+        return candidate
+    if (
+        current.context,
+        current.stop_command_id,
+        current.output_epoch,
+        current.speech_id,
+        current.reason,
+        current.requested_at,
+    ) != (
+        candidate.context,
+        candidate.stop_command_id,
+        candidate.output_epoch,
+        candidate.speech_id,
+        candidate.reason,
+        candidate.requested_at,
+    ):
+        raise ValueError("stop operation identity was reused with different content")
+    if candidate.state == "STOP_REQUESTED":
+        return current
+    if current.state == "STOP_REQUESTED":
+        return candidate
+    if (
+        current.state,
+        current.receipt_outcome,
+        current.played_position_samples,
+        current.failure_reason,
+    ) != (
+        candidate.state,
+        candidate.receipt_outcome,
+        candidate.played_position_samples,
+        candidate.failure_reason,
+    ):
+        raise ValueError("terminal stop evidence cannot be rewritten")
+    return current
+
+
+def validate_output_stop_deletion_scope(scope: tuple[str, str, str, str]) -> None:
+    if any(not isinstance(value, str) or not value for value in scope):
+        raise ValueError("stop fact deletion requires a complete session scope")

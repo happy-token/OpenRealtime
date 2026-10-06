@@ -11,6 +11,10 @@ from server.realtime.protocol.engine import RealtimeConversation
 from server.realtime.scope import conversation_scope
 
 
+class SessionHistoryDeletionConflict(ValueError):
+    """A live owner or an in-flight purge still owns the selected session."""
+
+
 @dataclass(frozen=True, slots=True)
 class ActiveRealtimeConversation:
     context: InteractionContext
@@ -23,6 +27,7 @@ class ActiveRealtimeConversations:
 
     def __init__(self) -> None:
         self._entries: dict[tuple[str, str, str, str, str], ActiveRealtimeConversation] = {}
+        self._deleting_sessions: set[tuple[str, str, str]] = set()
         self._deleting_threads: set[tuple[str, str, str]] = set()
 
     def register(
@@ -32,7 +37,8 @@ class ActiveRealtimeConversations:
         conversation: RealtimeConversation,
     ) -> None:
         scope = conversation_scope(context)
-        if (context.tenant_id, context.user_id, context.thread_id) in self._deleting_threads:
+        if ((context.tenant_id, context.user_id, context.thread_id) in self._deleting_threads
+            or (context.tenant_id, context.user_id, context.voice_session_id) in self._deleting_sessions):
             raise RuntimeError("conversation history is being deleted; retry opening the session")
         if scope in self._entries:
             raise ValueError("a Realtime Conversation is already active for this scope")
@@ -65,6 +71,20 @@ class ActiveRealtimeConversations:
             yield frozenset(reserved)
         finally:
             self._deleting_threads.difference_update(reserved)
+
+    @contextmanager
+    def session_deletion_guard(self, scopes: Sequence[tuple[str, str, str]]) -> Iterator[None]:
+        """Reserve idle session identities, including suspended owners, locally."""
+        selected = set(scopes)
+        active = {(entry.context.tenant_id, entry.context.user_id, entry.context.voice_session_id)
+                  for entry in self._entries.values()}
+        if selected & (active | self._deleting_sessions):
+            raise SessionHistoryDeletionConflict("active realtime session cannot be deleted; close it first")
+        self._deleting_sessions.update(selected)
+        try:
+            yield
+        finally:
+            self._deleting_sessions.difference_update(selected)
 
     def suspend(
         self,

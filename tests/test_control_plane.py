@@ -763,3 +763,30 @@ async def test_input_evidence_pagination_and_invalid_requests() -> None:
         assert (await asyncio.to_thread(_get, base.replace("voice-replay", "bad%2Fscope")))[0] == 400
     finally:
         await asyncio.to_thread(server.shutdown)
+
+
+async def test_batch_delete_maps_runtime_owner_conflict_to_409_without_leaking_details():
+    from server.realtime.registry import SessionHistoryDeletionConflict
+    async def delete_history(ids):
+        raise SessionHistoryDeletionConflict("internal owner identifiers")
+    server = control_plane_http.start(EndpointSessionRegistry(), session_history_deleter=delete_history, port=0)
+    try:
+        status, body = await asyncio.to_thread(_delete,
+            f"http://127.0.0.1:{server.server_address[1]}/observability/sessions", {"session_ids": ["voice"]})
+        assert status == 409
+        assert body == {"error": "active sessions cannot be deleted"}
+    finally:
+        server.shutdown()
+
+
+async def test_batch_delete_keeps_storage_validation_failure_as_500():
+    async def delete_history(ids):
+        raise ValueError("database password must not be exposed")
+    server = control_plane_http.start(EndpointSessionRegistry(), session_history_deleter=delete_history, port=0)
+    try:
+        status, body = await asyncio.to_thread(_delete,
+            f"http://127.0.0.1:{server.server_address[1]}/observability/sessions", {"session_ids": ["voice"]})
+        assert status == 500
+        assert body == {"error": "control-plane request failed"}
+    finally:
+        server.shutdown()

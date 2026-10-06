@@ -188,7 +188,7 @@ async def test_runtime_deletes_session_telemetry_and_conversation_history() -> N
         ["voice-delete"], tenant_id="local", user_id="user"
     )
 
-    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1, "deleted_evidence_threads": 1}
+    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1, "deleted_evidence_threads": 1, "deleted_output_stop_facts": 0}
     assert await runtime.journal.read(input_evidence_scope(context)) == ()
     assert not await runtime.debug_log_query.session_timeline("voice-delete")
     assert len(await runtime.debug_log_query.session_timeline("voice-keep")) == 1
@@ -339,4 +339,96 @@ async def test_thread_deletion_excludes_interleaved_registration_and_releases_gu
         release.set()
         await asyncio.gather(deleting, return_exceptions=True)
         runtime.active_realtime_conversations.unregister(context=resumed, conversation=conversation)
+        await runtime.close()
+
+
+async def test_delete_session_removes_only_its_stop_facts_for_resolved_identity():
+    from dataclasses import replace
+
+    from tests.realtime.test_output_stop_storage import requested
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    fact = requested()
+    resumed = replace(fact, context=replace(fact.context, voice_session_id="resumed"))
+    try:
+        for item in (fact, resumed):
+            await runtime.speech_deliveries.record_output_stop(item)
+            ctx = item.context
+            runtime.telemetry.bind(TelemetryIdentity(ctx.tenant_id, ctx.user_id, ctx.device_id,
+                                  ctx.voice_session_id, ctx.thread_id)).record("test")
+        result = await runtime.delete_session_history([fact.context.voice_session_id],
+                                                      tenant_id="admin-tenant", user_id="admin-user")
+        assert result["deleted_output_stop_facts"] == 1
+        assert await runtime.speech_deliveries.get_output_stop(fact.context, fact.stop_command_id) is None
+        assert await runtime.speech_deliveries.get_output_stop(resumed.context, resumed.stop_command_id) == resumed
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("suspended", [False, True])
+async def test_active_session_cannot_be_purged_while_it_may_still_write_stop_facts(suspended):
+    from tests.realtime.test_output_stop_storage import requested
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    fact = requested()
+    class Conversation:
+        pass
+    owner = Conversation()
+    runtime.active_realtime_conversations.register(context=fact.context, conversation=owner)
+    if suspended:
+        runtime.active_realtime_conversations.suspend(context=fact.context, conversation=owner)
+    try:
+        await runtime.speech_deliveries.record_output_stop(fact)
+        ctx = fact.context
+        runtime.telemetry.bind(TelemetryIdentity(ctx.tenant_id, ctx.user_id, ctx.device_id,
+                              ctx.voice_session_id, ctx.thread_id)).record("test")
+        with pytest.raises(ValueError, match="active realtime session"):
+            await runtime.delete_session_history([ctx.voice_session_id], tenant_id=ctx.tenant_id, user_id=ctx.user_id)
+        assert await runtime.speech_deliveries.get_output_stop(ctx, fact.stop_command_id) == fact
+        assert await runtime.diagnostics.session_detail(ctx.voice_session_id) is not None
+    finally:
+        runtime.active_realtime_conversations.unregister(context=fact.context, conversation=owner)
+        await runtime.close()
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_shared_thread_session_purge_blocks_registration_only_for_selected_session(monkeypatch, fail):
+    from dataclasses import replace
+
+    from tests.realtime.test_output_stop_storage import requested
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    fact = requested()  # Thread and session differ, so the thread guard cannot mask this test.
+    ctx = fact.context
+    entered, release = asyncio.Event(), asyncio.Event()
+    original_delete = runtime.debug_log.delete_sessions
+    async def paused_delete(ids):
+        entered.set()
+        await release.wait()
+        if fail:
+            raise RuntimeError("injected failure")
+        return await original_delete(ids)
+    monkeypatch.setattr(runtime.debug_log, "delete_sessions", paused_delete)
+    runtime.telemetry.bind(TelemetryIdentity(ctx.tenant_id, ctx.user_id, ctx.device_id,
+                          ctx.voice_session_id, ctx.thread_id)).record("test")
+    deleting = asyncio.create_task(runtime.delete_session_history([ctx.voice_session_id],
+                                  tenant_id=ctx.tenant_id, user_id=ctx.user_id))
+    class Conversation:
+        pass
+    owner = Conversation()
+    other = replace(ctx, voice_session_id="resumed")
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        with pytest.raises(RuntimeError, match="being deleted"):
+            runtime.active_realtime_conversations.register(context=replace(ctx, device_id="other"), conversation=owner)
+        runtime.active_realtime_conversations.register(context=other, conversation=owner)
+        release.set()
+        if fail:
+            with pytest.raises(RuntimeError, match="injected"):
+                await deleting
+        else:
+            await deleting
+        runtime.active_realtime_conversations.register(context=ctx, conversation=owner)
+    finally:
+        release.set()
+        await asyncio.gather(deleting, return_exceptions=True)
+        for target in (ctx, other):
+            runtime.active_realtime_conversations.unregister(context=target, conversation=owner)
         await runtime.close()

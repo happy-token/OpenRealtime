@@ -117,7 +117,7 @@ def _record_output_stop(telemetry: SessionTelemetry, event: OutputStopObservatio
     if event.phase == "handoff_failed":
         if event.reason == "session_closed":
             outcome = TelemetryOutcome.CANCELLED
-        elif event.reason in {"receipt_deadline", "playback_projection_deadline"}:
+        elif event.reason in {"receipt_deadline", "playback_projection_deadline", "stop_fact_persistence_deadline"}:
             outcome = TelemetryOutcome.TIMEOUT
         else:
             outcome = TelemetryOutcome.ERROR

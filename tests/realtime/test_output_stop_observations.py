@@ -13,7 +13,7 @@ from server.observability.telemetry import (
     RuntimeTelemetry,
     TelemetryIdentity,
 )
-from server.realtime import AssistantYieldRequested
+from server.realtime import AssistantYieldRequested, RecordOutputStop
 from server.realtime.transport import RealtimeWebSocketFrameBridge
 from server.realtime.transport.output_stop import OutputStopObservation
 from server.voice_session.protocol import OutputStopResult
@@ -200,6 +200,9 @@ async def test_observer_failure_cannot_change_stop_permission_or_audio_delivery(
 async def test_projection_deadline_preserves_queue_fact_without_successful_handoff():
     class BlockedProjection(RecordingConversation):
         async def send(self, command):
+            if isinstance(command, RecordOutputStop):
+                await super().send(command)
+                return
             await asyncio.Event().wait()
 
     store = InMemoryTelemetryStore()

@@ -40,6 +40,7 @@ from server.observability.telemetry import (
     DiagnosticsQuery,
     DiagnosticsWindow,
 )
+from server.realtime.registry import SessionHistoryDeletionConflict
 from server.speech import provider_contract_probe
 
 logger = logging.getLogger(__name__)
@@ -508,6 +509,8 @@ def _build_handler(
         def do_DELETE(self) -> None:
             try:
                 self._do_delete()
+            except SessionHistoryDeletionConflict:
+                self._write_json(409, {"error": "active sessions cannot be deleted"})
             except FutureTimeoutError:
                 logger.warning("control-plane request timed out: path=%s", self.path)
                 self._write_json(504, {"error": "control-plane request timed out"})

@@ -189,7 +189,7 @@ export const CORE_LATENCY_METRICS = [
 ] as const;
 export const METRIC_DESCRIPTIONS: Record<string, string> = {
   "playback.stop_request_to_receipt": "发送精确停播命令 → 收到匹配的本地音频队列停播回执，包含网络往返；不能证明扬声器已经物理静音。仅统计成功回执。",
-  "playback.stop_receipt_to_handoff": "收到本地停播回执 → 服务端播放事实投影完成并允许交接。仅统计成功交接。",
+  "playback.stop_receipt_to_handoff": "收到本地停播回执 → 停播证据保存、服务端播放事实投影完成并允许交接，包含写入等待。仅统计成功交接。",
   "playback.stop_request_to_handoff": "发送停播命令 → 服务端允许交接，包含回执延迟和投影等待；与子阶段重叠，不应重复相加。超时、未知和取消不计入成功耗时。",
 
   "jev.eot.slot_wait": "判停调用开始获取 JEV 并发槽位 → 获得槽位；不包含候选文本块在单飞队列中的等待。",

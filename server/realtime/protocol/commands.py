@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from server.conversation_journal import ConversationItem, ConversationItemDraft, JournalScope
 from server.core.interaction_context import InteractionContext
@@ -144,6 +146,87 @@ class ReportPlaybackProgress:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class OutputStopFact:
+    """Server-matched local queue evidence; never a physical speaker guarantee."""
+
+    context: InteractionContext
+    stop_command_id: str
+    output_epoch: str
+    speech_id: str
+    state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"]
+    reason: str
+    requested_at: datetime
+    observed_at: datetime
+    received_at: datetime | None = None
+    receipt_outcome: Literal["queue_stopped", "unknown", "stale"] | None = None
+    played_position_samples: int | None = None
+    failure_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if any(
+            not isinstance(value, str) or not value
+            for value in (self.stop_command_id, self.output_epoch, self.speech_id, self.reason)
+        ):
+            raise ValueError("stop fact identity and reason must be non-empty")
+        if type(self.context.generation) is not int or self.context.generation < 0:
+            raise ValueError("stop fact generation must be a non-negative integer")
+        if any(
+            not isinstance(value, datetime) or value.tzinfo is None
+            for value in (self.requested_at, self.observed_at)
+        ):
+            raise ValueError("stop fact timestamps must be timezone-aware")
+        if self.received_at is not None and (
+            not isinstance(self.received_at, datetime) or self.received_at.tzinfo is None
+        ):
+            raise ValueError("stop receipt timestamp must be timezone-aware")
+        if self.state == "STOP_REQUESTED":
+            if any(
+                value is not None
+                for value in (
+                    self.received_at,
+                    self.receipt_outcome,
+                    self.played_position_samples,
+                    self.failure_reason,
+                )
+            ):
+                raise ValueError("requested stop cannot contain a receipt or failure")
+        elif self.state == "STOP_CONFIRMED":
+            if (
+                self.receipt_outcome != "queue_stopped"
+                or self.received_at is None
+                or type(self.played_position_samples) is not int
+                or self.played_position_samples < 0
+                or self.failure_reason is not None
+            ):
+                raise ValueError("confirmed stop requires matching local queue receipt")
+        elif self.state == "STOP_UNKNOWN":
+            if (
+                not isinstance(self.failure_reason, str)
+                or not self.failure_reason
+                or self.played_position_samples is not None
+                or self.receipt_outcome not in (None, "unknown", "stale")
+                or (self.received_at is None) != (self.receipt_outcome is None)
+            ):
+                raise ValueError("unknown stop cannot claim confirmed queue position")
+        else:
+            raise ValueError("invalid stop fact state")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RecordOutputStop:
+    command_id: str
+    idempotency_key: str
+    context: InteractionContext
+    fact: OutputStopFact
+
+    def __post_init__(self) -> None:
+        if not self.command_id or not self.idempotency_key:
+            raise ValueError("stop recording command identity must be non-empty")
+        if self.context != self.fact.context:
+            raise ValueError("stop recording context must match original output")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class AppendItem:
     """Append a semantic item through the Journal-first control plane."""
 
@@ -249,6 +332,7 @@ RealtimeCommand = (
     | CommitSpeech
     | CancelSpeech
     | ReportPlaybackProgress
+    | RecordOutputStop
     | AppendItem
     | ProjectCommittedItem
     | DeliverItem

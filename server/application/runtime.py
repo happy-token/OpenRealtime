@@ -290,7 +290,12 @@ class ApplicationRuntime:
         )
         candidates = tuple((scope.tenant_id, scope.user_id, scope.thread_id)
                            for scope, session_id in zip(resolved, selected) if scope.thread_id == session_id)
-        with self.active_realtime_conversations.thread_deletion_guard(candidates) as reserved:
+        sessions = tuple((scope.tenant_id, scope.user_id, session_id)
+                         for scope, session_id in zip(resolved, selected))
+        with (
+            self.active_realtime_conversations.session_deletion_guard(sessions),
+            self.active_realtime_conversations.thread_deletion_guard(candidates) as reserved,
+        ):
             scopes = tuple(scope for scope in resolved if (scope.tenant_id, scope.user_id, scope.thread_id) in reserved)
             if self._pool is not None:
                 await self.debug_log.flush()
@@ -301,17 +306,31 @@ class ApplicationRuntime:
                     await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
                     deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_session_owned_threads(scopes, selected)
                     deleted_evidence_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(evidence_scopes)
+                    stop_store = PostgresSpeechDeliveryStore(connection, schema=self._postgres_schema)
+                    deleted_output_stop_facts = sum([
+                        await stop_store.delete_output_stop_facts(
+                            tenant_id=scope.tenant_id, user_id=scope.user_id,
+                            thread_id=scope.thread_id, voice_session_id=session_id)
+                        for scope, session_id in zip(resolved, selected)
+                    ])
                     deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
-                return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads}
+                return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads, "deleted_output_stop_facts": deleted_output_stop_facts}
             await self.debug_log.delete_sessions(selected)
             deleted_threads = await journal.delete_session_owned_threads(scopes, selected) if isinstance(journal, SessionOwnedHistoryRetention) else 0
             deleted_evidence_threads = await journal.delete_threads(evidence_scopes)
+            deleted_output_stop_facts = sum([
+                await self.speech_deliveries.delete_output_stop_facts(
+                    tenant_id=scope.tenant_id, user_id=scope.user_id,
+                    thread_id=scope.thread_id, voice_session_id=session_id)
+                for scope, session_id in zip(resolved, selected)
+            ])
             deleted_sessions = await self.telemetry.delete_sessions(selected)
             return {
                 "requested": len(selected),
                 "deleted_sessions": deleted_sessions,
                 "deleted_threads": deleted_threads,
                 "deleted_evidence_threads": deleted_evidence_threads,
+                "deleted_output_stop_facts": deleted_output_stop_facts,
             }
 
     async def close(self) -> None:

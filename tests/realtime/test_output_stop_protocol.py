@@ -12,6 +12,8 @@ from server.realtime import (
     AudioDelta,
     AudioEncoding,
     AudioFrame,
+    RecordOutputStop,
+    ReportPlaybackProgress,
     ResponseCompleted,
     ResponseStarted,
     SpeechAudioDelta,
@@ -111,7 +113,7 @@ async def test_unknown_stop_never_releases_new_audio_or_claims_stopped():
     await bridge.handle_inbound(result.model_copy(update={"outcome": "unknown", "played_position_samples": None}))
     await asyncio.wait_for(sending, .1)
     assert bridge.output_stop_snapshot()[0].state == "STOP_UNKNOWN"
-    assert not conversation.commands
+    assert not any(isinstance(command, ReportPlaybackProgress) for command in conversation.commands)
     assert not any(getattr(frame, "speech_id", None) == "response:next" for frame in transport.frames)
     await bridge.close()
 
@@ -122,7 +124,7 @@ async def test_late_confirmation_cannot_reopen_a_failed_stop_gate():
     await bridge.handle_inbound(result)
     await bridge.handle_event(audio_event("next", 2))
     assert bridge.output_stop_snapshot()[0].state == "STOP_UNKNOWN"
-    assert not conversation.commands
+    assert not any(isinstance(command, ReportPlaybackProgress) for command in conversation.commands)
     assert not any(getattr(frame, "speech_id", None) == "response:next" for frame in transport.frames)
     await bridge.close()
 
@@ -174,6 +176,9 @@ async def test_observed_stop_keeps_fact_but_cannot_release_audio_after_projectio
             self.entered, self.release = asyncio.Event(), asyncio.Event()
 
         async def send(self, command):
+            if isinstance(command, RecordOutputStop):
+                await super().send(command)
+                return
             self.entered.set()
             await self.release.wait()
             await super().send(command)
@@ -228,6 +233,9 @@ async def test_cancelled_projection_preserves_observed_stop_and_settles_audio_wa
     class SlowProjection(RecordingConversation):
         entered = asyncio.Event()
         async def send(self, command):
+            if isinstance(command, RecordOutputStop):
+                await super().send(command)
+                return
             self.entered.set()
             await asyncio.Event().wait()
 

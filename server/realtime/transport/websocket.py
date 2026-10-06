@@ -32,9 +32,11 @@ from server.realtime.protocol import (
     InputTranscriptCompleted,
     InputTranscriptDelta,
     ItemProjected,
+    OutputStopFact,
     PlaybackPrecision,
     RealtimeConversation,
     RealtimeEvent,
+    RecordOutputStop,
     ReportPlaybackProgress,
     RequestResponse,
     ResponseCancelled,
@@ -88,6 +90,12 @@ logger = logging.getLogger(__name__)
 _OUTPUT_FAILURE_IO_TIMEOUT_S = .25
 
 
+class _OutputStopFactError(RuntimeError):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 @dataclass(frozen=True, slots=True)
 class OutputStopSnapshot:
     request: AssistantSpeechCancelledFrame
@@ -106,6 +114,9 @@ class _OutputStop:
     received_ns: int | None = None
     receipt_outcome: Literal["queue_stopped", "unknown", "stale"] | None = None
     played_position_samples: int | None = None
+    failed_at: datetime | None = None
+    fact_tasks: dict[str, asyncio.Task[None]] = field(default_factory=dict)
+    projection_stage: str = "storage"
     state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"] = "STOP_REQUESTED"
     reason: str | None = None
     deadline: asyncio.TimerHandle | None = None
@@ -163,6 +174,7 @@ class RealtimeWebSocketFrameBridge:
         self._stop_output_failed = False
         self._closed = False
         self._output_failure = asyncio.Event()
+        self._stop_fact_tasks: set[asyncio.Task[None]] = set()
         self._failure_notification_started = False
         self._locally_cancelled_speech: set[str] = set()
         self._conversation = conversation
@@ -684,6 +696,13 @@ class RealtimeWebSocketFrameBridge:
         self._stop_by_target[key] = request.stop_command_id
         stop.deadline = loop.call_later(self._output_stop_timeout_s, self._expire_output_stop, stop)
         self._observe_output_stop(stop, "requested")
+        if stop.target_context is None:
+            self._fail_stop_handoff(stop, "stop_target_identity_missing")
+            await self._notify_stop_failure("stop_target_identity_missing")
+            return
+        # Write concurrently with immediate wire cancellation; no storage await
+        # precedes stop delivery. Handoff later joins this bounded write.
+        self._ensure_stop_fact_write(stop, "STOP_REQUESTED")
         try:
             await asyncio.wait_for(self._send_frame(request), timeout=self._output_stop_timeout_s)
         except asyncio.CancelledError:
@@ -724,12 +743,83 @@ class RealtimeWebSocketFrameBridge:
             stop.state = "STOP_UNKNOWN"
         if stop.reason is None:
             stop.reason = reason
+            stop.failed_at = datetime.now(UTC)
         self._stop_output_failed = True
+        if stop.target_context is not None:
+            self._ensure_stop_fact_write(stop, stop.state)
         if stop.deadline is not None:
             stop.deadline.cancel()
         if not stop.ready.done():
             stop.ready.set_result(False)
             self._observe_output_stop(stop, "handoff_failed")
+
+    def _ensure_stop_fact_write(self, stop: _OutputStop, state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"]) -> asyncio.Task[None]:
+        existing = stop.fact_tasks.get(state)
+        if existing is not None:
+            return existing
+        assert stop.target_context is not None
+        request = stop.request
+        assert request.stop_command_id and request.output_epoch and request.speech_id
+        fact = OutputStopFact(context=stop.target_context, stop_command_id=request.stop_command_id,
+            output_epoch=request.output_epoch, speech_id=request.speech_id, state=state,
+            reason=request.reason, requested_at=stop.requested_at,
+            observed_at=(stop.requested_at if state == "STOP_REQUESTED" else
+                         stop.received_at if state == "STOP_CONFIRMED" else stop.failed_at) or stop.requested_at,
+            received_at=stop.received_at if state != "STOP_REQUESTED" else None,
+            receipt_outcome=stop.receipt_outcome if state != "STOP_REQUESTED" else None,
+            played_position_samples=stop.played_position_samples if state == "STOP_CONFIRMED" else None,
+            failure_reason=stop.reason if state == "STOP_UNKNOWN" else None)
+        task = asyncio.create_task(self._record_stop_fact(fact), name=f"output-stop-fact:{request.stop_command_id}:{state}")
+        stop.fact_tasks[state] = task
+        self._stop_fact_tasks.add(task)
+        task.add_done_callback(lambda done: self._stop_fact_done(stop, done))
+        return task
+
+    async def _record_stop_fact(self, fact: OutputStopFact) -> None:
+        identity = f"stop-fact:{fact.stop_command_id}:{fact.state}"
+        try:
+            await asyncio.wait_for(self._conversation.send(RecordOutputStop(
+                command_id=identity, idempotency_key=identity, context=fact.context, fact=fact)),
+                timeout=self._output_stop_timeout_s)
+        except TimeoutError as error:
+            raise _OutputStopFactError("stop_fact_persistence_deadline") from error
+        except Exception as error:
+            raise _OutputStopFactError("stop_fact_persistence_failed") from error
+
+    def _stop_fact_done(self, stop: _OutputStop, task: asyncio.Task[None]) -> None:
+        self._stop_fact_tasks.discard(task)
+        error = None if task.cancelled() else task.exception()
+        if error is not None:
+            logger.warning("Output stop fact was not saved: %s", error)
+        if self._closed or (error is None and not task.cancelled()):
+            return
+        reason = error.reason if isinstance(error, _OutputStopFactError) else "stop_fact_persistence_cancelled"
+        self._fail_stop_handoff(stop, reason)
+        self._schedule_stop_failure(reason)
+
+    async def _complete_stop_projection(self, stop: _OutputStop, result: OutputStopResult) -> None:
+        confirmed = self._ensure_stop_fact_write(stop, "STOP_CONFIRMED")
+        requested = stop.fact_tasks.get("STOP_REQUESTED")
+        if requested is None:
+            raise _OutputStopFactError("stop_target_identity_missing")
+        if not await self._join_stop_fact_write(requested):
+            return
+        if not await self._join_stop_fact_write(confirmed):
+            return
+        stop.projection_stage = "playback"
+        assert result.played_position_samples is not None
+        await self._report_playback_v2(PlaybackProgressV2(
+            output_epoch=result.output_epoch, speech_id=result.speech_id, generation=result.generation,
+            phase="stopped", played_position_samples=result.played_position_samples))
+
+    async def _join_stop_fact_write(self, task: asyncio.Task[None]) -> bool:
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if self._closed and task.cancelled():
+                return False  # The close owner cancelled this write, not this caller.
+            raise
+        return True
 
     def _observe_output_stop(self, stop: _OutputStop, phase: Literal["requested", "receipt", "handoff_ready", "handoff_failed"]) -> None:
         if self._diagnostic_observer is None:
@@ -762,8 +852,10 @@ class RealtimeWebSocketFrameBridge:
             # One failure notice may cross the closed latch; ordinary frames
             # all use _send_frame and cannot start another send after closure.
             await asyncio.wait_for(self._transport.send(VoiceSessionFailureFrame(
-                code="output_stop_unconfirmed", phase="output", retryable=True,
-                session_disposition="close", safe_message="无法确认音频已经停止，请重新打开页面后开始会话。")),
+                code="output_stop_evidence_unavailable" if reason.startswith("stop_fact_") else "output_stop_unconfirmed",
+                phase="output", retryable=True, session_disposition="close",
+                safe_message=("无法保存停播证据，请重新打开页面后开始会话。" if reason.startswith("stop_fact_")
+                              else "无法确认音频已经停止，请重新打开页面后开始会话。"))),
                 timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
         except Exception:
             logger.warning("Stop failure could not reach client: %s", reason, exc_info=True)
@@ -815,18 +907,22 @@ class RealtimeWebSocketFrameBridge:
             stop.deadline.cancel()
         assert result.played_position_samples is not None
         try:
-            await asyncio.wait_for(self._report_playback_v2(PlaybackProgressV2(
-                output_epoch=result.output_epoch, speech_id=result.speech_id, generation=result.generation,
-                phase="stopped", played_position_samples=result.played_position_samples)),
+            await asyncio.wait_for(self._complete_stop_projection(stop, result),
                 timeout=self._output_stop_timeout_s)
         except asyncio.CancelledError:
             self._fail_stop_handoff(stop, "playback_projection_cancelled")
             if not self._closed:
                 self._schedule_stop_failure("playback_projection_cancelled")
             raise
+        except _OutputStopFactError as error:
+            self._fail_stop_handoff(stop, error.reason)
+            await self._notify_stop_failure(error.reason)
+            raise
         except TimeoutError:
-            self._fail_stop_handoff(stop, "playback_projection_deadline")
-            await self._notify_stop_failure("playback_projection_deadline")
+            reason = ("stop_fact_persistence_deadline" if stop.projection_stage == "storage"
+                      else "playback_projection_deadline")
+            self._fail_stop_handoff(stop, reason)
+            await self._notify_stop_failure(reason)
             raise
         except Exception:
             self._fail_stop_handoff(stop, "playback_projection_failed")
@@ -859,6 +955,15 @@ class RealtimeWebSocketFrameBridge:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        writes = tuple(self._stop_fact_tasks)
+        if writes:
+            _, pending = await asyncio.wait(writes, timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
+            for task in pending:
+                task.cancel()
+            if pending:
+                _, residual = await asyncio.wait(pending, timeout=0.05)
+                if residual:
+                    logger.warning("Stop fact writes did not cancel cooperatively: %s", len(residual))
 
     def _begin_playback(self, generation: int, speech_id: str, *, context: InteractionContext) -> _PlaybackState | None:
         if speech_id in self._retired_speech_ids:

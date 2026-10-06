@@ -31,3 +31,6 @@ actor签发许可，版本账本保存引用，既有输出边界执行并上报
 同日已补[停播诊断与正常关闭清理](../reports/2026-10-07-output-stop-diagnostics.md)：精确请求、回执、交接结果关联原回复并开放Session ID回读，成功三阶段计时与失败经过时间分离；正常关闭先结算再取消投影。诊断异步队列不等于actor持久确认，当前句许可与heard_frontier重验仍待实施。
 
 已补[原播放目标上下文](../reports/2026-10-07-playback-target-context.md)：legacy/V2回执与精确停播投影使用PlaybackState绑定的原turn/response，避免合成turn-N及丢失response身份。后续仍需持久stop操作事实、稳定句段identity、actor精确许可和heard_frontier重验。
+
+
+同日已补[持久停播操作账本](../reports/2026-10-07-output-stop-persistence.md)：SpeechDeliveryStore保存完整原目标和精确操作，终态不被重放降级；客户端停播不等待请求写入，交接等待请求/终态保存及原播放事实投影。生产Managed使用同一应用级存储，重配置切换不丢事实，普通关闭与重配置双失败保留未结算写入的删除保护；精确会话删除加入现有PG事务。本地队列确认和后续交付许可仍独立；Memory及外层事务未提交时不具有最终持久保证。迁移0034只在自建隔离测试库验证，未应用到用户服务。稳定句段身份、actor当前句许可、heard_frontier重验及真实renderer/G3仍未实现，本ADR保持Proposed。
