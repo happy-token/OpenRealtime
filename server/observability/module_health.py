@@ -41,7 +41,8 @@ def module_health(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ..
         item = result[module]
         count = int(row.get("count", 1))
         # Only one authoritative provider/capability event family per module.
-        authoritative = name.startswith("provider.") or name.startswith("realtime.capability.") or name == "client.input_capture_failed"
+        authoritative = (name.startswith(("provider.", "realtime.capability."))
+            or name in {"client.input_capture_failed", "playback.stop_handoff_failed", "playback.stop_handoff_ready"})
         if name.startswith("realtime.capability.") and module in provider_modules:
             authoritative = False
         if name == "transport.collection_ready":
@@ -70,9 +71,11 @@ def module_health(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ..
                     item[key] = 0
             if row["outcome"] in ("error", "timeout"):
                 item["timeout_count" if row["outcome"] == "timeout" else "error_count"] += count
-        if "disconnect" in name or "connection_lost" in name or row.get("error_type") in {"ConnectionError", "ConnectionClosedError", "ConnectionResetError", "WebSocketConnectionClosedException"}:
-            if name != "client.transport_disconnect":
-                item["disconnect_count"] = (item["disconnect_count"] or 0) + count
+        if (name != "client.transport_disconnect" and (
+            "disconnect" in name or "connection_lost" in name or row.get("error_type") in {
+                "ConnectionError", "ConnectionClosedError", "ConnectionResetError",
+                "WebSocketConnectionClosedException"})):
+            item["disconnect_count"] = (item["disconnect_count"] or 0) + count
     if asr_restart_success + asr_restart_failed:
         result["asr"]["recovery_rate"] = asr_restart_success / (asr_restart_success + asr_restart_failed)
     if transport_collected:

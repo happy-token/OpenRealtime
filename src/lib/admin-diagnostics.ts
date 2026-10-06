@@ -309,6 +309,11 @@ export function buildReplayTurns(
 }
 
 const TIMELINE_EVENT_META: Record<string, { label: string; stage: ReplayEventStage }> = {
+  "playback.stop_requested": { label: "发送停播命令", stage: "playback" },
+  "playback.stop_receipt": { label: "收到停播回执", stage: "playback" },
+  "playback.stop_handoff_ready": { label: "停播确认与投影已完成", stage: "playback" },
+  "playback.stop_handoff_failed": { label: "停播交接未完成", stage: "playback" },
+
   user_speech_started: { label: "用户开始说话", stage: "input" },
   "vad.silence_window": { label: "检测到静音窗口", stage: "endpoint" },
   vad_endpoint_confirmed: { label: "VAD 确认语音停止", stage: "endpoint" },

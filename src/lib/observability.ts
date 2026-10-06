@@ -185,8 +185,13 @@ export const CORE_LATENCY_METRICS = [
   "asr.speech_start_to_first_text", "asr.last_frame_to_final_text",
   "llm.request_to_first_text", "tts.first_text_to_first_audio",
   "turn_policy.eot_classify", "semantic_interruption.classify",
+  "playback.stop_request_to_receipt", "playback.stop_receipt_to_handoff", "playback.stop_request_to_handoff",
 ] as const;
 export const METRIC_DESCRIPTIONS: Record<string, string> = {
+  "playback.stop_request_to_receipt": "发送精确停播命令 → 收到匹配的本地音频队列停播回执，包含网络往返；不能证明扬声器已经物理静音。仅统计成功回执。",
+  "playback.stop_receipt_to_handoff": "收到本地停播回执 → 服务端播放事实投影完成并允许交接。仅统计成功交接。",
+  "playback.stop_request_to_handoff": "发送停播命令 → 服务端允许交接，包含回执延迟和投影等待；与子阶段重叠，不应重复相加。超时、未知和取消不计入成功耗时。",
+
   "jev.eot.slot_wait": "判停调用开始获取 JEV 并发槽位 → 获得槽位；不包含候选文本块在单飞队列中的等待。",
   "jev.eot.client_ready": "获得槽位 → SDK 客户端准备完成；HTTP 连接可能在后续请求阶段才建立。",
   "jev.eot.request": "SDK system_one 请求开始 → 完整结果返回，包含网络、HTTP 连接、服务端处理与 SDK 解析；并非纯模型推理。",
@@ -210,6 +215,14 @@ export const METRIC_DESCRIPTIONS: Record<string, string> = {
   "turn.endpoint_to_client_playback": "端点确认 → 客户端播放回执；不含端点确认前的判停等待。",
 };
 Object.assign(METRIC_LABELS, {
+  "playback.stop_request_to_receipt": "停播回执延迟",
+  "playback.stop_receipt_to_handoff": "停播投影等待",
+  "playback.stop_request_to_handoff": "停播交接总等待",
+  "playback.stop_requested": "发送停播命令",
+  "playback.stop_receipt": "收到停播回执",
+  "playback.stop_handoff_ready": "停播确认与投影已完成",
+  "playback.stop_handoff_failed": "停播交接未完成",
+
   "jev.eot.slot_wait": "JEV 判停并发排队",
   "jev.eot.client_ready": "JEV 判停客户端准备",
   "jev.eot.request": "JEV 判停请求等待",

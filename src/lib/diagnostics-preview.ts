@@ -18,6 +18,19 @@ const reports: SessionDiagnosticsReport[] = Array.from({ length: 6 }, (_, i) => 
     ].entries()) {
       events.push({ event_id: `${id}-${generation}-${index}`, sequence: events.length + 1, name: String(name), kind: "span", outcome: "ok", severity: "info", voice_session_id: id, generation, turn_id: `turn-${generation}`, response_id: null, call_id: null, worker_id: null, occurred_at: new Date(at + Number(end)).toISOString(), duration_ms: Number(duration), timeout_ms: null, error_type: null, error_message: null, attributes: {} });
     }
+    if (generation === 3) {
+      const identity = { stop_command_id: `${id}-stop-1`, output_epoch: "preview-epoch", speech_id: "response:preview-3", evidence: "local_output_queue_receipt", authority: "transport_observation" };
+      for (const [name, end, duration, state, handoff] of [
+        ["playback.stop_requested", 1200, null, "STOP_REQUESTED", "pending"],
+        ["playback.stop_receipt", 1300, null, "STOP_CONFIRMED", "pending"],
+        ["playback.stop_request_to_receipt", 1300, 100, "STOP_CONFIRMED", "pending"],
+        ["playback.stop_handoff_ready", 1340, null, "STOP_CONFIRMED", "granted"],
+        ["playback.stop_receipt_to_handoff", 1340, 40, "STOP_CONFIRMED", "granted"],
+        ["playback.stop_request_to_handoff", 1340, 140, "STOP_CONFIRMED", "granted"],
+      ] as const) {
+        events.push({ event_id: `${id}-${name}`, sequence: events.length + 1, name, kind: duration === null ? "event" : "span", outcome: "ok", severity: "info", voice_session_id: id, generation, turn_id: "turn-3", response_id: "preview-3", call_id: identity.stop_command_id, worker_id: null, occurred_at: new Date(at + end).toISOString(), duration_ms: duration, timeout_ms: 1500, error_type: null, error_message: null, attributes: { ...identity, state, handoff, ...(state === "STOP_CONFIRMED" ? { played_position_samples: 1200 } : {}) } });
+      }
+    }
     conversation.push({ item_id: `${id}-user-${generation}`, role: "user", text: ["帮我整理今天的安排。", "这段能说得简短一些吗？", "等等，先说最重要的事情。", "好的，我先处理这个。"][generation - 1], generation, status: "committed", occurred_at: new Date(at).toISOString() });
     conversation.push({ item_id: `${id}-assistant-${generation}`, role: "assistant", text: ["可以，我们先从最重要的事项开始。", "好的，我用三点说明。", "先完成刚才提到的那项任务。", "需要时我可以帮你继续拆解。"][generation - 1], generation, status: "committed", occurred_at: new Date(at + 1400).toISOString() });
   }

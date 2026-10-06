@@ -382,6 +382,7 @@ class VoiceSessionWebSocketSession:
             conversation=conversation,
             transport=self._transport,
             precise_output_stop=True,
+            diagnostic_observer=self._diagnostic_observer,
             inbound_fallback=self._inbound_fallback,
             input_epoch_started=self._accept_input_epoch,
             confirmation_decision_handler=(
@@ -430,6 +431,7 @@ class VoiceSessionWebSocketSession:
                 )
         finally:
             self._closed = True
+            bridge.begin_close()
             for task in tasks:
                 if not task.done():
                     task.cancel()

@@ -21,3 +21,7 @@ export function exactDuration(events: TelemetryEvent[], name: string): number | 
   const event = events.find(event => event.name === name && event.duration_ms !== null && Number.isFinite(event.duration_ms) && event.duration_ms >= 0);
   return event?.duration_ms ?? null;
 }
+
+export function interruptionEvents(events: TelemetryEvent[]): TelemetryEvent[] {
+  return events.filter(event => event.name.startsWith("barge_in.") || event.name.startsWith("playback.stop_") || event.name.includes("interrupt"));
+}

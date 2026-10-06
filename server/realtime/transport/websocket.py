@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from typing import Literal
 
 from server.conversation_journal import (
@@ -48,6 +50,7 @@ from server.realtime.protocol.events import (
     SpeechAudioCompleted,
     SpeechTextAlignment,
 )
+from server.realtime.transport.output_stop import OutputStopObservation
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
     AssistantAudioChunkFrame,
@@ -96,6 +99,13 @@ class OutputStopSnapshot:
 class _OutputStop:
     request: AssistantSpeechCancelledFrame
     ready: asyncio.Future[bool]
+    target_context: InteractionContext | None = None
+    requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    requested_ns: int = field(default_factory=time.monotonic_ns)
+    received_at: datetime | None = None
+    received_ns: int | None = None
+    receipt_outcome: Literal["queue_stopped", "unknown", "stale"] | None = None
+    played_position_samples: int | None = None
     state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"] = "STOP_REQUESTED"
     reason: str | None = None
     deadline: asyncio.TimerHandle | None = None
@@ -105,6 +115,7 @@ class _OutputStop:
 class _PlaybackState:
     speech_id: str
     generation: int
+    context: InteractionContext
     intended_text: str = ""
     audio_end_us: int = 0
     audio_samples: int = 0
@@ -136,6 +147,7 @@ class RealtimeWebSocketFrameBridge:
         output_epoch: str | None = None,
         precise_output_stop: bool = False,
         output_stop_timeout_ms: int = 1500,
+        diagnostic_observer: Callable[[object], None] | None = None,
     ) -> None:
         self._base_context = context
         if output_epoch == "":
@@ -158,6 +170,7 @@ class RealtimeWebSocketFrameBridge:
         self._inbound_fallback = inbound_fallback
         self._input_epoch_started = input_epoch_started
         self._confirmation_decision_handler = confirmation_decision_handler
+        self._diagnostic_observer = diagnostic_observer
         self._generation = max(1, context.generation)
         self._response_text: dict[str, str] = {}
         self._response_spoken: dict[str, str] = {}
@@ -285,7 +298,8 @@ class RealtimeWebSocketFrameBridge:
             self._advance_generation(event.context.generation)
             return
         if isinstance(event, ResponseStarted):
-            if self._begin_playback(event.context.generation, f"response:{event.response_id}") is None:
+            if self._begin_playback(event.context.generation, f"response:{event.response_id}",
+                    context=replace(event.context, response_id=event.response_id)) is None:
                 return
             self._response_text[event.response_id] = ""
             self._response_spoken[event.response_id] = ""
@@ -305,7 +319,8 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, SpokenContentDelta):
-            playback = self._begin_playback(event.context.generation, f"response:{event.response_id}")
+            playback = self._begin_playback(event.context.generation, f"response:{event.response_id}",
+                context=replace(event.context, response_id=event.response_id))
             if playback is None:
                 return
             spoken = self._response_spoken.get(event.response_id, "") + event.delta
@@ -390,7 +405,8 @@ class RealtimeWebSocketFrameBridge:
                         generation=event.context.generation,
                     )
                 )
-            await self._request_output_stop(event.context.generation, f"response:{event.response_id}", "failed")
+            await self._request_output_stop(event.context.generation, f"response:{event.response_id}", "failed",
+                target_context=replace(event.context, response_id=event.response_id))
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
             return
@@ -404,7 +420,8 @@ class RealtimeWebSocketFrameBridge:
                 self._response_generation_by_id.pop(event.response_id, None)
                 return
             if cancelled_generation not in self._locally_cancelled_generations:
-                await self._request_output_stop(cancelled_generation, f"response:{event.response_id}")
+                await self._request_output_stop(cancelled_generation, f"response:{event.response_id}",
+                    target_context=replace(event.context, response_id=event.response_id))
             self._locally_cancelled_generations.discard(cancelled_generation)
             self._clear_response_draft(event.response_id)
             self._response_generation_by_id.pop(event.response_id, None)
@@ -572,7 +589,8 @@ class RealtimeWebSocketFrameBridge:
             return
         if self._closed or generation in self._locally_cancelled_generations or speech_id in self._locally_cancelled_speech:
             return
-        playback = self._begin_playback(generation, speech_id)
+        playback = self._begin_playback(generation, speech_id,
+            context=replace(source.context, response_id=source.response_id) if isinstance(source, AudioDelta) else source.context)
         if playback is None or playback.generation_complete:
             return
         if playback.sample_rate_hz is not None and playback.sample_rate_hz != frame.sample_rate_hz:
@@ -632,7 +650,8 @@ class RealtimeWebSocketFrameBridge:
             await self._transport.send(frame)
 
     async def _request_output_stop(self, generation: int, speech_id: str | None,
-                                   reason: Literal["interrupted", "failed", "cancelled"] = "interrupted") -> None:
+                                   reason: Literal["interrupted", "failed", "cancelled"] = "interrupted", *,
+                                   target_context: InteractionContext | None = None) -> None:
         if self._closed:
             return
         if not self._precise_output_stop or speech_id is None:
@@ -658,10 +677,13 @@ class RealtimeWebSocketFrameBridge:
         request = AssistantSpeechCancelledFrame(generation=generation, reason=reason,
             output_epoch=self.output_epoch, speech_id=speech_id, stop_command_id=str(uuid.uuid4()))
         assert request.stop_command_id is not None
-        stop = _OutputStop(request=request, ready=loop.create_future())
+        playback = self._playback_by_speech.get(speech_id)
+        stop = _OutputStop(request=request, ready=loop.create_future(),
+            target_context=playback.context if playback is not None else target_context)
         self._output_stops[request.stop_command_id] = stop
         self._stop_by_target[key] = request.stop_command_id
         stop.deadline = loop.call_later(self._output_stop_timeout_s, self._expire_output_stop, stop)
+        self._observe_output_stop(stop, "requested")
         try:
             await asyncio.wait_for(self._send_frame(request), timeout=self._output_stop_timeout_s)
         except asyncio.CancelledError:
@@ -707,6 +729,29 @@ class RealtimeWebSocketFrameBridge:
             stop.deadline.cancel()
         if not stop.ready.done():
             stop.ready.set_result(False)
+            self._observe_output_stop(stop, "handoff_failed")
+
+    def _observe_output_stop(self, stop: _OutputStop, phase: Literal["requested", "receipt", "handoff_ready", "handoff_failed"]) -> None:
+        if self._diagnostic_observer is None:
+            return
+        if phase == "requested":
+            occurred_at, monotonic_ns = stop.requested_at, stop.requested_ns
+        elif phase == "receipt":
+            assert stop.received_at is not None and stop.received_ns is not None
+            occurred_at, monotonic_ns = stop.received_at, stop.received_ns
+        else:
+            occurred_at, monotonic_ns = datetime.now(UTC), time.monotonic_ns()
+        observation = OutputStopObservation(request=stop.request, target_context=stop.target_context,
+            phase=phase, state=stop.state, reason=stop.reason, receipt_outcome=stop.receipt_outcome,
+            played_position_samples=stop.played_position_samples, requested_at=stop.requested_at,
+            received_at=stop.received_at, occurred_at=occurred_at, requested_ns=stop.requested_ns,
+            received_ns=stop.received_ns, monotonic_ns=monotonic_ns, timeout_ms=self._output_stop_timeout_s * 1000)
+        try:
+            self._diagnostic_observer(observation)
+        except (Exception, asyncio.CancelledError):
+            # A synchronous diagnostic callback cannot cancel the control path.
+            # Cancellation of the owning task still propagates at transport awaits.
+            logger.warning("Output stop observation could not be recorded", exc_info=True)
 
     async def _notify_stop_failure(self, reason: str) -> None:
         if self._failure_notification_started:
@@ -756,11 +801,16 @@ class RealtimeWebSocketFrameBridge:
         if (result.output_epoch, result.speech_id, result.generation) != (
                 request.output_epoch, request.speech_id, request.generation):
             return
+        stop.received_at, stop.received_ns = datetime.now(UTC), time.monotonic_ns()
+        stop.receipt_outcome = result.outcome
+        stop.played_position_samples = result.played_position_samples
         if result.outcome != "queue_stopped":
+            self._observe_output_stop(stop, "receipt")
             self._settle_stop_unknown(stop, result.outcome)
             await self._notify_stop_failure(result.outcome)
             return
         stop.state = "STOP_CONFIRMED"
+        self._observe_output_stop(stop, "receipt")
         if stop.deadline is not None:
             stop.deadline.cancel()
         assert result.played_position_samples is not None
@@ -773,6 +823,10 @@ class RealtimeWebSocketFrameBridge:
             self._fail_stop_handoff(stop, "playback_projection_cancelled")
             if not self._closed:
                 self._schedule_stop_failure("playback_projection_cancelled")
+            raise
+        except TimeoutError:
+            self._fail_stop_handoff(stop, "playback_projection_deadline")
+            await self._notify_stop_failure("playback_projection_deadline")
             raise
         except Exception:
             self._fail_stop_handoff(stop, "playback_projection_failed")
@@ -787,8 +841,10 @@ class RealtimeWebSocketFrameBridge:
             return
         if not stop.ready.done():
             stop.ready.set_result(True)
+            self._observe_output_stop(stop, "handoff_ready")
 
-    async def close(self) -> None:
+    def begin_close(self) -> None:
+        """Declare normal shutdown before cancellation reaches pending projections."""
         self._closed = True
         self._output_failure.set()
         for stop in self._output_stops.values():
@@ -796,12 +852,15 @@ class RealtimeWebSocketFrameBridge:
                 stop.deadline.cancel()
             if not stop.ready.done():
                 self._fail_stop_handoff(stop, "session_closed")
+
+    async def close(self) -> None:
+        self.begin_close()
         tasks = tuple(self._stop_tasks)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _begin_playback(self, generation: int, speech_id: str) -> _PlaybackState | None:
+    def _begin_playback(self, generation: int, speech_id: str, *, context: InteractionContext) -> _PlaybackState | None:
         if speech_id in self._retired_speech_ids:
             return None
         existing = self._playback_by_speech.get(speech_id)
@@ -809,7 +868,7 @@ class RealtimeWebSocketFrameBridge:
             if existing.generation != generation:
                 raise ValueError("speech identity was reused by another generation")
             return existing if self._playback_by_generation.get(generation) is existing else None
-        playback = _PlaybackState(speech_id=speech_id, generation=generation)
+        playback = _PlaybackState(speech_id=speech_id, generation=generation, context=context)
         self._playback_by_speech[speech_id] = playback
         self._playback_by_generation[generation] = playback
         self._latest_speech_by_generation[generation] = speech_id

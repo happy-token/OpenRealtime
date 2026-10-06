@@ -7,13 +7,14 @@ import pytest
 
 from server.conversation_journal import InMemoryConversationJournal
 from server.endpoint_session.in_memory_session import InMemoryEndpointSession
-from server.realtime import AssistantYieldRequested
+from server.realtime import AssistantYieldRequested, ReportPlaybackProgress
 from server.realtime.transport import RealtimeWebSocketFrameBridge
+from server.realtime.transport.output_stop import OutputStopObservation
 from server.transport.frames import VoiceSessionReadyFrame
 from server.voice_session.admission import LocalVoiceSessionAdmissionController
 from server.voice_session.endpoint_bridge import VoiceSessionWebSocketSession
 from server.voice_session.models import VoiceSessionIdentity
-from server.voice_session.protocol import VoiceSessionFailureFrame
+from server.voice_session.protocol import OutputStopResult, VoiceSessionFailureFrame
 from tests.realtime.test_output_stop_protocol import audio_event
 from tests.realtime.test_realtime_websocket_bridge import context, event_context
 from tests.voice_session.test_endpoint_bridge import EpochTransport, WaitingConversation
@@ -100,9 +101,81 @@ async def test_stop_failure_wakes_endpoint_and_releases_work_when_transport_clos
             conversation_sequence=4, occurred_at=datetime.now(UTC), reason="barge_in_floor_claim"))
         await asyncio.wait_for(asyncio.shield(running), 1)
         assert bridge.output_stop_snapshot()[0].state == "STOP_UNKNOWN"
+        assert bridge.output_stop_snapshot()[0].reason == "receipt_deadline"
         assert raw_transport.close_started.is_set() and raw_transport.close_cancelled.is_set()
         assert raw_transport.receive_cancelled.is_set()
         assert factory.conversation.closed
+        assert all(task.done() for task in factory.conversation.work)
+    finally:
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+
+async def test_normal_endpoint_cancellation_during_stop_projection_preserves_fact_without_failure():
+    incoming = asyncio.Queue()
+    projecting = asyncio.Event()
+    observations = []
+
+    class ReceiptTransport(EpochTransport):
+        async def receive(self):
+            yield self._frame
+            while True:
+                yield await incoming.get()
+
+    class ProjectingConversation(ActiveConversation):
+        async def send(self, command):
+            if isinstance(command, ReportPlaybackProgress):
+                projecting.set()
+                await asyncio.Event().wait()
+            await super().send(command)
+
+    class RuntimeFactory:
+        conversation = None
+
+        async def open(self, **kwargs):
+            self.conversation = ProjectingConversation()
+            return self.conversation
+
+    raw_transport = ReceiptTransport()
+    transport = InMemoryEndpointSession("voice-1", raw_transport, raw_transport.receive(),
+                                        buffer_outbound_frames=False)
+    factory = RuntimeFactory()
+    ctx = context()
+    endpoint = VoiceSessionWebSocketSession(
+        identity=VoiceSessionIdentity(tenant_id=ctx.tenant_id, user_id=ctx.user_id,
+            device_id=ctx.device_id, voice_session_id=ctx.voice_session_id, thread_id=ctx.thread_id),
+        context=ctx, profile="cascaded-default", runtime_factory=factory,
+        journal=InMemoryConversationJournal(), transport=transport,
+        admission=LocalVoiceSessionAdmissionController(),
+        diagnostic_observer=observations.append,
+    )
+    running = asyncio.create_task(endpoint.run())
+    try:
+        async with asyncio.timeout(.5):
+            while not any(isinstance(frame, VoiceSessionReadyFrame) for frame in raw_transport.sent):
+                await asyncio.sleep(0)
+        bridge = endpoint._bridge
+        assert bridge is not None
+        await bridge.handle_event(audio_event())
+        await bridge.handle_event(AssistantYieldRequested(event_id="yield", context=event_context(),
+            conversation_sequence=4, occurred_at=datetime.now(UTC), reason="barge_in_floor_claim"))
+        request = raw_transport.sent[-1]
+        await incoming.put(OutputStopResult(output_epoch=request.output_epoch, speech_id=request.speech_id,
+            generation=request.generation, stop_command_id=request.stop_command_id,
+            outcome="queue_stopped", played_position_samples=1200))
+        await asyncio.wait_for(projecting.wait(), .1)
+        assert bridge.output_stop_snapshot()[0].state == "STOP_CONFIRMED"
+        running.cancel()
+        await asyncio.wait_for(asyncio.gather(running, return_exceptions=True), .5)
+        snapshot = bridge.output_stop_snapshot()[0]
+        assert snapshot.state == "STOP_CONFIRMED"
+        assert snapshot.reason == "session_closed"
+        stop_events = [event for event in observations if isinstance(event, OutputStopObservation)]
+        assert [event.phase for event in stop_events] == ["requested", "receipt", "handoff_failed"]
+        assert stop_events[-1].state == "STOP_CONFIRMED"
+        assert stop_events[-1].reason == "session_closed"
+        assert not any(isinstance(frame, VoiceSessionFailureFrame) for frame in raw_transport.sent)
+        assert factory.conversation is not None and factory.conversation.closed
         assert all(task.done() for task in factory.conversation.work)
     finally:
         running.cancel()

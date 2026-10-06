@@ -61,7 +61,7 @@
 
 同日继续补[迟到音频入队屏障](../reports/2026-10-07-late-audio-admission.md)：旧speech/旧generation不能重新占用浏览器输出；主hook在拒绝旧包时也不回滚speaking/timer。新增5项单测及主页面失败回归，最后同代/跨代Chrome各5轮通过。精确停播协议及其有限等待仍是下一项；阶段3完整验收不变。
 
-随后已补[live精确停播与有界交接](../reports/2026-10-07-precise-output-stop.md)：绑定epoch/speech/generation/stop操作，新音频等待匹配确认和投影；未知停止静音并持续封锁，断连/关闭不让旧epoch投影放行。下一步先补统一诊断停止事实，再落实actor句段许可与heard_frontier交接。Chrome间歇首轮finished缺失仍未定位，数字人只有void取消没有真实stop确认；这些限制继续阻止G3关闭。
+随后已补[live精确停播与有界交接](../reports/2026-10-07-precise-output-stop.md)：绑定epoch/speech/generation/stop操作，新音频等待匹配确认和投影；未知停止静音并持续封锁，断连/关闭不让旧epoch投影放行。已补[统一停播诊断](../reports/2026-10-07-output-stop-diagnostics.md)，成功计时与失败结果分离并关联原回复；异步诊断不等于actor持久停止账本。下一步落实actor句段许可与heard_frontier交接。Chrome间歇首轮finished缺失仍未定位，数字人只有void取消没有真实stop确认；这些限制继续阻止G3关闭。
 
 ## 阶段4
 

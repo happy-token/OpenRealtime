@@ -15,4 +15,12 @@ describe("diagnostic latency coverage", () => {
     expect(metricLabel("brain.time_to_first_text")).not.toBe(metricLabel("llm.request_to_first_text"));
     expect(METRIC_DESCRIPTIONS["provider.deepseek.responses.stream"]).toContain("不是首 Token");
   });
+  it("separates local stop receipt, projection wait and total handoff latency", () => {
+    const names = ["playback.stop_request_to_receipt", "playback.stop_receipt_to_handoff", "playback.stop_request_to_handoff"];
+    const rows = dashboardLatencyMetrics(names.map(sample));
+    expect(names.map(metricLabel)).toEqual(["停播回执延迟", "停播投影等待", "停播交接总等待"]);
+    expect(METRIC_DESCRIPTIONS[names[0]]).toContain("本地音频队列");
+    expect(METRIC_DESCRIPTIONS[names[0]]).toContain("网络");
+    expect(names.map(name => rows.find(row => row.name === name)?.metric?.sample_count)).toEqual([2, 2, 2]);
+  });
 });

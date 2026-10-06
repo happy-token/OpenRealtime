@@ -49,3 +49,17 @@ it("forwards independent cursors and preserves explicit page completeness", asyn
   expect(report.sources.debug_log.truncated).toBe(true);
   expect(report.collection_health.status).toBe("degraded");
 });
+
+it("preserves precise stop identity and failure metadata for the Session ID API", async () => {
+  const event = { event_id: "stop-failure", name: "playback.stop_handoff_failed", generation: 3,
+    turn_id: "original-turn", response_id: "response-1", call_id: "stop-1", duration_ms: null,
+    outcome: "timeout", attributes: { stop_command_id: "stop-1", output_epoch: "epoch",
+      speech_id: "response:response-1", state: "STOP_CONFIRMED", played_position_samples: 1200,
+      reason_code: "playback_projection_deadline", handoff: "denied", observed_wait_ms: 1500 } };
+  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [event] }))
+    .mockResolvedValueOnce(Response.json([])).mockResolvedValueOnce(Response.json({ entries: [] }))
+    .mockResolvedValueOnce(Response.json({ status: "ok" }));
+  const response = await run();
+  expect(response.status).toBe(200);
+  expect((await response.json()).telemetry.events).toEqual([event]);
+});
