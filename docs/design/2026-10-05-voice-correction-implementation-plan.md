@@ -59,6 +59,8 @@
 
 2026-10-07已补[播放事实隔离前置](../reports/2026-10-07-playback-fact-isolation.md)：attach epoch服务端签发并验证；自然ended与取消分离；同代不同speech独立样本时钟；provider分段终态不再结束整回复；旧终态/文本不影响替换回复。Chrome受控WebAudio回归3轮通过。上述不关闭阶段3，下一步精确句段/停播操作身份和有限等待，随后当前句许可与heard_frontier交接重验。
 
+同日继续补[迟到音频入队屏障](../reports/2026-10-07-late-audio-admission.md)：旧speech/旧generation不能重新占用浏览器输出；主hook在拒绝旧包时也不回滚speaking/timer。新增5项单测及主页面失败回归，最后同代/跨代Chrome各5轮通过。精确停播协议及其有限等待仍是下一项；阶段3完整验收不变。
+
 ## 阶段4
 
 恢复是新版本动作，不撤销已执行打断。分类旧结果不触发恢复；新证据与ASR改写可请求恢复。根据精确位置/句段确认/未知位置选择续播或重新续答；答案已错误则走修正。恢复签发新播放epoch，允许再次有效打断。同stop_command_id重发幂等。每个等待都有deadline和失败出口；新输入与关闭使恢复失效。按G4验证。

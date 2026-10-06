@@ -16,6 +16,9 @@ export class DeviceAudioOutputRuntime {
   private readonly speechByGeneration = new Map<number, string>();
   private readonly positions = new Map<string, number>();
   private readonly finishedSpeech = new Set<string>();
+  private readonly replacedSpeech = new Set<string>();
+  private readonly generationBySpeech = new Map<string, number>();
+  private highestGeneration = -1;
 
   get pendingCount(): number {
     return this.queue.length;
@@ -31,10 +34,33 @@ export class DeviceAudioOutputRuntime {
     this.outputEpoch = outputEpoch;
   }
 
+  canEnqueue(chunk: Pick<OutputAudioChunk, "speechId" | "generation">): boolean {
+    if (this.outputEpoch === null) return false;
+    if (chunk.generation < this.highestGeneration
+      || this.cancelledGenerations.has(chunk.generation)
+      || this.finishedSpeech.has(chunk.speechId)
+      || this.replacedSpeech.has(chunk.speechId)) return false;
+    const boundGeneration = this.generationBySpeech.get(chunk.speechId);
+    if (boundGeneration !== undefined && boundGeneration !== chunk.generation) return false;
+    return true;
+  }
+
   enqueue(chunk: OutputAudioChunk): boolean {
     if (this.outputEpoch === null) throw new Error("output epoch is not active");
-    if (this.cancelledGenerations.has(chunk.generation) || this.finishedSpeech.has(chunk.speechId)) return false;
+    if (!this.canEnqueue(chunk)) return false;
+    const previous = this.speechByGeneration.get(chunk.generation);
+    if (previous !== undefined && previous !== chunk.speechId) this.replacedSpeech.add(previous);
+    if (chunk.generation > this.highestGeneration) {
+      for (const speech of this.speechByGeneration.values()) this.replacedSpeech.add(speech);
+    }
+    this.highestGeneration = chunk.generation;
+    this.generationBySpeech.set(chunk.speechId, chunk.generation);
     this.speechByGeneration.set(chunk.generation, chunk.speechId);
+    this.queue = this.queue.filter(queued => {
+      if (queued.generation === chunk.generation && queued.speechId === chunk.speechId) return true;
+      queued.pcm16.fill(0);
+      return false;
+    });
     this.queue.push({ ...chunk, pcm16: chunk.pcm16.slice() });
     return true;
   }
@@ -70,6 +96,7 @@ export class DeviceAudioOutputRuntime {
     const speechId = this.speechByGeneration.get(generation);
     if (speechId === undefined) return null;
     if (this.cancelledGenerations.has(generation) && phase !== "stopped") return null;
+    if (this.replacedSpeech.has(speechId) && phase !== "stopped") return null;
     if (this.finishedSpeech.has(speechId) && phase !== "finished") return null;
     if (phase === "finished") this.finishedSpeech.add(speechId);
     return this.buildProgress(generation, speechId, phase, playedPositionSamples);
@@ -106,5 +133,8 @@ export class DeviceAudioOutputRuntime {
     this.speechByGeneration.clear();
     this.positions.clear();
     this.finishedSpeech.clear();
+    this.replacedSpeech.clear();
+    this.generationBySpeech.clear();
+    this.highestGeneration = -1;
   }
 }

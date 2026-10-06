@@ -110,7 +110,12 @@ export class BrowserAudioOutput {
     if (context.state === "suspended") await context.resume();
   }
 
+  canPlay(chunk: Pick<BrowserAudioChunk, "speechId" | "generation">): boolean {
+    return this.runtime.canEnqueue(chunk);
+  }
+
   play(chunk: BrowserAudioChunk): boolean {
+    if (!this.canPlay(chunk)) return false;
     const context = this.ensureContext();
     if (context.state === "suspended") void context.resume().catch(() => undefined);
     if (this.generation !== null && (chunk.generation !== this.generation || chunk.speechId !== this.speechId)) {

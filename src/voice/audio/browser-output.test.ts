@@ -48,6 +48,23 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it.each([1, 2])("ignores old speech audio after a replacement on generation %i", (generation) => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    const old = { pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: false };
+    output.play(old);
+    output.play({ ...old, generation, speechId: "new" });
+    expect(output.play({ ...old, sequence: 1 })).toBe(false);
+    expect(fake.sources).toHaveLength(2);
+    expect(fake.sources[1].stop).not.toHaveBeenCalled();
+    expect(output.activeGeneration).toBe(generation);
+    expect(output.playbackProgress(generation, "playing")?.speech_id).toBe("new");
+    output.close();
+  });
+
   it("does not report a natural completion after a source was cancelled", () => {
     const fake = fakeContext();
     const ended = vi.fn();

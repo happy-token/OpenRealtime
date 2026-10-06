@@ -4,6 +4,33 @@ import { DeviceAudioOutputRuntime } from "./output-runtime";
 
 
 describe("DeviceAudioOutputRuntime", () => {
+  it.each([1, 2])("rejects replaced speech and clears its queued PCM when the new generation is %i", (generation) => {
+    const runtime = new DeviceAudioOutputRuntime();
+    runtime.beginEpoch("epoch");
+    const old = { speechId: "old", generation: 1, sequence: 0,
+      sampleRateHz: 16000, pcm16: new Int16Array([5, 6]), isFinal: false };
+    expect(runtime.enqueue(old)).toBe(true);
+    const newer = { ...old, speechId: "new", generation };
+    expect(runtime.enqueue(newer)).toBe(true);
+    expect(runtime.pendingCount).toBe(1);
+    expect(runtime.enqueue({ ...old, sequence: 1 })).toBe(false);
+    expect(runtime.takeNext()?.speechId).toBe("new");
+    expect(old.pcm16).toEqual(new Int16Array([5, 6]));
+    expect(runtime.playbackProgress(generation, "playing", 1)?.speech_id).toBe("new");
+    runtime.beginEpoch("next-epoch");
+    expect(runtime.enqueue(old)).toBe(true);
+  });
+
+  it("cannot reuse a live speech identity for another generation", () => {
+    const runtime = new DeviceAudioOutputRuntime();
+    runtime.beginEpoch("epoch");
+    const chunk = { speechId: "speech", generation: 1, sequence: 0,
+      sampleRateHz: 16000, pcm16: new Int16Array(2), isFinal: false };
+    expect(runtime.enqueue(chunk)).toBe(true);
+    expect(runtime.enqueue({ ...chunk, generation: 2 })).toBe(false);
+    expect(runtime.playbackProgress(1, "playing", 1)?.speech_id).toBe("speech");
+  });
+
   it("allows another speech on the same input generation after natural completion", () => {
     const runtime = new DeviceAudioOutputRuntime();
     runtime.beginEpoch("epoch");

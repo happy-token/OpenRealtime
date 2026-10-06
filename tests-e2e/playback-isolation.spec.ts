@@ -1,11 +1,20 @@
 import { expect, test } from "@playwright/test";
 
-test("late cancellation preserves newer browser playback and reports the negotiated epoch", async ({ page }) => {
+for (const newGeneration of [1, 2]) {
+test(`late audio preserves replacement playback on generation ${newGeneration} and reports the negotiated epoch`, async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("openrealtime-language", "zh-CN");
     type Listener = (event: Event | MessageEvent<string>) => void;
-    const state = { sent: [] as Record<string, unknown>[], inject: (frame: object) => { void frame; } };
+    const state = { sent: [] as Record<string, unknown>[], contexts: [] as AudioContext[],
+      inject: (frame: object) => { void frame; } };
     Object.assign(window, { __playbackIsolation: state });
+    window.AudioContext = new Proxy(window.AudioContext, {
+      construct(target, args) {
+        const context = Reflect.construct(target, args) as AudioContext;
+        state.contexts.push(context);
+        return context;
+      },
+    });
     class Socket {
       static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
       readyState = 0;
@@ -53,21 +62,32 @@ test("late cancellation preserves newer browser playback and reports the negotia
     const state = (window as typeof window & { __playbackIsolation: { sent: Record<string, unknown>[] } }).__playbackIsolation;
     return state.sent.some(frame => frame.type === "session_hello");
   })).toBe(true);
-  await page.evaluate(() => {
+  await page.evaluate((generation) => {
     const state = (window as typeof window & { __playbackIsolation: { inject: (frame: object) => void } }).__playbackIsolation;
     state.inject({ type: "assistant_audio_chunk", generation: 1, speech_id: "old", sequence: 0,
       sample_rate_hz: 16000, pcm16_base64: btoa("\0".repeat(64000)), is_final: true });
-    state.inject({ type: "assistant_audio_chunk", generation: 2, speech_id: "new", sequence: 0,
+    state.inject({ type: "assistant_audio_chunk", generation, speech_id: "new", sequence: 0,
       sample_rate_hz: 16000, pcm16_base64: btoa("\0".repeat(25600)), is_final: true });
-    state.inject({ type: "assistant_speech_cancelled", generation: 1 });
-  });
+    state.inject({ type: "assistant_audio_chunk", generation: 1, speech_id: "old", sequence: 1,
+      sample_rate_hz: 16000, pcm16_base64: btoa("\0".repeat(64000)), is_final: true });
+    if (generation > 1) state.inject({ type: "assistant_speech_cancelled", generation: 1 });
+  }, newGeneration);
   const frames = () => page.evaluate(() => (window as typeof window & {
     __playbackIsolation: { sent: Record<string, unknown>[] }
   }).__playbackIsolation.sent.filter(frame => frame.type === "playback_progress_v2"));
-  await expect.poll(async () => (await frames()).map(frame => ({ generation: frame.generation, phase: frame.phase })),
-    { timeout: 3000 }).toContainEqual({ generation: 2, phase: "finished" });
+  await expect.poll(() => page.evaluate(() => {
+    const state = (window as typeof window & { __playbackIsolation: {
+      sent: Record<string, unknown>[]; contexts: AudioContext[];
+    } }).__playbackIsolation;
+    return { progress: state.sent.filter(frame => frame.type === "playback_progress_v2")
+      .map(frame => ({ speech_id: frame.speech_id, generation: frame.generation, phase: frame.phase })),
+      clocks: state.contexts.map(context => ({ state: context.state, currentTime: context.currentTime })) };
+  }), { timeout: 3000 }).toMatchObject({ progress: expect.arrayContaining([
+    { speech_id: "new", generation: newGeneration, phase: "finished" },
+  ]) });
   const observed = await frames();
   expect(observed.every(frame => frame.output_epoch === "server-output")).toBe(true);
-  expect(observed.some(frame => frame.generation === 1 && frame.phase === "finished")).toBe(false);
-  expect(observed.some(frame => frame.generation === 1 && frame.phase === "stopped")).toBe(true);
+  expect(observed.some(frame => frame.speech_id === "old" && frame.phase === "finished")).toBe(false);
+  if (newGeneration > 1) expect(observed.some(frame => frame.speech_id === "old" && frame.phase === "stopped")).toBe(true);
 });
+}

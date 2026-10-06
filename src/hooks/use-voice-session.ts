@@ -867,6 +867,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           break;
         }
         case "assistant_audio_chunk": {
+          if (!outputGraph.canPlay({ generation: frame.generation,
+            speechId: frame.speech_id ?? `response:${frame.generation}` })) break;
           clearThinkingFallback();
           clearPlaybackInactivityFallback();
           if (shouldDropAudioFrame(frame.generation, cancelledGenerationRef.current)) break;
