@@ -917,7 +917,7 @@ async def test_v2_playback_uses_output_epoch_speech_identity_and_exact_samples()
                 encoding=AudioEncoding.PCM_S16LE,
                 sample_rate_hz=24_000,
                 channels=1,
-                data=b"audio",
+                data=b"\x00\x00" * 4800,
             ),
             segment_index=0,
         )
@@ -952,7 +952,7 @@ async def test_playing_progress_includes_only_fully_played_aligned_segments():
         event_id="audio-aligned", context=ctx, conversation_sequence=2, occurred_at=now,
         response_id="response-1", response_sequence=2, speech_id="response:response-1",
         frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=200_000,
-                         encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio"),
+                         encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"\x00\x00" * 4800),
         segment_index=0))
     await bridge.handle_event(SpeechTextAlignment(
         event_id="boundary-aligned", context=ctx, conversation_sequence=3, occurred_at=now,

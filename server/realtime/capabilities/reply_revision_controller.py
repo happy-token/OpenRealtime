@@ -54,6 +54,7 @@ class ReplyRevisionController:
         self.input: InputRevision | None = None
         self.reply: ReplyRevision | None = None
         self._reply_context: InteractionContext | None = None
+        self._sample_rate_hz: int | None = None
         self._closed = False
         self._live_started = False
         self._history_sequence = 0
@@ -199,6 +200,7 @@ class ReplyRevisionController:
         ancestor = (previous if current is not None and previous is not None
                     and previous.input_id == current.input_id else None)
         self._reply_context = context
+        self._sample_rate_hz = None
         self.reply = ReplyRevision(
             response_id=response_id, turn_id=context.turn_id, generation=context.generation,
             input_id=current.input_id if current is not None else None,
@@ -232,7 +234,8 @@ class ReplyRevisionController:
             or conversation_scope(context) != conversation_scope(owner)
             or (context.turn_id, context.generation) != (reply.turn_id, reply.generation)
             or context.response_id not in {owner.response_id, response_id}
-            or fact.speech_id not in {response_id, f"response:{response_id}"}):
+            or fact.speech_id not in {response_id, f"response:{response_id}"}
+            or self._sample_rate_hz is not None and fact.sample_rate_hz not in {None, self._sample_rate_hz}):
             return False
         previous = reply.playback
         if fact.current_sentence is not None and (previous is None or previous.current_sentence != fact.current_sentence):
@@ -246,10 +249,17 @@ class ReplyRevisionController:
         if previous is not None:
             if (fact.observed_at_ns < previous.observed_at_ns and not fact.terminal
                 or fact.played_audio_end_us < previous.played_audio_end_us
+                or previous.played_position_samples is not None and fact.played_position_samples is not None
+                    and fact.played_position_samples < previous.played_position_samples
                 or fact.confirmed_text_end < previous.confirmed_text_end
                 or previous.output_epoch is not None and fact.output_epoch not in {None, previous.output_epoch}):
                 return False
             if previous.terminal:
+                if previous.position_precision == "unknown":
+                    # A later projection can refine reported history, not certify
+                    # an already uncertain final stop position or its PCM clock.
+                    fact = replace(fact, position_precision="unknown", current_sentence=None,
+                                   played_position_samples=None, sample_rate_hz=None)
                 # A late in-flight progress report may refine the heard frontier,
                 # but cannot change when this output first became terminal.
                 fact = replace(fact, terminal=True, current_sentence=None,
@@ -260,6 +270,8 @@ class ReplyRevisionController:
                 fact = replace(fact, output_epoch=previous.output_epoch, current_sentence=None)
             if fact.played_audio_end_us == previous.played_audio_end_us and not fact.terminal:
                 fact = replace(fact, observed_at_ns=previous.observed_at_ns)
+        if fact.sample_rate_hz is not None:
+            self._sample_rate_hz = fact.sample_rate_hz
         self.reply = replace(reply, playback=fact,
             playback_started=reply.playback_started or fact.played_audio_end_us > 0)
         return self.reply != reply

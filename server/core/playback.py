@@ -34,3 +34,24 @@ class SentenceSpan:
             raise ValueError(
                 "sentence ranges must match original code-point text and positive audio span"
             )
+
+
+def sample_position_us(position: int, sample_rate_hz: int) -> int:
+    """Round one cumulative PCM clock, using integer ties-to-even arithmetic."""
+    whole, remainder = divmod(position * 1_000_000, sample_rate_hz)
+    return whole + int(
+        2 * remainder > sample_rate_hz or (2 * remainder == sample_rate_hz and whole % 2 == 1)
+    )
+
+
+def validate_sample_position(position: int | None, sample_rate_hz: int | None) -> None:
+    """Legacy positions have neither field; exact positions require both."""
+    if position is None and sample_rate_hz is None:
+        return
+    if (
+        type(position) is not int
+        or not 0 <= position <= 2**53 - 1
+        or type(sample_rate_hz) is not int
+        or not 0 < sample_rate_hz <= 384000
+    ):
+        raise ValueError("exact playback requires a safe sample position and valid rate")

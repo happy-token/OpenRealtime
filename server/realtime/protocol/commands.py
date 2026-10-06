@@ -9,6 +9,7 @@ from typing import Literal
 
 from server.conversation_journal import ConversationItem, ConversationItemDraft, JournalScope
 from server.core.interaction_context import InteractionContext
+from server.core.playback import sample_position_us, validate_sample_position
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.playback import SentenceSpan
 from server.realtime.scope import conversation_scope
@@ -138,10 +139,20 @@ class ReportPlaybackProgress:
     stopped: bool = False
     output_epoch: str | None = None
     current_sentence: SentenceSpan | None = None
+    played_position_samples: int | None = None
+    sample_rate_hz: int | None = None
     # Transport replay time is not part of a playback command's semantic identity.
     observed_at_ns: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
+        validate_sample_position(self.played_position_samples, self.sample_rate_hz)
+        if self.played_position_samples is not None and (self.output_epoch is None
+            or self.precision is not PlaybackPrecision.SEGMENT):
+            raise ValueError("sample clock requires precise playback attachment")
+        if self.played_position_samples is not None and self.sample_rate_hz is not None and (
+            self.played_audio_end_us != sample_position_us(self.played_position_samples, self.sample_rate_hz)
+        ):
+            raise ValueError("sample clock and playback microseconds disagree")
         if self.output_epoch is not None and (
             not isinstance(self.output_epoch, str) or not self.output_epoch
             or type(self.observed_at_ns) is not int or self.observed_at_ns <= 0

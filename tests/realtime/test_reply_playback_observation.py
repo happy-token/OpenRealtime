@@ -112,6 +112,8 @@ async def test_actual_renderer_position_reaches_actor_with_current_sentence_and_
         assert fact.output_epoch == "epoch"
         assert fact.speech_id == "response:reply"
         assert fact.played_audio_end_us == 500_000
+        assert getattr(fact, "played_position_samples", None) == 500
+        assert getattr(fact, "sample_rate_hz", None) == 1000
         assert fact.confirmed_text_end == 0
         assert fact.current_sentence.text == "第一句。"
         assert fact.current_sentence.audio_end_us == 1_000_000
@@ -211,6 +213,8 @@ def test_ledger_playback_fact_keeps_all_identity_and_monotonic_terminal_boundari
         confirmed_text_end=0,
         observed_at_ns=10,
         position_precision="sample",
+        played_position_samples=500,
+        sample_rate_hz=1000,
         current_sentence=span,
     )
     assert ledger.observe_playback_fact("reply", context(), fact)
@@ -225,7 +229,9 @@ def test_ledger_playback_fact_keeps_all_identity_and_monotonic_terminal_boundari
         "reply", context(), replace(fact, output_epoch="expired", observed_at_ns=11)
     )
     assert not ledger.observe_playback_fact(
-        "reply", context(), replace(fact, played_audio_end_us=400_000, observed_at_ns=11)
+        "reply",
+        context(),
+        replace(fact, played_audio_end_us=400_000, played_position_samples=400, observed_at_ns=11),
     )
     assert not ledger.observe_playback_fact("reply", context(), replace(fact, observed_at_ns=9))
     assert ledger.reply.playback == fact
@@ -238,7 +244,9 @@ def test_ledger_playback_fact_keeps_all_identity_and_monotonic_terminal_boundari
     assert not ledger.observe_playback_fact("reply", context(), replace(fact, observed_at_ns=13))
     assert ledger.reply.playback.observed_at_ns == terminal.observed_at_ns
     ledger.observe_playback_fact(
-        "reply", context(), replace(fact, observed_at_ns=13, played_audio_end_us=600_000)
+        "reply",
+        context(),
+        replace(fact, observed_at_ns=13, played_audio_end_us=600_000, played_position_samples=600),
     )
     assert ledger.reply.playback.terminal and ledger.reply.playback.current_sentence is None
     assert ledger.reply.playback.observed_at_ns == terminal.observed_at_ns
@@ -274,6 +282,8 @@ def test_estimated_receipt_clears_current_sentence_without_losing_known_target()
         confirmed_text_end=0,
         observed_at_ns=10,
         position_precision="sample",
+        played_position_samples=500,
+        sample_rate_hz=1000,
         current_sentence=span,
     )
     ledger.observe_playback_fact("reply", context(), fact)
@@ -282,6 +292,8 @@ def test_estimated_receipt_clears_current_sentence_without_losing_known_target()
         output_epoch=None,
         current_sentence=None,
         position_precision="unknown",
+        played_position_samples=None,
+        sample_rate_hz=None,
         observed_at_ns=11,
     )
     assert ledger.observe_playback_fact("reply", context(), unknown)
@@ -309,8 +321,10 @@ async def test_duplicate_v2_receipt_is_idempotent_and_does_not_refresh_position_
 
 
 @pytest.mark.parametrize("late_projects_last", [False, True])
+@pytest.mark.parametrize("larger_late_position", [False, True])
 async def test_delayed_stop_persistence_keeps_original_receipt_clock_and_beats_late_playing_projection(
     late_projects_last,
+    larger_late_position,
 ):
     from dataclasses import replace
 
@@ -382,7 +396,11 @@ async def test_delayed_stop_persistence_keeps_original_receipt_clock_and_beats_l
             speech_id="response:reply",
             generation=1,
             phase="playing",
-            played_position_samples=600 if late_projects_last else 550,
+            played_position_samples=650
+            if larger_late_position
+            else 600
+            if late_projects_last
+            else 550,
         )
         if late_projects_last:
             store.block_next_progress = True
@@ -401,8 +419,8 @@ async def test_delayed_stop_persistence_keeps_original_receipt_clock_and_beats_l
             await asyncio.wait_for(late_projecting, 0.5)
         fact = core._input_pipeline.response_revision("reply").playback
         assert fact.terminal and fact.current_sentence is None
-        assert fact.played_audio_end_us == 600_000
-        assert fact.position_precision == "sample"
+        assert fact.played_audio_end_us == (650_000 if larger_late_position else 600_000)
+        assert fact.position_precision == ("unknown" if larger_late_position else "sample")
         assert fact.observed_at_ns == stop.received_ns
     finally:
         store.release.set()
@@ -457,6 +475,8 @@ async def test_actual_journal_playback_evidence_does_not_duplicate_large_sentenc
                     confirmed_text_end=0,
                     observed_at_ns=time.monotonic_ns(),
                     position_precision="sample",
+                    played_position_samples=500,
+                    sample_rate_hz=1000,
                     current_sentence=sentence,
                 ),
             )
@@ -564,6 +584,8 @@ def test_known_sentence_does_not_rehash_each_sample_and_rejects_boundary_reuse(m
         confirmed_text_end=0,
         observed_at_ns=10,
         position_precision="sample",
+        played_position_samples=25000,
+        sample_rate_hz=250000,
         current_sentence=sentence,
     )
     ledger.observe_playback_fact("reply", context(), fact)
@@ -576,7 +598,12 @@ def test_known_sentence_does_not_rehash_each_sample_and_rejects_boundary_reuse(m
         ledger.observe_playback_fact(
             "reply",
             context(),
-            replace(fact, played_audio_end_us=100_000 + index, observed_at_ns=10 + index),
+            replace(
+                fact,
+                played_audio_end_us=100_000 + index * 4,
+                played_position_samples=25000 + index,
+                observed_at_ns=10 + index,
+            ),
         )
     with pytest.raises(ValueError, match="reused"):
         ledger.observe_playback_fact(
@@ -585,7 +612,365 @@ def test_known_sentence_does_not_rehash_each_sample_and_rejects_boundary_reuse(m
             replace(
                 fact,
                 played_audio_end_us=200_000,
+                played_position_samples=50000,
                 observed_at_ns=120,
                 current_sentence=replace(sentence, audio_end_us=2_000_000),
             ),
+        )
+
+
+async def test_v2_regression_cannot_invent_a_current_sample_from_a_monotonic_microsecond_frontier():
+    core, bridge = await playing_core()
+    try:
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=500,
+            )
+        )
+        before = core._input_pipeline.response_revision("reply").playback
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=400,
+            )
+        )
+        assert core._input_pipeline.response_revision("reply").playback == before
+    finally:
+        await core.close()
+
+
+async def test_v2_sample_position_is_bounded_by_sent_pcm_and_retained_on_stop():
+    from dataclasses import replace
+
+    from server.realtime import AssistantYieldRequested
+    from server.voice_session.protocol import OutputStopResult
+
+    core, bridge = await playing_core(precise_stop=True)
+    try:
+        await bridge.handle_event(
+            AssistantYieldRequested(
+                event_id="yield",
+                context=replace(context(), response_id="reply"),
+                conversation_sequence=100,
+                occurred_at=datetime.now(UTC),
+                reason="barge_in_floor_claim",
+            )
+        )
+        request = bridge._transport.frames[-1]
+        await bridge.handle_inbound(
+            OutputStopResult(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                stop_command_id=request.stop_command_id,
+                outcome="queue_stopped",
+                played_position_samples=100_000,
+            )
+        )
+        fact = core._input_pipeline.response_revision("reply").playback
+        assert fact.terminal
+        assert getattr(fact, "played_position_samples", None) == 2000
+        assert getattr(fact, "sample_rate_hz", None) == 1000
+        assert fact.played_audio_end_us == 2_000_000
+    finally:
+        await bridge.close()
+        await core.close()
+
+
+@pytest.mark.parametrize("kind", ["command", "fact"])
+@pytest.mark.parametrize(
+    "samples,rate",
+    [
+        (None, 1000),
+        (500, None),
+        (True, 1000),
+        (500, True),
+        (500.0, 1000),
+        (500, 1000.0),
+        (-1, 1000),
+        (500, 0),
+        (500, 384001),
+        (2**53, 1000),
+        (400, 1000),
+    ],
+)
+def test_sample_clock_requires_strict_paired_fields_and_matching_microseconds(kind, samples, rate):
+    from server.realtime.protocol.commands import ReportPlaybackProgress
+    from server.realtime.protocol.playback import ReplyPlayback
+
+    with pytest.raises(ValueError, match="sample|clock"):
+        if kind == "command":
+            ReportPlaybackProgress(
+                command_id="sample",
+                idempotency_key="sample",
+                context=context(),
+                speech_id="response:reply",
+                output_epoch="epoch",
+                observed_at_ns=10,
+                played_audio_end_us=500_000,
+                delivered_text_end=0,
+                played_position_samples=samples,
+                sample_rate_hz=rate,
+            )
+        else:
+            ReplyPlayback(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                played_audio_end_us=500_000,
+                confirmed_text_end=0,
+                observed_at_ns=10,
+                position_precision="sample",
+                played_position_samples=samples,
+                sample_rate_hz=rate,
+            )
+
+
+def test_sample_clock_uses_cumulative_integer_rounding_at_large_safe_positions():
+    from fractions import Fraction
+
+    from server.core.playback import sample_position_us
+
+    for rate in [1000, 16000, 44100, 48000, 384000]:
+        for position in [0, 1, 3, 44101, 2**53 - 1]:
+            assert sample_position_us(position, rate) == round(Fraction(position * 1_000_000, rate))
+    assert sample_position_us(3, 44100) == 68  # Three rounded chunks would incorrectly yield69.
+
+
+async def test_terminal_sample_regression_keeps_stop_fact_but_drops_current_sentence_certainty():
+    core, bridge = await playing_core()
+    try:
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=500,
+            )
+        )
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="stopped",
+                played_position_samples=400,
+            )
+        )
+        fact = core._input_pipeline.response_revision("reply").playback
+        assert fact.terminal
+        assert fact.played_audio_end_us == 500_000
+        assert fact.played_position_samples is None and fact.sample_rate_hz is None
+        assert fact.position_precision == "unknown" and fact.current_sentence is None
+    finally:
+        await core.close()
+
+
+async def test_legacy_receipt_does_not_inherit_a_stale_exact_sample_clock():
+    from server.transport.frames import PlaybackProgressFrame
+
+    core, bridge = await playing_core()
+    try:
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=500,
+            )
+        )
+        await bridge.handle_inbound(
+            PlaybackProgressFrame(generation=1, finished=False, played_audio_end_us=500_000)
+        )
+        fact = core._input_pipeline.response_revision("reply").playback
+        assert fact.output_epoch == "epoch" and fact.position_precision == "unknown"
+        assert fact.played_position_samples is None and fact.sample_rate_hz is None
+    finally:
+        await core.close()
+
+
+def test_same_epoch_rate_changes_cannot_reinterpret_the_current_sample_clock():
+    from dataclasses import replace
+
+    from server.realtime.capabilities.reply_revision_controller import ReplyRevisionController
+    from server.realtime.protocol.playback import ReplyPlayback
+    from tests.realtime.test_reply_revision_controller import commit
+
+    ledger = ReplyRevisionController()
+    commit(ledger, ctx=context())
+    ledger.bind_response("reply", context())
+    fact = ReplyPlayback(
+        output_epoch="epoch",
+        speech_id="response:reply",
+        played_audio_end_us=500_000,
+        confirmed_text_end=0,
+        observed_at_ns=10,
+        position_precision="sample",
+        played_position_samples=500,
+        sample_rate_hz=1000,
+    )
+    ledger.observe_playback_fact("reply", context(), fact)
+    assert not ledger.observe_playback_fact(
+        "reply",
+        context(),
+        replace(
+            fact,
+            observed_at_ns=11,
+            played_position_samples=1200,
+            sample_rate_hz=2000,
+            played_audio_end_us=600_000,
+        ),
+    )
+    assert ledger.reply.playback == fact
+
+
+@pytest.mark.parametrize("replacement_rate,accepted", [(1000, True), (2000, False)])
+def test_legacy_downgrade_preserves_the_bound_sample_rate(replacement_rate, accepted):
+    from dataclasses import replace
+
+    from server.realtime.capabilities.reply_revision_controller import ReplyRevisionController
+    from server.realtime.protocol.playback import ReplyPlayback
+    from tests.realtime.test_reply_revision_controller import commit
+
+    ledger = ReplyRevisionController()
+    commit(ledger, ctx=context())
+    ledger.bind_response("reply", context())
+    fact = ReplyPlayback(
+        output_epoch="epoch",
+        speech_id="response:reply",
+        played_audio_end_us=500_000,
+        confirmed_text_end=0,
+        observed_at_ns=10,
+        position_precision="sample",
+        played_position_samples=500,
+        sample_rate_hz=1000,
+    )
+    ledger.observe_playback_fact("reply", context(), fact)
+    unknown = replace(
+        fact,
+        position_precision="unknown",
+        played_position_samples=None,
+        sample_rate_hz=None,
+        observed_at_ns=11,
+    )
+    ledger.observe_playback_fact("reply", context(), unknown)
+    assert (
+        ledger.observe_playback_fact(
+            "reply",
+            context(),
+            replace(
+                fact,
+                observed_at_ns=12,
+                played_position_samples=replacement_rate * 6 // 10,
+                sample_rate_hz=replacement_rate,
+                played_audio_end_us=600_000,
+            ),
+        )
+        is accepted
+    )
+    if accepted:
+        assert ledger.reply.playback.sample_rate_hz == replacement_rate
+    else:
+        # The unchanged-position downgrade keeps the original position age.
+        assert ledger.reply.playback.position_precision == "unknown"
+        assert ledger.reply.playback.sample_rate_hz is None
+
+
+async def test_epoch_command_without_pcm_metadata_cannot_supply_a_current_sentence():
+    from dataclasses import replace
+
+    from server.realtime import ReportPlaybackProgress
+
+    core, bridge = await playing_core()
+    try:
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=500,
+            )
+        )
+        before = core._input_pipeline.response_revision("reply").playback
+        span = before.current_sentence
+        await core.send(
+            ReportPlaybackProgress(
+                command_id="legacy-precise",
+                idempotency_key="legacy-precise",
+                context=replace(context(), response_id="reply"),
+                speech_id="response:reply",
+                played_audio_end_us=500_000,
+                delivered_text_end=0,
+                output_epoch="epoch",
+                observed_at_ns=before.observed_at_ns + 1,
+                current_sentence=span,
+            )
+        )
+        fact = core._input_pipeline.response_revision("reply").playback
+        assert fact.position_precision == "unknown" and fact.current_sentence is None
+        assert fact.played_position_samples is None and fact.sample_rate_hz is None
+    finally:
+        await core.close()
+
+
+async def test_partial_finished_regression_is_not_an_actual_response_terminal():
+    core, bridge = await playing_core()
+    try:
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=500,
+            )
+        )
+        before = core._input_pipeline.response_revision("reply").playback
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="finished",
+                played_position_samples=400,
+            )
+        )
+        assert core._input_pipeline.response_revision("reply").playback == before
+        assert not before.terminal
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch="epoch",
+                speech_id="response:reply",
+                generation=1,
+                phase="playing",
+                played_position_samples=600,
+            )
+        )
+        fact = core._input_pipeline.response_revision("reply").playback
+        assert not fact.terminal and fact.played_position_samples == 600
+        assert fact.current_sentence is not None
+    finally:
+        await core.close()
+
+
+def test_sample_precision_cannot_be_declared_without_an_actual_pcm_clock():
+    from server.realtime.protocol.playback import ReplyPlayback
+
+    with pytest.raises(ValueError, match="actual PCM"):
+        ReplyPlayback(
+            output_epoch="epoch",
+            speech_id="response:reply",
+            played_audio_end_us=500_000,
+            confirmed_text_end=0,
+            observed_at_ns=10,
+            position_precision="sample",
         )

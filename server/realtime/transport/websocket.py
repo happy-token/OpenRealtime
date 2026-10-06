@@ -19,6 +19,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.core.playback import sample_position_us
 from server.realtime.protocol import (
     AppendAudio,
     AppendItem,
@@ -140,6 +141,7 @@ class _PlaybackState:
     generation_complete: bool = False
     delivered_text_end: int = 0
     played_audio_end_us: int = 0
+    played_position_samples: int | None = None
     text_boundaries: list[tuple[int, int]] = field(default_factory=list)
     sentences: dict[str, SentenceSpan] = field(default_factory=dict)
     has_text_alignment: bool = False
@@ -1082,23 +1084,27 @@ class RealtimeWebSocketFrameBridge:
         if sample_rate_hz is None:
             return
         observed_at_ns = observed_at_ns or time.monotonic_ns()
-        played_audio_end_us = min(
-            round(frame.played_position_samples * 1_000_000 / sample_rate_hz),
-            playback.audio_end_us,
-        )
-        delivered_text_end = self._confirmed_text_end(playback, played_audio_end_us)
+        samples = min(frame.played_position_samples, playback.audio_samples)
+        actual_audio_end_us = sample_position_us(samples, sample_rate_hz)
         completed = (frame.phase == "finished" and playback.generation_complete
                      and frame.played_position_samples >= playback.audio_samples)
+        if (not completed and frame.phase != "stopped"
+            and (actual_audio_end_us < playback.played_audio_end_us
+                or playback.played_position_samples is not None and samples < playback.played_position_samples)):
+            return  # Do not turn a stale receipt into a fabricated newer PCM position.
+        played_audio_end_us = actual_audio_end_us
+        delivered_text_end = self._confirmed_text_end(playback, played_audio_end_us)
         if completed:
-            played_audio_end_us = playback.audio_end_us
             delivered_text_end = len(playback.intended_text)
         delivered_text_end = max(playback.delivered_text_end, delivered_text_end)
         playback.delivered_text_end = delivered_text_end
         played_audio_end_us = max(playback.played_audio_end_us, played_audio_end_us)
         playback.played_audio_end_us = played_audio_end_us
+        exact_clock = played_audio_end_us == actual_audio_end_us
+        playback.played_position_samples = samples if exact_clock else None
         current_sentence = next((sentence for sentence in playback.sentences.values()
             if sentence.audio_start_us < played_audio_end_us < sentence.audio_end_us), None)
-        if completed or frame.phase in {"stopped", "finished"}:
+        if not exact_clock or completed or frame.phase in {"stopped", "finished"}:
             current_sentence = None
         sentence_key = current_sentence.sentence_id if current_sentence is not None else "unknown"
         await self._conversation.send(
@@ -1113,7 +1119,9 @@ class RealtimeWebSocketFrameBridge:
                 speech_id=frame.speech_id,
                 delivered_text_end=delivered_text_end,
                 played_audio_end_us=played_audio_end_us,
-                precision=PlaybackPrecision.SEGMENT,
+                precision=PlaybackPrecision.SEGMENT if exact_clock else PlaybackPrecision.ESTIMATED,
+                played_position_samples=samples if exact_clock else None,
+                sample_rate_hz=sample_rate_hz if exact_clock else None,
                 completed=completed,
                 started=frame.phase == "started",
                 stopped=frame.phase == "stopped",

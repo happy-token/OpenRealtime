@@ -123,3 +123,5 @@
 同日共享JEV边界继续批次：关闭意图立即撤销准入，等待共享槽位/SDK准备后重新检查；新增7项受控SDK回归覆盖混合适配器等待顺序/取消/容量和实际双会话关闭与最终提交隔离。最终Python1913 passed/69 skipped/3 subtests，详情见[共享JEV报告](../reports/2026-10-07-jev-shared-capacity-lifecycle.md)。本批不改变并发或引入轮转策略，真实负载公平、全局等待资源预算及E01/E02/G1继续开放；0137/0138和横向需求不关闭。
 
 2026-10-07 renderer句末批次：Browser按实际样本截断跨句PCM、清后续source、有界等待及实际位置回执；页面响应帧前置准入、旧目标timer隔离、reset异步unknown与混合数字人完成屏障均有先红后绿回归。新增严格可选wire许可及core句段类型，最终Python1937 passed/69 skipped/3 subtests、前端74 passed、真实Chrome10场景通过，详见[renderer句末报告](../reports/2026-10-07-renderer-sentence-stop.md)。测试许可由受控Socket提供，生产actor签发/保存、Bridge传播/撤销和heard_frontier交接仍未实现；数字人/G3和全部其他阶段继续开放。
+
+2026-10-07 actor PCM批次：实际PCM位置与采样率贯通既有生产链，内部pair严格/一致；采样率绑定与当前精度分离，legacy降级不遗忘时钟。部分finished排空、退序stopped未知位置、持久stop与更大late progress两种顺序均已回归；最终Python1972 passed/69 skipped/3 subtests、Mypy/Ruff及独立审查通过，详见[PCM时钟报告](../reports/2026-10-07-actor-pcm-playback-clock.md)。本批仍不签发生产许可；下一任务是actor版本/epoch/句段/deadline授权、Bridge传递/撤销和heard_frontier重验。全部G0–G5与横向未交付项保持原范围。

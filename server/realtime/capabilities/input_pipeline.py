@@ -234,8 +234,10 @@ class CascadedInputPipeline:
             fact=ReplyPlayback(output_epoch=command.output_epoch, speech_id=command.speech_id,
                 played_audio_end_us=command.played_audio_end_us, confirmed_text_end=command.delivered_text_end,
                 observed_at_ns=command.observed_at_ns or time.monotonic_ns(),
-                position_precision="sample" if command.output_epoch else "unknown",
-                current_sentence=command.current_sentence, terminal=command.completed or command.stopped),
+                position_precision="sample" if command.played_position_samples is not None else "unknown",
+                played_position_samples=command.played_position_samples, sample_rate_hz=command.sample_rate_hz,
+                current_sentence=command.current_sentence if command.played_position_samples is not None else None,
+                terminal=command.completed or command.stopped),
         ))
 
     async def assistant_yielded(self, *, context: InteractionContext) -> None:
