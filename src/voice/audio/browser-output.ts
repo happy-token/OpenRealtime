@@ -55,6 +55,7 @@ export class BrowserAudioOutput {
   private levelBuffer: Uint8Array<ArrayBuffer> | null = null;
   private volume = 0.8;
   private generation: number | null = null;
+  private speechId: string | null = null;
   private startedGeneration: number | null = null;
   private scheduledSources: AudioBufferSourceNode[] = [];
   private nextPlayTime = 0;
@@ -95,11 +96,13 @@ export class BrowserAudioOutput {
   }
 
   beginEpoch(outputEpoch: string): void {
+    if (!outputEpoch) throw new Error("output epoch must be non-empty");
+    this.reset();
     this.runtime.beginEpoch(outputEpoch);
   }
 
-  activate(): void {
-    if (!this.runtime.isActive) this.beginEpoch(crypto.randomUUID());
+  activate(outputEpoch?: string): void {
+    if (!this.runtime.isActive) this.beginEpoch(outputEpoch ?? crypto.randomUUID());
   }
 
   async unlock(): Promise<void> {
@@ -110,6 +113,11 @@ export class BrowserAudioOutput {
   play(chunk: BrowserAudioChunk): boolean {
     const context = this.ensureContext();
     if (context.state === "suspended") void context.resume().catch(() => undefined);
+    if (this.generation !== null && (chunk.generation !== this.generation || chunk.speechId !== this.speechId)) {
+      // Record using the old identity and rate before enqueue binds the new
+      // speech to this generation.
+      this.runtime.playbackProgress(this.generation, "playing", this.playedPositionSamples());
+    }
     const accepted = this.runtime.enqueue({
       speechId: chunk.speechId,
       generation: chunk.generation,
@@ -122,18 +130,19 @@ export class BrowserAudioOutput {
     const outputChunk = this.runtime.takeNext();
     if (!outputChunk) return false;
     const { generation } = outputChunk;
-    this.sampleRate = outputChunk.sampleRateHz;
-
-    if (generation !== this.generation) {
+    if (generation !== this.generation || outputChunk.speechId !== this.speechId) {
       this.stopScheduledSources();
       this.nextPlayTime = context.currentTime;
       this.startedAt = null;
       this.playedSegments = [];
       this.scheduledEnd = 0;
       this.generation = generation;
+      this.speechId = outputChunk.speechId;
+      this.startedGeneration = null;
       this.quality = createPlaybackQuality(generation);
       this.reportedQuality.clear();
     }
+    this.sampleRate = outputChunk.sampleRateHz;
 
     const float32 = new Float32Array(outputChunk.pcm16.length);
     for (let index = 0; index < outputChunk.pcm16.length; index += 1) {
@@ -170,8 +179,9 @@ export class BrowserAudioOutput {
     this.scheduledEnd = this.nextPlayTime;
     this.scheduledSources.push(source);
     source.addEventListener("ended", () => {
+      const naturallyEnded = this.scheduledSources.includes(source);
       this.scheduledSources = this.scheduledSources.filter((item) => item !== source);
-      chunk.onEnded?.();
+      if (naturallyEnded) chunk.onEnded?.();
     });
     this.playedSegments.push({ start: startAt, end: startAt + buffer.duration });
     source.start(startAt);
@@ -192,11 +202,12 @@ export class BrowserAudioOutput {
     return this.runtime.playbackProgress(
       generation,
       phase,
-      this.playedPositionSamples(),
+      generation === this.generation ? this.playedPositionSamples() : 0,
     );
   }
 
   finishGeneration(generation: number): PlaybackProgressV2 | null {
+    if (generation !== this.generation || this.scheduledSources.length > 0) return null;
     const progress = this.playbackProgress(generation, "finished");
     if (this.startedGeneration === generation) this.startedGeneration = null;
     this.startedAt = null;
@@ -205,10 +216,13 @@ export class BrowserAudioOutput {
   }
 
   cancelGeneration(generation: number): PlaybackProgressV2 | null {
-    const progress = this.runtime.cancelGeneration(generation, this.playedPositionSamples());
+    const progress = this.runtime.cancelGeneration(generation,
+      generation === this.generation ? this.playedPositionSamples() : 0);
+    if (generation !== this.generation) return progress;
     this.stopScheduledSources();
     this.nextPlayTime = 0;
     this.generation = null;
+    this.speechId = null;
     this.playedSegments = [];
     if (this.startedGeneration === generation) this.startedGeneration = null;
     this.startedAt = null;
@@ -253,6 +267,7 @@ export class BrowserAudioOutput {
     this.stopScheduledSources();
     this.runtime.reset();
     this.generation = null;
+    this.speechId = null;
     this.startedGeneration = null;
     this.nextPlayTime = 0;
     this.startedAt = null;
@@ -296,14 +311,15 @@ export class BrowserAudioOutput {
   }
 
   private stopScheduledSources(): void {
-    for (const source of this.scheduledSources) {
+    const sources = this.scheduledSources;
+    this.scheduledSources = [];
+    for (const source of sources) {
       try {
         source.stop();
       } catch {
         // The source already reached its natural end.
       }
     }
-    this.scheduledSources = [];
   }
 }
 

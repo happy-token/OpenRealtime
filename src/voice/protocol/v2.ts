@@ -116,6 +116,7 @@ export interface SessionAckV2 {
   session_id: string;
   resume_token: string;
   resumed: boolean;
+  output_epoch?: string | null;
   protocol_version: 2;
   thread_id?: string;
   previous_voice_session_id?: string | null;

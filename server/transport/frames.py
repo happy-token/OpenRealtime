@@ -294,6 +294,7 @@ class SessionAckFrame(BaseModel):
     type: Literal["session_ack"] = "session_ack"
     session_id: str
     resumed: bool
+    output_epoch: str | None = Field(default=None, min_length=1)
     resume_token: str | None = None
     protocol_version: int = 1
     server_time_ms: int | None = None

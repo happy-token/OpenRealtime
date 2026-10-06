@@ -256,6 +256,7 @@ class EndpointSessionRegistry:
             SessionAckFrame(
                 session_id=entry.session.session_id,
                 resumed=True,
+                output_epoch=entry.session.output_epoch,
                 resume_token=resume_token,
                 protocol_version=protocol_version,
                 thread_id=entry.session.authorized_thread_id,
@@ -328,6 +329,7 @@ class EndpointSessionRegistry:
             SessionAckFrame(
                 session_id=session_id,
                 resumed=False,
+                output_epoch=session.output_epoch,
                 resume_token=resume_token,
                 protocol_version=protocol_version,
                 heartbeat_interval_ms=self._default_heartbeat_interval_ms,

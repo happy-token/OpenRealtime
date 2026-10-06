@@ -48,6 +48,77 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it("does not report a natural completion after a source was cancelled", () => {
+    const fake = fakeContext();
+    const ended = vi.fn();
+    const output = new BrowserAudioOutput({runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext});
+    output.beginEpoch("epoch");
+    output.play({pcm16Base64: "AAAAAA==", sampleRateHz: 16_000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: true, onEnded: ended});
+    output.cancelGeneration(1);
+    fake.sources[0].ended?.();
+    expect(ended).not.toHaveBeenCalled();
+    expect(output.finishGeneration(1)).toBeNull();
+    output.close();
+  });
+
+  it("a late cancellation of an old generation preserves newer audio and its clock", () => {
+    const fake = fakeContext();
+    const output = new BrowserAudioOutput({runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext});
+    output.beginEpoch("epoch");
+    const chunk = {pcm16Base64: "AAAAAA==", sampleRateHz: 16_000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: true};
+    output.play(chunk);
+    fake.context.currentTime = 1.000125;
+    output.play({...chunk, generation: 2, speechId: "new"});
+    fake.context.currentTime = 1.00025;
+    const old = output.cancelGeneration(1);
+    expect(fake.sources[1].stop).not.toHaveBeenCalled();
+    expect(output.activeGeneration).toBe(2);
+    expect(output.scheduledSourceCount).toBe(1);
+    expect(old).toMatchObject({speech_id: "old", played_position_samples: 2, phase: "stopped"});
+    expect(output.playbackProgress(2, "playing")).toMatchObject({speech_id: "new", played_position_samples: 2});
+    output.close();
+  });
+
+  it("starts a new epoch by stopping old audio and suppressing its delayed completion", () => {
+    const fake = fakeContext();
+    const ended = vi.fn();
+    const output = new BrowserAudioOutput({runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext});
+    const chunk = {pcm16Base64: "AAAAAA==", sampleRateHz: 16_000, generation: 1,
+      speechId: "old", sequence: 0, isFinal: true, onEnded: ended};
+    output.beginEpoch("old-epoch");
+    output.play(chunk);
+    output.beginEpoch("new-epoch");
+    expect(fake.sources[0].stop).toHaveBeenCalledOnce();
+    output.play({...chunk, speechId: "new"});
+    fake.sources[0].ended?.();
+    expect(ended).not.toHaveBeenCalled();
+    expect(output.playbackProgress(1, "playing")?.output_epoch).toBe("new-epoch");
+    output.close();
+  });
+
+  it("keeps distinct speech clocks when a generation is reused or the sample rate changes", () => {
+    const fake = fakeContext();
+    const ended = vi.fn();
+    const output = new BrowserAudioOutput({runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext});
+    output.beginEpoch("epoch");
+    const chunk = {pcm16Base64: "AAAAAA==", sampleRateHz: 16000, generation: 1,
+      speechId: "first", sequence: 0, isFinal: true, onEnded: ended};
+    output.play(chunk);
+    fake.context.currentTime = 1.000125;
+    output.play({...chunk, sampleRateHz: 24000, speechId: "second"});
+    fake.sources[0].ended?.();
+    expect(ended).not.toHaveBeenCalled();
+    expect(fake.sources[0].stop).toHaveBeenCalledOnce();
+    expect(output.playbackProgress(1, "started")).toMatchObject({speech_id: "second", played_position_samples: 0});
+    output.close();
+  });
+
   it("resumes browser audio during the start gesture", async () => {
     const fake = fakeContext();
     const output = new BrowserAudioOutput({

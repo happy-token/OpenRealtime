@@ -218,6 +218,9 @@ async def test_v2_resume_requires_and_rotates_a_single_use_token() -> None:
     assert second_ack.resumed is True
     assert second_ack.resume_token is not None
     assert second_ack.resume_token != first_ack.resume_token
+    assert getattr(first_ack, "output_epoch", None)
+    assert getattr(second_ack, "output_epoch", None)
+    assert first_ack.output_epoch != second_ack.output_epoch
 
     replay_transport = FakeTransport(
         [

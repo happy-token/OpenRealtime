@@ -4,6 +4,17 @@ import { DeviceAudioOutputRuntime } from "./output-runtime";
 
 
 describe("DeviceAudioOutputRuntime", () => {
+  it("allows another speech on the same input generation after natural completion", () => {
+    const runtime = new DeviceAudioOutputRuntime();
+    runtime.beginEpoch("epoch");
+    const chunk = {speechId: "first", generation: 1, sequence: 0,
+      sampleRateHz: 16000, pcm16: new Int16Array(2), isFinal: true};
+    runtime.enqueue(chunk);
+    runtime.playbackProgress(1, "finished", 2);
+    expect(runtime.cancelGeneration(1, 2)).toBeNull();
+    expect(runtime.enqueue({...chunk, speechId: "second"})).toBe(true);
+    expect(runtime.playbackProgress(1, "started", 0)).toMatchObject({speech_id: "second", played_position_samples: 0});
+  });
   it("clears a cancelled generation and rejects every late chunk for it", () => {
     const runtime = new DeviceAudioOutputRuntime();
     runtime.beginEpoch("output-1");

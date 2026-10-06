@@ -5,6 +5,8 @@ import base64
 from dataclasses import replace
 from datetime import UTC, datetime
 
+import pytest
+
 from server.conversation_journal.models import item_from_draft
 from server.core.interaction_context import InteractionContext
 from server.realtime import (
@@ -28,7 +30,11 @@ from server.realtime import (
     ResponseStarted,
     SpokenContentDelta,
 )
-from server.realtime.protocol.events import SpeechTextAlignment
+from server.realtime.protocol.events import (
+    SpeechAudioCompleted,
+    SpeechAudioDelta,
+    SpeechTextAlignment,
+)
 from server.realtime.transport import RealtimeWebSocketFrameBridge
 from server.tools.policy_gateway import ConfirmationChannel
 from server.transport.frames import (
@@ -879,6 +885,7 @@ async def test_v2_playback_uses_output_epoch_speech_identity_and_exact_samples()
         context=context(),
         conversation=conversation,
         transport=RecordingTransport(),
+        output_epoch="output-1",
     )
     now = datetime.now(UTC)
     response_context = event_context()
@@ -935,7 +942,7 @@ async def test_v2_playback_uses_output_epoch_speech_identity_and_exact_samples()
 
 async def test_playing_progress_includes_only_fully_played_aligned_segments():
     conversation = RecordingConversation()
-    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=RecordingTransport())
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=RecordingTransport(), output_epoch="output-1")
     now = datetime.now(UTC)
     ctx = event_context()
     await bridge.handle_event(SpokenContentDelta(
@@ -956,6 +963,194 @@ async def test_playing_progress_includes_only_fully_played_aligned_segments():
         command = conversation.commands[-1]
         assert command.delivered_text_end == expected
         assert command.precision is PlaybackPrecision.SEGMENT
+
+
+async def test_output_epoch_rejects_old_attachment_receipts_before_mutating_playback():
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    transport.output_epoch = "active-epoch"
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport)
+    await bridge.handle_event(AudioDelta(event_id="audio", context=event_context(),
+        conversation_sequence=1, occurred_at=datetime.now(UTC), response_id="response-1", response_sequence=1,
+        speech_id="response:response-1", segment_index=0,
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=200_000,
+            encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio")))
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="old-epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=4800))
+    assert conversation.commands == []
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="active-epoch", speech_id="response:response-1",
+        generation=1, phase="playing", played_position_samples=1200))
+    assert len(conversation.commands) == 1
+    transport.output_epoch = "new-attachment"
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="active-epoch", speech_id="response:response-1",
+        generation=1, phase="stopped", played_position_samples=2400))
+    assert len(conversation.commands) == 1
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="new-attachment", speech_id="response:response-1",
+        generation=1, phase="playing", played_position_samples=2400))
+    assert len(conversation.commands) == 2
+
+
+async def test_segment_end_and_short_finish_cannot_claim_the_whole_reply_was_heard():
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport,
+                                         output_epoch="epoch")
+    now, ctx = datetime.now(UTC), event_context()
+    await bridge.handle_event(SpokenContentDelta(event_id="text", context=ctx, conversation_sequence=1,
+        occurred_at=now, response_id="response-1", response_sequence=1, delta="第一句。第二句。"))
+    await bridge.handle_event(AudioDelta(event_id="segment", context=ctx, conversation_sequence=2,
+        occurred_at=now, response_id="response-1", response_sequence=2,
+        speech_id="response:response-1", segment_index=0, is_final_for_segment=True,
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=200_000,
+            encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24_000, channels=1, data=b"audio")))
+    assert isinstance(transport.frames[-1], AssistantAudioChunkFrame)
+    assert not transport.frames[-1].is_final
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=4800))
+    assert not conversation.commands[-1].completed  # Generation is still open.
+    await bridge.handle_event(ResponseCompleted(event_id="generated", context=ctx, conversation_sequence=3,
+        occurred_at=now, response_id="response-1", response_sequence=3))
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=0))
+    assert not conversation.commands[-1].completed
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=4800))
+    assert conversation.commands[-1].completed
+
+
+async def test_each_speech_has_its_own_terminal_and_position_on_the_same_generation():
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport,
+                                         output_epoch="epoch")
+    now, ctx = datetime.now(UTC), event_context()
+    async def audio(identity):
+        await bridge.handle_event(SpeechAudioDelta(event_id=f"audio-{identity}", context=ctx,
+            conversation_sequence=1, occurred_at=now, speech_id=identity, segment_index=0,
+            is_final_for_segment=True,
+            frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100_000,
+                encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24000, channels=1, data=b"audio")))
+    await audio("first")
+    await bridge.handle_event(SpeechAudioCompleted(event_id="done-first", context=ctx,
+        conversation_sequence=2, occurred_at=now, speech_id="first"))
+    await audio("second")
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="second",
+        generation=1, phase="finished", played_position_samples=2400))
+    assert not conversation.commands[-1].completed
+    await bridge.handle_event(SpeechAudioCompleted(event_id="done-second", context=ctx,
+        conversation_sequence=3, occurred_at=now, speech_id="second"))
+    assert transport.frames[-1].speech_id == "second" and transport.frames[-1].is_final
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="first",
+        generation=1, phase="finished", played_position_samples=2400))
+    assert conversation.commands[-1].speech_id == "first"
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="second",
+        generation=1, phase="finished", played_position_samples=2400))
+    assert conversation.commands[-1].speech_id == "second" and conversation.commands[-1].completed
+
+
+async def test_late_response_completed_cannot_finish_or_align_a_new_speech_on_same_generation():
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport)
+    ctx, now = event_context(response_id="new"), datetime.now(UTC)
+    await bridge.handle_event(SpokenContentDelta(event_id="new-text", context=ctx, conversation_sequence=1,
+        occurred_at=now, response_id="new", response_sequence=1, delta="新的回答"))
+    await bridge.handle_event(AudioDelta(event_id="new-audio", context=ctx, conversation_sequence=2,
+        occurred_at=now, response_id="new", response_sequence=2, speech_id="response:new", segment_index=0,
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100_000,
+            encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24000, channels=1, data=b"audio")))
+    before = list(transport.frames)
+    await bridge.handle_event(ResponseCompleted(event_id="old-done", context=event_context(),
+        conversation_sequence=3, occurred_at=now, response_id="response-1", response_sequence=3))
+    assert transport.frames == before
+
+
+@pytest.mark.parametrize("chunks", [2, 256])
+async def test_completion_counts_pcm_samples_instead_of_accumulated_rounded_microseconds(chunks):
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport,
+                                         output_epoch="epoch")
+    now, ctx = datetime.now(UTC), event_context()
+    for index in range(chunks):
+        await bridge.handle_event(AudioDelta(event_id=f"audio-{index}", context=ctx,
+            conversation_sequence=index + 1, occurred_at=now, response_id="response-1",
+            response_sequence=index + 1, speech_id="response:response-1", segment_index=index,
+            frame=AudioFrame(stream_id="tts", sequence=index, timestamp_us=0,
+                duration_us=round(4096 * 1e6 / 24000), encoding=AudioEncoding.PCM_S16LE,
+                sample_rate_hz=24000, channels=1, data=b"\0" * (4096 * 2))))
+    await bridge.handle_event(ResponseCompleted(event_id="generated", context=ctx,
+        conversation_sequence=chunks + 1, occurred_at=now, response_id="response-1", response_sequence=chunks + 1))
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=chunks * 4096 - 1))
+    assert not conversation.commands[-1].completed
+    await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:response-1",
+        generation=1, phase="finished", played_position_samples=chunks * 4096))
+    assert conversation.commands[-1].completed
+
+
+async def test_finished_can_arrive_while_terminal_frame_send_is_waiting():
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport,
+                                         output_epoch="epoch")
+    now, ctx = datetime.now(UTC), event_context()
+    send = transport.send
+    async def interleaved_send(frame):
+        await send(frame)
+        if isinstance(frame, AssistantAudioChunkFrame) and frame.is_final:
+            await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id=frame.speech_id,
+                generation=frame.generation, phase="finished", played_position_samples=2400))
+    transport.send = interleaved_send
+    await bridge.handle_event(AudioDelta(event_id="audio", context=ctx, conversation_sequence=1,
+        occurred_at=now, response_id="response-1", response_sequence=1, speech_id="response:response-1", segment_index=0,
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100000,
+            encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24000, channels=1, data=b"\0" * 4800)))
+    await bridge.handle_event(ResponseCompleted(event_id="generated", context=ctx, conversation_sequence=2,
+        occurred_at=now, response_id="response-1", response_sequence=2))
+    assert conversation.commands[-1].completed
+
+
+@pytest.mark.parametrize("kind", ["cancelled", "failed", "yield", "display"])
+@pytest.mark.parametrize("replacement_finished", [False, True])
+async def test_old_response_cannot_stop_or_overwrite_same_generation_replacement(kind, replacement_finished):
+    conversation, transport = RecordingConversation(), RecordingTransport()
+    bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation, transport=transport,
+                                         output_epoch="epoch")
+    now = datetime.now(UTC)
+    for index, identity in enumerate(("old", "new")):
+        await bridge.handle_event(ResponseStarted(event_id=f"start-{identity}",
+            context=event_context(response_id=identity), conversation_sequence=index + 1,
+            occurred_at=now, response_id=identity, response_sequence=1))
+    if replacement_finished:
+        await bridge.handle_event(AudioDelta(event_id="replacement-audio", context=event_context(response_id="new"),
+            conversation_sequence=3, occurred_at=now, response_id="new", response_sequence=2,
+            speech_id="response:new", segment_index=0,
+            frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100000,
+                encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24000, channels=1, data=b"\0" * 4800)))
+        await bridge.handle_event(SpeechAudioCompleted(event_id="new-done", context=event_context(response_id="new"),
+            conversation_sequence=3, occurred_at=now, speech_id="response:new"))
+        await bridge.handle_inbound(PlaybackProgressV2(output_epoch="epoch", speech_id="response:new",
+            generation=1, phase="finished", played_position_samples=2400))
+        assert conversation.commands[-1].completed
+    ctx = event_context(response_id="old")
+    common = {"event_id": "late", "context": ctx, "conversation_sequence": 3, "occurred_at": now}
+    if kind == "cancelled":
+        event = ResponseCancelled(**common, response_id="old", response_sequence=2, reason="cancelled")
+    elif kind == "failed":
+        event = ResponseFailed(**common, response_id="old", response_sequence=2, error="provider failed")
+    elif kind == "yield":
+        event = AssistantYieldRequested(**common, reason="barge_in_floor_claim")
+    else:
+        event = DisplayContentDelta(**common, response_id="old", response_sequence=2, delta="旧回答")
+    before = list(transport.frames)
+    await bridge.handle_event(event)
+    assert transport.frames == before
+    if replacement_finished:
+        await bridge.handle_event(ResponseStarted(event_id="next-start", context=event_context(response_id="next"),
+            conversation_sequence=4, occurred_at=now, response_id="next", response_sequence=1))
+    identity = "next" if replacement_finished else "new"
+    await bridge.handle_event(AudioDelta(event_id="new-audio", context=event_context(response_id=identity),
+        conversation_sequence=5, occurred_at=now, response_id=identity, response_sequence=2,
+        speech_id=f"response:{identity}", segment_index=0,
+        frame=AudioFrame(stream_id="tts", sequence=0, timestamp_us=0, duration_us=100000,
+            encoding=AudioEncoding.PCM_S16LE, sample_rate_hz=24000, channels=1, data=b"\0" * 4800)))
+    assert isinstance(transport.frames[-1], AssistantAudioChunkFrame)
+    assert transport.frames[-1].speech_id == f"response:{identity}"
 
 
 async def test_targeted_yield_stops_same_generation_and_rejects_late_audio() -> None:

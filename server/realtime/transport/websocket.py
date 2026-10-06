@@ -41,7 +41,11 @@ from server.realtime.protocol import (
     SpokenContentDelta,
 )
 from server.realtime.protocol.engine import is_output_deliverable
-from server.realtime.protocol.events import RealtimeCapabilityFailed, SpeechTextAlignment
+from server.realtime.protocol.events import (
+    RealtimeCapabilityFailed,
+    SpeechAudioCompleted,
+    SpeechTextAlignment,
+)
 from server.transport.base import TransportAdapter
 from server.transport.frames import (
     AssistantAudioChunkFrame,
@@ -78,11 +82,14 @@ ConfirmationDecisionHandler = Callable[[ConfirmationDecisionFrame], Awaitable[No
 @dataclass(slots=True)
 class _PlaybackState:
     speech_id: str
+    generation: int
     intended_text: str = ""
     audio_end_us: int = 0
+    audio_samples: int = 0
     sample_rate_hz: int | None = None
     next_sequence: int = 0
     terminal_audio_sent: bool = False
+    generation_complete: bool = False
     delivered_text_end: int = 0
     played_audio_end_us: int = 0
     text_boundaries: list[tuple[int, int]] = field(default_factory=list)
@@ -104,8 +111,12 @@ class RealtimeWebSocketFrameBridge:
         inbound_fallback: InboundFallback | None = None,
         input_epoch_started: InputEpochStartedHandler | None = None,
         confirmation_decision_handler: ConfirmationDecisionHandler | None = None,
+        output_epoch: str | None = None,
     ) -> None:
         self._base_context = context
+        if output_epoch == "":
+            raise ValueError("output epoch must be non-empty")
+        self._output_epoch = output_epoch or str(uuid.uuid4())
         self._conversation = conversation
         self._transport = transport
         self._inbound_fallback = inbound_fallback
@@ -118,11 +129,20 @@ class RealtimeWebSocketFrameBridge:
         self._active_response_id: str | None = None
         self._active_response_context: InteractionContext | None = None
         self._playback_by_generation: dict[int, _PlaybackState] = {}
+        self._playback_by_speech: dict[str, _PlaybackState] = {}
+        self._latest_speech_by_generation: dict[int, str] = {}
+        self._retired_speech_ids: set[str] = set()
         self._projection_waiters: dict[str, asyncio.Future[ItemProjected]] = {}
         self._locally_cancelled_generations: set[int] = set()
         self._input_timeline = InputEpochTimeline()
         self._input_format: AudioFormat | None = None
         self._voice_session_sequence = 0
+
+    @property
+    def output_epoch(self) -> str:
+        # EndpointSession survives reattachment; read its rotated epoch on
+        # each receipt rather than retaining the initial connection identity.
+        return getattr(self._transport, "output_epoch", self._output_epoch)
 
     async def handle_inbound(self, frame: InboundFrame) -> None:
         if isinstance(frame, InputEpochStarted):
@@ -186,6 +206,9 @@ class RealtimeWebSocketFrameBridge:
                 if event.context.response_id is not None
                 else self._interrupted_generation(event.context.generation)
             )
+            if (interrupted_generation is not None and event.context.response_id is not None
+                    and not self._response_is_current(interrupted_generation, event.context.response_id)):
+                return
             if interrupted_generation is not None:
                 self._locally_cancelled_generations.add(interrupted_generation)
                 await self._transport.send(
@@ -221,6 +244,8 @@ class RealtimeWebSocketFrameBridge:
             self._advance_generation(event.context.generation)
             return
         if isinstance(event, ResponseStarted):
+            if self._begin_playback(event.context.generation, f"response:{event.response_id}") is None:
+                return
             self._response_text[event.response_id] = ""
             self._response_spoken[event.response_id] = ""
             self._active_response_id = event.response_id
@@ -230,6 +255,8 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, DisplayContentDelta):
+            if not self._response_is_current(event.context.generation, event.response_id):
+                return
             text = self._response_text.get(event.response_id, "") + event.delta
             self._response_text[event.response_id] = text
             await self._transport.send(
@@ -237,6 +264,9 @@ class RealtimeWebSocketFrameBridge:
             )
             return
         if isinstance(event, SpokenContentDelta):
+            playback = self._begin_playback(event.context.generation, f"response:{event.response_id}")
+            if playback is None:
+                return
             spoken = self._response_spoken.get(event.response_id, "") + event.delta
             self._response_spoken[event.response_id] = spoken
             await self._transport.send(
@@ -245,14 +275,7 @@ class RealtimeWebSocketFrameBridge:
                     generation=event.context.generation,
                 )
             )
-            playback = self._playback_by_generation.get(event.context.generation)
-            if playback is None:
-                self._playback_by_generation[event.context.generation] = _PlaybackState(
-                    speech_id=f"response:{event.response_id}",
-                    intended_text=spoken,
-                )
-            else:
-                playback.intended_text = spoken
+            playback.intended_text = spoken
             return
         if isinstance(event, SpeechTextAlignment):
             playback = self._playback_by_generation.get(event.context.generation)
@@ -273,7 +296,6 @@ class RealtimeWebSocketFrameBridge:
                 speech_id=event.speech_id or f"response:{event.response_id}",
                 frame=event.frame,
                 sequence=event.response_sequence,
-                is_final=event.is_final_for_segment,
             )
             return
         if isinstance(event, SpeechAudioDelta):
@@ -282,11 +304,22 @@ class RealtimeWebSocketFrameBridge:
                 speech_id=event.speech_id,
                 frame=event.frame,
                 sequence=event.segment_index + 1,
-                is_final=event.is_final_for_segment,
             )
             return
+        if isinstance(event, SpeechAudioCompleted):
+            await self._send_terminal_audio(event.context.generation, event.speech_id)
+            return
         if isinstance(event, ResponseCompleted):
+            if f"response:{event.response_id}" in self._retired_speech_ids:
+                self._clear_response_draft(event.response_id)
+                self._response_generation_by_id.pop(event.response_id, None)
+                return
             playback = self._playback_by_generation.get(event.context.generation)
+            if playback is not None and playback.speech_id != f"response:{event.response_id}":
+                await self._send_terminal_audio(event.context.generation, f"response:{event.response_id}")
+                self._clear_response_draft(event.response_id)
+                self._response_generation_by_id.pop(event.response_id, None)
+                return
             if playback and playback.intended_text and playback.audio_end_us > 0 and not playback.text_boundaries:
                 # A provider without word timings still has one real utterance
                 # span. Display that span on the client playback clock.
@@ -295,22 +328,7 @@ class RealtimeWebSocketFrameBridge:
                     generation=event.context.generation, speech_id=playback.speech_id,
                     text=playback.intended_text, audio_start_us=0, audio_end_us=playback.audio_end_us,
                 ))
-            if (
-                playback is not None
-                and playback.sample_rate_hz is not None
-                and not playback.terminal_audio_sent
-            ):
-                await self._transport.send(
-                    AssistantAudioChunkFrame(
-                        pcm16_base64="",
-                        sample_rate_hz=playback.sample_rate_hz,
-                        generation=event.context.generation,
-                        speech_id=playback.speech_id,
-                        sequence=playback.next_sequence,
-                        is_final=True,
-                    )
-                )
-                playback.terminal_audio_sent = True
+            await self._send_terminal_audio(event.context.generation, f"response:{event.response_id}")
             await self._transport.send(
                 AssistantResponseCompletedFrame(generation=event.context.generation)
             )
@@ -318,6 +336,10 @@ class RealtimeWebSocketFrameBridge:
             self._response_generation_by_id.pop(event.response_id, None)
             return
         if isinstance(event, ResponseFailed):
+            if not self._response_is_current(event.context.generation, event.response_id):
+                self._clear_response_draft(event.response_id)
+                self._response_generation_by_id.pop(event.response_id, None)
+                return
             if not self._response_text.get(event.response_id):
                 await self._transport.send(
                     AssistantTextFrame(
@@ -339,6 +361,10 @@ class RealtimeWebSocketFrameBridge:
                 event.response_id,
                 event.context.generation,
             )
+            if not self._response_is_current(cancelled_generation, event.response_id):
+                self._clear_response_draft(event.response_id)
+                self._response_generation_by_id.pop(event.response_id, None)
+                return
             if cancelled_generation not in self._locally_cancelled_generations:
                 await self._transport.send(
                     AssistantSpeechCancelledFrame(generation=cancelled_generation)
@@ -494,19 +520,18 @@ class RealtimeWebSocketFrameBridge:
         speech_id: str,
         frame: AudioFrame,
         sequence: int,
-        is_final: bool,
     ) -> None:
         if generation in self._locally_cancelled_generations:
             return
-        playback = self._playback_by_generation.setdefault(
-            generation,
-            _PlaybackState(speech_id=speech_id),
-        )
-        playback.speech_id = speech_id
+        playback = self._begin_playback(generation, speech_id)
+        if playback is None or playback.generation_complete:
+            return
+        if playback.sample_rate_hz is not None and playback.sample_rate_hz != frame.sample_rate_hz:
+            raise ValueError("sample rate cannot change within one speech")
         playback.audio_end_us += frame.duration_us
+        playback.audio_samples += len(frame.data) // (2 * frame.channels)
         playback.sample_rate_hz = frame.sample_rate_hz
         playback.next_sequence = max(playback.next_sequence, sequence + 1)
-        playback.terminal_audio_sent = playback.terminal_audio_sent or is_final
         await self._transport.send(
             AssistantAudioChunkFrame(
                 pcm16_base64=base64.b64encode(frame.data).decode("ascii"),
@@ -514,9 +539,54 @@ class RealtimeWebSocketFrameBridge:
                 generation=generation,
                 speech_id=speech_id,
                 sequence=sequence,
-                is_final=is_final,
+                # A provider segment boundary is not the end of the reply.
+                is_final=False,
             )
         )
+
+    async def _send_terminal_audio(self, generation: int, speech_id: str) -> None:
+        playback = self._playback_by_speech.get(speech_id)
+        if playback is None or playback.generation != generation:
+            return
+        playback.generation_complete = True
+        if (self._playback_by_generation.get(generation) is not playback
+                or playback.sample_rate_hz is None or playback.terminal_audio_sent):
+            return
+        # Publish terminal state before an awaited send can expose its frame
+        # and interleave the client's completion receipt.
+        playback.terminal_audio_sent = True
+        await self._transport.send(AssistantAudioChunkFrame(
+            pcm16_base64="", sample_rate_hz=playback.sample_rate_hz,
+            generation=generation, speech_id=playback.speech_id,
+            sequence=playback.next_sequence, is_final=True,
+        ))
+
+    def _response_is_current(self, generation: int, response_id: str) -> bool:
+        speech_id = f"response:{response_id}"
+        if speech_id in self._retired_speech_ids:
+            return False
+        latest = self._latest_speech_by_generation.get(generation)
+        return latest is None or latest == speech_id
+
+    def _begin_playback(self, generation: int, speech_id: str) -> _PlaybackState | None:
+        if speech_id in self._retired_speech_ids:
+            return None
+        existing = self._playback_by_speech.get(speech_id)
+        if existing is not None:
+            if existing.generation != generation:
+                raise ValueError("speech identity was reused by another generation")
+            return existing if self._playback_by_generation.get(generation) is existing else None
+        playback = _PlaybackState(speech_id=speech_id, generation=generation)
+        self._playback_by_speech[speech_id] = playback
+        self._playback_by_generation[generation] = playback
+        self._latest_speech_by_generation[generation] = speech_id
+        return playback
+
+    def _retire_playback(self, playback: _PlaybackState) -> None:
+        self._retired_speech_ids.add(playback.speech_id)
+        self._playback_by_speech.pop(playback.speech_id, None)
+        if self._playback_by_generation.get(playback.generation) is playback:
+            self._playback_by_generation.pop(playback.generation, None)
 
     async def _report_playback(self, frame: PlaybackProgressFrame) -> None:
         playback = self._playback_by_generation.get(frame.generation)
@@ -577,11 +647,13 @@ class RealtimeWebSocketFrameBridge:
             )
         )
         if frame.finished or frame.stopped:
-            self._playback_by_generation.pop(frame.generation, None)
+            self._retire_playback(playback)
 
     async def _report_playback_v2(self, frame: PlaybackProgressV2) -> None:
-        playback = self._playback_by_generation.get(frame.generation)
-        if playback is None or playback.speech_id != frame.speech_id:
+        if frame.output_epoch != self.output_epoch:
+            return
+        playback = self._playback_by_speech.get(frame.speech_id)
+        if playback is None or playback.generation != frame.generation:
             return
         sample_rate_hz = playback.sample_rate_hz
         if sample_rate_hz is None:
@@ -594,7 +666,9 @@ class RealtimeWebSocketFrameBridge:
             (text_end for audio_end, text_end in playback.text_boundaries
              if audio_end <= played_audio_end_us), default=0,
         )
-        if frame.phase == "finished":
+        completed = (frame.phase == "finished" and playback.generation_complete
+                     and frame.played_position_samples >= playback.audio_samples)
+        if completed:
             played_audio_end_us = playback.audio_end_us
             delivered_text_end = len(playback.intended_text)
         delivered_text_end = max(playback.delivered_text_end, delivered_text_end)
@@ -604,23 +678,23 @@ class RealtimeWebSocketFrameBridge:
         await self._conversation.send(
             ReportPlaybackProgress(
                 command_id=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}"
                 ),
                 idempotency_key=(
-                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}"
+                    f"playback-v2:{frame.output_epoch}:{frame.speech_id}:{frame.phase}:{frame.played_position_samples}:{delivered_text_end}:{played_audio_end_us}:{int(completed)}"
                 ),
                 context=self._turn_context(frame.generation),
                 speech_id=frame.speech_id,
                 delivered_text_end=delivered_text_end,
                 played_audio_end_us=played_audio_end_us,
                 precision=PlaybackPrecision.SEGMENT,
-                completed=frame.phase == "finished",
+                completed=completed,
                 started=frame.phase == "started",
                 stopped=frame.phase == "stopped",
             )
         )
-        if frame.phase in {"finished", "stopped"}:
-            self._playback_by_generation.pop(frame.generation, None)
+        if completed or frame.phase == "stopped":
+            self._retire_playback(playback)
 
     def _turn_context(self, generation: int) -> InteractionContext:
         return replace(

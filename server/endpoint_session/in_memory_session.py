@@ -13,6 +13,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import AsyncIterator
+from uuid import uuid4
 
 from server.transport.base import (
     AuthenticatedTransportIdentity,
@@ -38,6 +39,7 @@ class InMemoryEndpointSession:
         previous_voice_session_id: str | None = None,
     ) -> None:
         self.session_id = session_id
+        self._output_epoch = str(uuid4())
         self._transport: TransportAdapter | None = transport
         self._frame_iterator: AsyncIterator[InboundFrame] | None = frame_iterator
         self._buffer_capacity = buffer_capacity
@@ -125,12 +127,18 @@ class InMemoryEndpointSession:
     async def attach(
         self, transport: TransportAdapter, frame_iterator: AsyncIterator[InboundFrame] | None = None
     ) -> None:
+        self._output_epoch = str(uuid4())
         self._transport = transport
         self._frame_iterator = frame_iterator if frame_iterator is not None else transport.receive()
         self._touch_activity()
         self._detached_event.clear()
         await self._flush_buffer()
         self._reattached.set()
+
+    @property
+    def output_epoch(self) -> str:
+        """Server-issued playback identity for the current transport attachment."""
+        return self._output_epoch
 
     async def detach(self) -> None:
         if self._transport is None:

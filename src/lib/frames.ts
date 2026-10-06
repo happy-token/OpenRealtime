@@ -155,6 +155,7 @@ export interface SessionAckFrame {
   type: "session_ack";
   session_id: string;
   resumed: boolean;
+  output_epoch?: string | null;
   protocol_version?: number;
   resume_token?: string | null;
   thread_id?: string | null;
@@ -339,6 +340,7 @@ export function parseServerFrame(value: unknown): ServerToClientFrame | null {
       return (
         typeof value.session_id === "string"
         && typeof value.resumed === "boolean"
+        && isOptionalStringOrNull(value, "output_epoch")
         && isOptionalNumberOrNull(value, "protocol_version")
         && isOptionalStringOrNull(value, "resume_token")
         && isOptionalStringOrNull(value, "thread_id")

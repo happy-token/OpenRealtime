@@ -391,6 +391,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
   const sessionOutputEnabledRef = useRef(false);
   const inputRuntimeRef = useRef(new DeviceAudioInputRuntime());
   const outputRuntimeRef = useRef(new DeviceAudioOutputRuntime());
+  const outputEpochRef = useRef<string | undefined>(undefined);
   const voiceControllerRef = useRef(
     new ClientVoiceSessionController({
       input: inputRuntimeRef.current,
@@ -625,7 +626,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           sessionIdRef.current = frame.session_id ?? null;
           setSessionId(sessionIdRef.current);
-          outputGraph.beginEpoch(crypto.randomUUID());
+          outputEpochRef.current = frame.output_epoch ?? undefined;
+          outputGraph.beginEpoch(outputEpochRef.current ?? crypto.randomUUID());
           if (
             frame.protocol_version === 2
             && typeof frame.resume_token === "string"
@@ -943,13 +945,25 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           break;
         }
         case "assistant_speech_cancelled": {
+          const targetGeneration = frame.generation;
+          const playingGeneration = speakingGenerationRef.current;
+          if (playingGeneration !== null && targetGeneration < playingGeneration) {
+            // Settle the old output without clearing the newer reply's
+            // caption, playback timers or speaking state.
+            cancelledGenerationRef.current = Math.max(cancelledGenerationRef.current ?? -1, targetGeneration);
+            const progress = playbackOutput.cancelGeneration(targetGeneration);
+            if (progress) transportRef.current?.send(progress);
+            setTranscript(previous => settleAssistantTranscript(previous, targetGeneration,
+              frame.reason === "failed" ? "failed" : "interrupted"));
+            break;
+          }
           clearThinkingFallback();
           clearPlaybackInactivityFallback();
           // The server confirmed a barge-in (τ9). Nothing new will arrive for
           // this generation, so playChunk's own generation-change reset will
           // never run — this is the only thing that stops audio already
           // scheduled in the Web Audio graph.
-          cancelledGenerationRef.current = frame.generation ?? null;
+          cancelledGenerationRef.current = Math.max(cancelledGenerationRef.current ?? -1, targetGeneration);
           const avatarProgress = reportAvatarPlaybackPosition(frame.generation as number);
           const lastProgress = outputGraph.playbackProgress(frame.generation as number, "stopped");
           if (!avatarProgress && lastProgress) playbackTextRef.current.advance(lastProgress.generation, lastProgress.speech_id, outputGraph.playedAudioEndUs);
@@ -1243,7 +1257,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
         browserSpeechRecognitionConstructor() !== null,
       );
       try {
-        outputGraph.activate();
+        outputGraph.activate(outputEpochRef.current);
         if (mode === "server") await inputGraph.start();
         else if (mode === "browser") startBrowserSpeechRecognition();
         else throw new Error("语音识别不可用，请先使用文字输入");
@@ -1315,7 +1329,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
         return false;
       }
       setSessionError(null);
-      outputGraph.activate();
+      outputGraph.activate(outputEpochRef.current);
       sessionOutputEnabledRef.current = true;
       setCaption(`你：${text}`);
       if (

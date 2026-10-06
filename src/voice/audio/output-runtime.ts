@@ -14,6 +14,8 @@ export class DeviceAudioOutputRuntime {
   private queue: OutputAudioChunk[] = [];
   private readonly cancelledGenerations = new Set<number>();
   private readonly speechByGeneration = new Map<number, string>();
+  private readonly positions = new Map<string, number>();
+  private readonly finishedSpeech = new Set<string>();
 
   get pendingCount(): number {
     return this.queue.length;
@@ -31,7 +33,7 @@ export class DeviceAudioOutputRuntime {
 
   enqueue(chunk: OutputAudioChunk): boolean {
     if (this.outputEpoch === null) throw new Error("output epoch is not active");
-    if (this.cancelledGenerations.has(chunk.generation)) return false;
+    if (this.cancelledGenerations.has(chunk.generation) || this.finishedSpeech.has(chunk.speechId)) return false;
     this.speechByGeneration.set(chunk.generation, chunk.speechId);
     this.queue.push({ ...chunk, pcm16: chunk.pcm16.slice() });
     return true;
@@ -47,6 +49,7 @@ export class DeviceAudioOutputRuntime {
   ): PlaybackProgressV2 | null {
     if (this.outputEpoch === null) return null;
     const speechId = this.speechByGeneration.get(generation);
+    if (speechId !== undefined && this.finishedSpeech.has(speechId)) return null;
     this.cancelledGenerations.add(generation);
     const retained: OutputAudioChunk[] = [];
     for (const chunk of this.queue) {
@@ -66,6 +69,9 @@ export class DeviceAudioOutputRuntime {
     if (this.outputEpoch === null) return null;
     const speechId = this.speechByGeneration.get(generation);
     if (speechId === undefined) return null;
+    if (this.cancelledGenerations.has(generation) && phase !== "stopped") return null;
+    if (this.finishedSpeech.has(speechId) && phase !== "finished") return null;
+    if (phase === "finished") this.finishedSpeech.add(speechId);
     return this.buildProgress(generation, speechId, phase, playedPositionSamples);
   }
 
@@ -76,13 +82,15 @@ export class DeviceAudioOutputRuntime {
     playedPositionSamples: number,
   ): PlaybackProgressV2 {
     if (this.outputEpoch === null) throw new Error("output epoch is not active");
+    const position = Math.max(0, this.positions.get(speechId) ?? 0, playedPositionSamples);
+    this.positions.set(speechId, position);
     return {
       type: "playback_progress_v2",
       output_epoch: this.outputEpoch,
       speech_id: speechId,
       generation,
       phase,
-      played_position_samples: Math.max(0, playedPositionSamples),
+      played_position_samples: position,
     };
   }
 
@@ -96,5 +104,7 @@ export class DeviceAudioOutputRuntime {
     this.queue = [];
     this.cancelledGenerations.clear();
     this.speechByGeneration.clear();
+    this.positions.clear();
+    this.finishedSpeech.clear();
   }
 }
