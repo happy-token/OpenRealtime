@@ -78,7 +78,7 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 |分类含义与策略|classifier插件/CoordinationPolicy|不直接操控音频或提交|
 |最终输入关联|InputAssociationPolicy纯同步策略；actor校验并应用|未播时机不是关联依据，未知保留原文及父引用；不自行控制播放|
 |预生成候选生命周期|PrefetchController|回复提交时复用或失效|
-|当前输入/回复版本、替代关系、整回复交付许可|actor驱动的ReplyRevisionController，已实施|既有输出边界复验；精确当前句许可与跨Session重建仍待实现|
+|当前输入/回复版本、替代关系、整回复交付许可|actor驱动的ReplyRevisionController，已实施|既有输出边界复验；已归档版本跨Session重建已补，未归档动作幂等与精确当前句许可仍待实现|
 |实际播放位置、队列与句末确认|renderer/PlaybackOutputController|通过带ID回执向服务端报告|
 |停播/句末交付屏障|输出边界，待扩展|执行actor许可并等待实际回执，不自行裁决语义|
 |持久历史与诊断|Journal/Observability|保存事实，不接管实时决策|
@@ -98,6 +98,8 @@ ReplyRevisionController 不直接向Prefetch/renderer异步发动作；图中其
 已补0136首批：当前输入/回复版本、替代关系、取消前撤销许可、生产装饰链与WebSocket交付复验、原判停结论与截止原因分离，以及未决重叠输入的显式失败出口。账本覆盖运行中ASR正式提交，完整范围见[首批报告](../reports/2026-10-06-reply-version-delivery-isolation.md)。
 
 未完成：完整补充语义关联、跨Session版本重建/幂等、实际句末切换、误打断恢复与G2。这些按0136—0138继续实施，必须确认各renderer回执能力。
+
+2026-10-07进展：跨Session版本重建已覆盖已归档主Journal，未归档回复和全历史动作幂等仍开放。历史投影使用当前命令scope、保留原item/context/digest；既有actor在恢复屏障驱动同一账本，不恢复旧交付许可或另起执行任务。见[恢复报告](../reports/2026-10-07-cross-session-revision-restoration.md)。协调器1663行、账本242行，新增恢复解析和校验位于账本；没有新增actor或队列。
 
 当前yield_ack来自服务端取消完成，不是客户端实际stopped；现有PlaybackOutputController只能整generation取消，尚无当前句保留/未来队列清理/恢复已取消generation接口。协议能力审计前移到阶段0，功能实现仍扩展原输出边界。
 

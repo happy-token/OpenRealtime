@@ -166,7 +166,11 @@ class AppendItem:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProjectCommittedItem:
-    """Control-plane command delivered to engines only after Journal commit."""
+    """Project thread history into the current session after Journal commit.
+
+    The command belongs to the live session; the immutable item may originate
+    in an earlier voice session or device within the same authorized thread.
+    """
 
     command_id: str
     idempotency_key: str
@@ -178,8 +182,6 @@ class ProjectCommittedItem:
             raise ValueError("project item command identity must be non-empty")
         if self.item.scope != JournalScope.from_context(self.context):
             raise ValueError("committed item belongs to a different journal scope")
-        if conversation_scope(self.item.context) != conversation_scope(self.context):
-            raise ValueError("committed item belongs to a different realtime conversation scope")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

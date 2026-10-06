@@ -816,6 +816,8 @@ class CoordinatedTurnManagerSession:
                 text = "\n".join(
                     part.text for part in journal_item.content if isinstance(part, TextContent)
                 )
+                if self._revisions.restore_item(journal_item):
+                    self._last_committed = (journal_item.context.turn_id, text)
                 if text.strip():
                     self._history[journal_item.item_id] = (
                         journal_item.sequence,
@@ -1013,7 +1015,8 @@ class CoordinatedTurnManagerSession:
                 item.continuation_text = parent[1] if parent and association.continues_input else ""
                 reply = self._revisions.reply
                 supersedes_unplayed_reply = bool(association.continues_input and reply is not None
-                    and parent is not None and reply.turn_id == parent[0] and not reply.playback_started)
+                    and parent is not None and reply.turn_id == parent[0] and not reply.playback_started
+                    and reply.invalidation_reason != "journal_restored")
                 committed_text = (
                     item.continuation_text + "\n" + event.text
                     if item.continuation_text else event.text
@@ -1071,6 +1074,7 @@ class CoordinatedTurnManagerSession:
                         committed_at=datetime.now(UTC),
                         speech_ended_ns=item.speech_ended_ns,
                         input_id=version.input_id,
+                        input_observation_id=version.observation_id,
                         input_version=version.input_version,
                         admission_reason=version.admission_reason,
                         endpoint_decision=item.endpoint.decision.value if item.endpoint else None,

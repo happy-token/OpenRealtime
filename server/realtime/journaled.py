@@ -76,7 +76,7 @@ class JournalCommittedProjector:
                         ProjectCommittedItem(
                             command_id=f"project:{item.item_id}:{item.sequence}",
                             idempotency_key=f"project:{item.item_id}:{item.sequence}",
-                            context=item.context,
+                            context=self._context,
                             item=item,
                         )
                     )

@@ -108,6 +108,7 @@ class InputTranscriptCompleted:
     schema_version: int = 1
     speech_ended_ns: int | None = None
     input_id: str | None = None
+    input_observation_id: str | None = None
     input_version: int | None = None
     admission_reason: str | None = None
     endpoint_decision: str | None = None

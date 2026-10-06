@@ -1732,6 +1732,7 @@ class CascadedRealtimeConversation:
                         continuation_of_turn_id=event.continuation_of_turn_id,
                         speech_ended_ns=event.speech_ended_ns,
                         input_id=event.input_id,
+                        input_observation_id=event.input_observation_id,
                         input_version=event.input_version,
                         admission_reason=event.admission_reason,
                         endpoint_decision=event.endpoint_decision,

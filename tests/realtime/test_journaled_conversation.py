@@ -25,6 +25,7 @@ from server.realtime import (
     ResponseCancelled,
     ResponseRequested,
 )
+from server.realtime.journaled import JournalCommittedProjector
 
 
 def context() -> InteractionContext:
@@ -225,3 +226,61 @@ async def test_append_item_rejects_draft_from_another_voice_session_before_commi
 
     assert await journal.read(JournalScope.from_context(context())) == ()
     await conversation.close()
+
+
+async def test_projector_fills_old_session_gap_using_current_command_scope() -> None:
+    journal = InMemoryConversationJournal()
+    old = (await journal.append(user_item())).item
+    current = replace(context(), voice_session_id="voice-new", device_id="device-new")
+    latest = (await journal.append(replace(user_item(), item_id="latest", context=current))).item
+    engine = InMemoryRealtimeConversation(context=current)
+    projector = JournalCommittedProjector(context=current, journal=journal, engine_conversation=engine)
+    command = ProjectCommittedItem(command_id="latest", idempotency_key="latest", context=current, item=latest)
+    try:
+        await projector.send(command)
+        events = engine.events()
+        first, second = await anext(events), await anext(events)
+        assert (first.item_id, second.item_id) == (old.item_id, latest.item_id)
+        assert first.context == second.context == current
+        assert (await journal.read(JournalScope.from_context(current)))[0] == old
+        await projector.send(command)  # Duplicate cannot re-project either item.
+        assert projector._projected_through == 2
+    finally:
+        await engine.close()
+
+
+async def test_projector_rejects_forged_digest_in_old_session_item() -> None:
+    journal = InMemoryConversationJournal()
+    old = (await journal.append(user_item())).item
+    current = replace(context(), voice_session_id="voice-new")
+    engine = InMemoryRealtimeConversation(context=current)
+    projector = JournalCommittedProjector(context=current, journal=journal, engine_conversation=engine)
+    try:
+        with pytest.raises(ValueError, match="does not match"):
+            await projector.send(ProjectCommittedItem(command_id="forged", idempotency_key="forged",
+                context=current, item=replace(old, item_digest="forged")))
+        assert projector._projected_through == 0
+    finally:
+        await engine.close()
+
+
+@pytest.mark.parametrize("axis", ["tenant_id", "user_id", "thread_id"])
+async def test_projection_rejects_foreign_journal_scope(axis):
+    journal = InMemoryConversationJournal()
+    foreign = (await journal.append(replace(user_item(), context=replace(context(), **{axis: "other"})))).item
+    with pytest.raises(ValueError, match="different journal scope"):
+        ProjectCommittedItem(command_id="foreign", idempotency_key="foreign", context=context(), item=foreign)
+
+
+async def test_projector_rejects_old_session_as_command_owner() -> None:
+    journal = InMemoryConversationJournal()
+    old = (await journal.append(user_item())).item
+    current = replace(context(), voice_session_id="voice-new")
+    engine = InMemoryRealtimeConversation(context=current)
+    projector = JournalCommittedProjector(context=current, journal=journal, engine_conversation=engine)
+    try:
+        with pytest.raises(ValueError, match="different realtime conversation scope"):
+            await projector.send(ProjectCommittedItem(command_id="old-owner", idempotency_key="old-owner",
+                                                       context=context(), item=old))
+    finally:
+        await engine.close()

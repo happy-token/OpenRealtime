@@ -9,6 +9,12 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, replace
 
+from server.conversation_journal import (
+    ConversationItem,
+    ConversationItemKind,
+    ConversationItemStatus,
+    TextContent,
+)
 from server.core.interaction_context import InteractionContext
 
 
@@ -45,6 +51,93 @@ class ReplyRevisionController:
         self.input: InputRevision | None = None
         self.reply: ReplyRevision | None = None
         self._closed = False
+        self._live_started = False
+        self._history_sequence = 0
+
+    def restore_item(self, item: ConversationItem) -> bool:
+        """Rebuild current identities during the Journal restoration barrier.
+
+        Returns whether a user input was restored. No delivery permission,
+        pending response or execution lease survives this barrier. Once live
+        commits/bindings begin, their later Journal projections cannot roll
+        back the actor's state. The caller enforces thread authorization.
+        """
+        if self._closed:
+            raise RuntimeError("reply revision controller is closed")
+        if self._live_started or item.sequence <= self._history_sequence:
+            return False
+        metadata = item.provider_metadata
+        if item.kind is ConversationItemKind.USER_INPUT and item.status is ConversationItemStatus.COMPLETED:
+            text = "\n".join(part.text for part in item.content if isinstance(part, TextContent))
+            if not text.strip():
+                self._history_sequence = item.sequence
+                return False
+            root = metadata.get("input_id")
+            version = metadata.get("input_version")
+            legacy = root is None and version is None
+            if legacy:
+                root, version = item.item_id, 1
+            root = _identity(root, "input_id")
+            version = _positive_integer(version, "input_version")
+            observation_value = metadata.get("input_observation_id")
+            observation = _identity(item.item_id if observation_value is None else observation_value, "observation_id")
+            transcript = _positive_integer(metadata.get("transcript_revision", 1), "transcript_revision")
+            reason_value = metadata.get("admission_reason")
+            reason = _identity("journal_restore" if reason_value is None else reason_value, "admission_reason")
+            parent = metadata.get("continuation_of_turn_id") if not legacy else None
+            if parent is not None:
+                parent = _identity(parent, "continuation_of_turn_id")
+            previous = self.input
+            if previous is not None and previous.input_id == root and (
+                version <= previous.input_version or observation == previous.observation_id
+            ):
+                raise ValueError("restored input identity or version was reused")
+            if version > 1 and (previous is None or previous.input_id != root
+                    or previous.input_version + 1 != version or previous.turn_id != parent):
+                raise ValueError("restored input continuation has no preceding version")
+            if version == 1 and parent is not None:
+                raise ValueError("restored first input version cannot have a continuation")
+            self.input = InputRevision(
+                input_id=root, observation_id=observation, input_version=version,
+                turn_id=item.context.turn_id, generation=item.context.generation,
+                transcript_revision=transcript, text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                admission_reason=reason, supersedes_turn_id=parent,
+            )
+            if self.reply is not None and self.reply.input_id != root:
+                self.reply = None
+            self._history_sequence = item.sequence
+            return True
+        if item.kind is ConversationItemKind.ASSISTANT_OUTPUT and metadata.get("reply_version") is not None:
+            reply_version = _positive_integer(metadata["reply_version"], "reply_version")
+            # Manual/external replies can carry a reply version without an
+            # ASR input identity. They belong in history, not this input chain.
+            if metadata.get("input_id") is None and metadata.get("input_version") is None:
+                self._history_sequence = item.sequence
+                return False
+            root = _identity(metadata.get("input_id"), "input_id")
+            version = _positive_integer(metadata.get("input_version"), "input_version")
+            response_id = _identity(metadata.get("response_id"), "response_id")
+            if item.context.response_id != response_id:
+                raise ValueError("restored reply context and response identity disagree")
+            if self.input is not None and self.input.input_id == root:
+                if version > self.input.input_version:
+                    raise ValueError("restored reply refers to a future input version")
+                if version == self.input.input_version and (
+                    item.context.turn_id, item.context.generation
+                ) != (self.input.turn_id, self.input.generation):
+                    raise ValueError("restored reply belongs to a different input context")
+                predecessor = metadata.get("supersedes_response_id")
+                if predecessor is not None:
+                    predecessor = _identity(predecessor, "supersedes_response_id")
+                if self.reply is None or reply_version > self.reply.reply_version:
+                    self.reply = ReplyRevision(
+                        response_id=response_id, turn_id=item.context.turn_id, generation=item.context.generation,
+                        input_id=root, input_version=version, reply_version=reply_version,
+                        supersedes_response_id=predecessor, delivery_permitted=False,
+                        completed=True, invalidation_reason="journal_restored",
+                    )
+        self._history_sequence = item.sequence
+        return False
 
     def commit_input(
         self, *, input_id: str, context: InteractionContext, text: str,
@@ -69,6 +162,7 @@ class ReplyRevisionController:
             previous is None or previous.turn_id != continuation_of_turn_id
         ):
             raise ValueError("input continuation has no current parent")
+        self._live_started = True
         parent = previous if continuation_of_turn_id is not None else None
         self.input = InputRevision(
             input_id=parent.input_id if parent is not None else input_id,
@@ -87,6 +181,7 @@ class ReplyRevisionController:
             raise RuntimeError("reply revision controller is closed")
         if not response_id:
             raise ValueError("response identity must be non-empty")
+        self._live_started = True
         previous = self.reply
         if previous is not None and previous.response_id == response_id:
             if (previous.turn_id, previous.generation) != (context.turn_id, context.generation):
@@ -133,3 +228,15 @@ class ReplyRevisionController:
         self._closed = True
         if self.reply is not None:
             self.revoke(self.reply.response_id, reason="session_closed")
+
+
+def _identity(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"restored {name} must be a non-empty string")
+    return value
+
+
+def _positive_integer(value: object, name: str) -> int:
+    if type(value) is not int or value < 1:
+        raise ValueError(f"restored {name} must be a positive integer")
+    return value

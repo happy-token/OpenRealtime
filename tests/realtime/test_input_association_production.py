@@ -13,7 +13,13 @@ from server.conversation_journal import (
     InMemoryConversationJournal,
     JournalScope,
 )
-from server.realtime import AudioDelta, CancelResponse, ReportPlaybackProgress, RequestResponse
+from server.realtime import (
+    ActiveRealtimeConversations,
+    AudioDelta,
+    CancelResponse,
+    ReportPlaybackProgress,
+    RequestResponse,
+)
 from server.realtime.capabilities import (
     DeterministicSpeechRenderer,
     LegacyAsrCapabilityAdapter,
@@ -28,6 +34,7 @@ from server.realtime.capabilities.coordinated_turn_manager import (
 from server.realtime.cascaded import CascadedRealtimeEngine
 from server.realtime.control_plane import RealtimeTurnController
 from server.realtime.journaled import JournaledRealtimeConversation
+from server.realtime.runtime import RealtimeRuntimeFactory
 from server.signals.energy_vad import EnergyVad, EnergyVadConfig
 from server.speech.asr import PreloadedAsrEngine
 from server.turn_policy.policy import TurnPolicy
@@ -62,6 +69,78 @@ async def wait_for(predicate):
     async with asyncio.timeout(1):
         while not predicate():
             await asyncio.sleep(.001)
+
+
+@pytest.mark.asyncio
+async def test_runtime_restoration_preserves_input_identity_through_a_real_correction(monkeypatch):
+    journal, brain = InMemoryConversationJournal(), RecordingBrain()
+    engine = CascadedRealtimeEngine(
+        vad=LegacyVadCapabilityAdapter(lambda: EnergyVad(EnergyVadConfig())),
+        asr=LegacyAsrCapabilityAdapter(PreloadedAsrEngine("unused")),
+        turn_manager=CoordinatedTurnManagerCapabilityAdapter(TurnPolicy, eot_classifier=Endpoint()),
+        brain=LegacyBrainCapabilityAdapter(brain), speech_renderer=DeterministicSpeechRenderer(),
+        tts=LegacyTtsCapabilityAdapter(EchoDuplexTts()),
+    )
+    cores = []
+    open_engine = engine.open
+
+    async def recording_open(**kwargs):
+        core = await open_engine(**kwargs)
+        cores.append(core)
+        send_asr = core._input_pipeline._asr.send
+
+        async def controlled_asr(command):
+            if not isinstance(command, CommitAsrInput):
+                await send_asr(command)
+
+        monkeypatch.setattr(core._input_pipeline._asr, "send", controlled_asr)
+        return core
+
+    monkeypatch.setattr(engine, "open", recording_open)
+    factory = RealtimeRuntimeFactory(engine=engine, journal=journal,
+                                    active_conversations=ActiveRealtimeConversations())
+
+    async def submit(value, ctx):
+        actor = cores[-1]._input_pipeline._turn_manager
+        await start(actor, ctx)
+        await text(actor, value, ctx=ctx)
+        await stop(actor, ctx)
+        await wait_for(lambda: actor.snapshot().commit_pending)
+        await final(actor, ctx, value)
+
+    first = await factory.open(context=context(), profile=None)
+    try:
+        await submit("查北京天气", context())
+        await wait_for(lambda: len(brain.turns) == 1 and cores[-1]._active_response_id is None
+                       and any(item.kind is ConversationItemKind.ASSISTANT_OUTPUT
+                               for item in cores[-1]._projected_items.values()))
+        original = cores[-1]._input_pipeline._turn_manager._revisions.input
+        old_reply = cores[-1]._input_pipeline._turn_manager._revisions.reply
+    finally:
+        await first.close()
+    current = replace(context(), voice_session_id="new-voice", device_id="new-device", turn_id="new-turn")
+    restored = await factory.open(context=current, profile=None)
+    try:
+        actor = cores[-1]._input_pipeline._turn_manager
+        assert actor._revisions.input == original
+        assert len(brain.turns) == 1
+        assert not actor.response_delivery_allowed(old_reply.response_id)
+        await submit("不是，上海", current)
+        await wait_for(lambda: len(brain.turns) == 2 and cores[-1]._active_response_id is None
+                       and sum(item.kind is ConversationItemKind.ASSISTANT_OUTPUT
+                               for item in cores[-1]._projected_items.values()) == 2)
+        users = [item for item in await journal.read(JournalScope.from_context(current))
+                 if item.kind is ConversationItemKind.USER_INPUT]
+        assert users[-1].provider_metadata["input_id"] == original.input_id
+        assert users[-1].provider_metadata["input_version"] == 2
+        assert users[-1].provider_metadata["input_observation_id"] == actor._revisions.input.observation_id
+        assert users[-1].context.voice_session_id == "new-voice"
+        assert users[0].context.voice_session_id == context().voice_session_id
+        assert brain.turns[-1].text == "查北京天气\n不是，上海"
+        assert actor._revisions.reply.reply_version == 2
+        assert actor._revisions.reply.supersedes_response_id == old_reply.response_id
+    finally:
+        await restored.close()
 
 
 @pytest.mark.asyncio

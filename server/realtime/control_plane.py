@@ -206,6 +206,7 @@ class RealtimeTurnController:
                 "transcript_revision": event.transcript_revision,
                 "provider_endpoint_observed": event.provider_endpoint_observed,
                 "input_id": event.input_id,
+                "input_observation_id": event.input_observation_id,
                 "input_version": event.input_version,
                 "admission_reason": event.admission_reason,
                 "endpoint_decision": event.endpoint_decision,

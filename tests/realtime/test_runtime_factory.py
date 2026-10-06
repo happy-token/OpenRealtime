@@ -474,6 +474,27 @@ async def test_runtime_replay_projects_only_confirmed_delivered_speech_prefix() 
     await conversation.close()
 
 
+async def test_new_voice_session_restores_same_thread_without_rewriting_history() -> None:
+    journal = InMemoryConversationJournal()
+    committed = await journal.append(ConversationItemDraft(
+        item_id="previous-input", context=context(),
+        kind=ConversationItemKind.USER_INPUT, status=ConversationItemStatus.COMPLETED,
+        producer="test", content=(TextContent("查北京天气"),),
+    ))
+    current = replace(context(), voice_session_id="voice-2", device_id="device-2")
+    engine = RecordingEngine()
+    conversation = await RealtimeRuntimeFactory(
+        engine=engine, journal=journal, active_conversations=ActiveRealtimeConversations(),
+    ).open(context=current, profile=None)
+    try:
+        projected = engine.conversation.commands[0]
+        assert projected.context == current
+        assert projected.item == committed.item
+        assert projected.item.context.voice_session_id == "voice-1"
+    finally:
+        await conversation.close()
+
+
 async def test_reconfigure_cancels_active_response_before_closing_old_runtime() -> None:
     engine = RecordingEngine()
     conversation = await RealtimeRuntimeFactory(
