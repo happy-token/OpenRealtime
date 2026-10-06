@@ -104,6 +104,20 @@ export interface OutputStopTarget {
   stop_command_id: string;
 }
 
+/** Actor-issued exception for one already-started sentence of a revoked reply. */
+export interface SentencePlaybackPermit {
+  permit_id: string;
+  input_id: string;
+  input_version: number;
+  response_id: string;
+  reply_version: number;
+  sentence_id: string;
+  audio_start_samples: number;
+  audio_end_samples: number;
+  sample_rate_hz: number;
+  max_wait_ms: number;
+}
+
 export interface OutputStopResult extends OutputStopTarget {
   type: "output_stop_result";
   outcome: "queue_stopped" | "unknown" | "stale";

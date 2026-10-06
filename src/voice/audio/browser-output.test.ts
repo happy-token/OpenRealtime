@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DeviceAudioOutputRuntime } from "./output-runtime";
 import { BrowserAudioOutput } from "./browser-output";
+import { PlaybackOutputController } from "./playback-output-controller";
+
+const sentencePermit = { permit_id: "permit", input_id: "input", input_version: 1,
+  response_id: "old", reply_version: 1, sentence_id: "sentence", audio_start_samples: 0,
+  audio_end_samples: 1000, sample_rate_hz: 1000, max_wait_ms: 1000 };
 
 function fakeContext() {
   const sources: Array<{
@@ -48,6 +53,150 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it("keeps only the permitted sentence, even when a PCM chunk crosses its end", async () => {
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    const naturalEnd = vi.fn();
+    const chunk = { pcm16Base64: btoa(String.fromCharCode(...new Uint8Array(4000))),
+      sampleRateHz: 1000, generation: 1, speechId: "old", sequence: 0,
+      isFinal: false, onEnded: naturalEnd };
+    output.play(chunk);
+    output.play({ ...chunk, sequence: 1, isFinal: true });
+    fake.context.currentTime = 1.4;
+    const target = { output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "stop" };
+    const receipt = output.stopAtSentenceEnd(target, { permit_id: "permit", input_id: "input", input_version: 1,
+      response_id: "old", reply_version: 1, sentence_id: "sentence",
+      audio_start_samples: 0, audio_end_samples: 1000, sample_rate_hz: 1000, max_wait_ms: 1000 });
+    expect(fake.sources[0].stop).toHaveBeenCalledWith(2);
+    expect(fake.sources[1].stop).toHaveBeenCalledWith();
+    expect(output.play({ ...chunk, sequence: 2 })).toBe(false);
+    expect(output.play({ ...chunk, speechId: "new" })).toBe(false);
+    fake.context.currentTime = 2;
+    fake.sources[0].ended?.();
+    expect(await receipt).toMatchObject({ outcome: "queue_stopped", played_position_samples: 1000 });
+    fake.sources[1].ended?.();
+    expect(naturalEnd).not.toHaveBeenCalled();
+    expect(output.play({ ...chunk, speechId: "new" })).toBe(true);
+    output.close();
+  });
+
+  it("replays the same pending stop without extending it or cutting it early", async () => {
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    const controller = new PlaybackOutputController(output, () => null);
+    controller.beginEpoch("epoch");
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: btoa("\0".repeat(4000)), sampleRateHz: 1000,
+      generation: 1, speechId: "old", sequence: 0, isFinal: true, onStarted: vi.fn(), onEnded: vi.fn() };
+    controller.enqueue(chunk);
+    fake.context.currentTime = 1.4;
+    const target = { output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "stop" };
+    const pending = controller.stopAtSentenceEnd(target, sentencePermit);
+    expect(controller.stopAtSentenceEnd(target, { ...sentencePermit })).toBe(pending);
+    expect(fake.sources[0].stop).toHaveBeenCalledExactlyOnceWith(2);
+    expect(controller.canEnqueue({ generation: 2, speechId: "new" })).toBe(false);
+    fake.context.currentTime = 2;
+    fake.sources[0].ended?.();
+    const result = await pending;
+    controller.enqueue({ ...chunk, speechId: "new" });
+    expect(await controller.stopAtSentenceEnd(target, sentencePermit)).toEqual(result);
+    expect(fake.sources[1].stop).not.toHaveBeenCalled();
+    output.close();
+  });
+
+  it.each(["reset", "beginEpoch"])("retains async stop failure across %s and avatar completion", async operation => {
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    const avatar = { enqueue: vi.fn(() => false), completeGeneration: vi.fn(() => true),
+      cancelGeneration: vi.fn(), isActive: vi.fn(() => false), reset: vi.fn(), setVolume: vi.fn() };
+    const controller = new PlaybackOutputController(output, () => avatar);
+    controller.beginEpoch("epoch");
+    output.beginEpoch("epoch");
+    controller.enqueue({ pcm16Base64: btoa("\0".repeat(4000)), sampleRateHz: 1000,
+      generation: 1, speechId: "old", sequence: 0, isFinal: true, onStarted: vi.fn(), onEnded: vi.fn() });
+    fake.context.currentTime = 1.2;
+    const pending = controller.stopAtSentenceEnd({ output_epoch: "epoch", speech_id: "old",
+      generation: 1, stop_command_id: "stop" }, sentencePermit);
+    fake.sources[0].stop.mockImplementation(() => { throw new Error("physical stop failed"); });
+    if (operation === "reset") controller.reset();
+    else controller.beginEpoch("replacement");
+    expect(await pending).toMatchObject({ outcome: "unknown", played_position_samples: null });
+    controller.setVolume(0.7);
+    expect(avatar.setVolume).toHaveBeenLastCalledWith(0);
+    expect(controller.completeGeneration(2)).toBe(false);
+    expect(avatar.completeGeneration).not.toHaveBeenCalled();
+    expect(controller.canEnqueue({ generation: 2, speechId: "new" })).toBe(false);
+    output.close();
+  });
+
+  it.each(["unknown_sentence", "expired_sentence", "wrong_rate", "short_queue", "suspended", "wrong_reply"]) (
+    "does not extend audio when the sentence boundary is %s", async (kind) => {
+      const fake = fakeContext();
+      fake.context.state = kind === "suspended" ? "suspended" : "running";
+      const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+        createContext: () => fake.context as unknown as AudioContext });
+      output.beginEpoch("epoch");
+      const count = kind === "short_queue" ? 800 : 4000;
+      output.play({ pcm16Base64: btoa("\0".repeat(count)), sampleRateHz: 1000,
+        generation: 1, speechId: "old", sequence: 0, isFinal: true });
+      if (kind === "suspended") fake.context.state = "suspended";
+      fake.context.currentTime = kind === "expired_sentence" ? 2.5 : 1.2;
+      const permit = { ...sentencePermit,
+        sentence_id: kind === "unknown_sentence" ? "" : sentencePermit.sentence_id,
+        response_id: kind === "wrong_reply" ? "other" : sentencePermit.response_id,
+        sample_rate_hz: kind === "wrong_rate" ? 2000 : 1000 };
+      const result = await output.stopAtSentenceEnd({ output_epoch: "epoch", speech_id: "old",
+        generation: 1, stop_command_id: "stop" }, permit);
+      expect(result.outcome).toBe("queue_stopped");
+      expect(fake.sources[0].stop).toHaveBeenCalledWith();
+      output.close();
+    },
+  );
+
+  it("bounds a stalled sentence without reporting its unplayed suffix as heard", async () => {
+    vi.useFakeTimers();
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    try {
+      output.beginEpoch("epoch");
+      output.play({ pcm16Base64: btoa("\0".repeat(4000)), sampleRateHz: 1000,
+        generation: 1, speechId: "old", sequence: 0, isFinal: true });
+      fake.context.currentTime = 1.2;
+      const pending = output.stopAtSentenceEnd({ output_epoch: "epoch", speech_id: "old",
+        generation: 1, stop_command_id: "stop" }, sentencePermit);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await pending).toMatchObject({ outcome: "queue_stopped", played_position_samples: 200 });
+      expect(fake.sources[0].stop).toHaveBeenLastCalledWith();
+    } finally { output.close(); vi.useRealTimers(); }
+  });
+
+  it("an immediate new stop revokes an active sentence wait and settles both operations", async () => {
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    output.play({ pcm16Base64: btoa("\0".repeat(4000)), sampleRateHz: 1000,
+      generation: 1, speechId: "old", sequence: 0, isFinal: true });
+    fake.context.currentTime = 1.2;
+    const target = { output_epoch: "epoch", speech_id: "old", generation: 1, stop_command_id: "sentence-stop" };
+    const pending = output.stopAtSentenceEnd(target, sentencePermit);
+    const receipt = output.stopOutput({ ...target, stop_command_id: "immediate-stop" });
+    expect(receipt).toMatchObject({ stop_command_id: "immediate-stop", played_position_samples: 200 });
+    expect(await pending).toMatchObject({ stop_command_id: "sentence-stop", played_position_samples: 200 });
+    expect(fake.sources[0].stop).toHaveBeenLastCalledWith();
+    output.close();
+  });
+
   it("precisely stops one speech without poisoning a replacement on the same generation", () => {
     const fake = fakeContext();
     const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),

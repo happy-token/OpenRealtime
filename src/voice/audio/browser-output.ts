@@ -5,7 +5,7 @@ import {
   readAnalyserLevel,
   type PlaybackQuality,
 } from "@/lib/audio";
-import type { OutputStopResult, OutputStopTarget, PlaybackProgressV2 } from "../protocol/v2";
+import type { OutputStopResult, OutputStopTarget, PlaybackProgressV2, SentencePlaybackPermit } from "../protocol/v2";
 import { DeviceAudioOutputRuntime } from "./output-runtime";
 
 const LEVEL_FFT_SIZE = 256;
@@ -58,6 +58,10 @@ export class BrowserAudioOutput {
   private speechId: string | null = null;
   private startedGeneration: number | null = null;
   private scheduledSources: AudioBufferSourceNode[] = [];
+  private readonly sourceTimes = new Map<AudioBufferSourceNode, { start: number; end: number }>();
+  private readonly suppressedEnds = new WeakSet<AudioBufferSourceNode>();
+  private sentenceStop: { target: OutputStopTarget; timer: ReturnType<typeof setTimeout>;
+    resolve: (result: OutputStopResult) => void } | null = null;
   private nextPlayTime = 0;
   private startedAt: number | null = null;
   private scheduledEnd = 0;
@@ -78,6 +82,8 @@ export class BrowserAudioOutput {
   get playedAudioEndUs(): number {
     return Math.round(this.playedPositionSamples() / this.sampleRate * 1_000_000);
   }
+
+  get playbackSampleRateHz(): number { return this.sampleRate; }
 
   get scheduledSourceCount(): number {
     return this.scheduledSources.length;
@@ -112,7 +118,7 @@ export class BrowserAudioOutput {
   }
 
   canPlay(chunk: Pick<BrowserAudioChunk, "speechId" | "generation">): boolean {
-    return !this.outputUnsafe && this.runtime.canEnqueue(chunk);
+    return !this.outputUnsafe && this.sentenceStop === null && this.runtime.canEnqueue(chunk);
   }
 
   play(chunk: BrowserAudioChunk): boolean {
@@ -185,10 +191,13 @@ export class BrowserAudioOutput {
     this.nextPlayTime = startAt + buffer.duration;
     this.scheduledEnd = this.nextPlayTime;
     this.scheduledSources.push(source);
+    this.sourceTimes.set(source, { start: startAt, end: startAt + buffer.duration });
     source.addEventListener("ended", () => {
-      const naturallyEnded = this.scheduledSources.includes(source);
+      const naturallyEnded = this.scheduledSources.includes(source) && !this.suppressedEnds.has(source);
       this.scheduledSources = this.scheduledSources.filter((item) => item !== source);
+      this.sourceTimes.delete(source);
       if (naturallyEnded) chunk.onEnded?.();
+      if (this.sentenceStop && this.scheduledSources.length === 0) this.stopOutput(this.sentenceStop.target);
     });
     this.playedSegments.push({ start: startAt, end: startAt + buffer.duration });
     source.start(startAt);
@@ -226,6 +235,7 @@ export class BrowserAudioOutput {
     const progress = this.runtime.cancelGeneration(generation,
       generation === this.generation ? this.playedPositionSamples() : 0);
     if (generation !== this.generation) return progress;
+    if (this.sentenceStop) this.stopOutput(this.sentenceStop.target);
     this.stopScheduledSources();
     this.nextPlayTime = 0;
     this.generation = null;
@@ -256,7 +266,75 @@ export class BrowserAudioOutput {
       this.scheduledEnd = 0;
       this.nextPlayTime = 0;
     }
-    return this.outputUnsafe ? result("unknown", null) : result("queue_stopped", position);
+    const receipt = this.outputUnsafe ? result("unknown", null) : result("queue_stopped", position);
+    if (current && this.sentenceStop) {
+      const pending = this.sentenceStop;
+      this.sentenceStop = null;
+      clearTimeout(pending.timer);
+      pending.resolve({ ...receipt, ...pending.target });
+    }
+    return receipt;
+  }
+
+  stopAtSentenceEnd(target: OutputStopTarget, permit: SentencePlaybackPermit): Promise<OutputStopResult> {
+    const valid = [permit.permit_id, permit.input_id, permit.response_id, permit.sentence_id]
+      .every(value => typeof value === "string" && value.length > 0)
+      && [permit.input_version, permit.reply_version, permit.sample_rate_hz, permit.max_wait_ms]
+        .every(value => Number.isSafeInteger(value) && value > 0)
+      && [permit.audio_start_samples, permit.audio_end_samples].every(value => Number.isSafeInteger(value) && value >= 0)
+      && permit.audio_start_samples < permit.audio_end_samples && permit.max_wait_ms <= 5000
+      && permit.sample_rate_hz <= 384000
+      && (target.speech_id === permit.response_id || target.speech_id === `response:${permit.response_id}`);
+    const position = this.playedPositionSamples();
+    if (!valid || this.sentenceStop || target.output_epoch !== this.runtime.currentEpoch
+      || target.generation !== this.generation || target.speech_id !== this.speechId
+      || this.context?.state !== "running" || permit.sample_rate_hz !== this.sampleRate
+      || position <= permit.audio_start_samples || position >= permit.audio_end_samples) {
+      return Promise.resolve(this.stopOutput(target));
+    }
+    // Convert a speech-local sample boundary through actual scheduled segments;
+    // network underruns are gaps in wall time, not samples in the sentence.
+    let remaining = permit.audio_end_samples / this.sampleRate;
+    let cutTime: number | null = null;
+    for (const segment of this.playedSegments) {
+      const duration = segment.end - segment.start;
+      if (remaining <= duration + 1e-9) { cutTime = segment.start + remaining; break; }
+      remaining -= duration;
+    }
+    if (cutTime === null || (cutTime - this.context.currentTime) * 1000 > permit.max_wait_ms) {
+      return Promise.resolve(this.stopOutput(target));
+    }
+    const boundaryTime = cutTime;
+    this.runtime.cancelSpeech(target.speech_id, target.generation, position);
+    const promise = new Promise<OutputStopResult>(resolve => {
+      const timer = setTimeout(() => this.stopOutput(target), permit.max_wait_ms);
+      this.sentenceStop = { target, timer, resolve };
+    });
+    try {
+      const retained: AudioBufferSourceNode[] = [];
+      for (const source of this.scheduledSources) {
+        const segment = this.sourceTimes.get(source);
+        if (!segment) throw new Error("scheduled source has no sample range");
+        this.suppressedEnds.add(source);
+        if (segment.start >= boundaryTime - 1e-9) {
+          source.stop();
+          this.sourceTimes.delete(source);
+        } else {
+          if (segment.end > boundaryTime) source.stop(boundaryTime);
+          retained.push(source);
+        }
+      }
+      this.scheduledSources = retained;
+      this.playedSegments = this.playedSegments.filter(segment => segment.start < boundaryTime)
+        .map(segment => ({ start: segment.start, end: Math.min(segment.end, boundaryTime) }));
+      this.scheduledEnd = boundaryTime;
+      this.nextPlayTime = boundaryTime;
+    } catch {
+      this.outputUnsafe = true;
+      if (this.gainNode) this.gainNode.gain.value = 0;
+      this.stopOutput(target);
+    }
+    return promise;
   }
 
   takeQuality(generation: number): PlaybackQualityFrame | null {
@@ -290,6 +368,7 @@ export class BrowserAudioOutput {
   }
 
   reset(): void {
+    if (this.sentenceStop) this.stopOutput(this.sentenceStop.target);
     if (this.progressTimer !== null) clearInterval(this.progressTimer);
     this.progressTimer = null;
     this.playedSegments = [];
@@ -342,6 +421,7 @@ export class BrowserAudioOutput {
   private stopScheduledSources(): void {
     const sources = this.scheduledSources;
     this.scheduledSources = [];
+    this.sourceTimes.clear();
     for (const source of sources) {
       try {
         source.stop();

@@ -38,3 +38,5 @@ actor签发许可，版本账本保存引用，既有输出边界执行并上报
 同日已补[句子时间证据与精度分离](../reports/2026-10-07-sentence-playback-evidence.md)：完整provider字幕提供稳定原文/全speech时间区间，比例字符字幕标estimated，不进入exact已播前沿；重复句、残缺词、晚到证据及直接播报映射有回归。浏览器真实页面覆盖清屏后字幕、旧epoch以及同代/新代输出替换。该元数据不签发句段许可，字幕晚到也不能保证及时定位实际当前句；actor许可、队列切分/清理、heard_frontier重验及真实数字人/G3仍待实施，状态保持Proposed。
 
 随后已补[actor 实际播放事实投影](../reports/2026-10-07-actor-playback-observation.md)：通过现有输入actor保存当前回复的epoch、精确位置、不可变当前句与原回执时刻；重复不刷新年龄，终态不被晚处理playing改写，外部speech保留源上下文但绑定实际交付租约。事实不恢复交付权限；历史恢复不恢复live所有权。当前句许可、renderer未来队列清理和heard_frontier重验仍待实施，本ADR保持Proposed。
+
+同日继续补[浏览器句末执行与响应帧隔离](../reports/2026-10-07-renderer-sentence-stop.md)：跨句PCM按精确样本边界截断，后续source清除；等待/撤销按实际位置返回，重复操作不续期，reset后的未知停止持续封锁。真实Chrome10场景包含主页面状态回归。仅新增wire契约和renderer能力，测试Socket提供许可；生产actor签发/保存、Bridge传播/撤销、heard_frontier衔接和真实数字人/G3仍未实现，本ADR保持Proposed。

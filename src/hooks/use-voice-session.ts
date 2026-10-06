@@ -29,6 +29,7 @@ import { DeviceAudioInputRuntime } from "@/voice/audio/input-runtime";
 import { DeviceAudioOutputRuntime } from "@/voice/audio/output-runtime";
 import { readConversationPreferences } from "@/lib/conversation-preferences";
 import {
+  type OutputStopResult,
   type SessionAckV2,
 } from "@/voice/protocol/v2";
 import { ClientVoiceSessionController } from "@/voice/session/controller";
@@ -778,6 +779,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           break;
         case "assistant_text":
+          if (!playbackOutput.canUpdateResponse()) break;
           clearThinkingFallback();
           if (speakingGenerationRef.current !== frame.generation) {
             enterSpeaking(frame.generation as number);
@@ -811,6 +813,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           break;
         case "assistant_speech_text":
+          if (!playbackOutput.canUpdateResponse()) break;
           clearThinkingFallback();
           if (speakingGenerationRef.current !== frame.generation) {
             enterSpeaking(frame.generation as number);
@@ -840,6 +843,8 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           }
           break;
         case "assistant_audio": {
+          if (!playbackOutput.canEnqueue({ generation: frame.generation,
+            speechId: `response:${frame.generation}` })) break;
           clearThinkingFallback();
           clearPlaybackInactivityFallback();
           if (shouldDropAudioFrame(frame.generation, cancelledGenerationRef.current)) break;
@@ -912,6 +917,7 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           break;
         }
         case "assistant_response_completed": {
+          if (!playbackOutput.canUpdateResponse()) break;
           clearThinkingFallback();
           if (serverTtsRef.current !== true) {
           setTranscript((previous) => settleAssistantTranscript(
@@ -953,32 +959,47 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
           if (frame.output_epoch && frame.speech_id && frame.stop_command_id) {
             const target = { output_epoch: frame.output_epoch, speech_id: frame.speech_id,
               generation: frame.generation, stop_command_id: frame.stop_command_id };
-            const current = frame.output_epoch === outputEpochRef.current
-              && playbackOutput.isCurrentSpeech(frame.generation, frame.speech_id);
-            const playedUs = current ? outputGraph.playedAudioEndUs : 0;
-            let result;
+            const sampleRate = outputGraph.playbackSampleRateHz;
+            const receivedEpoch = outputEpochRef.current;
+            const receivedTransport = transportRef.current;
+            const settleStop = (result: OutputStopResult) => {
+              // An async old stop must neither write into a new attachment nor
+              // settle the caption/timers of a replacement on the same epoch.
+              if (receivedEpoch !== outputEpochRef.current || receivedTransport !== transportRef.current) return;
+              receivedTransport?.send(result);
+              if (frame.output_epoch !== receivedEpoch) return;
+              const current = playbackOutput.isCurrentSpeech(frame.generation, frame.speech_id as string);
+              if (result.outcome === "unknown") {
+                setCaption("无法确认音频已经停止，请重新打开页面后开始会话。");
+              }
+              if (result.outcome === "queue_stopped" && current) {
+                clearThinkingFallback();
+                clearPlaybackInactivityFallback();
+                playbackTextRef.current.advance(frame.generation, frame.speech_id as string,
+                  (result.played_position_samples ?? 0) / sampleRate * 1_000_000);
+                const text = playbackTextRef.current.stop(frame.generation);
+                if (text !== null) setCaption(text);
+                setTranscript(previous => settleAssistantTranscript(previous, frame.generation,
+                  frame.reason === "failed" ? "failed" : "interrupted"));
+                reportPlaybackQuality(frame.generation);
+                if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+                if (speakingGenerationRef.current === frame.generation) leaveSpeaking();
+              }
+            };
+            const unknownStop = () => settleStop({ ...target, type: "output_stop_result",
+              outcome: "unknown", played_position_samples: null });
             try {
-              result = playbackOutput.stopOutput(target);
-            } catch {
-              result = { ...target, type: "output_stop_result" as const,
-                outcome: "unknown" as const, played_position_samples: null };
-            }
-            transportRef.current?.send(result);
-            if (result.outcome === "unknown") {
-              setCaption("无法确认音频已经停止，请重新打开页面后开始会话。");
-            }
-            if (result.outcome === "queue_stopped" && current) {
-              clearThinkingFallback();
-              clearPlaybackInactivityFallback();
-              playbackTextRef.current.advance(frame.generation, frame.speech_id, playedUs);
-              const text = playbackTextRef.current.stop(frame.generation);
-              if (text !== null) setCaption(text);
-              setTranscript(previous => settleAssistantTranscript(previous, frame.generation,
-                frame.reason === "failed" ? "failed" : "interrupted"));
-              reportPlaybackQuality(frame.generation);
-              if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-              if (speakingGenerationRef.current === frame.generation) leaveSpeaking();
-            }
+              if (frame.sentence_permit) {
+                if (frame.output_epoch === receivedEpoch
+                  && playbackOutput.isCurrentSpeech(frame.generation, frame.speech_id)) {
+                  clearPlaybackInactivityFallback();
+                  if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+                }
+                void playbackOutput.stopAtSentenceEnd(target, frame.sentence_permit).then(settleStop, unknownStop);
+              } else {
+                settleStop(playbackOutput.stopOutput(target));
+              }
+            } catch { unknownStop(); }
             break;
           }
           const targetGeneration = frame.generation;

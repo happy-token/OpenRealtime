@@ -1,7 +1,7 @@
 // Browser-side mirror of server/transport/frames.py's WebSocket schema.
 // Keep transport direction explicit: names are always from the browser's view.
 
-import type { InputCaptureDiagnostic, OutputStopResult, VoiceSessionPhase } from "@/voice/protocol/v2";
+import type { InputCaptureDiagnostic, OutputStopResult, SentencePlaybackPermit, VoiceSessionPhase } from "@/voice/protocol/v2";
 
 export interface UserTextFrame {
   type: "user_text";
@@ -165,6 +165,7 @@ export interface AssistantSpeechCancelledFrame {
   output_epoch?: string | null;
   speech_id?: string | null;
   stop_command_id?: string | null;
+  sentence_permit?: SentencePlaybackPermit | null;
 }
 
 export interface SessionAckFrame {

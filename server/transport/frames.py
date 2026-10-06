@@ -13,7 +13,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from server.realtime.protocol.playback import SentenceSpan
+from server.core.playback import SentenceSpan
 from server.voice_session.protocol import (
     AudioGap,
     InputAudioAck,
@@ -294,6 +294,28 @@ class AssistantAudioChunkFrame(BaseModel):
     is_final: bool
 
 
+class SentencePlaybackPermitFrame(BaseModel):
+    """One actor-authorized sentence, bounded by the enclosing stop target."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    permit_id: str = Field(min_length=1, strict=True)
+    input_id: str = Field(min_length=1, strict=True)
+    input_version: int = Field(gt=0, le=2**53 - 1, strict=True)
+    response_id: str = Field(min_length=1, strict=True)
+    reply_version: int = Field(gt=0, le=2**53 - 1, strict=True)
+    sentence_id: str = Field(min_length=1, strict=True)
+    audio_start_samples: int = Field(ge=0, le=2**53 - 1, strict=True)
+    audio_end_samples: int = Field(gt=0, le=2**53 - 1, strict=True)
+    sample_rate_hz: int = Field(gt=0, le=384000, strict=True)
+    max_wait_ms: int = Field(gt=0, le=5000, strict=True)
+
+    @model_validator(mode="after")
+    def validate_boundary(self) -> Self:
+        if self.audio_start_samples >= self.audio_end_samples:
+            raise ValueError("sentence permit requires a positive sample interval")
+        return self
+
+
 class AssistantSpeechCancelledFrame(BaseModel):
     """Sent the instant τ9 confirms a barge-in: stop playing `generation`'s
     audio and drop whatever is still buffered for it.
@@ -314,12 +336,31 @@ class AssistantSpeechCancelledFrame(BaseModel):
     output_epoch: str | None = Field(default=None, min_length=1)
     speech_id: str | None = Field(default=None, min_length=1)
     stop_command_id: str | None = Field(default=None, min_length=1)
+    sentence_permit: SentencePlaybackPermitFrame | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_permit_generation(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("sentence_permit") is not None:
+            for name in ("output_epoch", "speech_id", "stop_command_id"):
+                if not isinstance(value.get(name), str) or not value[name]:
+                    raise ValueError("sentence permit requires strict non-empty output identities")
+            generation = value.get("generation")
+            if type(generation) is not int or generation < 0 or generation > 2**53 - 1:
+                raise ValueError("sentence permit requires a strict safe generation")
+        return value
 
     @model_validator(mode="after")
     def validate_stop_identity(self) -> Self:
         fields = (self.output_epoch, self.speech_id, self.stop_command_id)
         if any(value is not None for value in fields) and any(value is None for value in fields):
             raise ValueError("precise stop requires epoch, speech and operation identity")
+        if self.sentence_permit is not None and (self.output_epoch is None or self.reason != "interrupted"):
+            raise ValueError("sentence permit requires an interrupted precise stop")
+        if self.sentence_permit is not None and self.speech_id not in {
+            self.sentence_permit.response_id, f"response:{self.sentence_permit.response_id}",
+        }:
+            raise ValueError("sentence permit belongs to another reply")
         return self
 
 
