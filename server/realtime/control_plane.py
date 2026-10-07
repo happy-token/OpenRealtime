@@ -280,6 +280,8 @@ class RealtimeTurnController:
                     "input_id": event.input_id, "input_version": event.input_version,
                     "reply_version": event.reply_version,
                     "supersedes_response_id": event.supersedes_response_id,
+                    **({"input_turn_id": event.input_turn_id, "input_generation": event.input_generation}
+                       if event.input_turn_id is not None else {}),
                 },
             )
         elif isinstance(event, DisplayContentDelta):
@@ -360,16 +362,17 @@ class RealtimeTurnController:
 
     async def _repair_context_response(self, event: ResponseRepairRequested) -> None:
         permit, previous = event.permit, self._repairable_request
+        predecessor_context = permit.recovery.source_context if permit.recovery is not None else permit.context
         if (self._closed or previous is None or previous.response_id != permit.predecessor_response_id
             or previous.minimum_thread_sequence != permit.minimum_thread_sequence
-            or (previous.context.turn_id, previous.context.generation) != (permit.context.turn_id, permit.context.generation)):
+            or (previous.context.turn_id, previous.context.generation) != (predecessor_context.turn_id, predecessor_context.generation)):
             return  # Only the current request can consume an actor-issued permit.
         parent_item_id = self._response_parents.get(previous.response_id)
         if parent_item_id is None:
             return
         output_item_id = self._stable_id(previous.context, f"assistant-output:{permit.response_id}")
         request = replace(previous, command_id=f"repair:{permit.permit_id}", idempotency_key=f"repair:{permit.permit_id}",
-            context=replace(previous.context, response_id=permit.response_id), response_id=permit.response_id,
+            context=replace(permit.context, response_id=permit.response_id), response_id=permit.response_id,
             output_item_id=output_item_id, repair=permit)
         self._response_parents[request.response_id] = parent_item_id
         self._response_output_item_ids[request.response_id] = output_item_id

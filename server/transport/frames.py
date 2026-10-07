@@ -405,6 +405,23 @@ class SessionCapabilitiesFrame(BaseModel):
     heartbeat_interval_ms: int | None = None
 
 
+class OutputEpochStartedFrame(BaseModel):
+    """Ordered rebind after confirmed stopping; does not restart input capture."""
+
+    model_config = ConfigDict(frozen=True)
+    type: Literal["output_epoch_started"] = "output_epoch_started"
+    previous_output_epoch: str = Field(min_length=1)
+    output_epoch: str = Field(min_length=1)
+    recovery_id: str = Field(min_length=1)
+    generation: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_rotation(self):
+        if self.output_epoch == self.previous_output_epoch:
+            raise ValueError("output epoch rotation requires a fresh identity")
+        return self
+
+
 class VoiceSessionReadyFrame(BaseModel):
     model_config = ConfigDict(frozen=True)
     type: Literal["voice_session_ready"] = "voice_session_ready"
@@ -544,6 +561,7 @@ OutboundFrame = (
     | VoiceSessionFailureFrame
     | VoiceSessionPhaseChangedFrame
     | VoiceSessionReadyFrame
+    | OutputEpochStartedFrame
     | VoiceSessionSnapshotFrame
     | VoiceSessionEventTailFrame
     | ConfirmationRequestedFrame

@@ -13,7 +13,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
-from server.core.reply_repair import ReplyRepairPermit
+from server.core.reply_repair import ReplyRecoveryPlan, ReplyRepairPermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AppendAsrAudio,
@@ -36,6 +36,7 @@ from server.realtime.capabilities.turn_manager import (
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
     ObserveConversationItem,
+    ObserveResponseRecoveryReady,
     ObserveResponseRepairReady,
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
@@ -192,6 +193,10 @@ class CascadedInputPipeline:
     async def offer_context_repair(self, response_id: str, *, context: InteractionContext,
                                   minimum_thread_sequence: int, deadline_ns: int) -> None:
         await self._turn_manager.send(ObserveResponseRepairReady(context=context, response_id=response_id,
+            minimum_thread_sequence=minimum_thread_sequence, deadline_ns=deadline_ns))
+
+    async def offer_recovery(self, plan: ReplyRecoveryPlan, *, minimum_thread_sequence: int, deadline_ns: int) -> None:
+        await self._turn_manager.send(ObserveResponseRecoveryReady(context=plan.source_context, plan=plan,
             minimum_thread_sequence=minimum_thread_sequence, deadline_ns=deadline_ns))
 
     async def append_audio(

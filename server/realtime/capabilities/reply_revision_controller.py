@@ -60,6 +60,8 @@ class ReplyRevision:
     invalidation_reason: str | None = None
     playback: ReplyPlayback | None = None
     sentence_permit: CurrentSentencePermit | None = None
+    input_context: InteractionContext | None = None
+    recovery_preparing: bool = False
     context_repair_attempt: int = 0
     context_repair_deadline_ns: int | None = None
     context_repair_permit: ReplyRepairPermit | None = None
@@ -164,8 +166,15 @@ class ReplyRevisionController:
             if self.input is not None and self.input.input_id == root:
                 if version > self.input.input_version:
                     raise ValueError("restored reply refers to a future input version")
+                source_turn = metadata.get("input_turn_id", item.context.turn_id)
+                source_generation = metadata.get("input_generation", item.context.generation)
+                if (not isinstance(source_turn, str) or not source_turn or type(source_generation) is not int
+                    or source_generation < 0 or source_generation > item.context.generation
+                    or source_turn != item.context.turn_id):
+                    raise ValueError("restored reply has an invalid original input lease")
+                source_context = replace(item.context, turn_id=source_turn, generation=source_generation, response_id=None)
                 if version == self.input.input_version and (
-                    item.context.turn_id, item.context.generation
+                    source_turn, source_generation
                 ) != (self.input.turn_id, self.input.generation):
                     raise ValueError("restored reply belongs to a different input context")
                 predecessor = metadata.get("supersedes_response_id")
@@ -176,7 +185,7 @@ class ReplyRevisionController:
                         response_id=response_id, turn_id=item.context.turn_id, generation=item.context.generation,
                         input_id=root, input_version=version, reply_version=reply_version,
                         supersedes_response_id=predecessor, delivery_permitted=False,
-                        completed=True, invalidation_reason="journal_restored",
+                        completed=True, invalidation_reason="journal_restored", input_context=source_context,
                     )
         self._history_sequence = item.sequence
         return False
@@ -236,8 +245,9 @@ class ReplyRevisionController:
                 raise ValueError("response identity was reused for another input")
             return previous  # Repeated started never restores a revoked permission.
         current = self.input
+        source = repair.input_context if repair is not None else context
         if current is not None and (current.turn_id, current.generation) != (
-            context.turn_id, context.generation
+            source.turn_id, source.generation
         ):
             current = None
         ancestor = (previous if current is not None and previous is not None
@@ -252,6 +262,8 @@ class ReplyRevisionController:
             input_version=current.input_version if current is not None else None,
             reply_version=ancestor.reply_version + 1 if ancestor is not None else 1,
             supersedes_response_id=ancestor.response_id if ancestor is not None else None,
+            input_context=source,
+            recovery_preparing=repair is not None and repair.recovery is not None,
             context_repair_attempt=repair.attempt if repair is not None else 0,
             context_repair_deadline_ns=repair.deadline_ns if repair is not None else None,
         )
@@ -284,7 +296,7 @@ class ReplyRevisionController:
             or reply.response_id != response_id or reply.delivery_permitted
             or reply.invalidation_reason != "response_invalidated" or reply.context_repair_permit is not None
             or (reply.input_id, reply.input_version) != (current.input_id, current.input_version)
-            or (context.turn_id, context.generation) != (current.turn_id, current.generation)
+            or (context.turn_id, context.generation) != (reply.turn_id, reply.generation)
             or conversation_scope(context) != conversation_scope(owner)
             or reply.context_repair_attempt >= MAX_CONTEXT_REPAIRS):
             return None
@@ -295,7 +307,8 @@ class ReplyRevisionController:
             predecessor_response_id=response_id, response_id=str(uuid.uuid4()),
             input_id=current.input_id, input_version=current.input_version,
             predecessor_reply_version=reply.reply_version, minimum_thread_sequence=minimum_thread_sequence,
-            attempt=reply.context_repair_attempt + 1, deadline_ns=deadline)
+            attempt=reply.context_repair_attempt + 1, deadline_ns=deadline,
+            source_context=reply.input_context)
         self.reply = replace(reply, context_repair_permit=permit)
         return permit
 
@@ -303,9 +316,11 @@ class ReplyRevisionController:
         reply, current = self.reply, self.input
         return bool(not self._closed and reply is not None and current is not None
             and reply.context_repair_permit == permit and now_ns < permit.deadline_ns
-            and reply.invalidation_reason == "response_invalidated" and not reply.delivery_permitted
+            and not reply.delivery_permitted
+            and (self.recovery_plan_current(permit.recovery, now_ns=now_ns) if permit.recovery is not None
+                 else reply.invalidation_reason == "response_invalidated")
             and (current.input_id, current.input_version, current.turn_id, current.generation) ==
-                (permit.input_id, permit.input_version, permit.context.turn_id, permit.context.generation))
+                (permit.input_id, permit.input_version, permit.input_context.turn_id, permit.input_context.generation))
 
     def delivery_allowed(self, response_id: str) -> bool:
         return bool(not self._closed and self.reply is not None
@@ -375,13 +390,21 @@ class ReplyRevisionController:
             and permit.audio_start_samples < fact.played_position_samples < permit.audio_end_samples)
 
     def _clear_interruption_recovery(self) -> None:
+        if self.reply is not None and self.reply.context_repair_permit is not None and self.reply.context_repair_permit.recovery is not None:
+            self.reply = replace(self.reply, context_repair_permit=None)
         self._interruption_recovery = None
         self._recovery_plan = None
         self._recovery_plan_basis = None
 
     def invalidate_recovery_planning(self) -> None:
-        """New speech/input ownership supersedes any unconsumed recovery intention."""
+        """New speech/input ownership supersedes recovery until semantic publication."""
         self._clear_interruption_recovery()
+        if self.reply is not None and self.reply.recovery_preparing:
+            self.revoke(self.reply.response_id, reason="recovery_superseded_before_publication")
+
+    def mark_response_published(self, response_id: str) -> None:
+        if self.reply is not None and self.reply.response_id == response_id and self.reply.recovery_preparing:
+            self.reply = replace(self.reply, recovery_preparing=False)
 
     def lock_interruption_recovery(self, response_id: str, overlap: InteractionContext, *,
                                    observation_id: str, revision: int, text: str,
@@ -488,6 +511,24 @@ class ReplyRevisionController:
         anchor, stop, playback = state
         return (anchor.observation_id, anchor.revision, anchor.text, anchor.feedback, stop, playback)
 
+    def offer_recovery_permit(self, plan: ReplyRecoveryPlan, *, minimum_thread_sequence: int,
+                              deadline_ns: int, now_ns: int) -> ReplyRepairPermit | None:
+        if (self.reply is not None and self.reply.context_repair_permit is not None
+            and self.reply.context_repair_permit.recovery is not None
+            and not self.context_repair_permit_current(self.reply.context_repair_permit, now_ns=now_ns)):
+            self.reply = replace(self.reply, context_repair_permit=None)
+        if (not self.recovery_plan_current(plan, now_ns=now_ns) or self.reply is None
+            or self.reply.context_repair_permit is not None or minimum_thread_sequence < 1
+            or deadline_ns <= now_ns):
+            return None
+        permit = ReplyRepairPermit(permit_id=str(uuid.uuid4()), context=plan.response_context,
+            predecessor_response_id=plan.predecessor_response_id, response_id=plan.response_context.response_id or "",
+            input_id=plan.input_id, input_version=plan.input_version, predecessor_reply_version=plan.predecessor_reply_version,
+            minimum_thread_sequence=minimum_thread_sequence, attempt=1, deadline_ns=min(deadline_ns, plan.deadline_ns),
+            source_context=plan.input_context, recovery=plan)
+        self.reply = replace(self.reply, context_repair_permit=permit)
+        return permit
+
     def recovery_plan_current(self, plan: ReplyRecoveryPlan, *, now_ns: int) -> bool:
         state = self._recovery_state(now_ns)
         return bool(state is not None and self._recovery_plan == plan and self._recovery_plan_basis == self._recovery_basis(state))
@@ -517,7 +558,8 @@ class ReplyRevisionController:
             operation_sequence=stop.operation_sequence, output_epoch=str(uuid.uuid4()), confirmed_text_end=playback.confirmed_text_end,
             played_audio_end_us=playback.played_audio_end_us, position_precision="sample" if exact else "unknown",
             played_position_samples=playback.played_position_samples if exact else None,
-            sample_rate_hz=playback.sample_rate_hz if exact else None, deadline_ns=anchor.deadline_ns)
+            sample_rate_hz=playback.sample_rate_hz if exact else None, deadline_ns=anchor.deadline_ns,
+            source_input_context=self.reply.input_context if self.reply is not None else None)
         self._recovery_plan, self._recovery_plan_basis = plan, basis
         return plan
 

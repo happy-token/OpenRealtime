@@ -67,10 +67,12 @@ from server.realtime.capabilities.turn_manager import (
     ObserveAssistantYielded,
     ObserveConversationItem,
     ObserveResponseInvalidated,
+    ObserveResponseRecoveryReady,
     ObserveResponseRepairReady,
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
+    ReplyRecoveryRequested,
     ReplyRepairRequested,
     SemanticInputRejected,
     TurnManagerCommand,
@@ -724,6 +726,7 @@ class CoordinatedTurnManagerSession:
         plan = self._revisions.plan_misinterruption_recovery(now_ns=time.monotonic_ns())
         if plan is not None:
             self._record_revision("reply_recovery_planned", plan.source_context, asdict(plan))
+            self._outbox.put_nowait(ReplyRecoveryRequested(context=plan.source_context, plan=plan))
 
     async def _resume_context_repair(self) -> None:
         ready = self._deferred_context_repair
@@ -963,6 +966,16 @@ class CoordinatedTurnManagerSession:
         if isinstance(event, ObserveResponseInvalidated):
             self._revoke_response(event.response_id, reason=event.reason)
             return
+        if isinstance(event, ObserveResponseRecoveryReady):
+            if (self._input is None and not self._awaiting_response and not self._evidence_fault_reported
+                and self._revision_evidence_failure is None):
+                recovery_permission = self._revisions.offer_recovery_permit(event.plan,
+                    minimum_thread_sequence=event.minimum_thread_sequence, deadline_ns=event.deadline_ns,
+                    now_ns=time.monotonic_ns())
+                if recovery_permission is not None:
+                    self._record_revision("reply_recovery_permitted", recovery_permission.context, asdict(recovery_permission))
+                    await self._outbox.put(ReplyRepairRequested(context=recovery_permission.context, permit=recovery_permission))
+            return
         if isinstance(event, ObserveResponseRepairReady):
             self._deferred_context_repair = event
             await self._resume_context_repair()
@@ -1010,6 +1023,7 @@ class CoordinatedTurnManagerSession:
                 return
             if self._response_id == event.response_id:
                 if not event.preparing:
+                    self._revisions.mark_response_published(event.response_id)
                     await self._project(event.context or self._context)
                 return
             prior_reply = self._revisions.reply
@@ -1053,6 +1067,7 @@ class CoordinatedTurnManagerSession:
                     self._judge_interruption(item, InterruptionBoundary(item.boundary.value))
             self._awaiting_response = False
             if not event.preparing:
+                self._revisions.mark_response_published(event.response_id)
                 await self._project(event.context or self._context)
             return
         if isinstance(event, ObserveSystemResponseCompleted):
@@ -1176,6 +1191,8 @@ class CoordinatedTurnManagerSession:
             return
         if isinstance(event, ObserveVadEvent):
             observation = event.event
+            if self._response_context is not None and observation.context.generation < self._response_context.generation:
+                return  # Sealed input leases cannot revoke a newer reply's preparation.
             item = self._ensure_input(observation.context)
             if item.commit_pending:
                 self._defer_input(event)

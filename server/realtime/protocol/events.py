@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
-from server.core.reply_repair import ReplyRepairPermit
+from server.core.reply_repair import ReplyRecoveryPlan, ReplyRepairPermit
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.commands import (
     DeliveryMode,
@@ -573,8 +573,15 @@ class ResponseStarted:
     reply_version: int | None = None
     supersedes_response_id: str | None = None
     source_item_id: str | None = None
+    input_turn_id: str | None = None
+    input_generation: int | None = None
+    recovery: ReplyRecoveryPlan | None = None
 
     def __post_init__(self) -> None:
+        if self.recovery is not None and (self.context != self.recovery.response_context
+            or self.response_id != self.recovery.response_context.response_id
+            or self.supersedes_response_id != self.recovery.predecessor_response_id):
+            raise ValueError("recovery started must match its new lease and predecessor")
         _validate_response_event(
             context=self.context,
             event_id=self.event_id,

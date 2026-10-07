@@ -63,7 +63,7 @@ test.afterEach(async ({ page, request }, info) => {
 });
 
 for (const kind of ["text", "speech"] as const) {
-  for (const scenario of ["normal", "revoked_pending"] as const) {
+  for (const scenario of ["normal", "revoked_pending", "recovery"] as const) {
     test(`actual socket and WebAudio handle ${kind} ${scenario} at the permitted sentence end`, async ({ page, request }, info) => {
       const pageErrors: string[] = [];
       page.on("pageerror", error => pageErrors.push(error.stack ?? error.message));
@@ -106,10 +106,31 @@ for (const kind of ["text", "speech"] as const) {
         await page.getByRole("button", { name: "主页开始对话" }).click({ timeout: 5000 });
         await expect(page.getByRole("button", { name: "关闭麦克风" })).toBeVisible();
         expect((await request.get(`http://127.0.0.1:${port}/start`, { timeout: 2000 })).ok()).toBe(true);
-        await expect.poll(() => page.evaluate(() => window.__productionHandoff.sent.some(({ frame }) =>
+        await expect.poll(() => page.evaluate((scenario) => window.__productionHandoff.sent.some(({ frame }) =>
           frame.type === "playback_progress_v2" && frame.speech_id === "response:reply"
-          && Number(frame.played_position_samples) > 1600)), { intervals: [20], timeout: 5000 }).toBe(true);
+          && Number(frame.played_position_samples) > (scenario === "recovery" ? 17000 : 1600)), scenario), { intervals: [20], timeout: 5000 }).toBe(true);
         expect((await request.get(`http://127.0.0.1:${port}/trigger`, { timeout: 2000 })).ok()).toBe(true);
+        if (scenario === "recovery") {
+          await expect.poll(() => page.evaluate(() => window.__productionHandoff.sent.some(({ frame }) =>
+            frame.type === "output_stop_result" && frame.outcome === "queue_stopped")), { timeout: 3000 }).toBe(true);
+          expect((await request.get(`http://127.0.0.1:${port}/revise`, { timeout: 2000 })).ok()).toBe(true);
+          await expect.poll(() => page.evaluate(() => window.__productionHandoff.sent.some(({ frame }) =>
+            frame.type === "playback_progress_v2" && frame.generation === 3 && frame.phase === "playing")),
+            { timeout: 3000 }).toBe(true);
+          const evidence = await page.evaluate(() => window.__productionHandoff);
+          const rotation = evidence.received.find(({ frame }) => frame.type === "output_epoch_started")!;
+          expect(rotation.frame).toMatchObject({ previous_output_epoch: "epoch", generation: 3 });
+          expect(rotation.frame.output_epoch).not.toBe("epoch");
+          const audio = evidence.received.find(({ frame }) => frame.type === "assistant_audio_chunk" && frame.generation === 3)!;
+          expect(audio.clock).toBeGreaterThanOrEqual(rotation.clock);
+          expect(evidence.sent.filter(({ frame }) => frame.type === "playback_progress_v2" && frame.generation === 3)
+            .every(({ frame }) => frame.output_epoch === rotation.frame.output_epoch)).toBe(true);
+          const backend = await (await request.get(`http://127.0.0.1:${port}/evidence`, { timeout: 2000 })).json();
+          expect(backend).toMatchObject({ provider_calls: 2, context_repair: true, reply_generation: 3, user_inputs: 1, commits: 0 });
+          await expect(page.getByRole("button", { name: "关闭麦克风" })).toBeVisible();
+          expect(pageErrors).toEqual([]);
+          return;
+        }
         await expect.poll(async () => (await (await request.get(`http://127.0.0.1:${port}/evidence`, { timeout: 2000 })).json()).conditional,
           { intervals: [20], timeout: 1000 }).toBe(true);
         const prepared = await (await request.get(`http://127.0.0.1:${port}/evidence`, { timeout: 2000 })).json();

@@ -20,6 +20,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit, sample_position_us
+from server.core.reply_repair import ReplyRecoveryPlan
 from server.realtime.protocol import (
     AppendAudio,
     AppendItem,
@@ -77,6 +78,7 @@ from server.transport.frames import (
     ConfirmationRequestedFrame,
     InboundFrame,
     OutboundFrame,
+    OutputEpochStartedFrame,
     PlaybackProgressFrame,
     SentencePlaybackPermitFrame,
     UserTextFrame,
@@ -134,6 +136,7 @@ class _OutputStop:
     state: Literal["STOP_REQUESTED", "STOP_CONFIRMED", "STOP_UNKNOWN"] = "STOP_REQUESTED"
     reason: str | None = None
     deadline: asyncio.TimerHandle | None = None
+    applied_recovery: ReplyRecoveryPlan | None = None
 
 
 @dataclass(slots=True)
@@ -340,6 +343,61 @@ class RealtimeWebSocketFrameBridge:
             self._advance_generation(event.context.generation)
             return
         if isinstance(event, ResponseStarted):
+            if event.recovery is not None:
+                plan = event.recovery
+                stop = self._output_stops.get(plan.stop_command_id)
+                if stop is not None and stop.applied_recovery == plan:
+                    return  # Completion does not retire the applied rebind's idempotency identity.
+                if (self.output_epoch != plan.stopped_output_epoch or stop is None
+                    or stop.state != "STOP_CONFIRMED" or not stop.ready.done() or not stop.ready.result()
+                    or (stop.request.output_epoch, stop.request.speech_id, stop.request.generation) !=
+                        (plan.stopped_output_epoch, f"response:{plan.predecessor_response_id}", plan.source_context.generation)
+                    or time.monotonic_ns() >= plan.deadline_ns):
+                    self._schedule_stop_failure("recovery_epoch_precondition_failed")
+                    return
+                rotate = getattr(self._transport, "rotate_output_epoch", None)
+                if rotate is not None:
+                    if not rotate(previous=plan.stopped_output_epoch, replacement=plan.output_epoch):
+                        self._schedule_stop_failure("recovery_epoch_attachment_changed")
+                        return
+                elif getattr(self._transport, "output_epoch", None) is not None:
+                    self._schedule_stop_failure("recovery_epoch_transport_unsupported")
+                    return
+                else:
+                    self._output_epoch = plan.output_epoch
+                stop.applied_recovery = plan
+                self._advance_generation(event.context.generation)
+                # Once the server rotates, the client must receive the control fact
+                # even if this reply loses delivery permission while sending.
+                try:
+                    frame = OutputEpochStartedFrame(previous_output_epoch=plan.stopped_output_epoch,
+                        output_epoch=plan.output_epoch, recovery_id=plan.plan_id, generation=event.context.generation)
+                    remaining_s = (plan.deadline_ns - time.monotonic_ns()) / 1_000_000_000
+                    notification_deadline = asyncio.timeout(max(0, min(remaining_s, self._output_stop_timeout_s)))
+                    async with notification_deadline:
+                        notify = getattr(self._transport, "send_output_epoch_started", None)
+                        if notify is not None:
+                            if not await notify(frame):
+                                self._schedule_stop_failure("recovery_epoch_attachment_changed")
+                                return
+                        else:
+                            await self._send_frame(frame)
+                    if notification_deadline.expired() or time.monotonic_ns() >= plan.deadline_ns:
+                        self._schedule_stop_failure("recovery_epoch_notification_deadline")
+                        return
+                    if self.output_epoch != plan.output_epoch or getattr(self._transport, "is_detached", False):
+                        self._schedule_stop_failure("recovery_epoch_attachment_changed")
+                        return
+                except TimeoutError:
+                    if not self._closed:
+                        self._schedule_stop_failure("recovery_epoch_notification_deadline")
+                    return
+                except (Exception, asyncio.CancelledError):
+                    if not self._closed:
+                        self._schedule_stop_failure("recovery_epoch_notification_failed")
+                    raise
+                if not is_output_deliverable(self._conversation, event):
+                    return
             if self._begin_playback(event.context.generation, f"response:{event.response_id}",
                     context=replace(event.context, response_id=event.response_id)) is None:
                 return
@@ -815,6 +873,8 @@ class RealtimeWebSocketFrameBridge:
         self._schedule_stop_failure("receipt_deadline")
 
     def _schedule_stop_failure(self, reason: str) -> None:
+        # Failure notification runs later; queued output must be blocked now.
+        self._stop_output_failed = True
         if self._failure_notification_started or self._stop_tasks:
             return
         task = asyncio.create_task(self._notify_stop_failure(reason))

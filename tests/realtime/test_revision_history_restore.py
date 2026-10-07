@@ -193,3 +193,22 @@ async def test_actor_rejects_foreign_thread_history(axis):
         assert session._revisions.input is None
     finally:
         await session.close()
+
+
+@pytest.mark.parametrize("lease", [
+    {"input_turn_id": "other", "input_generation": 1},
+    {"input_turn_id": "", "input_generation": 1},
+    {"input_turn_id": context().turn_id, "input_generation": True},
+    {"input_turn_id": context().turn_id, "input_generation": 4},
+    {"input_turn_id": context().turn_id, "input_generation": -1},
+])
+async def test_recovered_history_rejects_corrupt_original_input_lease(lease):
+    journal, ledger = InMemoryConversationJournal(), ReplyRevisionController()
+    user = await history(journal, identity="user", ctx=context(), value="原问题", input_id="root", input_version=1)
+    ledger.restore_item(user)
+    item = await history(journal, identity="recovered", ctx=replace(context(), response_id="recovered", generation=3),
+        value="续答", kind=ConversationItemKind.ASSISTANT_OUTPUT, response_id="recovered",
+        input_id="root", input_version=1, reply_version=2, **lease)
+    with pytest.raises(ValueError, match="original input lease"):
+        ledger.restore_item(item)
+    assert ledger.reply is None

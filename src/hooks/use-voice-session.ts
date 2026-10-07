@@ -654,6 +654,15 @@ export function useVoiceSession({ publicVoiceEnabled = false, roleProviders, ini
         case "audio_gap":
           inputGraph.failGap(frame.input_epoch);
           break;
+        case "output_epoch_started":
+          if (frame.previous_output_epoch !== outputEpochRef.current) break;
+          outputEpochRef.current = frame.output_epoch;
+          playbackTextRef.current.beginEpoch(frame.output_epoch);
+          playbackOutput.beginEpoch(frame.output_epoch);
+          outputGraph.beginEpoch(frame.output_epoch);
+          cancelledGenerationRef.current = null;
+          speakingGenerationRef.current = null;
+          break;
         case "voice_session_ready":
           setSessionError(null);
           voiceControllerRef.current.applyEvent(frame);

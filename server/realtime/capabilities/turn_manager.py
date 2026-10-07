@@ -17,7 +17,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
-from server.core.reply_repair import ReplyRepairPermit
+from server.core.reply_repair import ReplyRecoveryPlan, ReplyRepairPermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AsrCommitRejected,
@@ -113,6 +113,20 @@ class ObserveResponseRepairReady:
     response_id: str
     minimum_thread_sequence: int
     deadline_ns: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ObserveResponseRecoveryReady:
+    context: InteractionContext
+    plan: ReplyRecoveryPlan
+    minimum_thread_sequence: int
+    deadline_ns: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplyRecoveryRequested:
+    context: InteractionContext
+    plan: ReplyRecoveryPlan
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -240,6 +254,7 @@ TurnManagerCommand = (
     | ObserveConversationItem
     | ObserveResponseInvalidated
     | ObserveResponseRepairReady
+    | ObserveResponseRecoveryReady
 )
 TurnManagerEvent = (
     DialogueStateChanged
@@ -249,6 +264,7 @@ TurnManagerEvent = (
     | AssistantYieldRequested
     | SemanticInputRejected
     | ReplyRepairRequested
+    | ReplyRecoveryRequested
 )
 
 

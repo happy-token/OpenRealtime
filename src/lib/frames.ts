@@ -195,6 +195,14 @@ export interface AudioGapFrame {
   received_start_sample: number;
 }
 
+export interface OutputEpochStartedFrame {
+  type: "output_epoch_started";
+  previous_output_epoch: string;
+  output_epoch: string;
+  recovery_id: string;
+  generation: number;
+}
+
 export interface VoiceSessionReadyFrame {
   type: "voice_session_ready";
   session_sequence: number;
@@ -291,6 +299,7 @@ export type ServerToClientFrame =
   | InputAudioAckFrame
   | AudioGapFrame
   | VoiceSessionReadyFrame
+  | OutputEpochStartedFrame
   | VoiceSessionPhaseChangedFrame
   | VoiceSessionSnapshotFrame
   | VoiceSessionEventTailFrame
@@ -379,6 +388,14 @@ export function parseServerFrame(value: unknown): ServerToClientFrame | null {
         && isNumber(value.expected_start_sample)
         && isNumber(value.received_start_sample)
       ) ? value as unknown as AudioGapFrame : null;
+    case "output_epoch_started":
+      return (
+        typeof value.previous_output_epoch === "string" && value.previous_output_epoch.length > 0
+        && typeof value.output_epoch === "string" && value.output_epoch.length > 0
+        && value.output_epoch !== value.previous_output_epoch
+        && typeof value.recovery_id === "string" && value.recovery_id.length > 0
+        && Number.isSafeInteger(value.generation) && (value.generation as number) >= 0
+      ) ? value as unknown as OutputEpochStartedFrame : null;
     case "voice_session_ready":
       return (
         isNumber(value.session_sequence)

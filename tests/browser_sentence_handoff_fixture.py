@@ -96,13 +96,17 @@ async def main() -> None:
             second = replace(context(), turn_id="supplement", generation=2)
             await start(actor, second)
             await text(actor, asr.latest, ctx=second)
-            await stop(actor, second)
+            if state.get("scenario") != "recovery":
+                await stop(actor, second)
         elif path == "/revise":
             if actor is None or state.get("revised"):
                 return connection.respond(409, "scenario not ready")
             state["revised"] = True
-            asr.latest = "不是，明天不要看，只看今天。"
-            await text(actor, asr.latest, revision=2, ctx=replace(context(), turn_id="supplement", generation=2))
+            asr.latest = "好的" if state.get("scenario") == "recovery" else "不是，明天不要看，只看今天。"
+            second = replace(context(), turn_id="supplement", generation=2)
+            await text(actor, asr.latest, revision=2, ctx=second)
+            if state.get("scenario") == "recovery":
+                await stop(actor, second)
         elif path == "/release":
             if provider is not None:
                 provider.release.set()
@@ -111,6 +115,9 @@ async def main() -> None:
         delivery = await core._speech_deliveries.get("response:reply") if core is not None else None
         body = json.dumps({**state, "provider_calls": len(provider.turns) if provider else 0,
             "conditional": bool(provider and len(provider.turns) > 1 and provider.turns[1].conditional_handoff),
+            "context_repair": bool(provider and len(provider.turns) > 1 and provider.turns[1].context_repair),
+            "reply_generation": provider.turns[-1].generation if provider and provider.turns else None,
+            "user_inputs": sum(item.kind is ConversationItemKind.USER_INPUT for item in core._projected_items.values()) if core else 0,
             "commits": len(asr.commits) if asr else 0,
             "delivered": delivery.delivered_speech_transcript if delivery else None,
             "candidate_cancelled": provider.cancelled if provider else False,
@@ -136,13 +143,15 @@ async def main() -> None:
         state.update(triggered=False, sent=[], received=[], prefetch=[])
         options = parse_qs(urlsplit(socket.request.path).query)
         provider, asr, tts = Provider(pending=options.get("scenario") == ["revoked_pending"]), ControlledAsr(), Duplex()
-        asr.latest = "补充一下，明天也要看。"
+        scenario = options.get("scenario", ["normal"])[0]
+        state["scenario"] = scenario
+        asr.latest = "等一下换个问题" if scenario == "recovery" else "补充一下，明天也要看。"
         kind = options.get("kind", ["text"])[0]
         cache = (SpeculativeSpeechPipeline(brain=provider, tts=tts) if kind == "speech"
             else SpeculativeStreamingBrain(provider))
         manager = CoordinatedTurnManagerCapabilityAdapter(TurnPolicy,
             semantic_interruption_classifier=Interrupt(), response_prefetch_enabled=True,
-            sentence_handoff_prefetch_enabled=True, response_prefetcher=cache,
+            sentence_handoff_prefetch_enabled=scenario != "recovery", response_prefetcher=cache,
             asr_idle_stop_ms=15, semantic_interruption_idle_ms=5, recovery_timeout_ms=2000)
         core, bridge = await playing_core(brain=cache, tts=cache if kind == "speech" else tts,
             asr=asr, turn_manager=manager, managed=True, precise_stop=True,

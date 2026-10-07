@@ -1,5 +1,7 @@
 """Actor-issued permission to replace a reply without admitting a new input."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,6 +23,12 @@ class ReplyRepairPermit:
     minimum_thread_sequence: int
     attempt: int
     deadline_ns: int
+    source_context: InteractionContext | None = None
+    recovery: ReplyRecoveryPlan | None = None
+
+    @property
+    def input_context(self) -> InteractionContext:
+        return self.source_context or self.context
 
     def __post_init__(self) -> None:
         if not self.permit_id or not self.predecessor_response_id or not self.input_id or not self.response_id:
@@ -31,6 +39,18 @@ class ReplyRepairPermit:
             raise ValueError("reply repair requires positive versions, projection and deadline")
         if not 1 <= self.attempt <= MAX_CONTEXT_REPAIRS:
             raise ValueError("reply repair attempt exceeds its bounded budget")
+        source = self.input_context
+        scope = ("tenant_id", "user_id", "device_id", "voice_session_id", "thread_id")
+        if (any(getattr(source, name) != getattr(self.context, name) for name in scope)
+            or source.turn_id != self.context.turn_id or source.generation > self.context.generation):
+            raise ValueError("reply continuation must retain its source user lease")
+        if self.recovery is not None:
+            plan = self.recovery
+            if (self.context != plan.response_context or source != plan.input_context
+                or (self.predecessor_response_id, self.response_id, self.input_id, self.input_version, self.predecessor_reply_version) !=
+                    (plan.predecessor_response_id, plan.response_context.response_id, plan.input_id, plan.input_version, plan.predecessor_reply_version)
+                or self.deadline_ns > plan.deadline_ns):
+                raise ValueError("recovery permission must match its original evidence plan")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -62,6 +82,11 @@ class ReplyRecoveryPlan:
     sample_rate_hz: int | None
     deadline_ns: int
     strategy: Literal["regenerate_continuation"] = "regenerate_continuation"
+    source_input_context: InteractionContext | None = None
+
+    @property
+    def input_context(self) -> InteractionContext:
+        return self.source_input_context or self.source_context
 
     def __post_init__(self) -> None:
         identities = (self.plan_id, self.predecessor_response_id, self.input_id, self.observation_id,
@@ -75,7 +100,9 @@ class ReplyRecoveryPlan:
             raise ValueError("recovery planning requires full feedback evidence")
         scope_fields = ("tenant_id", "user_id", "device_id", "voice_session_id", "thread_id")
         if (any(getattr(self.source_context, name) != getattr(other, name)
-                for name in scope_fields for other in (self.trigger_context, self.response_context))
+                for name in scope_fields for other in (self.trigger_context, self.response_context, self.input_context))
+            or self.input_context.turn_id != self.source_context.turn_id
+            or self.input_context.generation > self.source_context.generation
             or self.response_context.turn_id != self.source_context.turn_id
             or not self.response_context.response_id or self.response_context.response_id == self.predecessor_response_id
             or self.source_context.response_id not in {None, self.predecessor_response_id}

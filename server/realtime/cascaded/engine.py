@@ -68,6 +68,7 @@ from server.realtime.capabilities.brain import BrainEvent
 from server.realtime.capabilities.response_prefetch_controller import PrefetchCandidate
 from server.realtime.capabilities.tts import TtsCommand
 from server.realtime.capabilities.turn_manager import (
+    ReplyRecoveryRequested,
     ReplyRepairRequested,
     SemanticInputRejected,
     TurnManagerCapabilityProvider,
@@ -1054,13 +1055,14 @@ class CascadedRealtimeConversation:
         )
         # Results trigger model delivery; the same-lease durable user item
         # remains the authority for reply revisions.
+        input_context = command.repair.input_context if command.repair is not None else command.context
         input_item = next((item for sequence in range(command.minimum_thread_sequence, 0, -1)
             if (item := self._projected_items.get(sequence)) is not None
             and item.kind is ConversationItemKind.USER_INPUT
             and item.status is ConversationItemStatus.COMPLETED
             and ConversationVisibility.MODEL in item.visibility
             and conversation_scope(item.context) == conversation_scope(command.context)
-            and (item.context.turn_id, item.context.generation) == (command.context.turn_id, command.context.generation)), None)
+            and (item.context.turn_id, item.context.generation) == (input_context.turn_id, input_context.generation)), None)
         self._active_response_id = command.response_id
         self._response_admitted_by_id[command.response_id] = asyncio.Event()
         ready = asyncio.Event()
@@ -1228,7 +1230,7 @@ class CascadedRealtimeConversation:
                 if repair is not None:
                     if item.kind is not ConversationItemKind.USER_INPUT:
                         continue  # Durable results are context, never new user authority.
-                    if (item.context.turn_id, item.context.generation) != (repair.context.turn_id, repair.context.generation):
+                    if (item.context.turn_id, item.context.generation) != (repair.input_context.turn_id, repair.input_context.generation):
                         raise ValueError("reply repair must retain its original user input lease")
                     # Tool/delegation outcomes and heard projections may have
                     # committed after this input. They are context, not a new
@@ -1868,7 +1870,7 @@ class CascadedRealtimeConversation:
                     await self._input_pipeline.response_started(command.response_id, context=command.context)
                     _, source = self._response_projection_snapshot(command.minimum_thread_sequence, repair=command.repair)
                     await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id,
-                                              source_item_id=source.item_id)
+                                              source_item_id=source.item_id, recovery=command.repair.recovery if command.repair is not None else None)
                 await self._require_brain_context_current(command, attempt, stage="after response publication")
             if isinstance(event, BrainTextDelta):
                 if tts_task is None:
@@ -2206,7 +2208,9 @@ class CascadedRealtimeConversation:
             if revision is not None:
                 fields.update(input_id=revision.input_id, input_version=revision.input_version,
                               reply_version=revision.reply_version,
-                              supersedes_response_id=revision.supersedes_response_id)
+                              supersedes_response_id=revision.supersedes_response_id,
+                              input_turn_id=revision.input_context.turn_id if revision.input_context is not None else None,
+                              input_generation=revision.input_context.generation if revision.input_context is not None else None)
         is_terminal = event_type in {
             ResponseCompleted,
             ResponseCancelled,
@@ -2298,6 +2302,14 @@ class CascadedRealtimeConversation:
                         supersedes_unplayed_reply=event.supersedes_unplayed_reply,
                     )
                 )
+            elif isinstance(event, ReplyRecoveryRequested):
+                plan, basis = event.plan, self._published_brain_output
+                if (basis is not None and basis.command.response_id == plan.predecessor_response_id
+                    and (basis.command.context.turn_id, basis.command.context.generation) ==
+                        (plan.source_context.turn_id, plan.source_context.generation)):
+                    await self._input_pipeline.offer_recovery(plan,
+                        minimum_thread_sequence=basis.command.minimum_thread_sequence,
+                        deadline_ns=min(plan.deadline_ns, basis.deadline_ns))
             elif isinstance(event, ReplyRepairRequested):
                 await self._emit(ResponseRepairRequested(event_id=str(uuid.uuid4()), context=event.context,
                     conversation_sequence=self._next_sequence(), occurred_at=datetime.now(UTC), permit=event.permit))

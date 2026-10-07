@@ -20,7 +20,12 @@ from server.transport.base import (
     TransportAdapter,
     TransportDisconnected,
 )
-from server.transport.frames import InboundFrame, OutboundFrame, SessionHelloFrame
+from server.transport.frames import (
+    InboundFrame,
+    OutboundFrame,
+    OutputEpochStartedFrame,
+    SessionHelloFrame,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +144,35 @@ class InMemoryEndpointSession:
     def output_epoch(self) -> str:
         """Server-issued playback identity for the current transport attachment."""
         return self._output_epoch
+
+    def rotate_output_epoch(self, *, previous: str, replacement: str) -> bool:
+        """Compare-and-swap one live attachment after the bridge's stop barrier."""
+        if not replacement or replacement == previous:
+            raise ValueError("output epoch rotation requires a fresh identity")
+        if self._closed.is_set() or self._transport is None or self._output_epoch != previous:
+            return False
+        self._output_epoch = replacement
+        return True
+
+    async def send_output_epoch_started(self, frame: OutputEpochStartedFrame) -> bool:
+        """Notify only the rotated attachment; never buffer or send across resume."""
+        async with self._send_lock:
+            transport = self._transport
+            if self._closed.is_set() or transport is None or self._output_epoch != frame.output_epoch:
+                return False
+            try:
+                await transport.send(frame)
+            except TransportDisconnected:
+                if self._transport is transport:
+                    self._transport = None
+                    self._frame_iterator = None
+                    self._reattached.clear()
+                    self._detached_event.set()
+                return False
+            if self._closed.is_set() or self._transport is not transport or self._output_epoch != frame.output_epoch:
+                return False
+            self._touch_activity()
+            return True
 
     async def detach(self) -> None:
         if self._transport is None:
