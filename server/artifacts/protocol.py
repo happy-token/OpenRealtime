@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -140,6 +142,15 @@ class SessionRecordingPreservation:
     preserved_segments: int
     pending_segments: int
     unavailable_segments: int
+
+
+@runtime_checkable
+class RecordingHistoryCoordination(Protocol):
+    """Shared volatile coordinator for Application history mark/purge operations."""
+
+    def recording_history_guard(
+        self, *, deleting: Sequence[str] = ()
+    ) -> AbstractAsyncContextManager[None]: ...
 
 
 @runtime_checkable

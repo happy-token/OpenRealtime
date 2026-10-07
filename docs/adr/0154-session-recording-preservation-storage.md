@@ -3,6 +3,8 @@
 Date: 2026-10-07
 Status: Accepted for the storage foundation. Admin API/UI and history purge protection remain open.
 
+Follow-up: [ADR0155](0155-session-preservation-source-and-history-protection.md) adds internal source revalidation and Runtime history purge protection; administrator HTTP/UI remain open.
+
 ## Decision
 
 Preservation is a monotonic policy for the original tenant, owner and Voice Session, not an administrator-owned copy or a pin on only the currently selected segment. An optional `RecordingPreservation` capability records the first operator and mark time. Repeated marks retain these facts. It covers existing eligible AVAILABLE recordings and future recordings from the same Session. It does not revive expired, deleting or deleted artifacts. Eligibility requires the mark strictly before the original retention deadline; equality is already expired.

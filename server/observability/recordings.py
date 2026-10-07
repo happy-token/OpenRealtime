@@ -23,6 +23,8 @@ from server.conversation_journal import (
     ConversationItemStatus,
     ConversationJournal,
     ConversationVisibility,
+    JournalScope,
+    SessionConversationQuery,
     SessionRecordingQuery,
     StructuredContent,
 )
@@ -192,6 +194,22 @@ class SessionRecordingReader:
         if not isinstance(self._journal, SessionRecordingQuery):
             raise RecordingUnavailable(503, "recording_query_not_configured")
         return self._journal
+
+    async def source_scope(self, session_id: str) -> JournalScope | None:
+        """Resolve original source using bounded authoritative Journal queries."""
+        page = await self._query().read_recording_page(session_id, limit=1)
+        if page.items:
+            evidence = _evidence(page.items[0], session_id)
+            return JournalScope(
+                evidence.scope.tenant_id,
+                evidence.scope.owner_id,
+                evidence.manifest["source_thread_id"],
+            )
+        if isinstance(self._journal, SessionConversationQuery):
+            page = await self._journal.read_session_page(session_id, limit=1)
+            if page.items:
+                return JournalScope.from_context(page.items[0].context)
+        return None
 
     async def _record(self, evidence: _Evidence) -> tuple[str, ArtifactRecord | None]:
         if self._artifacts is None:

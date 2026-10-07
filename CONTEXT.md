@@ -1361,3 +1361,13 @@ ActualRuntimeHTTP red->green HIGH DNSrebinding maliciousHost/Origin denial; sche
 NextcontinueOBS03 Session preservation UI +originalscope/Agentdeny write policy, confirmedrenderer epoch/speech/sample joins andsourcecompleteness/actualbrowseraudio/realS3/admin/externalAgent acceptance. ExistingSessions no backfill. ResponsecapnotSDKcorruptobjectpeakmemorybound. OriginalOBS02 inputaggregation/faultdedup/coldwarmreconnect andallG0–G5 scope preserved; goalactive, do notmarkwholecomplete.
 
 Afterfulltests added3formalcontrolled-hookUI regressions (duplicate/failedcursorretry,refreshplayer-removal,unmountlateignored) and1Agent-audio-routecase; scopedvalidated, not repeatedfull. These are realhandlers underhookdriver, notrealDOM/physicalaudio.
+
+
+## 2026-10-07 Session recording preservation storage (ADR0154)
+
+Committed9dbd15d after5d27429. Original tenant/owner/Session first actor/time policy preserves existing eligible AVAILABLE and future verified recordings. STAGING revision/actual upload permits retained; strict mark<expiry/no revival. PG0038/source advisory lock/failed finalize expiry rearm; Memory volatile. Formal limit1 heldfirstput+physicalcrashorphan red confirmed cleanup starvation; exact protectedpending now excludedbeforescanlimit, lockrecheck remains. Both reviewers limitedApprove. FullPython2624passed/96skipped/3subtests62.61s, isolatedPG27passed3.31s,5productionMypy/scopedRuffgreen. No frontend/liveprovider/S3/service restart/productionmigration/push. HTTP/UI/historypurge next; confirmedrenderer/realplayback/recordingcompleteness/OBS02/03/fullG0–G5 remainopen. Reportdocs/reports/2026-10-07-session-recording-preservation-storage.md.
+
+
+## 2026-10-07 internal Session preservation and history protection (ADR0155)
+
+After9dbd15d continued Runtime.preserve_session_recordings via boundedJournal originalscope/freshrecheck, originalsource PG TX lock/sharedMemory Store guard. Entire purge prechecks policies beforemutation; PG protection evenS3absentafterrestart. Mark/purge winner2Runtime2pool regressions; timedoutmark retainsactualtask/resources. Formal originalpurge red fixed; reviewer markerror misclassified aspreserved red fixed entryonly AsyncExitStack translation. 7newMemory+3newPGcases. FullPython2630pass/99skip/3subtests61.12s beforelastfix; affectedfinal33pass.95realPG recording+Artifact6.33s,5scopedMypy(ignoremissingimports)/Ruff/diffgreen, bothlimitedApprove. ExistingglobalMypybaselinegatefails; archiveHEAD97diagnostics/current96,noadded,baselineneverexpanded. No newactor/queue/frontend/liveprovider/S3/productionmigration/servicerestart/push. AdminHTTP/UI/catalogpolicy next; alloriginal remainingOBS02/03/G0–G5 intact. Reportdocs/reports/2026-10-07-session-recording-history-protection.md.

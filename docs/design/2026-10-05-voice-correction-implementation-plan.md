@@ -172,3 +172,9 @@
 2026-10-07 [ADR0152](../adr/0152-session-authoritative-recording-read.md)完成 Session 权威录音分页/Artifact定位、原始owner校验、读取后保留期限复验和八个实际读取任务的取消/超时归属。0037并发索引及错误predicate拒绝已在随机隔离PG验证，未生产迁移。下一项接通HTTP/Agent授权与回放UI；保留操作、confirmed renderer映射及完整OBS03/G0–G5继续开放。
 
 2026-10-07 [ADR0153](../adr/0153-authorized-session-recording-api-and-player.md)接通私有HTTP/CLI/生产reader、管理员或exactSession Agent录音目录/音频GET、白名单引用与bounded校验、同主题手动目录与单片段播放器；统一接口发现catalog，目录独立游标。Host/Origin DNS重绑定缺口已用真实HTTP红绿回归修复。预览Chrome不等于实际音频回放，生产服务未重启。下一项仍是保留操作、confirmed renderer映射、真实S3/部署/Agent/录音完整验收；OBS02与所有G0–G5继续开放。
+
+
+2026-10-07 [ADR0154](../adr/0154-session-recording-preservation-storage.md)落实原 tenant/owner/Session 的首次长期保留政策，覆盖已有和后续录音，保护实际 pending 上传而不改变修订号；严格到期、失败验证及限批次清理公平性已回归。仅内部存储基础，管理员API/UI及会话历史删除保护下一步接入；不关闭OBS03或任何G0–G5验收。验证详见[实施记录](../reports/2026-10-07-session-recording-preservation-storage.md)。
+
+
+2026-10-07 [ADR0155](../adr/0155-session-preservation-source-and-history-protection.md)继续接内部 Runtime 标记、Journal 原来源与锁内重验、整批历史删除保护；PG 重启无 S3 仍保护，Memory 两 Runtime 共用协调锁。标记超时保持真实任务归属，操作失败不误报已保留。管理员 HTTP/UI、目录保留状态及所有真实回放/renderer/OBS02/03/G0–G5 验收继续开放，详见[实施记录](../reports/2026-10-07-session-recording-history-protection.md)。

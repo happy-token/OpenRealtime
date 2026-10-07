@@ -6,7 +6,8 @@ import asyncio
 import hashlib
 import json
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
 from typing import TypedDict, Unpack
@@ -84,6 +85,16 @@ class InMemoryArtifactStore(ArtifactStore):
         self._cleanup_attempts: dict[str, int] = {}
         self._preserved_sessions: dict[tuple[str, str, str], tuple[datetime, str]] = {}
         self._lock = asyncio.Lock()
+        self._history_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def recording_history_guard(self, *, deleting: Sequence[str] = ()) -> AsyncIterator[None]:
+        # Shared across runtimes using this volatile store; no object IO under this lock.
+        async with self._history_lock:
+            async with self._lock:
+                if any(key[2] in deleting for key in self._preserved_sessions):
+                    raise ArtifactConflict("Session recording history is preserved")
+            yield
 
     def _session_preserved(self, record: ArtifactRecord) -> bool:
         policy = self._preserved_sessions.get(

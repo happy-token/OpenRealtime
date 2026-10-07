@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Coroutine, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from typing import Any, TypeVar
 
-from server.artifacts.protocol import ArtifactCleanup, ArtifactStore
+from server.artifacts.protocol import (
+    ArtifactCleanup,
+    ArtifactConflict,
+    ArtifactStore,
+    RecordingHistoryCoordination,
+    RecordingPreservation,
+)
 from server.conversation_journal import ConversationJournal
 from server.core.interaction_context import InteractionContext
 from server.observability.recordings import RecordingUnavailable, SessionRecordingReader
@@ -130,7 +136,7 @@ class ApplicationRecordingOwner:
         self._observe(context, "active", recorder=recorder)
         return recorder
 
-    async def _query(
+    async def run_owned_operation(
         self, session_id: str, operation: Callable[[], Coroutine[Any, Any, _QueryResult]]
     ) -> _QueryResult:
         if self._closing:
@@ -139,7 +145,7 @@ class ApplicationRecordingOwner:
             raise RecordingUnavailable(503, "recording_query_capacity")
         if any(key[2] == session_id for key in self._deleting):
             raise RecordingUnavailable(409, "recording_history_being_deleted")
-        task = asyncio.create_task(operation(), name=f"recording-query:{session_id}")
+        task = asyncio.create_task(operation(), name=f"recording-operation:{session_id}")
         self._reads[task] = session_id
         task.add_done_callback(self._query_done)
         done, _ = await asyncio.wait((task,), timeout=self._query_timeout_s)
@@ -156,13 +162,36 @@ class ApplicationRecordingOwner:
         self, session_id: str, after_sequence: int = 0, limit: int = 200
     ) -> dict[str, Any]:
         reader = SessionRecordingReader(self._journal, self.artifacts)
-        return await self._query(
+        return await self.run_owned_operation(
             session_id, lambda: reader.read_page(session_id, after_sequence, limit)
         )
 
     async def read_audio(self, session_id: str, artifact_id: str) -> bytes:
         reader = SessionRecordingReader(self._journal, self.artifacts)
-        return await self._query(session_id, lambda: reader.read_audio(session_id, artifact_id))
+        return await self.run_owned_operation(
+            session_id, lambda: reader.read_audio(session_id, artifact_id)
+        )
+
+    @asynccontextmanager
+    async def volatile_history_guard(self, *, deleting: Sequence[str] = ()) -> AsyncIterator[None]:
+        store = self.artifacts
+        if isinstance(store, RecordingHistoryCoordination):
+            async with AsyncExitStack() as stack:
+                try:
+                    await stack.enter_async_context(
+                        store.recording_history_guard(deleting=deleting)
+                    )
+                except ArtifactConflict as error:
+                    if not deleting:
+                        raise
+                    raise SessionHistoryDeletionConflict(
+                        "Session recording history is preserved"
+                    ) from error
+                yield  # Operation errors retain their original meaning.
+        elif isinstance(store, RecordingPreservation):
+            raise RecordingUnavailable(503, "recording_history_coordination_not_configured")
+        else:
+            yield
 
     @contextmanager
     def deletion_guard(self, keys: Sequence[SessionKey]) -> Iterator[None]:

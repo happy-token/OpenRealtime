@@ -13,15 +13,23 @@ from typing import Any
 from server.agent_session.work_registry import AgentWorkRegistry
 from server.application.recording import ApplicationRecordingOwner
 from server.artifacts import InMemoryArtifactStore
-from server.artifacts.protocol import ArtifactStore, S3ObjectClient
+from server.artifacts.protocol import (
+    ArtifactAccessScope,
+    ArtifactStore,
+    RecordingPreservation,
+    S3ObjectClient,
+    validate_recording_preservation,
+)
 from server.conversation_journal import (
     ConversationHistoryRetention,
     ConversationJournal,
     JournalScope,
+    SessionRecordingQuery,
 )
 from server.conversation_journal.input_evidence import input_evidence_thread_id
 from server.conversation_journal.journal import SessionOwnedHistoryRetention
 from server.core.interaction_context import InteractionContext
+from server.observability.recordings import RecordingUnavailable, SessionRecordingReader
 from server.observability.telemetry import (
     DebugLogQuery,
     DiagnosticsQuery,
@@ -40,10 +48,14 @@ from server.persistence.postgres import (
     PostgresTelemetryStore,
 )
 from server.persistence.postgres.conversation_journal import PostgresConversationJournal
+from server.persistence.postgres.recording_preservation import (
+    PostgresRecordingPreservation,
+    lock_session_recordings,
+)
 from server.persistence.postgres.schema import validate_schema_name
 from server.persistence.unit_of_work import AgentPersistence
 from server.realtime.recording import SessionAudioRecorder
-from server.realtime.registry import ActiveRealtimeConversations
+from server.realtime.registry import ActiveRealtimeConversations, SessionHistoryDeletionConflict
 from server.realtime.speech import InMemorySpeechDeliveryStore, SpeechDeliveryStore
 from server.voice_session.admission import (
     LocalVoiceSessionAdmissionController,
@@ -283,6 +295,48 @@ class ApplicationRuntime:
             return next(iter(scopes))
         return JournalScope(tenant_id, user_id, voice_session_id)
 
+    async def preserve_session_recordings(self, session_id: str, *, actor_id: str) -> dict[str, Any]:
+        """Internal admin operation; source proof and real mutation remain owned after timeout."""
+        validate_recording_preservation(session_id, actor_id)
+        return await self.recordings.run_owned_operation(
+            session_id, lambda: self._preserve_session_recordings(session_id, actor_id=actor_id)
+        )
+
+    async def _preserve_session_recordings(self, session_id: str, *, actor_id: str) -> dict[str, Any]:
+        store = self.recordings.artifacts
+        if not isinstance(store, RecordingPreservation):
+            raise RecordingUnavailable(503, "recording_preservation_not_configured")
+        source = await SessionRecordingReader(self.journal, store).source_scope(session_id)
+        if source is None:
+            raise RecordingUnavailable(404, "recording_source_not_found")
+        scope = ArtifactAccessScope(source.tenant_id, source.user_id)
+        if self._pool is not None:
+            async with self._pool.acquire() as connection, connection.transaction():
+                await lock_session_recordings(connection, self._postgres_schema, scope, session_id)
+                fresh = await SessionRecordingReader(
+                    PostgresConversationJournal(connection, schema=self._postgres_schema), store
+                ).source_scope(session_id)
+                if fresh != source:
+                    raise RecordingUnavailable(409, "recording_source_changed")
+                state = await PostgresRecordingPreservation(
+                    connection, schema=self._postgres_schema
+                ).preserve_session_for(scope, session_id, actor_id=actor_id)
+        else:
+            async with self.recordings.volatile_history_guard():
+                fresh = await SessionRecordingReader(self.journal, store).source_scope(session_id)
+                if fresh != source:
+                    raise RecordingUnavailable(409, "recording_source_changed")
+                state = await store.preserve_session_for(scope, session_id, actor_id=actor_id)
+        return {
+            "voice_session_id": state.voice_session_id,
+            "preserved": True,
+            "marked_at": state.marked_at.isoformat(),
+            "preserved_segments": state.preserved_segments,
+            "pending_segments": state.pending_segments,
+            "unavailable_segments": state.unavailable_segments,
+            "storage_durable": self.recordings.storage_status == "durable",
+        }
+
     async def delete_session_history(
         self,
         voice_session_ids: Sequence[str],
@@ -301,6 +355,10 @@ class ApplicationRuntime:
         await self.telemetry.flush()
         resolved = [await self.session_history_scope(session_id, tenant_id=tenant_id, user_id=user_id)
                     for session_id in selected]
+        if isinstance(journal, SessionRecordingQuery):
+            reader = SessionRecordingReader(journal, self.recordings.artifacts)
+            resolved = [await reader.source_scope(session_id) or scope
+                        for session_id, scope in zip(selected, resolved)]
         # A conversation thread may be shared by several resumed sessions; never delete it wholesale.
         evidence_scopes = tuple(
             JournalScope(tenant_id=scope.tenant_id, user_id=scope.user_id,
@@ -326,6 +384,24 @@ class ApplicationRuntime:
                     self._pool.acquire() as connection,
                     connection.transaction(),
                 ):
+                    for source_tenant, source_user, session_id in sorted(sessions):
+                        await lock_session_recordings(
+                            connection, self._postgres_schema,
+                            ArtifactAccessScope(source_tenant, source_user), session_id,
+                        )
+                    if await connection.fetchval(
+                        f'SELECT EXISTS(SELECT 1 FROM "{self._postgres_schema}".session_recording_preservation WHERE voice_session_id=ANY($1::text[]))',
+                        list(selected),
+                    ):
+                        raise SessionHistoryDeletionConflict("Session recording history is preserved")
+                    fresh_reader = SessionRecordingReader(
+                        PostgresConversationJournal(connection, schema=self._postgres_schema),
+                        self.recordings.artifacts,
+                    )
+                    for session_id, source in zip(selected, resolved):
+                        fresh = await fresh_reader.source_scope(session_id)
+                        if fresh is not None and fresh != source:
+                            raise SessionHistoryDeletionConflict("Session history source changed")
                     await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
                     deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_session_owned_threads(scopes, selected)
                     deleted_evidence_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(evidence_scopes)
@@ -339,25 +415,26 @@ class ApplicationRuntime:
                     ])
                     deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
                 return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads, "deleted_recording_threads": deleted_recording_threads, "deleted_output_stop_facts": deleted_output_stop_facts}
-            await self.debug_log.delete_sessions(selected)
-            deleted_threads = await journal.delete_session_owned_threads(scopes, selected) if isinstance(journal, SessionOwnedHistoryRetention) else 0
-            deleted_evidence_threads = await journal.delete_threads(evidence_scopes)
-            deleted_recording_threads = await journal.delete_threads(recording_scopes)
-            deleted_output_stop_facts = sum([
-                await self.speech_deliveries.delete_output_stop_facts(
-                    tenant_id=scope.tenant_id, user_id=scope.user_id,
-                    thread_id=scope.thread_id, voice_session_id=session_id)
-                for scope, session_id in zip(resolved, selected)
-            ])
-            deleted_sessions = await self.telemetry.delete_sessions(selected)
-            return {
-                "requested": len(selected),
-                "deleted_sessions": deleted_sessions,
-                "deleted_threads": deleted_threads,
-                "deleted_evidence_threads": deleted_evidence_threads,
-                "deleted_recording_threads": deleted_recording_threads,
-                "deleted_output_stop_facts": deleted_output_stop_facts,
-            }
+            async with self.recordings.volatile_history_guard(deleting=selected):
+                await self.debug_log.delete_sessions(selected)
+                deleted_threads = await journal.delete_session_owned_threads(scopes, selected) if isinstance(journal, SessionOwnedHistoryRetention) else 0
+                deleted_evidence_threads = await journal.delete_threads(evidence_scopes)
+                deleted_recording_threads = await journal.delete_threads(recording_scopes)
+                deleted_output_stop_facts = sum([
+                    await self.speech_deliveries.delete_output_stop_facts(
+                        tenant_id=scope.tenant_id, user_id=scope.user_id,
+                        thread_id=scope.thread_id, voice_session_id=session_id)
+                    for scope, session_id in zip(resolved, selected)
+                ])
+                deleted_sessions = await self.telemetry.delete_sessions(selected)
+                return {
+                    "requested": len(selected),
+                    "deleted_sessions": deleted_sessions,
+                    "deleted_threads": deleted_threads,
+                    "deleted_evidence_threads": deleted_evidence_threads,
+                    "deleted_recording_threads": deleted_recording_threads,
+                    "deleted_output_stop_facts": deleted_output_stop_facts,
+                }
 
     async def close(self) -> None:
         if self._close_task is None or (self._close_task.done() and not self._closed):
