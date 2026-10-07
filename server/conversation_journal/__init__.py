@@ -6,6 +6,7 @@ from server.conversation_journal.journal import (
     InMemoryConversationJournal,
     JournalConflict,
     SessionConversationQuery,
+    SessionRecordingQuery,
     ThreadVersionConflict,
 )
 from server.conversation_journal.models import (
@@ -46,6 +47,7 @@ __all__ = [
     "JournalScope",
     "SessionConversationPage",
     "SessionConversationQuery",
+    "SessionRecordingQuery",
     "SpokenContent",
     "StructuredContent",
     "TextContent",

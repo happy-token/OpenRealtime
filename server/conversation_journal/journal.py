@@ -9,6 +9,7 @@ from typing import Protocol, runtime_checkable
 
 from server.conversation_journal.models import (
     AppendResult,
+    ArtifactReferenceContent,
     ConversationItem,
     ConversationItemDraft,
     ConversationItemKind,
@@ -76,6 +77,34 @@ class SessionConversationQuery(Protocol):
     ) -> SessionConversationPage: ...
 
 
+@runtime_checkable
+class SessionRecordingQuery(Protocol):
+    async def read_recording_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionConversationPage: ...
+
+    async def find_recording_artifact(
+        self, voice_session_id: str, artifact_id: str,
+    ) -> ConversationItem | None: ...
+
+
+def validate_recording_query_scope(
+    session_id: str, recordings: Sequence[JournalScope], dialogue: Sequence[JournalScope],
+) -> JournalScope | None:
+    if len(recordings) > 1 or len(dialogue) > 1:
+        raise ValueError("session recording identity is ambiguous")
+    if not recordings:
+        return None
+    scope = recordings[0]
+    suffix = f"::recording:{session_id}"
+    if not scope.thread_id.endswith(suffix) or scope.thread_id == suffix:
+        raise ValueError("invalid recording evidence thread")
+    source = JournalScope(scope.tenant_id, scope.user_id, scope.thread_id[:-len(suffix)])
+    if dialogue and dialogue[0] != source:
+        raise ValueError("session recording and conversation identity is ambiguous")
+    return scope
+
+
 class InMemoryConversationJournal:
     """A concurrency-safe test conformer; it is deliberately not durable."""
 
@@ -85,6 +114,8 @@ class InMemoryConversationJournal:
         self._items_by_id: dict[str, ConversationItem] = {}
         self._threads: dict[JournalScope, list[ConversationItem]] = {}
         self._session_replay: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
+        self._session_recordings: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
+        self._recording_artifacts: dict[tuple[str, str], dict[JournalScope, list[ConversationItem]]] = {}
         self._lock = asyncio.Lock()
 
     async def append(
@@ -123,6 +154,11 @@ class InMemoryConversationJournal:
             self._items_by_id[item.item_id] = item
             if item.kind in {ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT}:
                 self._session_replay.setdefault(item.context.voice_session_id, {}).setdefault(draft.scope, []).append(item)
+            if item.producer == "voice-session-recording":
+                session = item.context.voice_session_id
+                self._session_recordings.setdefault(session, {}).setdefault(draft.scope, []).append(item)
+                for artifact_id in {part.artifact_id for part in item.content if isinstance(part, ArtifactReferenceContent)}:
+                    self._recording_artifacts.setdefault((session, artifact_id), {}).setdefault(draft.scope, []).append(item)
             return AppendResult(item=item, created=True)
 
     async def read_session_page(
@@ -139,12 +175,53 @@ class InMemoryConversationJournal:
             more = start + len(page) < len(items)
             return SessionConversationPage(page, page[-1].sequence if more else None)
 
+    def _recording_scope(self, session_id: str) -> JournalScope | None:
+        return validate_recording_query_scope(session_id, tuple(self._session_recordings.get(session_id, {})),
+                                              tuple(self._session_replay.get(session_id, {})))
+
+    async def read_recording_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionConversationPage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        async with self._lock:
+            scope = self._recording_scope(voice_session_id)
+            items = self._session_recordings.get(voice_session_id, {}).get(scope, []) if scope is not None else []
+            start = bisect_right(items, after_sequence, key=lambda item: item.sequence)
+            page = tuple(items[start:start + limit])
+            return SessionConversationPage(page, page[-1].sequence if start + len(page) < len(items) else None)
+
+    async def find_recording_artifact(self, voice_session_id: str, artifact_id: str) -> ConversationItem | None:
+        validate_session_window(voice_session_id, 0, 1)
+        if not artifact_id or len(artifact_id) > 128:
+            raise ValueError("invalid recording artifact identity")
+        async with self._lock:
+            scope = self._recording_scope(voice_session_id)
+            items = self._recording_artifacts.get((voice_session_id, artifact_id), {}).get(scope, []) if scope is not None else []
+            if len(items) > 1:
+                raise ValueError("recording artifact reference is ambiguous")
+            return items[0] if items else None
+
     def _remove_thread_items(self, scope: JournalScope, items: Sequence[ConversationItem]) -> None:
         sessions = set()
         for item in items:
             self._items_by_id.pop(item.item_id, None)
             sessions.add(item.context.voice_session_id)
+        for item in items:
+            if item.producer == "voice-session-recording":
+                for part in item.content:
+                    if isinstance(part, ArtifactReferenceContent):
+                        key = (item.context.voice_session_id, part.artifact_id)
+                        artifact_scopes = self._recording_artifacts.get(key)
+                        if artifact_scopes is not None:
+                            artifact_scopes.pop(scope, None)
+                            if not artifact_scopes:
+                                self._recording_artifacts.pop(key, None)
         for session_id in sessions:
+            recording_scopes = self._session_recordings.get(session_id)
+            if recording_scopes is not None:
+                recording_scopes.pop(scope, None)
+                if not recording_scopes:
+                    self._session_recordings.pop(session_id, None)
             scopes = self._session_replay.get(session_id)
             if scopes is not None:
                 scopes.pop(scope, None)

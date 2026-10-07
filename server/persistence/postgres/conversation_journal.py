@@ -26,7 +26,10 @@ from server.conversation_journal import (
     TextContent,
     ThreadVersionConflict,
 )
-from server.conversation_journal.journal import validate_session_window
+from server.conversation_journal.journal import (
+    validate_recording_query_scope,
+    validate_session_window,
+)
 from server.conversation_journal.models import ConversationContent, utc_now
 from server.core.interaction_context import InteractionContext
 from server.persistence.postgres._connection import connection_scope
@@ -235,6 +238,60 @@ class PostgresConversationJournal:
                 return SessionConversationPage((), None)
             page = tuple(self._item(row) for row in rows[:limit])
             return SessionConversationPage(page, page[-1].sequence if len(rows) > limit else None)
+
+    async def _recording_items(
+        self, session_id: str, after_sequence: int, limit: int, artifact_id: str | None = None,
+    ) -> tuple[ConversationItem, ...]:
+        async with asyncio.timeout(4), connection_scope(self._executor) as connection, connection.transaction():
+            previous = await connection.fetchval("SHOW statement_timeout")
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", _session_statement_timeout(previous))
+            rows = await connection.fetch(f"""
+                WITH recording_scopes AS MATERIALIZED (
+                    SELECT DISTINCT tenant_id, user_id, thread_id FROM {self._items}
+                    WHERE voice_session_id=$1 AND producer='voice-session-recording'
+                    ORDER BY tenant_id,user_id,thread_id LIMIT 2
+                ), dialogue_scopes AS MATERIALIZED (
+                    SELECT DISTINCT tenant_id, user_id, thread_id FROM {self._items}
+                    WHERE voice_session_id=$1 AND kind IN ('user.input','assistant.output')
+                    ORDER BY tenant_id,user_id,thread_id LIMIT 2
+                ), identity AS (
+                    SELECT (SELECT count(*) FROM recording_scopes) AS recording_count,
+                           (SELECT count(*) FROM dialogue_scopes) AS dialogue_count
+                ) SELECT identity.*, r.tenant_id AS rt, r.user_id AS ru, r.thread_id AS rh,
+                         d.tenant_id AS dt, d.user_id AS du, d.thread_id AS dh, page.*
+                FROM identity LEFT JOIN recording_scopes r ON true LEFT JOIN dialogue_scopes d ON true
+                LEFT JOIN LATERAL (
+                    SELECT item.* FROM {self._items} item
+                    WHERE identity.recording_count=1 AND identity.dialogue_count<=1
+                        AND item.tenant_id=r.tenant_id AND item.user_id=r.user_id AND item.thread_id=r.thread_id
+                        AND item.voice_session_id=$1 AND item.producer='voice-session-recording'
+                        AND item.sequence>$2 AND ($4::jsonb IS NULL OR item.content @> $4::jsonb)
+                    ORDER BY item.sequence LIMIT $3
+                ) page ON true ORDER BY page.sequence
+                """, session_id, after_sequence, limit,
+                _json([{"type": "artifact_reference", "artifact_id": artifact_id}]) if artifact_id is not None else None)
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", previous)
+            if rows[0]["recording_count"] > 1 or rows[0]["dialogue_count"] > 1:
+                raise ValueError("session recording identity is ambiguous")
+            row = rows[0]
+            validate_recording_query_scope(session_id, [JournalScope(row["rt"],row["ru"],row["rh"])] if row["rt"] is not None else [],
+                                            [JournalScope(row["dt"],row["du"],row["dh"])] if row["dt"] is not None else [])
+            return tuple(self._item(row) for row in rows if row["item_id"] is not None)
+
+    async def read_recording_page(self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200) -> SessionConversationPage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        rows = await self._recording_items(voice_session_id, after_sequence, limit + 1)
+        page = rows[:limit]
+        return SessionConversationPage(page, page[-1].sequence if len(rows)>limit else None)
+
+    async def find_recording_artifact(self, voice_session_id: str, artifact_id: str) -> ConversationItem | None:
+        validate_session_window(voice_session_id, 0, 1)
+        if not artifact_id or len(artifact_id) > 128:
+            raise ValueError("invalid recording artifact identity")
+        rows = await self._recording_items(voice_session_id, 0, 2, artifact_id)
+        if len(rows)>1:
+            raise ValueError("recording artifact reference is ambiguous")
+        return rows[0] if rows else None
 
     async def delete_threads(self, scopes: Sequence[JournalScope]) -> int:
         return await self._delete_threads(scopes)

@@ -168,3 +168,5 @@
 执行批次提交`43bb066`后继续补12项未知/过期/缺失停播回执生产组合与迟到成功不可重开回归。该子集不再列为“完全未覆盖”；完整未知位置策略、断连/失配/非合作/真实renderer矩阵仍按G4验收，阶段4不关闭。
 
 2026-10-07继续补[非合作停播控制IO](../reports/2026-10-07-output-control-io-hardening.md)，采用[ADR0147](../adr/0147-owned-output-control-io-deadlines.md)：恢复通知、精确/兼容停止及失败通知/关闭均使用有界调用者等待，仍在途IO占8任务预算到真实退出。正常关闭后超时不误报故障；正式Endpoint本地Brain/TTS/classifier清理不受非合作控制IO阻塞。此项补齐G4异步控制IO异常子集，未替代持久事实/投影、全部供应商和renderer/负载验收。
+
+2026-10-07 [ADR0152](../adr/0152-session-authoritative-recording-read.md)完成 Session 权威录音分页/Artifact定位、原始owner校验、读取后保留期限复验和八个实际读取任务的取消/超时归属。0037并发索引及错误predicate拒绝已在随机隔离PG验证，未生产迁移。下一项接通HTTP/Agent授权与回放UI；保留操作、confirmed renderer映射及完整OBS03/G0–G5继续开放。

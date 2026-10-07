@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Coroutine, Iterator, Sequence
 from contextlib import contextmanager
+from typing import Any, TypeVar
 
 from server.artifacts.protocol import ArtifactCleanup, ArtifactStore
 from server.conversation_journal import ConversationJournal
 from server.core.interaction_context import InteractionContext
+from server.observability.recordings import RecordingUnavailable, SessionRecordingReader
 from server.observability.telemetry import RuntimeTelemetry, TelemetryIdentity, TelemetryOutcome
 from server.realtime.recording import SessionAudioRecorder
 from server.realtime.registry import SessionHistoryDeletionConflict
 
 logger = logging.getLogger(__name__)
 SessionKey = tuple[str, str, str]
+_QueryResult = TypeVar("_QueryResult")
 
 
 class RecordingWritesPending(RuntimeError):
@@ -44,6 +47,8 @@ class ApplicationRecordingOwner:
         self._maintenance: asyncio.Task[None] | None = None
         self._cleanup: asyncio.Task[object] | None = None
         self._cleanup_interval_s = 60.0
+        self._reads: dict[asyncio.Task[Any], str] = {}
+        self._query_timeout_s = 4.0
 
     @property
     def storage_status(self) -> str:
@@ -125,10 +130,46 @@ class ApplicationRecordingOwner:
         self._observe(context, "active", recorder=recorder)
         return recorder
 
+    async def _query(
+        self, session_id: str, operation: Callable[[], Coroutine[Any, Any, _QueryResult]]
+    ) -> _QueryResult:
+        if self._closing:
+            raise RecordingUnavailable(503, "recording_owner_closing")
+        if len(self._reads) >= 8:
+            raise RecordingUnavailable(503, "recording_query_capacity")
+        if any(key[2] == session_id for key in self._deleting):
+            raise RecordingUnavailable(409, "recording_history_being_deleted")
+        task = asyncio.create_task(operation(), name=f"recording-query:{session_id}")
+        self._reads[task] = session_id
+        task.add_done_callback(self._query_done)
+        done, _ = await asyncio.wait((task,), timeout=self._query_timeout_s)
+        if not done:
+            raise RecordingUnavailable(503, "recording_source_timeout")
+        return task.result()
+
+    def _query_done(self, task: asyncio.Task[Any]) -> None:
+        self._reads.pop(task, None)
+        if not task.cancelled():
+            task.exception()
+
+    async def read_page(
+        self, session_id: str, after_sequence: int = 0, limit: int = 200
+    ) -> dict[str, Any]:
+        reader = SessionRecordingReader(self._journal, self.artifacts)
+        return await self._query(
+            session_id, lambda: reader.read_page(session_id, after_sequence, limit)
+        )
+
+    async def read_audio(self, session_id: str, artifact_id: str) -> bytes:
+        reader = SessionRecordingReader(self._journal, self.artifacts)
+        return await self._query(session_id, lambda: reader.read_audio(session_id, artifact_id))
+
     @contextmanager
     def deletion_guard(self, keys: Sequence[SessionKey]) -> Iterator[None]:
         selected = set(keys)
-        if selected & (self._deleting | self._recorders.keys()):
+        if selected & (self._deleting | self._recorders.keys()) or any(
+            key[2] in self._reads.values() for key in selected
+        ):
             raise SessionHistoryDeletionConflict(
                 "recording writes still own this Session; close and wait for settlement"
             )
@@ -185,7 +226,7 @@ class ApplicationRecordingOwner:
                 for _, recorder in tuple(self._recorders.values())
             )
         )
-        if self._recorders or self._cleanup is not None:
+        if self._recorders or self._cleanup is not None or self._reads:
             raise RecordingWritesPending(
                 "recording IO remains owned; persistence resources must stay open"
             )
