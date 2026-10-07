@@ -85,6 +85,7 @@ from server.realtime.protocol.commands import (
     DeliverItem,
     DeliveryMode,
     InterruptedContextPolicy,
+    OutputStopFact,
     ProjectCommittedItem,
     RealtimeCommand,
     RecordOutputStop,
@@ -468,7 +469,8 @@ class CascadedRealtimeConversation:
             self._commands_by_idempotency_key[command.idempotency_key] = command
             return
         if isinstance(command, RecordOutputStop):
-            await self._speech_lifecycle.record_output_stop(command.fact)
+            saved = await self._speech_lifecycle.record_output_stop(command.fact)
+            await self._input_pipeline.assistant_output_stop(saved)
             self._commands_by_idempotency_key[command.idempotency_key] = command
             return
         if isinstance(command, ReportPlaybackProgress):
@@ -2431,6 +2433,10 @@ class CascadedRealtimeConversation:
         if not isinstance(event, VERSIONED_OUTPUT_EVENTS):
             return True  # Cancellation/failure/completion facts must still drain.
         return self.output_context_current(event)
+
+    async def observe_saved_output_stop(self, fact: OutputStopFact) -> None:
+        if not self._closed:
+            await self._input_pipeline.assistant_output_stop(fact)
 
     def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
         basis = self._published_brain_output

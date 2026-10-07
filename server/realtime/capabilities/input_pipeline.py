@@ -31,6 +31,7 @@ from server.realtime.capabilities.turn_manager import (
     AsrCommitRequested,
     AsrDiscardRequested,
     ObserveAsrEvent,
+    ObserveAssistantOutputStop,
     ObserveAssistantPlayback,
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
@@ -50,7 +51,7 @@ from server.realtime.capabilities.vad import (
     VadSpeechStarted,
 )
 from server.realtime.protocol.audio import AudioFrame
-from server.realtime.protocol.commands import ReportPlaybackProgress
+from server.realtime.protocol.commands import OutputStopFact, ReportPlaybackProgress
 from server.realtime.protocol.playback import ReplyPlayback
 
 if TYPE_CHECKING:
@@ -260,6 +261,11 @@ class CascadedInputPipeline:
                 current_sentence=command.current_sentence if command.played_position_samples is not None else None,
                 terminal=command.completed or command.stopped),
         ))
+
+    async def assistant_output_stop(self, fact: OutputStopFact) -> None:
+        if self._closed:
+            raise RuntimeError("cascaded input pipeline is closed")
+        await self._turn_manager.send(ObserveAssistantOutputStop(fact=fact))
 
     async def assistant_yielded(self, *, context: InteractionContext) -> None:
         if self._closed:

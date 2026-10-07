@@ -20,6 +20,7 @@ from server.conversation_journal import (
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit, sample_position_us
 from server.core.reply_repair import MAX_CONTEXT_REPAIRS, ReplyRepairPermit
+from server.realtime.protocol.commands import OutputStopFact, transition_output_stop_fact
 from server.realtime.protocol.playback import ReplyPlayback, sentence_identity
 from server.realtime.scope import conversation_scope
 
@@ -63,6 +64,7 @@ class ReplyRevisionController:
         self.reply: ReplyRevision | None = None
         self._reply_context: InteractionContext | None = None
         self._sample_rate_hz: int | None = None
+        self._output_stop: OutputStopFact | None = None
         self._closed = False
         self._live_started = False
         self._history_sequence = 0
@@ -215,6 +217,7 @@ class ReplyRevisionController:
                     and previous.input_id == current.input_id else None)
         self._reply_context = context
         self._sample_rate_hz = None
+        self._output_stop = None
         self.reply = ReplyRevision(
             response_id=response_id, turn_id=context.turn_id, generation=context.generation,
             input_id=current.input_id if current is not None else None,
@@ -340,6 +343,32 @@ class ReplyRevisionController:
             and fact.current_sentence is not None and fact.current_sentence.sentence_id == permit.sentence_id
             and fact.played_position_samples is not None
             and permit.audio_start_samples < fact.played_position_samples < permit.audio_end_samples)
+
+    @property
+    def output_stop(self) -> OutputStopFact | None:
+        return None if self._closed else self._output_stop
+
+    def observe_output_stop(self, fact: OutputStopFact) -> bool:
+        """Observe the current target's saved stop, never grant delivery authority."""
+        reply, owner = self.reply, self._reply_context
+        if (self._closed or reply is None or owner is None
+            or conversation_scope(fact.context) != conversation_scope(owner)
+            or (fact.context.turn_id, fact.context.generation) != (reply.turn_id, reply.generation)
+            or fact.context.response_id not in {owner.response_id, reply.response_id}
+            or fact.speech_id not in {reply.response_id, f"response:{reply.response_id}"}
+            or reply.playback is not None and reply.playback.output_epoch not in {None, fact.output_epoch}):
+            return False
+        previous = self._output_stop
+        if previous is not None and previous.stop_command_id != fact.stop_command_id:
+            if (previous.output_epoch != fact.output_epoch or previous.operation_sequence is None
+                or fact.operation_sequence is None or fact.operation_sequence <= previous.operation_sequence):
+                return False  # An unordered/older operation cannot replace current evidence.
+            previous = None
+        saved = transition_output_stop_fact(previous, fact)
+        if saved == self._output_stop:
+            return False
+        self._output_stop = saved
+        return True
 
     def observe_playback(self, response_id: str) -> None:
         if not self._closed and self.reply is not None and self.reply.response_id == response_id:

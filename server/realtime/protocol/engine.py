@@ -7,7 +7,7 @@ from typing import Protocol, TypeVar
 
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
-from server.realtime.protocol.commands import ProjectCommittedItem, RealtimeCommand
+from server.realtime.protocol.commands import OutputStopFact, ProjectCommittedItem, RealtimeCommand
 from server.realtime.protocol.events import (
     AgentDelegationRequestProposed,
     AudioDelta,
@@ -67,6 +67,13 @@ def observe_output_admitted(conversation: RealtimeConversation, event: AudioDelt
     observer = getattr(conversation, "observe_output_admitted", None)
     if observer is not None:
         observer(event)
+
+
+async def observe_saved_output_stop(conversation: RealtimeConversation, fact: OutputStopFact) -> None:
+    """Notify the original live delegate after canonical persistence, without writing again."""
+    observer = getattr(conversation, "observe_saved_output_stop", None)
+    if observer is not None:
+        await observer(fact)
 
 
 class RealtimeConversation(Protocol):

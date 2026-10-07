@@ -21,12 +21,14 @@ from server.realtime.protocol import (
     RealtimeConversation,
     RealtimeEvent,
 )
+from server.realtime.protocol.commands import OutputStopFact
 from server.realtime.protocol.engine import (
     CommittedItemProjection,
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
     observe_output_admitted,
+    observe_saved_output_stop,
 )
 from server.realtime.protocol.events import AudioDelta, SpeechAudioDelta
 from server.realtime.scope import conversation_scope
@@ -167,6 +169,11 @@ class RealtimeDelegationController:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return not self._closed and is_sentence_permit_current(self._conversation, permit)
+
+    async def observe_saved_output_stop(self, fact: OutputStopFact) -> None:
+        if self._closed:
+            return
+        await observe_saved_output_stop(self._conversation, fact)
 
     def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
         observe_output_admitted(self._conversation, event)

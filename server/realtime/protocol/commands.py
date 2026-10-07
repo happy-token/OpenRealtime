@@ -188,6 +188,7 @@ class OutputStopFact:
     receipt_outcome: Literal["queue_stopped", "unknown", "stale"] | None = None
     played_position_samples: int | None = None
     failure_reason: str | None = None
+    operation_sequence: int | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -195,6 +196,8 @@ class OutputStopFact:
             for value in (self.stop_command_id, self.output_epoch, self.speech_id, self.reason)
         ):
             raise ValueError("stop fact identity and reason must be non-empty")
+        if self.operation_sequence is not None and (type(self.operation_sequence) is not int or self.operation_sequence < 1):
+            raise ValueError("stop operation sequence must be a positive server ordinal")
         if type(self.context.generation) is not int or self.context.generation < 0:
             raise ValueError("stop fact generation must be a non-negative integer")
         if any(
@@ -237,6 +240,49 @@ class OutputStopFact:
                 raise ValueError("unknown stop cannot claim confirmed queue position")
         else:
             raise ValueError("invalid stop fact state")
+
+
+def transition_output_stop_fact(
+    current: OutputStopFact | None, candidate: OutputStopFact
+) -> OutputStopFact:
+    """Preserve first terminal evidence and fence every operation's immutable target."""
+    if current is None:
+        return candidate
+    if (
+        current.context,
+        current.stop_command_id,
+        current.output_epoch,
+        current.speech_id,
+        current.reason,
+        current.requested_at,
+        current.operation_sequence,
+    ) != (
+        candidate.context,
+        candidate.stop_command_id,
+        candidate.output_epoch,
+        candidate.speech_id,
+        candidate.reason,
+        candidate.requested_at,
+        candidate.operation_sequence,
+    ):
+        raise ValueError("stop operation identity was reused with different content")
+    if candidate.state == "STOP_REQUESTED":
+        return current
+    if current.state == "STOP_REQUESTED":
+        return candidate
+    if (
+        current.state,
+        current.receipt_outcome,
+        current.played_position_samples,
+        current.failure_reason,
+    ) != (
+        candidate.state,
+        candidate.receipt_outcome,
+        candidate.played_position_samples,
+        candidate.failure_reason,
+    ):
+        raise ValueError("terminal stop evidence cannot be rewritten")
+    return current
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

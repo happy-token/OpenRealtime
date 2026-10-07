@@ -535,3 +535,191 @@ async def test_managed_close_keeps_session_owned_until_inflight_stop_writes_sett
         release.set()
         await asyncio.gather(writing, return_exceptions=True)
         await managed.close()
+
+
+@pytest.mark.parametrize("phase", ["before_reconfigure", "during_reconfigure", "close"])
+async def test_saved_stop_notification_cannot_cross_delegate_replacement(phase):
+    from server.conversation_journal import InMemoryConversationJournal
+    from server.realtime.registry import ActiveRealtimeConversations
+    from server.realtime.runtime import RealtimeRuntimeFactory
+
+    saving, release_save = asyncio.Event(), asyncio.Event()
+    opening, release_open = asyncio.Event(), asyncio.Event()
+
+    class Store(InMemorySpeechDeliveryStore):
+        async def record_output_stop(self, fact):
+            saving.set()
+            try:
+                await release_save.wait()
+            except asyncio.CancelledError:
+                # Exercise retained ownership of a noncooperative storage write.
+                await release_save.wait()
+            return await super().record_output_stop(fact)
+
+    store, delegates = Store(), []
+
+    class Delegate(InMemoryRealtimeConversation):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.stops = []
+
+        async def observe_saved_output_stop(self, fact):
+            self.stops.append(fact)
+
+    class Engine:
+        async def open(self, **kwargs):
+            if delegates:
+                opening.set()
+                await release_open.wait()
+            delegate = Delegate(context=kwargs["context"], speech_deliveries=store)
+            delegates.append(delegate)
+            return delegate
+
+    managed = await RealtimeRuntimeFactory(engine=Engine(), journal=InMemoryConversationJournal(),
+        speech_deliveries=store, active_conversations=ActiveRealtimeConversations()).open(context=context(), profile=None)
+    writing = reconfiguring = None
+    fact = requested()
+
+    def write():
+        return asyncio.create_task(managed.send(RecordOutputStop(command_id="fact", idempotency_key="fact",
+            context=fact.context, fact=fact)))
+
+    try:
+        if phase in {"before_reconfigure", "close"}:
+            writing = write()
+            await asyncio.wait_for(saving.wait(), 1)
+        if phase == "close":
+            await managed.close()
+        else:
+            reconfiguring = asyncio.create_task(managed.reconfigure(profile=None))
+            await asyncio.wait_for(opening.wait(), 1)
+            if phase == "during_reconfigure":
+                writing = write()
+                await asyncio.wait_for(saving.wait(), 1)
+            release_open.set()
+            await reconfiguring
+        release_save.set()
+        await writing
+        assert await store.get_output_stop(fact.context, fact.stop_command_id) == fact
+        assert all(not delegate.stops for delegate in delegates)
+    finally:
+        release_save.set()
+        release_open.set()
+        await asyncio.gather(*(task for task in (writing, reconfiguring) if task is not None), return_exceptions=True)
+        await managed.close()
+
+
+@pytest.mark.parametrize("operation_sequence", [None, 1, 512])
+def test_postgres_stop_payload_roundtrips_optional_server_order(operation_sequence):
+    import json
+
+    from server.persistence.postgres.speech_delivery import _stop_fact, _stop_json
+    from server.realtime.scope import conversation_scope
+
+    fact = replace(confirmed(requested()), operation_sequence=operation_sequence)
+    payload = json.loads(_stop_json(fact))
+    if operation_sequence is None:
+        payload.pop("operation_sequence")  # Old stored rows remain readable.
+    names = ("tenant_id", "user_id", "device_id", "voice_session_id", "thread_id")
+    row = dict(zip(names, conversation_scope(fact.context), strict=True))
+    row.update(stop_command_id=fact.stop_command_id, state=fact.state, payload=payload)
+    assert _stop_fact(row) == fact
+
+
+@pytest.mark.parametrize("operation_sequence", [0, -1, True, 1.5, "1"])
+def test_stop_fact_rejects_invalid_server_operation_order(operation_sequence):
+    with pytest.raises(ValueError, match="operation sequence"):
+        replace(requested(), operation_sequence=operation_sequence)
+
+
+@pytest.mark.parametrize("stage", ["cancel_output", "close_delegate"])
+@pytest.mark.parametrize("failure", ["error", "cancel"])
+async def test_reconfiguration_barrier_failure_closes_instead_of_leaving_a_silent_observer(stage, failure):
+    from server.conversation_journal import InMemoryConversationJournal
+    from server.realtime.protocol.commands import CancelResponse
+    from server.realtime.protocol.events import RealtimeCapabilityFailed
+    from server.realtime.registry import ActiveRealtimeConversations, SessionHistoryDeletionConflict
+    from server.realtime.runtime import RealtimeRuntimeFactory
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    recovery_entered, recovery_cancelled = asyncio.Event(), asyncio.Event()
+
+    class Recovery:
+        async def recovery_profile(self, **kwargs):
+            recovery_entered.set()
+            try:
+                await release.wait()
+            except asyncio.CancelledError:
+                recovery_cancelled.set()
+                raise
+
+    store, delegates = InMemorySpeechDeliveryStore(), []
+
+    async def fail():
+        entered.set()
+        if failure == "error":
+            raise RuntimeError("controlled reconfiguration barrier failure")
+        await release.wait()
+
+    class Delegate(InMemoryRealtimeConversation):
+        close_attempts = 0
+
+        async def events(self):
+            yield RealtimeCapabilityFailed(event_id="controlled-recovery", context=context(),
+                conversation_sequence=1, occurred_at=datetime.now(UTC), capability="llm", error="controlled failure")
+            async for event in super().events():
+                yield event
+
+        async def send(self, command):
+            if stage == "cancel_output" and isinstance(command, CancelResponse):
+                await fail()
+            await super().send(command)
+
+        async def close(self):
+            self.close_attempts += 1
+            if stage == "close_delegate" and self.close_attempts == 1:
+                await fail()
+            await super().close()
+
+    class Engine:
+        async def open(self, **kwargs):
+            delegate = Delegate(context=kwargs["context"], speech_deliveries=store)
+            delegates.append(delegate)
+            return delegate
+
+    active = ActiveRealtimeConversations()
+    managed = await RealtimeRuntimeFactory(engine=Engine(), journal=InMemoryConversationJournal(),
+        speech_deliveries=store, active_conversations=active, failure_recovery=Recovery()).open(context=context(), profile=None)
+    await asyncio.wait_for(recovery_entered.wait(), 1)
+    if stage == "cancel_output":
+        managed._mark_output_started(response_id="a")
+    reconfiguring = asyncio.create_task(managed.reconfigure(profile=None))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if failure == "cancel":
+            reconfiguring.cancel()
+        with pytest.raises(RuntimeError if failure == "error" else asyncio.CancelledError):
+            await reconfiguring
+        assert managed._closed, "a failed barrier cannot leave a live handle without stop observation"
+        if stage == "close_delegate":
+            with pytest.raises(RuntimeError, match="delegate close was not confirmed"):
+                await asyncio.wait_for(managed.close(), 1)
+            assert not managed._close_completed
+            scope = (context().tenant_id, context().user_id, context().voice_session_id)
+            with pytest.raises(SessionHistoryDeletionConflict), active.session_deletion_guard([scope]):
+                pass
+        else:
+            await asyncio.wait_for(managed.close(), 1)
+            assert delegates[0]._closed and managed._close_completed
+        assert managed._recovery_task.done() and recovery_cancelled.is_set()
+        assert len(delegates) == 1
+        fact = requested()
+        with pytest.raises(RuntimeError, match="closed"):
+            await managed.send(RecordOutputStop(command_id="late", idempotency_key="late", context=fact.context, fact=fact))
+        assert await store.get_output_stop(fact.context, fact.stop_command_id) is None
+    finally:
+        release.set()
+        reconfiguring.cancel()
+        await asyncio.gather(reconfiguring, return_exceptions=True)
+        await delegates[0].close()  # Test-owned underlying fake cleanup after an uncertain wrapper close.
+        await asyncio.gather(managed.close(), return_exceptions=True)

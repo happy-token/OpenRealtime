@@ -41,10 +41,11 @@ class SpeechLifecycle:
         self._next_text_sequence: dict[str, int] = {}
         self._text_parts: dict[str, list[str]] = {}
 
-    async def record_output_stop(self, fact: OutputStopFact) -> None:
+    async def record_output_stop(self, fact: OutputStopFact) -> OutputStopFact:
         saved = await self._deliveries.record_output_stop(fact)
         if not isinstance(saved, OutputStopFact) or transition_output_stop_fact(saved, fact) != saved:
             raise RuntimeError("stop fact store did not confirm the requested state")
+        return saved
 
     async def start(
         self, command: StartSpeech, *, sequence: Callable[[], int]

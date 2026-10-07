@@ -29,6 +29,7 @@ from server.realtime.protocol.commands import (
     CancelSpeech,
     DeliverItem,
     DeliveryMode,
+    OutputStopFact,
     ProjectCommittedItem,
     RealtimeCommand,
     RecordOutputStop,
@@ -43,6 +44,7 @@ from server.realtime.protocol.engine import (
     is_output_deliverable,
     is_sentence_permit_current,
     observe_output_admitted,
+    observe_saved_output_stop,
 )
 from server.realtime.protocol.events import (
     AudioDelta,
@@ -255,6 +257,7 @@ class ManagedRealtimeConversation:
         self._context = context
         self._profile = profile
         self._conversation = conversation
+        self._stop_observer_delegate: RealtimeConversation | None = conversation
         self._replayed_item_ids = replayed_item_ids
         self._factory = factory
         self._stop_lifecycle = SpeechLifecycle(factory._speech_deliveries) if factory._speech_deliveries is not None else None
@@ -278,12 +281,14 @@ class ManagedRealtimeConversation:
     async def send(self, command: RealtimeCommand) -> None:
         if isinstance(command, RecordOutputStop) and self._stop_lifecycle is not None:
             # App-owned immutable facts survive replacement of the actor delegate.
-            # The shared store fences transitions; these writes do not own actor state.
+            # The shared store fences transitions. Notify only the original live
+            # delegate; a replacement cannot inherit the old reply's stop facts.
             if self._closed:
                 raise RuntimeError("managed realtime conversation is closed")
             if conversation_scope(command.context) != conversation_scope(self._context):
                 raise ValueError("command belongs to a different realtime conversation scope")
-            write = asyncio.create_task(self._stop_lifecycle.record_output_stop(command.fact),
+            delegate = self._stop_observer_delegate
+            write = asyncio.create_task(self._save_output_stop(command.fact, delegate),
                                         name=f"managed-stop-fact:{command.fact.stop_command_id}:{command.fact.state}")
             self._stop_fact_writes.add(write)
             write.add_done_callback(self._stop_fact_write_done)
@@ -305,6 +310,12 @@ class ManagedRealtimeConversation:
                     self._observer.observe_command(command)
                 except Exception:
                     logger.exception("Realtime command diagnostics projection failed")
+
+    async def _save_output_stop(self, fact: OutputStopFact, delegate: RealtimeConversation | None) -> None:
+        assert self._stop_lifecycle is not None
+        saved = await self._stop_lifecycle.record_output_stop(fact)
+        if not self._closed and delegate is not None and self._stop_observer_delegate is delegate:
+            await observe_saved_output_stop(delegate, saved)
 
     def _stop_fact_write_done(self, task: asyncio.Task[None]) -> None:
         self._stop_fact_writes.discard(task)
@@ -335,44 +346,57 @@ class ManagedRealtimeConversation:
         async with self._send_lock:
             if self._closed:
                 raise RuntimeError("managed realtime conversation is closed")
-            previous_profile = self._profile
-            previous = self._conversation
-            previous_pump = self._event_pump
-            await self._cancel_active_outputs(previous)
-            if self._active_response_ids or self._active_speech_ids:
-                await self._outputs_quiet.wait()
-            await previous.close()
-            await previous_pump
+            previous_close_started = previous_close_confirmed = False
             try:
-                replacement, replayed_item_ids = await self._factory._open_delegate(
-                    context=self._context,
-                    profile=profile,
-                )
-            except Exception as reconfiguration_error:
+                self._stop_observer_delegate = None  # Fence before cancelling/closing the old actor.
+                previous_profile = self._profile
+                previous = self._conversation
+                previous_pump = self._event_pump
+                await self._cancel_active_outputs(previous)
+                if self._active_response_ids or self._active_speech_ids:
+                    await self._outputs_quiet.wait()
+                previous_close_started = True
+                await previous.close()
+                await previous_pump
+                previous_close_confirmed = True
                 try:
                     replacement, replayed_item_ids = await self._factory._open_delegate(
                         context=self._context,
-                        profile=previous_profile,
+                        profile=profile,
                     )
-                except Exception as rollback_error:  # noqa: BLE001 - preserve both failures
-                    self._closed = True
+                except Exception as reconfiguration_error:
                     try:
-                        await self._settle_stop_fact_writes()
-                    finally:
-                        self._finish_close_ownership()
-                        await self._events.put(_CLOSED)
-                    raise ExceptionGroup(
-                        "Realtime reconfiguration and rollback both failed",
-                        [reconfiguration_error, rollback_error],
-                    ) from reconfiguration_error
+                        replacement, replayed_item_ids = await self._factory._open_delegate(
+                            context=self._context,
+                            profile=previous_profile,
+                        )
+                    except Exception as rollback_error:  # noqa: BLE001 - preserve both failures
+                        self._closed = True
+                        try:
+                            await self._settle_stop_fact_writes()
+                        finally:
+                            self._finish_close_ownership()
+                            await self._events.put(_CLOSED)
+                        raise ExceptionGroup(
+                            "Realtime reconfiguration and rollback both failed",
+                            [reconfiguration_error, rollback_error],
+                        ) from reconfiguration_error
+                    self._conversation = replacement
+                    self._stop_observer_delegate = replacement
+                    self._replayed_item_ids = replayed_item_ids
+                    self._event_pump = self._start_event_pump(replacement)
+                    raise
                 self._conversation = replacement
+                self._stop_observer_delegate = replacement
+                self._profile = profile
                 self._replayed_item_ids = replayed_item_ids
                 self._event_pump = self._start_event_pump(replacement)
+            except (Exception, asyncio.CancelledError):
+                if not self._closed and self._stop_observer_delegate is None:
+                    # A failed/cancelled barrier cannot expose a live handle
+                    # with unknown delegate lifecycle and no stop observer.
+                    self._start_close(delegate_close_uncertain=previous_close_started and not previous_close_confirmed)
                 raise
-            self._conversation = replacement
-            self._profile = profile
-            self._replayed_item_ids = replayed_item_ids
-            self._event_pump = self._start_event_pump(replacement)
 
     async def _cancel_active_outputs(self, conversation: RealtimeConversation) -> None:
         for response_id in tuple(self._active_response_ids):
@@ -569,14 +593,20 @@ class ManagedRealtimeConversation:
             if self._close_task is None:
                 if self._closed:
                     return
-                self._closed = True
-                self._active_conversations.suspend(context=self._context, conversation=self)
-                self._close_task = asyncio.create_task(self._close_owned(), name="managed-realtime-close")
-                self._close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+                self._start_close()
             close_task = self._close_task
+            assert close_task is not None
         await asyncio.shield(close_task)
 
-    async def _close_owned(self) -> None:
+    def _start_close(self, *, delegate_close_uncertain: bool = False) -> None:
+        """Acquire cleanup ownership synchronously while holding the send barrier."""
+        self._closed = True
+        self._stop_observer_delegate = None
+        self._active_conversations.suspend(context=self._context, conversation=self)
+        self._close_task = asyncio.create_task(self._close_owned(delegate_close_uncertain=delegate_close_uncertain), name="managed-realtime-close")
+        self._close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+
+    async def _close_owned(self, *, delegate_close_uncertain: bool = False) -> None:
         delegate_closed = False
         try:
             await self._settle_stop_fact_writes()
@@ -585,6 +615,10 @@ class ManagedRealtimeConversation:
             if recovery_task is not None and recovery_task is not current_task and not recovery_task.done():
                 recovery_task.cancel()
                 await asyncio.gather(recovery_task, return_exceptions=True)
+            if delegate_close_uncertain:
+                # A decorator may already consider itself closed after a
+                # failed underlying close. Retrying cannot prove cleanup.
+                raise RuntimeError("reconfiguration delegate close was not confirmed")
             await self._conversation.close()
             await self._event_pump
             delegate_closed = True

@@ -10,6 +10,7 @@ from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
 from server.realtime.protocol.commands import (
     AppendItem,
+    OutputStopFact,
     ProjectCommittedItem,
     RealtimeCommand,
 )
@@ -19,6 +20,7 @@ from server.realtime.protocol.engine import (
     is_output_deliverable,
     is_sentence_permit_current,
     observe_output_admitted,
+    observe_saved_output_stop,
 )
 from server.realtime.protocol.events import AudioDelta, RealtimeEvent, SpeechAudioDelta
 from server.realtime.scope import conversation_scope
@@ -148,6 +150,9 @@ class JournaledRealtimeConversation:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return is_sentence_permit_current(self._engine_conversation, permit)
+
+    async def observe_saved_output_stop(self, fact: OutputStopFact) -> None:
+        await observe_saved_output_stop(self._engine_conversation, fact)
 
     def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
         observe_output_admitted(self._engine_conversation, event)

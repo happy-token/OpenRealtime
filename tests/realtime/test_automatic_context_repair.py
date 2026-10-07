@@ -54,7 +54,7 @@ class RepairBrain:
 
 
 @asynccontextmanager
-async def automatic_reply(monkeypatch, *, generation_finished=True, brain=None, timeout_s=None, tool_handler_factory=None, supervisor=None, evidence=False):
+async def automatic_reply(monkeypatch, *, generation_finished=True, brain=None, timeout_s=None, tool_handler_factory=None, supervisor=None, evidence=False, precise_stop=False):
     brain = brain or RepairBrain(generation_finished=generation_finished)
     journal, store = InMemoryConversationJournal(), InMemorySpeechDeliveryStore()
     core = await open_core(brain=brain, tts=Provider(), speech_deliveries=store, interaction_context=context(),
@@ -84,7 +84,7 @@ async def automatic_reply(monkeypatch, *, generation_finished=True, brain=None, 
     slot = _ReconnectableConversation()
     await slot.attach(conversation)
     bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=slot,
-        transport=RecordingTransport(), output_epoch="epoch")
+        transport=RecordingTransport(), output_epoch="epoch", precise_output_stop=precise_stop)
 
     async def submit(value, ctx):
         await start(actor, ctx)

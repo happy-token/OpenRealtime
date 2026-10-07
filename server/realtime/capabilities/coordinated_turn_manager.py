@@ -61,6 +61,7 @@ from server.realtime.capabilities.turn_manager import (
     DialogueStateChanged,
     LegacyTurnManagerCapabilityAdapter,
     ObserveAsrEvent,
+    ObserveAssistantOutputStop,
     ObserveAssistantPlayback,
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
@@ -1040,6 +1041,20 @@ class CoordinatedTurnManagerSession:
                 self._input.yield_pending = False
                 await self._advance(self._input)
             await self._project(event.context or self._context)
+            return
+        if isinstance(event, ObserveAssistantOutputStop):
+            if self._revisions.observe_output_stop(event.fact):
+                fact = self._revisions.output_stop
+                assert fact is not None
+                detail = asdict(fact)
+                reply = self._revisions.reply
+                assert reply is not None
+                detail.update(response_id=reply.response_id, input_id=reply.input_id,
+                              input_version=reply.input_version, reply_version=reply.reply_version)
+                for field in ("requested_at", "observed_at", "received_at"):
+                    if detail[field] is not None:
+                        detail[field] = detail[field].isoformat()
+                self._record_revision("reply_output_stop_observed", fact.context, detail)
             return
         if isinstance(event, ObserveAssistantPlayback):
             item = self._input

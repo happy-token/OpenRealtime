@@ -31,6 +31,7 @@ from server.realtime.protocol.commands import (
     CancelResponse,
     DeliverItem,
     DeliveryMode,
+    OutputStopFact,
     RealtimeCommand,
     RequestResponse,
     SpeechContextPolicy,
@@ -41,6 +42,7 @@ from server.realtime.protocol.engine import (
     is_output_deliverable,
     is_sentence_permit_current,
     observe_output_admitted,
+    observe_saved_output_stop,
 )
 from server.realtime.protocol.events import (
     AudioDelta,
@@ -503,6 +505,11 @@ class RealtimeTurnController:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return not self._closed and is_sentence_permit_current(self._conversation, permit)
+
+    async def observe_saved_output_stop(self, fact: OutputStopFact) -> None:
+        if self._closed:
+            return
+        await observe_saved_output_stop(self._conversation, fact)
 
     def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
         observe_output_admitted(self._conversation, event)

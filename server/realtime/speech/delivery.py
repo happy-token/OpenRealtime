@@ -15,6 +15,9 @@ from server.realtime.protocol.commands import (
     PlaybackPrecision,
     SpeechContextPolicy,
 )
+from server.realtime.protocol.commands import (
+    transition_output_stop_fact as transition_output_stop_fact,  # noqa: PLC0414 - compatibility export
+)
 from server.realtime.scope import conversation_scope
 
 
@@ -313,47 +316,6 @@ def _same_delivery_identity(
         right.context_policy,
         right.interrupted_context_policy,
     )
-
-
-def transition_output_stop_fact(
-    current: OutputStopFact | None, candidate: OutputStopFact
-) -> OutputStopFact:
-    """Preserve first terminal evidence and fence every operation's immutable target."""
-    if current is None:
-        return candidate
-    if (
-        current.context,
-        current.stop_command_id,
-        current.output_epoch,
-        current.speech_id,
-        current.reason,
-        current.requested_at,
-    ) != (
-        candidate.context,
-        candidate.stop_command_id,
-        candidate.output_epoch,
-        candidate.speech_id,
-        candidate.reason,
-        candidate.requested_at,
-    ):
-        raise ValueError("stop operation identity was reused with different content")
-    if candidate.state == "STOP_REQUESTED":
-        return current
-    if current.state == "STOP_REQUESTED":
-        return candidate
-    if (
-        current.state,
-        current.receipt_outcome,
-        current.played_position_samples,
-        current.failure_reason,
-    ) != (
-        candidate.state,
-        candidate.receipt_outcome,
-        candidate.played_position_samples,
-        candidate.failure_reason,
-    ):
-        raise ValueError("terminal stop evidence cannot be rewritten")
-    return current
 
 
 def validate_output_stop_deletion_scope(scope: tuple[str, str, str, str]) -> None:

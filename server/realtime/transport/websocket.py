@@ -120,6 +120,7 @@ class _OutputStop:
     request: AssistantSpeechCancelledFrame
     ready: asyncio.Future[bool]
     target_context: InteractionContext | None = None
+    operation_sequence: int | None = None
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     requested_ns: int = field(default_factory=time.monotonic_ns)
     received_at: datetime | None = None
@@ -782,7 +783,7 @@ class RealtimeWebSocketFrameBridge:
         assert request.stop_command_id is not None
         playback = self._playback_by_speech.get(speech_id)
         stop = _OutputStop(request=request, ready=loop.create_future(),
-            target_context=playback.context if playback is not None else target_context)
+            operation_sequence=len(self._output_stops) + 1, target_context=playback.context if playback is not None else target_context)
         self._output_stops[request.stop_command_id] = stop
         self._stop_by_target[key] = request.stop_command_id
         stop.receipt_timeout_s = self._output_stop_timeout_s + (permit_frame.max_wait_ms / 1000 if permit_frame else 0)
@@ -854,7 +855,7 @@ class RealtimeWebSocketFrameBridge:
         assert request.stop_command_id and request.output_epoch and request.speech_id
         fact = OutputStopFact(context=stop.target_context, stop_command_id=request.stop_command_id,
             output_epoch=request.output_epoch, speech_id=request.speech_id, state=state,
-            reason=request.reason, requested_at=stop.requested_at,
+            reason=request.reason, requested_at=stop.requested_at, operation_sequence=stop.operation_sequence,
             observed_at=(stop.requested_at if state == "STOP_REQUESTED" else
                          stop.received_at if state == "STOP_CONFIRMED" else stop.failed_at) or stop.requested_at,
             received_at=stop.received_at if state != "STOP_REQUESTED" else None,
