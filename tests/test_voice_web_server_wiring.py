@@ -729,12 +729,18 @@ async def test_application_shutdown_closes_main_runtime_when_avatar_close_fails(
 
 
 @pytest.mark.parametrize("prefetch_tts", [False, True])
+@pytest.mark.parametrize("sentence_prefetch", [None, "0", "true"])
 async def test_session_runtime_can_select_stateful_realtime_transport(
-    monkeypatch, prefetch_tts,
+    monkeypatch, prefetch_tts, sentence_prefetch,
 ):
     runtime = await build_application_runtime(ApplicationRuntimeConfig())
     monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
     monkeypatch.setenv("VOICEAGENT_REALTIME_RUNTIME", "1")
+    monkeypatch.setenv("VOICEAGENT_RESPONSE_PREFETCH_ENABLED", "1")
+    if sentence_prefetch is None:
+        monkeypatch.delenv("VOICEAGENT_SENTENCE_HANDOFF_PREFETCH_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("VOICEAGENT_SENTENCE_HANDOFF_PREFETCH_ENABLED", sentence_prefetch)
     monkeypatch.setenv("VOICEAGENT_RESPONSE_PREFETCH_TTS_ENABLED", "1" if prefetch_tts else "0")
     monkeypatch.setenv("VOICEAGENT_TURN_RESPONSE_TIMEOUT_S", "12")
     monkeypatch.setenv("VOICEAGENT_EOT_ASR_IDLE_MS", "750")
@@ -812,6 +818,7 @@ async def test_session_runtime_can_select_stateful_realtime_transport(
         is session_runtime._runtime_factory._engine._brain._brain
     )
     assert turn_manager.response_prefetch_enabled is True
+    assert turn_manager.sentence_handoff_prefetch_enabled is (sentence_prefetch == "true")
     assert turn_manager.input_evidence_journal is runtime.journal
     assert turn_manager.input_budget.max_text_bytes == 16384
     assert turn_manager.input_evidence_timeout_s == 1

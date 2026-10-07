@@ -14,7 +14,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 
-from server.core.async_stream import OwnedStreamCleanupError
+from server.core.async_stream import OwnedStreamCleanupError, StreamAdmissionPendingError
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +61,7 @@ class SpeculativeState:
         if isinstance(self.error, SpeculativeBudgetExceeded):
             return False
         if self.retired.is_set() and not self.done:
-            raise OwnedStreamCleanupError("retired speculative candidate cleanup remains pending")
+            raise StreamAdmissionPendingError("retired speculative candidate cleanup remains pending")
         if self.error is not None and not self.done:
             # A child failure may be visible before the producer starts joining
             # its siblings. Keep private ownership until actual exit; promotion
@@ -187,7 +187,7 @@ class SpeculativeCleanupOwner:
             self._check_finished()
             self._raise_failure()
             if self._retired:
-                raise OwnedStreamCleanupError("speculative provider cleanup remains pending")
+                raise StreamAdmissionPendingError("speculative provider cleanup remains pending")
 
     def _finished(self, task: asyncio.Task[None]) -> None:
         state = self._retired.pop(task, None)
@@ -222,7 +222,7 @@ async def join_owned_tasks(tasks: set[asyncio.Task[None]]) -> list[object]:
 def detached_error(error: Exception) -> Exception:
     """Stored terminal diagnostics must not own provider packet traceback frames."""
     message = str(error)[:2048]
-    for kind in (SpeculativeBudgetExceeded, OwnedStreamCleanupError, TimeoutError,
+    for kind in (SpeculativeBudgetExceeded, OwnedStreamCleanupError, StreamAdmissionPendingError, TimeoutError,
                  ValueError, TypeError, RuntimeError):
         if isinstance(error, kind):
             return kind(message)

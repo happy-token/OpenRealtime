@@ -23,3 +23,5 @@
 先红后绿覆盖实际供应商循环、超限大包内存留存、自然/异常清理竞争、正式背压、空回复及真实 actor → Core/Managed 关闭。生产 speech 分支补接已有 response.prefetch 观察接口。见[实施报告](../reports/2026-10-07-speculative-output-budgets.md)。
 
 本批为一般补充提前生成的前置。句末重叠预生成、交接时 heard_frontier 重验与重生成、误打断恢复、真实 renderer/供应商延迟及全局资源预算仍按原计划实施。
+
+2026-10-07 实际浏览器交接暴露临时准入等待与永久清理失败的混用，已按 [ADR0142](0142-stream-admission-versus-cleanup-failure.md) 分开。pending 不宣称释放旧供应商；真实清理错误继续隔离，实际退出后组合所有者可以关闭。

@@ -81,7 +81,7 @@ async def test_replacement_never_starts_before_old_provider_really_exits(kind):
 
 from dataclasses import replace
 
-from server.core.async_stream import OwnedStreamCleanupError
+from server.core.async_stream import OwnedStreamCleanupError, StreamAdmissionPendingError
 from server.realtime.capabilities.speculative_budget import (
     SpeculativeBudgetExceeded,
     SpeculativeOutputBudget,
@@ -157,7 +157,7 @@ async def test_silent_candidate_residency_expires_and_retains_pending_supplier(k
         assert not state.task.done() and not exited.is_set()
         assert isinstance(state.error, SpeculativeBudgetExceeded)
         assert str(state.error) == "candidate_residency"
-        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="pending"):
             await cache.prepare(TurnContent(text="新问题", generation=2))
         release.set()
         await asyncio.wait_for(state.task, .5)
@@ -264,7 +264,7 @@ async def test_cancelled_replacement_waiter_retains_actual_cleanup_owner(kind):
         await closing.wait()
         replacement.cancel()
         await asyncio.gather(replacement, return_exceptions=True)
-        with pytest.raises(OwnedStreamCleanupError, match="remains pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="remains pending"):
             await cache.prepare(TurnContent(text="再次", generation=3))
         assert calls == ["旧"] and not old.done()
         release.set()
@@ -397,7 +397,7 @@ async def test_invalidation_during_budget_failure_cannot_cancel_real_tts_cleanup
         invalidation = asyncio.create_task(cache.invalidate(1, reason="rewrite"))
         await asyncio.sleep(.02)
         assert not state.task.done() and not invalidation.done()
-        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="pending"):
             await cache.prepare(TurnContent(text="新", generation=2))
         assert calls == ["旧"] and not closed.is_set()
         release.set()
@@ -498,7 +498,7 @@ async def test_retirement_cannot_cut_short_a_suppliers_natural_finally(kind):
         invalidation = asyncio.create_task(cache.invalidate(1, reason="rewrite"))
         await asyncio.sleep(.02)
         assert not state.task.done() and not closed.is_set()
-        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="pending"):
             await cache.prepare(TurnContent(text="新", generation=2))
         assert calls == ["旧"]
         release.set()
@@ -668,7 +668,7 @@ async def test_failed_retiring_candidate_cannot_be_promoted_to_formal_cancellati
         consumer = asyncio.create_task(anext(cache.stream(turn)))
         await asyncio.sleep(.01)
         assert not state.claimed, "failed retired candidate cannot become a cancellable formal lease"
-        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="pending"):
             await consumer
         assert not state.task.done() and not closed.is_set()
         release.set()
@@ -770,7 +770,7 @@ async def test_known_candidate_error_cannot_promote_before_producer_exit():
         assert not cancelled.is_set(), "failed private candidate was destructively promoted"
         assert not state.done
         await asyncio.wait_for(consumer, .5)
-        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+        with pytest.raises(StreamAdmissionPendingError, match="pending"):
             await cache.prepare(TurnContent(text="新的完整输入", generation=2))
         assert calls == [turn]
         assert not cancelled.is_set() and not state.done

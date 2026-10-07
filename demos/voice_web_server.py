@@ -1284,6 +1284,7 @@ def _build_realtime_session(
             ),
             coordination_policy_factory=_build_turn_coordination_policy,
             response_prefetch_enabled=os.environ.get("VOICEAGENT_RESPONSE_PREFETCH_ENABLED", "1").strip().lower() in {"1", "true", "yes"},
+            sentence_handoff_prefetch_enabled=os.environ.get("VOICEAGENT_SENTENCE_HANDOFF_PREFETCH_ENABLED", "0").strip().lower() in {"1", "true", "yes"},
             semantic_chunks_enabled=os.environ.get("VOICEAGENT_SEMANTIC_CHUNKS_ENABLED", "1").strip().lower() in {"1", "true", "yes"},
             interruption_chunk_chars=int(os.environ.get("VOICEAGENT_INTERRUPTION_CHUNK_CHARS", "5")),
             semantic_chunk_concurrency=int(os.environ.get("VOICEAGENT_SEMANTIC_CHUNK_CONCURRENCY", "2")),
