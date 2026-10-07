@@ -176,6 +176,13 @@ class JournalScope:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionInputEvidencePage:
+    items: tuple[ConversationItem, ...]
+    next_sequence: int | None
+    collected: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SessionConversationPage:
     """A bounded original-Session view of user and assistant Journal items."""
 

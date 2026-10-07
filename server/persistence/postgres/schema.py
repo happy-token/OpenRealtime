@@ -39,6 +39,7 @@ async def apply_migrations(connection: Any, *, schema: str = "voiceagent") -> No
         await connection.execute(migration)
     predicates = {
         "conversation_items_session_read_idx": "kind = ANY (ARRAY['user.input'::text, 'assistant.output'::text])",
+        "conversation_items_input_evidence_read_idx": "producer = 'semantic.input_evidence'::text",
         "conversation_items_recording_read_idx": "producer = 'voice-session-recording'::text",
     }
     for index_name, predicate in predicates.items():

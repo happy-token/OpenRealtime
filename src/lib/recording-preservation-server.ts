@@ -3,25 +3,12 @@ import type { WebUser } from "./user-session";
 import { currentAppAdmin } from "./admin-server";
 import { isDiagnosticSessionId } from "./diagnostics-access";
 import { recordingError } from "./recording-access-server";
-
-function preservationOrigin(request: Request): string | null {
-  try {
-    const url = new URL(request.url), host = request.headers.get("host");
-    // Next may normalize 127.0.0.1 to localhost; use the actual HTTP authority.
-    // Forwarded headers and Referer cannot authorize a mutation.
-    if (host !== null) {
-      if (!/^(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(?::[0-9]+)?$/.test(host)) return null;
-      return new URL(`${url.protocol}//${host}`).origin;
-    }
-    return url.origin;
-  } catch { return null; }
-}
+import { isSameOriginRequest } from "./request-origin";
 
 /** Write access never accepts an Agent grant or falls back from Authorization. */
 export async function recordingPreservationAdmin(request: Request, sessionId: string): Promise<WebUser | Response> {
   if (request.headers.has("authorization")) return recordingError(403, "Agent 凭据仅允许读取录音");
-  const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
-  if (!origin || origin !== preservationOrigin(request) || (site && site !== "same-origin")) return recordingError(403, "请求来源无效");
+  if (!isSameOriginRequest(request)) return recordingError(403, "请求来源无效");
   if (!isDiagnosticSessionId(sessionId)) return recordingError(400, "Session ID 无效");
   try { return await currentAppAdmin(request) ?? recordingError(403, "未授权"); }
   catch { return recordingError(503, "管理员权限服务暂时不可用"); }

@@ -1,3 +1,4 @@
+import type { SessionInputEvidencePage } from "./session-input-evidence";
 import type { ConversationReplayItem } from "./admin-diagnostics";
 import type { DebugLogTimeline, SessionDetail, TelemetryEvent } from "./observability";
 
@@ -9,7 +10,8 @@ export interface SessionDiagnosticsReport {
   conversation: ConversationReplayItem[];
   conversation_next_cursor?: string | null;
   debug_log: DebugLogTimeline | null;
-  sources: Record<"telemetry" | "conversation" | "debug_log", { status: "available" | "unavailable" | "not-found"; truncated: boolean; error?: string }>;
+  input_evidence?: SessionInputEvidencePage | null;
+  sources: Partial<Record<"input_evidence", { status: "available" | "unavailable" | "not-found"; truncated: boolean; error?: string }>> & Record<"telemetry" | "conversation" | "debug_log", { status: "available" | "unavailable" | "not-found"; truncated: boolean; error?: string }>;
   audio: { status: "not-configured" | "not-queried"; catalog_url?: string };
 }
 
@@ -17,13 +19,17 @@ export interface SessionDiagnosticsReport {
 export function mergeDiagnosticsPage(previous: SessionDiagnosticsReport, next: SessionDiagnosticsReport, params: URLSearchParams): SessionDiagnosticsReport {
   if (previous.session_id !== next.session_id) return previous;
   const merge = <T,>(before: T[], after: T[], key: (item: T) => string) => [...new Map([...before, ...after].map(item => [key(item), item])).values()];
+  const input = params.has("input_cursor");
   const telemetry = params.has("telemetry_cursor"), debug = params.has("debug_cursor"), conversation = params.has("conversation_cursor");
   return {
     ...previous, collection_health: next.collection_health,
     sources: { ...previous.sources, ...(telemetry ? { telemetry: next.sources.telemetry } : {}),
-      ...(debug ? { debug_log: next.sources.debug_log } : {}), ...(conversation ? { conversation: next.sources.conversation } : {}) },
+      ...(debug ? { debug_log: next.sources.debug_log } : {}), ...(conversation ? { conversation: next.sources.conversation } : {}), ...(input ? { input_evidence: next.sources.input_evidence } : {}) },
     telemetry: telemetry && next.telemetry ? { ...next.telemetry, events: merge(previous.telemetry?.events ?? [], next.telemetry.events, item => item.event_id) } : previous.telemetry,
     debug_log: debug && next.debug_log ? { ...next.debug_log, entries: merge(previous.debug_log?.entries ?? [], next.debug_log.entries, item => item.event_id) } : previous.debug_log,
+    input_evidence: input && next.input_evidence && next.sources.input_evidence?.status === "available"
+      ? { ...next.input_evidence, records: merge(previous.input_evidence?.records ?? [], next.input_evidence.records, item => item.item_id) }
+      : previous.input_evidence,
     conversation: conversation && next.sources.conversation.status === "available" ? merge(previous.conversation, next.conversation, item => item.item_id) : previous.conversation,
     conversation_next_cursor: conversation && next.sources.conversation.status === "available" ? next.conversation_next_cursor : previous.conversation_next_cursor,
   };

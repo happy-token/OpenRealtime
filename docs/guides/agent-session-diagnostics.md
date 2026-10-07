@@ -11,11 +11,12 @@ Agent 从文件读取 `endpoint` 和 `authorization_header`，以 `GET` 和 `Aut
 - `telemetry`：该会话的事件、指标和 `next_cursor`。
 - `conversation`：当前页的已提交对话记录；`conversation_next_cursor` 表示后续页。每条记录的 `journal_sequence` 是十进制字符串，不能转成 JavaScript Number。
 - `debug_log`：决策日志和独立的 `next_cursor`。
+- `input_evidence`：原始 Session 的已提交输入证据，包含 ASR 改写、语义判断与纠正记录；`next_cursor` 和 `sequence` 为十进制字符串，保持原样使用。`not_collected` 不表示用户没有输入，`durable: false` 表示临时存储。
 - `sources`：每个来源的可用性和截断状态。缺失数据不代表事件未发生。
 - `audio.status: not-queried` 与 `audio.catalog_url`：录音目录是独立来源，使用同一请求头查询；该状态不表示录音一定存在或已回放。旧部署可能仍返回 `not-configured`。
 - `collection_health: null`：机器凭据不提供全局采集健康状态。
 
-如 `telemetry.next_cursor` 非空，下次传 `telemetry_cursor`；如 `debug_log.next_cursor` 非空，下次传 `debug_cursor`；如 `conversation_next_cursor` 非空，下次传 `conversation_cursor`。三路分别推进，日志按 `event_id`、对话按 `item_id` 合并去重；没有请求续页的来源不要重复累加。某一路不可用时保留其旧游标和已读记录，成功来源可以继续推进；页面会显示部分失败并允许重试。根据 `sources.*.truncated` 和游标判断是否仍有后续，不能把单页当完整记录。
+如 `telemetry.next_cursor` 非空，下次传 `telemetry_cursor`；如 `debug_log.next_cursor` 非空，下次传 `debug_cursor`；如 `conversation_next_cursor` 非空，下次传 `conversation_cursor`；如 `input_evidence.next_cursor` 非空，下次传 `input_cursor`。四路分别推进，日志按 `event_id`、对话和输入证据按 `item_id` 合并去重；没有请求续页的来源不要重复累加。某一路不可用时保留其旧游标和已读记录，成功来源可以继续推进；页面会显示部分失败并允许重试。根据 `sources.*.truncated` 和游标判断是否仍有后续，不能把单页当完整记录。
 
 HTTP 403 表示授权无效/过期/Session 不匹配；重新联系管理员授权，不使用管理员浏览器 Cookie 补救。404 表示该会话没有记录。503 表示所需服务不可用；200 仍可能是部分来源可用，应读取 `sources`。有效凭据不证明 Session 一定存在。
 
@@ -40,3 +41,5 @@ HTTP 403 表示授权无效/过期/Session 不匹配；重新联系管理员授�
 管理员同源可空体 `POST /api/observability/sessions/{sessionId}/recordings/preservation`，不接受客户端actor/source/query。Agent Authorization即使有效且同时有管理员Cookie也会403。Next完成管理员校验后向私有后台发送限定Session/原始body/60秒窗口的签名证明；部署须让两服务使用相同既有32字节 `VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY`，没有或不匹配则拒绝，不自动生成。受控部署需补0038，长期保留政策及历史删除保护在原来源上执行；已过期/删除的片段不恢复。新签名采用独立领域派生，不能用Agent只读密钥代替。私有接口仍须保持内部可达；本批未改变生产密钥或迁移。
 
 隔离管理员/无Cookie机器凭据/WAV浏览器链路已验收；真实S3、生产部署、录音完整性和原交互confirmed renderer映射仍待验收。浏览器回放完成不能证明原通话中已播放。
+
+[ADR0161](../adr/0161-session-authoritative-input-evidence.md)将输入证据改为 Journal 原始身份查询，不依赖遥测第一页或本地账号猜测。私有 `/input-evidence` 使用同一来源，一页最多100条；真实空尾页保留已采集状态，不存在的来源不因请求游标变成已采集。部署者需在维护流程中受控执行0041并发部分索引，并同时更新两服务；本次仅隔离测试库执行，没有修改运行中服务。

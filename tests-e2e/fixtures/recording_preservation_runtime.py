@@ -20,6 +20,10 @@ from server.application.runtime import (
     build_application_runtime,
 )
 from server.control_plane.http import start
+from server.conversation_journal.input_evidence import (
+    InputEvidenceRecorder,
+    read_session_input_evidence,
+)
 from server.core.interaction_context import InteractionContext
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.telemetry import TelemetryIdentity
@@ -190,6 +194,17 @@ async def main() -> None:
             turn_id="fixture-turn",
             generation=0,
         )
+        evidence = InputEvidenceRecorder(runtime.journal, context=ctx, on_failure=lambda _: None)
+        try:
+            for index in range(101):
+                await evidence.offer("fixture-logical-input", "asr_revision", {"suffix": f"fixture revision {index + 1}", "replace_from": 0}).committed
+        finally:
+            if await evidence.close() != 0:
+                raise RuntimeError("fixture input evidence did not settle")
+
+        async def read_evidence(sid: str, after: int, limit: int) -> dict:
+            return await read_session_input_evidence(runtime.journal, sid, after_sequence=after, limit=limit)
+
         recorder = runtime.open_recording(ctx)
         if recorder is None:
             raise RuntimeError("fixture recorder unavailable")
@@ -229,6 +244,7 @@ async def main() -> None:
         server = start(
             EndpointSessionRegistry(),
             port=0,
+            session_input_evidence_reader=read_evidence,
             diagnostics=runtime.diagnostics,
             diagnostics_health_reader=runtime.diagnostics_health,
             session_recording_page_reader=runtime.recordings.read_page,

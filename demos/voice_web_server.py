@@ -95,7 +95,7 @@ from server.conversation_journal import (
     SessionConversationQuery,
     TextContent,
 )
-from server.conversation_journal.input_evidence import read_input_evidence
+from server.conversation_journal.input_evidence import read_session_input_evidence
 from server.core.interaction_context import InteractionContext
 from server.endpoint_session.in_memory_session import InMemoryEndpointSession
 from server.endpoint_session.registry import EndpointSessionRegistry
@@ -1836,20 +1836,8 @@ async def _preserve_session_recordings(session_id: str, actor_id: str) -> dict:
 async def _read_session_input_evidence(session_id: str, after_sequence: int, limit: int) -> dict:
     if _application_runtime is None:
         raise RuntimeError("application runtime is not started")
-    await _application_runtime.telemetry.flush()
-    scope = await _application_runtime.session_history_scope(
-        session_id, tenant_id=os.environ.get("VOICEAGENT_TENANT_ID", "local"),
-        user_id=os.environ.get("VOICEAGENT_USER_ID", "local-user"),
-    )
-    context = InteractionContext(
-        tenant_id=scope.tenant_id, user_id=scope.user_id,
-        device_id="diagnostics", voice_session_id=session_id, thread_id=scope.thread_id,
-        turn_id="diagnostics", generation=0,
-    )
-    result = await read_input_evidence(_application_runtime.journal, context,
-                                      after_sequence=after_sequence, limit=limit)
-    result["status"] = "available" if result["last_sequence"] else "not_collected"
-    return result
+    return await read_session_input_evidence(_application_runtime.journal, session_id,
+                                              after_sequence=after_sequence, limit=limit)
 
 
 async def _delete_session_history(session_ids: list[str]) -> dict[str, int]:

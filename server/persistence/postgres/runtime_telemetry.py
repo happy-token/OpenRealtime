@@ -269,9 +269,9 @@ class PostgresTelemetryStore:
                 window.until,
             )
             health_rows = await connection.fetch(
-                f"""SELECT name, outcome, error_type, count(*) AS count, count(DISTINCT voice_session_id) AS session_count
+                f"""SELECT name, outcome, error_type, tenant_id, user_id, voice_session_id, call_id, attributes->>'incident_id' AS incident_id, count(*) AS count
                 FROM {self._records} WHERE occurred_at >= $1 AND ($2::timestamptz IS NULL OR occurred_at <= $2)
-                GROUP BY name, outcome, error_type""",
+                GROUP BY name, outcome, error_type, tenant_id, user_id, voice_session_id, call_id, attributes->>'incident_id'""",
                 window.since,
                 window.until,
             )

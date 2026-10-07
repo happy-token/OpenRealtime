@@ -30,7 +30,8 @@ it("delegates only one Session to a machine, independent of browser/admin servic
   authorize.mockReset().mockRejectedValue(new Error("admin DB offline"));
   fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [], next_cursor: "more-events" }))
     .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [{ voice_session_id: "session-1", item_id: "user-1", journal_sequence: "1", generation: 1, role: "user", text: "test", status: "committed", occurred_at: "2026-10-07T00:00:00Z" }], next_cursor: null }))
-    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", entries: [], next_cursor: "more-debug" }));
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", entries: [], next_cursor: "more-debug" }))
+    .mockResolvedValueOnce(Response.json({ schema: "semantic-input-evidence.v1", voice_session_id: "session-1", records: [], next_cursor: null, status: "not_collected", durable: false }));
   const reportResponse = await read(grant.access_token, "session-1", "?telemetry_cursor=event-1&debug_cursor=debug-1");
   expect(reportResponse.status).toBe(200);
   expect(authorize).not.toHaveBeenCalled();
@@ -39,7 +40,8 @@ it("delegates only one Session to a machine, independent of browser/admin servic
   expect(report.debug_log.next_cursor).toBe("more-debug");
   expect(report.conversation[0].text).toBe("test");
   expect(report.collection_health).toBeNull();
-  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(report.input_evidence.status).toBe("not_collected");
+  expect(fetchMock).toHaveBeenCalledTimes(4);
   expect(fetchMock.mock.calls.every(([url, options]) => String(url).includes("/sessions/session-1") && !options.headers)).toBe(true);
   expect(JSON.stringify(report)).not.toContain(grant.access_token);
   expect(String(fetchMock.mock.calls[0][0])).toContain("cursor=event-1");
@@ -74,6 +76,22 @@ it("refuses cross-origin/missing-origin signing and anonymous or machine-only si
     method: "POST", headers: { authorization: `Bearer ${token}`, origin: "https://app.example" },
   }), context())).status).toBe(403);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+it("uses the actual HTTP authority when Next normalizes a local URL", async () => {
+  const request = new NextRequest("http://localhost:3029/api/observability/sessions/session-1/diagnostics/access", {
+    method: "POST", headers: { host: "127.0.0.1:3029", origin: "http://127.0.0.1:3029", "sec-fetch-site": "same-origin" },
+  });
+  expect((await POST(request, context())).status).toBe(201);
+});
+it.each<Record<string, string>>([
+  { host: "127.0.0.1:3029", origin: "http://localhost:3029" },
+  { host: "127.0.0.1:3029", origin: "http://127.0.0.1:3030" },
+  { host: "127.0.0.1:3029", origin: "http://127.0.0.1:3029", "sec-fetch-site": "cross-site" },
+  { host: "localhost:3029", origin: "http://evil.example", "x-forwarded-host": "evil.example" },
+  { host: "evil.example/path", origin: "http://evil.example" },
+])("rejects mismatched or malformed signing authority: %j", async headers => {
+  const request = new NextRequest("http://localhost:3029/api/observability/sessions/session-1/diagnostics/access", { method: "POST", headers });
+  expect((await POST(request, context())).status).toBe(403);
 });
 it("fails safely on admin-service/config outages and invalid signing identities", async () => {
   authorize.mockRejectedValueOnce(new Error("secret DB detail"));

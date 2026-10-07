@@ -1536,7 +1536,7 @@ def _overview(
     terminals = [record for record in records if record.kind is TelemetryKind.TERMINAL]
     interrupted = [record for record in terminals if _record_is_expected_interruption(record)]
     from server.observability.module_health import module_health
-    health = module_health({"name": record.name, "outcome": record.outcome.value, "error_type": record.error_type, "voice_session_id": record.voice_session_id} for record in records)
+    health = module_health({"name": record.name, "outcome": record.outcome.value, "error_type": record.error_type, "voice_session_id": record.voice_session_id, "tenant_id": record.tenant_id, "user_id": record.user_id, "call_id": record.call_id, "incident_id": record.attributes.get("incident_id")} for record in records)
     now = window.until or datetime.now(UTC)
     return DiagnosticsOverview(
         since=window.since,

@@ -122,3 +122,20 @@ it("preserves microsecond ordering even when separate telemetry bindings reset s
   expect(recordingCollectionNotice([active, failed])).toContain("录音采集异常");
   expect(recordingCollectionNotice([failed, active])).toContain("录音采集异常");
 });
+
+it("merges only requested input evidence, deduplicates retries and retains failed cursors", () => {
+  const previous = emptyReport();
+  const record = { item_id: "e1", voice_session_id: "session-1", sequence: "1", occurred_at: "2026-10-07T00:00:00Z", detail: { generation: 1 } };
+  previous.input_evidence = { schema: "semantic-input-evidence.v1", voice_session_id: "session-1", records: [record], next_cursor: "1", durable: false, status: "available" };
+  previous.sources.input_evidence = { status: "available", truncated: true };
+  const next = emptyReport(); next.input_evidence = { ...previous.input_evidence, records: [record, { ...record, item_id: "e2", sequence: "2" }], next_cursor: null };
+  next.sources.input_evidence = { status: "available", truncated: false };
+  const params = new URLSearchParams({ input_cursor: "1" });
+  const merged = mergeDiagnosticsPage(previous, next, params);
+  expect(merged.input_evidence?.records.map(row => row.item_id)).toEqual(["e1", "e2"]);
+  expect(merged.input_evidence?.next_cursor).toBeNull();
+  expect(mergeDiagnosticsPage(merged, next, params).input_evidence?.records).toHaveLength(2);
+  expect(mergeDiagnosticsPage(previous, next, new URLSearchParams({ conversation_cursor: "1" })).input_evidence).toBe(previous.input_evidence);
+  next.sources.input_evidence.status = "unavailable"; next.input_evidence = null;
+  expect(mergeDiagnosticsPage(previous, next, params).input_evidence).toBe(previous.input_evidence);
+});

@@ -199,3 +199,39 @@ async def read_input_evidence(
     return {"schema": "semantic-input-evidence.v1", "records": records,
             "next_sequence": latest, "last_sequence": last_sequence, "has_more": latest < last_sequence,
             "durable": bool(getattr(journal, "durable", False))}
+
+
+async def read_session_input_evidence(
+    journal: ConversationJournal, voice_session_id: str, *, after_sequence: int = 0, limit: int = 100,
+) -> dict[str, Any]:
+    """Read committed evidence by its original authority, with exact wire cursors."""
+    from server.conversation_journal.journal import SessionInputEvidenceQuery
+
+    if not isinstance(journal, SessionInputEvidenceQuery):
+        raise TypeError("Journal does not support session input evidence pagination")
+    page = await journal.read_input_evidence_page(voice_session_id, after_sequence=after_sequence, limit=limit)
+    records = []
+    suffix = f"::input-evidence:{voice_session_id}"
+    for item in page.items:
+        if (item.context.voice_session_id != voice_session_id or item.producer != "semantic.input_evidence"
+            or item.kind is not ConversationItemKind.CONTEXT_SUMMARY
+            or item.status is not ConversationItemStatus.COMMITTED
+            or len(item.content) != 1 or not isinstance(item.content[0], StructuredContent)
+            or not item.context.thread_id.endswith(suffix) or item.context.thread_id == suffix):
+            raise InputEvidenceUnavailable("invalid committed input evidence envelope")
+        detail = item.content[0].value
+        if (detail.get("schema") != "semantic-input-evidence.v1"
+            or detail.get("source_thread_id") != item.context.thread_id[:-len(suffix)]
+            or detail.get("generation") != item.context.generation
+            or type(detail.get("generation")) is not int
+            or detail.get("turn_id") != item.context.turn_id
+            or not isinstance(detail.get("input_id"), str) or not detail["input_id"]
+            or not isinstance(detail.get("event"), str) or not detail["event"]
+            or not isinstance(detail.get("durable"), bool)):
+            raise InputEvidenceUnavailable("invalid committed input evidence content")
+        records.append({"item_id": item.item_id, "voice_session_id": voice_session_id,
+            "sequence": str(item.sequence), "occurred_at": item.occurred_at.isoformat(), "detail": detail})
+    return {"schema": "semantic-input-evidence.v1", "voice_session_id": voice_session_id,
+        "records": records, "next_cursor": str(page.next_sequence) if page.next_sequence is not None else None,
+        "durable": bool(getattr(journal, "durable", False)),
+        "status": "available" if page.collected else "not_collected"}

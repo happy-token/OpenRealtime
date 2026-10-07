@@ -17,6 +17,7 @@ from server.conversation_journal.models import (
     ConversationVisibility,
     JournalScope,
     SessionConversationPage,
+    SessionInputEvidencePage,
     item_from_draft,
     utc_now,
 )
@@ -78,6 +79,13 @@ class SessionConversationQuery(Protocol):
 
 
 @runtime_checkable
+class SessionInputEvidenceQuery(Protocol):
+    async def read_input_evidence_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionInputEvidencePage: ...
+
+
+@runtime_checkable
 class SessionRecordingQuery(Protocol):
     async def read_recording_page(
         self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
@@ -105,6 +113,23 @@ def validate_recording_query_scope(
     return scope
 
 
+def validate_input_evidence_query_scope(
+    session_id: str, evidence: Sequence[JournalScope], dialogue: Sequence[JournalScope],
+) -> JournalScope | None:
+    if len(evidence) > 1 or len(dialogue) > 1:
+        raise ValueError("session input evidence identity is ambiguous")
+    if not evidence:
+        return None
+    scope = evidence[0]
+    suffix = f"::input-evidence:{session_id}"
+    if not scope.thread_id.endswith(suffix) or scope.thread_id == suffix:
+        raise ValueError("invalid input evidence thread")
+    source = JournalScope(scope.tenant_id, scope.user_id, scope.thread_id[:-len(suffix)])
+    if dialogue and dialogue[0] != source:
+        raise ValueError("session input evidence and conversation identity is ambiguous")
+    return scope
+
+
 class InMemoryConversationJournal:
     """A concurrency-safe test conformer; it is deliberately not durable."""
 
@@ -114,6 +139,7 @@ class InMemoryConversationJournal:
         self._items_by_id: dict[str, ConversationItem] = {}
         self._threads: dict[JournalScope, list[ConversationItem]] = {}
         self._session_replay: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
+        self._session_input_evidence: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
         self._session_recordings: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
         self._recording_artifacts: dict[tuple[str, str], dict[JournalScope, list[ConversationItem]]] = {}
         self._lock = asyncio.Lock()
@@ -154,6 +180,8 @@ class InMemoryConversationJournal:
             self._items_by_id[item.item_id] = item
             if item.kind in {ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT}:
                 self._session_replay.setdefault(item.context.voice_session_id, {}).setdefault(draft.scope, []).append(item)
+            if item.producer == "semantic.input_evidence":
+                self._session_input_evidence.setdefault(item.context.voice_session_id, {}).setdefault(draft.scope, []).append(item)
             if item.producer == "voice-session-recording":
                 session = item.context.voice_session_id
                 self._session_recordings.setdefault(session, {}).setdefault(draft.scope, []).append(item)
@@ -174,6 +202,19 @@ class InMemoryConversationJournal:
             page = tuple(items[start:start + limit])
             more = start + len(page) < len(items)
             return SessionConversationPage(page, page[-1].sequence if more else None)
+
+    async def read_input_evidence_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionInputEvidencePage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        async with self._lock:
+            evidence = self._session_input_evidence.get(voice_session_id, {})
+            scope = validate_input_evidence_query_scope(voice_session_id, tuple(evidence),
+                                                        tuple(self._session_replay.get(voice_session_id, {})))
+            items = evidence.get(scope, []) if scope is not None else []
+            start = bisect_right(items, after_sequence, key=lambda item: item.sequence)
+            page = tuple(items[start:start + limit])
+            return SessionInputEvidencePage(page, page[-1].sequence if start + len(page) < len(items) else None, scope is not None)
 
     def _recording_scope(self, session_id: str) -> JournalScope | None:
         return validate_recording_query_scope(session_id, tuple(self._session_recordings.get(session_id, {})),
@@ -217,6 +258,11 @@ class InMemoryConversationJournal:
                             if not artifact_scopes:
                                 self._recording_artifacts.pop(key, None)
         for session_id in sessions:
+            evidence_scopes = self._session_input_evidence.get(session_id)
+            if evidence_scopes is not None:
+                evidence_scopes.pop(scope, None)
+                if not evidence_scopes:
+                    self._session_input_evidence.pop(session_id, None)
             recording_scopes = self._session_recordings.get(session_id)
             if recording_scopes is not None:
                 recording_scopes.pop(scope, None)

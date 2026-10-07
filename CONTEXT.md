@@ -1,5 +1,9 @@
 # OpenRealtime
 
+## Current scope — 2026-10-07 bounded closeout
+
+The user explicitly paused the old continuous goal after its prolonged run, then authorized only the three-item closeout: authoritative input evidence in the unified Agent/admin diagnostics; latency/failure-statistics audit and definite fixes; existing controlled production-path interaction regressions. The local delivery is documented in [the closeout report](docs/reports/2026-10-07-voice-closeout.md) and ADR0161. This entry supersedes older historical entries saying the unlimited goal remains active or should continue automatically. Keep that goal paused; do not turn the remaining full G0–G5/provider/device/S3/deployment experiment gates into an automatic next batch.
+
 A universal, extensible voice-interaction agent framework: a runtime that owns the voice interface (listening/speaking/dialogue-state) and delegates conversational intelligence to a built-in or external Brain, over a vendor-neutral transport.
 
 ## Language

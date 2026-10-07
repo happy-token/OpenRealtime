@@ -175,3 +175,31 @@ async def test_real_http_pagination_runs_production_reader_and_conversation_quer
         await asyncio.to_thread(server.shutdown)
         server.server_close()
         await runtime.close()
+
+
+async def test_real_http_input_evidence_uses_journal_without_telemetry(monkeypatch):
+    from server.conversation_journal.input_evidence import InputEvidenceRecorder
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
+    ctx = InteractionContext(tenant_id="real-tenant", user_id="real-user", device_id="device",
+        voice_session_id="original", thread_id="shared", turn_id="turn", generation=1)
+    recorder = InputEvidenceRecorder(runtime.journal, context=ctx, on_failure=lambda _: None)
+    server = control_plane_http.start(EndpointSessionRegistry(),
+        session_input_evidence_reader=voice_web_server._read_session_input_evidence, port=0)
+    def get(query):
+        with urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/observability/sessions/original/input-evidence?{query}", timeout=3) as response:
+            return json.loads(response.read())
+    try:
+        await recorder.offer("input", "asr_revision", {"suffix": "原文"}).committed
+        await recorder.offer("input", "asr_revision", {"suffix": "纠正"}).committed
+        first = await asyncio.to_thread(get, "limit=1")
+        second = await asyncio.to_thread(get, "limit=1&after_sequence=" + first["next_cursor"])
+        assert first["records"][0]["detail"]["suffix"] == "原文"
+        assert second["records"][0]["detail"]["suffix"] == "纠正" and second["next_cursor"] is None
+        assert first["voice_session_id"] == "original" and not first["durable"]
+    finally:
+        await recorder.close()
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        await runtime.close()

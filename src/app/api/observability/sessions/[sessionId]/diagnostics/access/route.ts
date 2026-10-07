@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentAppAdmin } from "@/lib/admin-server";
+import { isSameOriginRequest } from "@/lib/request-origin";
 import { isDiagnosticSessionId, issueDiagnosticsAccess } from "@/lib/diagnostics-access";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ se
   try {
     if (!await currentAppAdmin(request)) return NextResponse.json({ error: "未授权" }, { status: 403, headers });
   } catch { return NextResponse.json({ error: "管理员权限服务暂时不可用" }, { status: 503, headers }); }
-  if (request.headers.get("origin") !== request.nextUrl.origin)
+  if (!isSameOriginRequest(request))
     return NextResponse.json({ error: "请求来源无效" }, { status: 403, headers });
   const { sessionId } = await context.params;
   const agentId = request.nextUrl.searchParams.get("agent_id") ?? "diagnostic-agent";

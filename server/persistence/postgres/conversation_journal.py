@@ -21,12 +21,14 @@ from server.conversation_journal import (
     JournalConflict,
     JournalScope,
     SessionConversationPage,
+    SessionInputEvidencePage,
     SpokenContent,
     StructuredContent,
     TextContent,
     ThreadVersionConflict,
 )
 from server.conversation_journal.journal import (
+    validate_input_evidence_query_scope,
     validate_recording_query_scope,
     validate_session_window,
 )
@@ -238,6 +240,48 @@ class PostgresConversationJournal:
                 return SessionConversationPage((), None)
             page = tuple(self._item(row) for row in rows[:limit])
             return SessionConversationPage(page, page[-1].sequence if len(rows) > limit else None)
+
+    async def read_input_evidence_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionInputEvidencePage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        session_id = voice_session_id
+        async with asyncio.timeout(4), connection_scope(self._executor) as connection, connection.transaction():
+            previous = await connection.fetchval("SHOW statement_timeout")
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", _session_statement_timeout(previous))
+            rows = await connection.fetch(f"""
+                WITH evidence_scopes AS MATERIALIZED (
+                    SELECT DISTINCT tenant_id, user_id, thread_id FROM {self._items}
+                    WHERE voice_session_id=$1 AND producer='semantic.input_evidence'
+                    ORDER BY tenant_id,user_id,thread_id LIMIT 2
+                ), dialogue_scopes AS MATERIALIZED (
+                    SELECT DISTINCT tenant_id, user_id, thread_id FROM {self._items}
+                    WHERE voice_session_id=$1 AND kind IN ('user.input','assistant.output')
+                    ORDER BY tenant_id,user_id,thread_id LIMIT 2
+                ), identity AS (
+                    SELECT (SELECT count(*) FROM evidence_scopes) AS evidence_count,
+                           (SELECT count(*) FROM dialogue_scopes) AS dialogue_count
+                ) SELECT identity.*, r.tenant_id AS rt, r.user_id AS ru, r.thread_id AS rh,
+                         d.tenant_id AS dt, d.user_id AS du, d.thread_id AS dh, page.*
+                FROM identity LEFT JOIN evidence_scopes r ON true LEFT JOIN dialogue_scopes d ON true
+                LEFT JOIN LATERAL (
+                    SELECT item.* FROM {self._items} item
+                    WHERE identity.evidence_count=1 AND identity.dialogue_count<=1
+                        AND item.tenant_id=r.tenant_id AND item.user_id=r.user_id AND item.thread_id=r.thread_id
+                        AND item.voice_session_id=$1 AND item.producer='semantic.input_evidence'
+                        AND item.sequence>$2
+                    ORDER BY item.sequence LIMIT $3
+                ) page ON true ORDER BY page.sequence
+                """, session_id, after_sequence, limit + 1)
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", previous)
+            if rows[0]["evidence_count"] > 1 or rows[0]["dialogue_count"] > 1:
+                raise ValueError("session input evidence identity is ambiguous")
+            row = rows[0]
+            validate_input_evidence_query_scope(session_id, [JournalScope(row["rt"],row["ru"],row["rh"])] if row["rt"] is not None else [],
+                                            [JournalScope(row["dt"],row["du"],row["dh"])] if row["dt"] is not None else [])
+            items = tuple(self._item(row) for row in rows if row["item_id"] is not None)
+            page = items[:limit]
+            return SessionInputEvidencePage(page, page[-1].sequence if len(items) > limit else None, row["evidence_count"] == 1)
 
     async def _recording_items(
         self, session_id: str, after_sequence: int, limit: int, artifact_id: str | None = None,

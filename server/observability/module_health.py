@@ -23,11 +23,23 @@ def module_for(name: str) -> str | None:
     return None
 
 
+def _failure_key(row: Mapping[str, Any]) -> tuple[str, ...] | None:
+    module = module_for(str(row["name"]))
+    session = row.get("voice_session_id")
+    incident = row.get("incident_id") or row.get("call_id")
+    if not module or not isinstance(session, str) or not session or not isinstance(incident, str) or not incident:
+        return None
+    return (module, str(row.get("tenant_id") or ""), str(row.get("user_id") or ""), session,
+            "incident" if row.get("incident_id") else "call", incident)
+
+
 def module_health(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
-    result = {module: {"module": module, "error_count": None, "timeout_count": None,
+    result: dict[str, dict[str, Any]] = {module: {"module": module, "error_count": None, "timeout_count": None,
         "disconnect_count": None, "retry_count": None, "recovery_rate": None} for module in MODULES}
     rows = list(rows)
-    provider_modules = {module_for(str(row["name"])) for row in rows if str(row["name"]).startswith("provider.") and row["outcome"] in ("error", "timeout")}
+    provider_incidents = {_failure_key(row) for row in rows
+        if str(row["name"]).startswith("provider.") and row["outcome"] in ("error", "timeout")}
+    provider_incidents.discard(None)
     recovered = failed = disconnected = 0
     transport_collected = False
     affected_sessions: set[str] = set()
@@ -40,10 +52,12 @@ def module_health(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ..
             continue
         item = result[module]
         count = int(row.get("count", 1))
-        # Only one authoritative provider/capability event family per module.
+        # Prefer a provider fact only for a positively correlated incident.
+        # Uncorrelated rows remain event counts, never guessed unique requests.
         authoritative = (name.startswith(("provider.", "realtime.capability."))
             or name in {"client.input_capture_failed", "playback.stop_handoff_failed", "playback.stop_handoff_ready"})
-        if name.startswith("realtime.capability.") and module in provider_modules:
+        duplicate = name.startswith("realtime.capability.") and _failure_key(row) in provider_incidents
+        if duplicate:
             authoritative = False
         if name == "transport.collection_ready":
             transport_collected = True
@@ -71,7 +85,8 @@ def module_health(rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, Any], ..
                     item[key] = 0
             if row["outcome"] in ("error", "timeout"):
                 item["timeout_count" if row["outcome"] == "timeout" else "error_count"] += count
-        if (name != "client.transport_disconnect" and (
+        if (not duplicate and row["outcome"] not in ("cancelled", "superseded")
+            and name != "client.transport_disconnect" and (
             "disconnect" in name or "connection_lost" in name or row.get("error_type") in {
                 "ConnectionError", "ConnectionClosedError", "ConnectionResetError",
                 "WebSocketConnectionClosedException"})):

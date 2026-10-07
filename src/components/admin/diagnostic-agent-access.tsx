@@ -22,7 +22,7 @@ export function DiagnosticAgentAccess({ sessionId, preview = false }: { sessionI
         ...grant, endpoint: new URL(endpoint, window.location.origin).href,
         recordings_endpoint: new URL(`/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings`, window.location.origin).href,
         method: "GET", authorization_header: `Bearer ${grant.access_token}`,
-        pagination: { telemetry: "telemetry.next_cursor → telemetry_cursor", debug_log: "debug_log.next_cursor → debug_cursor", conversation: "conversation_next_cursor → conversation_cursor", recordings: "next_cursor → after_sequence" },
+        pagination: { telemetry: "telemetry.next_cursor → telemetry_cursor", debug_log: "debug_log.next_cursor → debug_cursor", conversation: "conversation_next_cursor → conversation_cursor", input_evidence: "input_evidence.next_cursor → input_cursor", recordings: "next_cursor → after_sequence" },
         instruction: "仅查询此 Session；凭据15分钟内有效。通过 Authorization 请求头使用，不要放入链接或日志。数据源缺失或截断必须保留说明。录音目录独立分页；使用同一请求头访问片段audio_url。已发送不等于已播放。",
       };
       const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));

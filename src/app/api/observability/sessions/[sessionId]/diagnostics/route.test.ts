@@ -36,11 +36,12 @@ it("isolates malformed upstream responses from the detail page", async () => {
 
 it("returns not found when telemetry is absent and the other sources are empty", async () => {
   fetchMock.mockResolvedValueOnce(Response.json({}, { status: 404 })).mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null })).mockResolvedValueOnce(Response.json({ entries: [] }));
+  fetchMock.mockResolvedValueOnce(Response.json({}, { status: 404 }));
   expect((await run()).status).toBe(404);
 });
 
 it("forwards independent cursors and preserves explicit page completeness", async () => {
-  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [], next_cursor: null })).mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null })).mockResolvedValueOnce(Response.json({ entries: [], next_cursor: "next-debug" })).mockResolvedValueOnce(Response.json({ status: "degraded", telemetry: { dropped_events: 1 }, debug_log: { dropped_events: 0 } }));
+  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [], next_cursor: null })).mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null })).mockResolvedValueOnce(Response.json({ entries: [], next_cursor: "next-debug" })).mockResolvedValueOnce(Response.json({}, { status: 404 })).mockResolvedValueOnce(Response.json({ status: "degraded", telemetry: { dropped_events: 1 }, debug_log: { dropped_events: 0 } }));
   const response = await GET(new NextRequest("https://app.example/api/observability/sessions/session-1/diagnostics?telemetry_cursor=event-1&debug_cursor=debug-1"), { params: Promise.resolve({ sessionId: "session-1" }) });
   const report = await response.json();
   expect(String(fetchMock.mock.calls[0][0])).toContain("?cursor=event-1");
@@ -112,4 +113,65 @@ it("continues through a valid empty projected page without falsely returning 404
   const second = await runPage(report.conversation_next_cursor);
   expect(second.status).toBe(200);
   expect((await second.json()).conversation[0].item_id).toBe("item-201");
+});
+
+const evidencePage = (session = "session-1", sequence = "9007199254740994") => ({
+  schema: "semantic-input-evidence.v1", voice_session_id: session, durable: true, status: "available",
+  next_cursor: sequence, records: [{ item_id: "evidence-1", voice_session_id: session, sequence,
+    occurred_at: "2026-10-07T00:00:00Z", detail: { schema: "semantic-input-evidence.v1", input_id: "input-1",
+      event: "asr_revision", source_thread_id: "original-thread", generation: 1, turn_id: "original-turn", durable: true, suffix: "重要纠正" } }],
+});
+it("aggregates input evidence with an independent exact bigint cursor", async () => {
+  fetchMock.mockResolvedValueOnce(Response.json({}, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null }))
+    .mockResolvedValueOnce(Response.json({ entries: [] }))
+    .mockResolvedValueOnce(Response.json(evidencePage()));
+  const response = await GET(new NextRequest("https://app.example/api/observability/sessions/session-1/diagnostics?input_cursor=9007199254740993"), { params: Promise.resolve({ sessionId: "session-1" }) });
+  const report = await response.json();
+  expect(response.status).toBe(200);
+  expect(String(fetchMock.mock.calls[3][0])).toContain("/input-evidence?limit=100&after_sequence=9007199254740993");
+  expect(report.input_evidence.records[0].detail.suffix).toBe("重要纠正");
+  expect(report.input_evidence.next_cursor).toBe("9007199254740994");
+  expect(report.sources.input_evidence).toEqual({ status: "available", truncated: true });
+});
+it.each(["", "01", "-1", "9223372036854775808", "1&input_cursor=2"])("rejects malformed input evidence cursor %s", async cursor => {
+  const response = await GET(new NextRequest(`https://app.example/api/observability/sessions/session-1/diagnostics?input_cursor=${cursor}`), { params: Promise.resolve({ sessionId: "session-1" }) });
+  expect(response.status).toBe(400); expect(fetchMock).not.toHaveBeenCalled();
+});
+it("rejects foreign input evidence while preserving other useful sources", async () => {
+  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [] }))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null }))
+    .mockResolvedValueOnce(Response.json({ entries: [] }))
+    .mockResolvedValueOnce(Response.json(evidencePage("foreign")));
+  const response = await run(), report = await response.json();
+  expect(response.status).toBe(200);
+  expect(report.input_evidence).toBeNull();
+  expect(report.sources.input_evidence.status).toBe("unavailable");
+});
+
+it.each([["available"], ["not_collected"], { value: "available" }])("isolates invalid coerced evidence status %j", async status => {
+  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [] }))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null }))
+    .mockResolvedValueOnce(Response.json({ entries: [] }))
+    .mockResolvedValueOnce(Response.json({ ...evidencePage(), status }));
+  const report = await (await run()).json();
+  expect(report.input_evidence).toBeNull(); expect(report.sources.input_evidence.status).toBe("unavailable");
+});
+it("rejects input evidence without its original turn", async () => {
+  const body = evidencePage(); Object.assign(body.records[0].detail, { turn_id: null });
+  fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [] }))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null }))
+    .mockResolvedValueOnce(Response.json({ entries: [] })).mockResolvedValueOnce(Response.json(body));
+  const report = await (await run()).json();
+  expect(report.input_evidence).toBeNull();
+});
+
+it("returns a successful empty tail for authoritatively collected input evidence", async () => {
+  fetchMock.mockResolvedValueOnce(Response.json({}, { status: 404 }))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [], next_cursor: null }))
+    .mockResolvedValueOnce(Response.json({ entries: [] }))
+    .mockResolvedValueOnce(Response.json({ ...evidencePage(), records: [], next_cursor: null }));
+  const response = await GET(new NextRequest("https://app.example/api/observability/sessions/session-1/diagnostics?input_cursor=100"), { params: Promise.resolve({ sessionId: "session-1" }) });
+  expect(response.status).toBe(200);
+  expect((await response.json()).input_evidence.records).toEqual([]);
 });
