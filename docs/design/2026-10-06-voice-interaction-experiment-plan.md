@@ -143,3 +143,12 @@ G5（综合）：正确性与可靠性无新增退化；完成配对延迟/连�
 回放、故障注入与统计放在测试/实验工具。生产继续由一个 actor 裁决，版本账本保存状态，输出边界执行许可。禁止为了测试增加第二条生产状态机或让测试假回执绕过实际播放契约。
 
 发布按能力逐项启用，纠正/句末/恢复具有独立开关；发现安全退化停止相关交付并保留输入。并发 1 仅是诊断回退；在语义契约未统一前，回退也不能视为纯容量切换。
+
+
+## 2026-10-07 production WebAudio recording evidence (ADR0159)
+
+Continued after `3a3caf5`. The opted-in Chrome test now connects actual `/conversation` WebAudio through a real WebSocket/parser/Bridge, canonical speech lifecycle/Observer, Memory recording/private HTTP, Settings and the exact-Session no-Cookie Agent endpoint. The actual browser exposed an empty terminal marker adding one control sample to its PCM clock (6401 instead of6400). Two 16k/24k regressions failed, then passed after excluding empty PCM from `playedSegments` while preserving source scheduling and completion. The fixture permits replacement only for an empty, successfully settled connection; started scenarios and cleanup errors deny replacement. Cleanup preserves the primary test failure and independently closes WS/HTTP/Runtime/owned schema/pool. No new business actor, queue, table, default flag, secret, provider/S3 request, production migration, user-service restart or push.
+
+Validation: full Vitest1428passed/7skipped24.13s, related Python57passed1.09s, playback subset48passed.422s, scoped TSC/ESLint/Ruff and fixture Mypy green. Actual isolated3029 Chrome1passed19.6s (27.7s including setup): browser and canonical final positions6400, Settings0.400/0.400, no-Cookie Agent counts/hash and403 write denial, WAV12844bytes equal actual wire PCM and native AudioBuffer contents. Reviews are limited to this increment. See the [report](../reports/2026-10-07-browser-recording-renderer.md) and [ADR0159](../adr/0159-browser-recording-renderer-sample-clock.md).
+
+Only the normal production WebAudio recording/receipt seam is accepted here. It does not establish physical speaker output/user hearing; microphone input remains synthetic/pre-seeded. Partial/stopped/avatar/disconnect renderer matrices, recording completeness/S3/deployment/external Agent acceptance remain open. Original OBS02 input aggregation/causal fault deduplication/cold-warm reconnect and all G0–G5 real marked paired oracles, true JEV fairness/global wait/history budget with paired latency/accuracy, durable unknown-action handling, ordinary supplement/manual/model-delivery/noncooperative/disconnect matrices and provider load remain open. The unlimited original goal stays active without a reduced substitute. Next: actual stopped/partial recording receipts, followed by the original full scope.

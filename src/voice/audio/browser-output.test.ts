@@ -53,6 +53,27 @@ function fakeContext() {
 }
 
 describe("BrowserAudioOutput", () => {
+  it.each([16000, 24000])("excludes the empty terminal source from the PCM sample clock at %i Hz", (rate) => {
+    const fake = fakeContext();
+    fake.context.state = "running";
+    const output = new BrowserAudioOutput({ runtime: new DeviceAudioOutputRuntime(),
+      createContext: () => fake.context as unknown as AudioContext });
+    output.beginEpoch("epoch");
+    const chunk = { pcm16Base64: btoa(String.fromCharCode(...new Uint8Array(6400))),
+      sampleRateHz: rate, generation: 1, speechId: "speech", sequence: 0, isFinal: false };
+    try {
+      output.play(chunk);
+      output.play({ ...chunk, sequence: 1 });
+      output.play({ ...chunk, pcm16Base64: "", sequence: 2, isFinal: true });
+      expect(fake.sources).toHaveLength(3);
+      fake.context.currentTime = 1 + 6401 / rate;
+      expect(output.playbackProgress(1, "playing")).toMatchObject({ played_position_samples: 6400 });
+      expect(output.playedAudioEndUs).toBe(Math.round(6400 / rate * 1_000_000));
+      for (const source of fake.sources) source.ended?.();
+      expect(output.finishGeneration(1)).toMatchObject({ phase: "finished", played_position_samples: 6400 });
+    } finally { output.close(); }
+  });
+
   it("keeps only the permitted sentence, even when a PCM chunk crosses its end", async () => {
     const fake = fakeContext();
     fake.context.state = "running";

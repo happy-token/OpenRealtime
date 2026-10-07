@@ -199,7 +199,11 @@ export class BrowserAudioOutput {
       if (naturallyEnded) chunk.onEnded?.();
       if (this.sentenceStop && this.scheduledSources.length === 0) this.stopOutput(this.sentenceStop.target);
     });
-    this.playedSegments.push({ start: startAt, end: startAt + buffer.duration });
+    // The one-sample empty terminal source drives onEnded only. It is not
+    // transmitted PCM and must not extend the speech-local sample clock.
+    if (outputChunk.pcm16.length > 0) {
+      this.playedSegments.push({ start: startAt, end: startAt + buffer.duration });
+    }
     source.start(startAt);
     if (this.onProgress && this.progressTimer === null) {
       this.progressTimer = setInterval(() => {

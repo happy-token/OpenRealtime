@@ -161,6 +161,7 @@ async def main() -> None:
     runtime = None
     server = None
     owns_schema = False
+    websocket_server = None
     try:
         async with pool.acquire() as conn:
             # CREATE without IF NOT EXISTS is the atomic ownership claim.
@@ -209,7 +210,17 @@ async def main() -> None:
         )
         if not await recorder.close():
             raise RuntimeError("fixture recording did not settle")
-        await seed_sent_receipt(runtime, ctx)
+        renderer_port = None
+        if os.environ.get("RECORDING_BROWSER_RENDERER") == "1":
+            from websockets.asyncio.server import serve
+
+            from tests.browser_recording_playback_fixture import RecordingRendererFixture
+
+            renderer = RecordingRendererFixture(runtime, ctx)
+            websocket_server = await serve(renderer.handle, "127.0.0.1", 0, process_request=renderer.http)
+            renderer_port = websocket_server.sockets[0].getsockname()[1]
+        else:
+            await seed_sent_receipt(runtime, ctx)
         await runtime.telemetry.flush()
 
         async def preserve(sid: str, actor: str) -> dict:
@@ -227,6 +238,7 @@ async def main() -> None:
                 {
                     "control_plane_url": f"http://127.0.0.1:{server.server_address[1]}",
                     "session_id": SESSION,
+                    "renderer_port": renderer_port,
                 }
             ),
             flush=True,
@@ -235,9 +247,16 @@ async def main() -> None:
     finally:
         try:
             try:
-                if server is not None:
-                    await asyncio.to_thread(server.shutdown)
-                    server.server_close()
+                try:
+                    if websocket_server is not None:
+                        websocket_server.close()
+                        await websocket_server.wait_closed()
+                finally:
+                    if server is not None:
+                        try:
+                            await asyncio.to_thread(server.shutdown)
+                        finally:
+                            server.server_close()
             finally:
                 if runtime is not None:
                     await runtime.close()
