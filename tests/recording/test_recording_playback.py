@@ -181,7 +181,8 @@ async def test_malformed_persisted_receipts_are_not_reclassified_as_exact(attrs)
         await runtime.telemetry.flush()
         store = runtime.diagnostics
         event = next(event for event in store._records if event.name == "client.playback_progress")
-        store._records.remove(event)
+        # Delete through the storage seam so derived lookup indexes stay consistent.
+        await store.delete_sessions([ctx.voice_session_id])
         await store.append_batch(
             [replace(event, event_id="bad", attributes=dict(event.attributes) | attrs)]
         )
@@ -203,6 +204,8 @@ async def test_truncated_evidence_retains_found_prefix_but_never_proves_absence(
         await sent_recording(runtime, ctx)
         receipt(runtime, ctx)
         await runtime.telemetry.flush()
+        # Exercise the legacy optional adapter fallback, not the production targeted query.
+        monkeypatch.setattr(runtime.diagnostics, "playback_receipts_for", None)
         monkeypatch.setattr(runtime.diagnostics, "session_detail", truncated)
         page = await runtime.recordings.read_page(ctx.voice_session_id)
         assert page["playback_source"]["truncated"] is True
@@ -221,7 +224,7 @@ async def test_slow_playback_evidence_degrades_without_abandoning_actual_io(
     runtime = await build_application_runtime(ApplicationRuntimeConfig())
     ctx = replace(context(), response_id="response")
     entered, release = asyncio.Event(), asyncio.Event()
-    original = runtime.diagnostics.session_detail
+    original = runtime.diagnostics.playback_receipts_for
 
     async def blocked(*args, **kwargs):
         entered.set()
@@ -231,7 +234,7 @@ async def test_slow_playback_evidence_degrades_without_abandoning_actual_io(
 
     try:
         await sent_recording(runtime, ctx)
-        monkeypatch.setattr(runtime.diagnostics, "session_detail", blocked)
+        monkeypatch.setattr(runtime.diagnostics, "playback_receipts_for", blocked)
         runtime.recordings._query_timeout_s = 0.1
         runtime.recordings._optional_timeout_s = 0.01
         page = await runtime.recordings.read_page(ctx.voice_session_id)
@@ -240,8 +243,8 @@ async def test_slow_playback_evidence_degrades_without_abandoning_actual_io(
         assert page["preservation"]["status"] == "unmarked"
         assert page["playback_source"]["status"] == "unavailable"
         assert page["items"][0]["playback"]["status"] == "unavailable"
-        # Scope resolution also uses DiagnosticsQuery; only the already-owned child is held.
-        monkeypatch.setattr(runtime.diagnostics, "session_detail", original)
+        # Only the already-owned targeted child remains held.
+        monkeypatch.setattr(runtime.diagnostics, "playback_receipts_for", original)
         with pytest.raises(SessionHistoryDeletionConflict):
             await runtime.delete_session_history(
                 [ctx.voice_session_id], tenant_id="admin", user_id="admin"
@@ -271,7 +274,7 @@ async def test_optional_child_cancellation_does_not_cancel_the_audio_catalog(mon
                 runtime.recordings.artifacts, "get_session_preservation_for", cancelled
             )
         else:
-            monkeypatch.setattr(runtime.diagnostics, "session_detail", cancelled)
+            monkeypatch.setattr(runtime.diagnostics, "playback_receipts_for", cancelled)
         page = await runtime.recordings.read_page(ctx.voice_session_id)
         assert page["items"][0]["status"] == "available"
         assert (

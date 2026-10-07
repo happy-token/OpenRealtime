@@ -108,3 +108,6 @@ Turn actor 是唯一业务事件裁决入口。计划新增的 ReplyRevisionCont
 
 
 2026-10-07 [ADR0157](../adr/0157-recording-playback-receipt-correlation.md)保留规范事件/Observer的精确epoch/speech/sample锚点，将原owner保存音频区间与客户端报告前缀按完整身份求交集；同主题页面显示数字与悬停说明，缺失/旧格式始终未知。实际任务归属内的可选查询慢/失败/自身取消仅降级，不隐藏有效录音。真实PG重启回读、实际Bridge受控sink及隔离Chrome/API/无CookieAgent通过，详见[实施记录](../reports/2026-10-07-recording-playback-receipts.md)。一个最多5000返回事件的诊断页不等于长会话完整检索，也不限制Memory底层全量扫描；真实renderer/device、录音完整度、S3/部署、OBS02及全部原G0–G5仍待验收。
+
+
+2026-10-07 [ADR0158](../adr/0158-targeted-recording-playback-lookups.md)落实长会话按原附件定向查询播放正证据。Memory append维护最大有效前缀索引，Session删除清理；PG0039固定pg_catalog严格采样函数与0040并发部分索引、单快照每附件最大前缀、完整十字段重验。实际>5000事件/禁止通用扫描先红后绿，search_path/影子函数/非法返回键/错误UNIQUE索引审查问题均正式回归闭环。详见[实施记录](../reports/2026-10-07-targeted-playback-receipt-lookups.md)。仅解除请求附件的通用分页遗漏，缺少回执仍未知；不证明全部采集或实际扬声器/设备播放，Memory总历史存储界未完成。0039/0040仅随机所属PG测试库执行，无生产迁移。录音完整度/真实renderer/S3部署、OBS02及全部原G0–G5仍保持原范围待验收。

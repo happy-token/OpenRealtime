@@ -59,3 +59,6 @@ async def apply_migrations(connection: Any, *, schema: str = "voiceagent") -> No
             raise RuntimeError(
                 f"session index is missing, invalid or incompatible ({index_name}); inspect and rebuild it before continuing"
             )
+    from server.persistence.postgres.runtime_telemetry import validate_playback_lookup_index
+
+    await validate_playback_lookup_index(connection, validate_schema_name(schema))

@@ -284,6 +284,14 @@ class TelemetryWriter(Protocol):
     async def append_batch(self, records: Sequence[TelemetryRecord]) -> None: ...
 
 
+ReceiptKey = tuple[str, str, str, str, int, str | None, str | None, str, str, int]
+
+
+@runtime_checkable
+class PlaybackReceiptQuery(Protocol):
+    async def playback_receipts_for(self, keys: Sequence[ReceiptKey]) -> dict[ReceiptKey, int]: ...
+
+
 @runtime_checkable
 class DiagnosticsQuery(Protocol):
     async def overview(self, window: DiagnosticsWindow) -> DiagnosticsOverview: ...
@@ -308,11 +316,24 @@ class InMemoryTelemetryStore(TelemetryWriter, DiagnosticsQuery):
 
     def __init__(self) -> None:
         self._records: list[TelemetryRecord] = []
+        self._playback_receipts: dict[ReceiptKey, int] = {}
         self._lock = asyncio.Lock()
 
     async def append_batch(self, records: Sequence[TelemetryRecord]) -> None:
+        from server.observability.recording_playback import receipt_index
+
+        receipts = receipt_index(records)
         async with self._lock:
             self._records.extend(records)
+            for key, position in receipts.items():
+                self._playback_receipts[key] = max(self._playback_receipts.get(key, 0), position)
+
+    async def playback_receipts_for(self, keys: Sequence[ReceiptKey]) -> dict[ReceiptKey, int]:
+        from server.observability.recording_playback import validated_receipt_keys
+
+        selected = validated_receipt_keys(keys)
+        async with self._lock:
+            return {key: self._playback_receipts[key] for key in selected if key in self._playback_receipts}
 
     async def overview(self, window: DiagnosticsWindow) -> DiagnosticsOverview:
         records = await self._within(window)
@@ -383,6 +404,10 @@ class InMemoryTelemetryStore(TelemetryWriter, DiagnosticsQuery):
                 for record in self._records
                 if record.voice_session_id not in selected
             ]
+            self._playback_receipts = {
+                key: position for key, position in self._playback_receipts.items()
+                if key[2] not in selected
+            }
         return len(existing)
 
     async def _within(self, window: DiagnosticsWindow) -> tuple[TelemetryRecord, ...]:

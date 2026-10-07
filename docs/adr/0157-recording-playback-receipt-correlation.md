@@ -30,3 +30,5 @@ All five local steps have been exercised. Actual speech lifecycle and recording-
 Real PostgreSQL tests verify stored JSON sample anchors and correct precise-versus-legacy projections after Runtime reconstruction. The isolated browser fixture uses a controlled wire sink with the actual Bridge, shared speech lifecycle, observer and Runtime. It sends 1600 samples and accepts a precise 800-sample client receipt. Chrome then verifies the public projection, numeric tooltip, native WAV replay and no-cookie Agent read. It does not produce an original production renderer receipt or physical device oracle. No user service or live provider is involved.
 
 Validation and remaining scope: [implementation report](../reports/2026-10-07-recording-playback-receipts.md).
+
+Follow-up [ADR0158](0158-targeted-recording-playback-lookups.md) replaces the initial general-page lookup in built-in Memory/PG adapters with indexed exact-attachment positive-prefix lookup. The original bounded page remains the explicit legacy-adapter fallback. This resolves pagination omission for the requested attachment keys, not complete receipt collection or physical playback evidence.

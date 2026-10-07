@@ -7,9 +7,7 @@ from typing import Any, TypeGuard
 
 from server.conversation_journal import ConversationItem
 from server.core.playback import sample_position_us
-from server.observability.telemetry import TelemetryOutcome, TelemetryRecord
-
-ReceiptKey = tuple[str, str, str, str, int, str | None, str | None, str, str, int]
+from server.observability.telemetry import ReceiptKey, TelemetryOutcome, TelemetryRecord
 
 
 def _uint(value: Any) -> TypeGuard[int]:
@@ -23,6 +21,58 @@ def _text(value: Any) -> TypeGuard[str]:
         return len(value.encode()) <= 512
     except UnicodeEncodeError:
         return False
+
+
+def validated_receipt_keys(keys: Sequence[ReceiptKey]) -> tuple[ReceiptKey, ...]:
+    if len(keys) > 200:
+        raise ValueError("playback attachment lookup exceeds recording page limit")
+    for key in keys:
+        if (
+            not isinstance(key, tuple)
+            or len(key) != 10
+            or not all(_text(key[index]) for index in (0, 1, 2, 3, 7, 8))
+            or not _uint(key[4])
+            or not _uint(key[9])
+            or not 1 <= key[9] <= 192000
+            or any(key[index] is not None and not _text(key[index]) for index in (5, 6))
+        ):
+            raise ValueError("invalid original playback attachment")
+    return tuple(dict.fromkeys(keys))
+
+
+def recording_receipt_key(item: ConversationItem, manifest: dict[str, Any]) -> ReceiptKey | None:
+    if manifest["direction"] != "sent" or manifest["stream_id"] != manifest["speech_id"]:
+        return None
+    ctx = item.context
+    return (
+        ctx.tenant_id,
+        ctx.user_id,
+        ctx.voice_session_id,
+        manifest["source_thread_id"],
+        ctx.generation,
+        ctx.turn_id,
+        ctx.response_id,
+        manifest["epoch"],
+        manifest["speech_id"],
+        manifest["sample_rate_hz"],
+    )
+
+
+def validate_receipt_result(
+    keys: Sequence[ReceiptKey], result: dict[ReceiptKey, int]
+) -> dict[ReceiptKey, int]:
+    selected = frozenset(validated_receipt_keys(keys))
+    if not isinstance(result, dict):
+        raise ValueError("invalid targeted playback evidence")  # noqa: TRY004 - one invalid-source contract
+    validated_receipt_keys(tuple(result))
+    if len(result) > len(selected) or any(
+        key not in selected
+        or not _uint(position)
+        or sample_position_us(position, key[9]) > 2**53 - 1
+        for key, position in result.items()
+    ):
+        raise ValueError("invalid targeted playback evidence")
+    return result
 
 
 def receipt_index(events: Sequence[TelemetryRecord]) -> dict[ReceiptKey, int]:
@@ -96,21 +146,9 @@ def project_playback(
     if receipts is None:
         return playback_view("unavailable")
     # Only the Bridge's normalized speech-local stream shares the receipt clock.
-    if manifest["stream_id"] != manifest["speech_id"]:
+    key = recording_receipt_key(item, manifest)
+    if key is None:
         return playback_view("unknown")
-    ctx = item.context
-    key = (
-        ctx.tenant_id,
-        ctx.user_id,
-        ctx.voice_session_id,
-        manifest["source_thread_id"],
-        ctx.generation,
-        ctx.turn_id,
-        ctx.response_id,
-        manifest["epoch"],
-        manifest["speech_id"],
-        manifest["sample_rate_hz"],
-    )
     end = receipts.get(key)
     if end is None:
         return playback_view("unknown")

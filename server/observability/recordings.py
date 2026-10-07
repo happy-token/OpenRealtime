@@ -31,8 +31,13 @@ from server.conversation_journal import (
     StructuredContent,
 )
 from server.conversation_journal.models import utc_now
-from server.observability.recording_playback import project_playback, receipt_index
-from server.observability.telemetry import DiagnosticsQuery
+from server.observability.recording_playback import (
+    project_playback,
+    receipt_index,
+    recording_receipt_key,
+    validate_receipt_result,
+)
+from server.observability.telemetry import DiagnosticsQuery, PlaybackReceiptQuery
 
 MAX_AUDIO_BYTES = 4 * 1024 * 1024 + 44
 RecordingOptionalOperation = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
@@ -209,19 +214,26 @@ class SessionRecordingReader:
         self._playback_query = playback_query
         self._playback_health = playback_health
 
-    async def _playback(self, session_id: str) -> dict[str, Any]:
+    async def _playback(self, session_id: str, evidence: list[_Evidence]) -> dict[str, Any]:
         source: dict[str, Any] = {"status": "unavailable", "truncated": False, "collection_healthy": None}
         try:
             if self._playback_query is None:
                 return {"source": source, "receipts": None}
-            detail = await self._playback_query.session_detail(session_id)
-            if detail is not None and (detail.summary.voice_session_id != session_id or len(detail.events) > 5000):
-                raise ValueError("invalid playback evidence page")
-            source.update(status="available" if detail is not None else "missing", truncated=detail.next_cursor is not None if detail else False)
+            if isinstance(self._playback_query, PlaybackReceiptQuery) and callable(self._playback_query.playback_receipts_for):
+                keys = tuple(dict.fromkeys(key for item in evidence
+                    if (key := recording_receipt_key(item.item, item.manifest)) is not None))
+                receipts = validate_receipt_result(keys, await self._playback_query.playback_receipts_for(keys))
+                source["status"] = "available"
+            else:
+                detail = await self._playback_query.session_detail(session_id)
+                if detail is not None and (detail.summary.voice_session_id != session_id or len(detail.events) > 5000):
+                    raise ValueError("invalid playback evidence page")
+                source.update(status="available" if detail is not None else "missing", truncated=detail.next_cursor is not None if detail else False)
+                receipts = receipt_index(detail.events if detail else ())
             if self._playback_health is not None:
                 health = self._playback_health()
                 source["collection_healthy"] = health.get("status") == "ok" and health.get("pending_events") == 0
-            return {"source": source, "receipts": receipt_index(detail.events if detail else ())}
+            return {"source": source, "receipts": receipts}
         except Exception:  # noqa: BLE001 - optional evidence does not hide verified audio
             return {"source": {"status": "unavailable", "truncated": False, "collection_healthy": None}, "receipts": None}
 
@@ -360,7 +372,7 @@ class SessionRecordingReader:
         if any(e.manifest["direction"] == "sent" for e in evidence_items):
             playback["source"]["status"] = "not-configured" if self._playback_query is None else "unavailable"
             if self._playback_query is not None and self._owned_optional_query is not None:
-                playback_result = await self._owned_optional_query(session_id, lambda: self._playback(session_id))
+                playback_result = await self._owned_optional_query(session_id, lambda: self._playback(session_id, evidence_items))
                 if playback_result is not None:
                     playback = playback_result
         for row, evidence in zip(rows, evidence_items, strict=True):
