@@ -160,3 +160,5 @@
 2026-10-07继续完成[实际误打断恢复执行](../reports/2026-10-07-misinterruption-recovery-execution.md)，采用[ADR0146](../adr/0146-recovery-execution-and-output-epoch.md)：原USER租约与执行租约分离，复用许可/原截止及副作用屏障，新版本/播放epoch按已确认停播后有序切换。实际Endpoint发送锁内核附着，失败同步封锁PCM；准备中新语音撤权、旧VAD隔离、完成后幂等、下一轮真实UserText和连续恢复已补。真实Chrome文本/语音恢复及原句末4场景共6项通过。完整未知停播/断连/非合作供应商和renderer矩阵及G4仍开放；其他全量轨道保持原验收要求。
 
 执行批次提交`43bb066`后继续补12项未知/过期/缺失停播回执生产组合与迟到成功不可重开回归。该子集不再列为“完全未覆盖”；完整未知位置策略、断连/失配/非合作/真实renderer矩阵仍按G4验收，阶段4不关闭。
+
+2026-10-07继续补[非合作停播控制IO](../reports/2026-10-07-output-control-io-hardening.md)，采用[ADR0147](../adr/0147-owned-output-control-io-deadlines.md)：恢复通知、精确/兼容停止及失败通知/关闭均使用有界调用者等待，仍在途IO占8任务预算到真实退出。正常关闭后超时不误报故障；正式Endpoint本地Brain/TTS/classifier清理不受非合作控制IO阻塞。此项补齐G4异步控制IO异常子集，未替代持久事实/投影、全部供应商和renderer/负载验收。

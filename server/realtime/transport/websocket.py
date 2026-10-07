@@ -7,10 +7,10 @@ import base64
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal, TypeVar
 
 from server.conversation_journal import (
     ConversationItemDraft,
@@ -102,6 +102,8 @@ InputEpochStartedHandler = Callable[[InputEpochStarted], Awaitable[None]]
 ConfirmationDecisionHandler = Callable[[ConfirmationDecisionFrame], Awaitable[None]]
 logger = logging.getLogger(__name__)
 _OUTPUT_FAILURE_IO_TIMEOUT_S = .25
+_MAX_PENDING_OUTPUT_CONTROL_TASKS = 8
+_ControlResult = TypeVar("_ControlResult")
 
 
 class _OutputStopFactError(RuntimeError):
@@ -192,6 +194,7 @@ class RealtimeWebSocketFrameBridge:
         self._output_stops: dict[str, _OutputStop] = {}
         self._stop_by_target: dict[tuple[str, int, str], str] = {}
         self._stop_tasks: set[asyncio.Task[None]] = set()
+        self._output_io_tasks: set[asyncio.Task[object]] = set()
         self._stop_output_failed = False
         self._closed = False
         self._output_failure = asyncio.Event()
@@ -373,16 +376,17 @@ class RealtimeWebSocketFrameBridge:
                     frame = OutputEpochStartedFrame(previous_output_epoch=plan.stopped_output_epoch,
                         output_epoch=plan.output_epoch, recovery_id=plan.plan_id, generation=event.context.generation)
                     remaining_s = (plan.deadline_ns - time.monotonic_ns()) / 1_000_000_000
-                    notification_deadline = asyncio.timeout(max(0, min(remaining_s, self._output_stop_timeout_s)))
-                    async with notification_deadline:
-                        notify = getattr(self._transport, "send_output_epoch_started", None)
-                        if notify is not None:
-                            if not await notify(frame):
-                                self._schedule_stop_failure("recovery_epoch_attachment_changed")
-                                return
-                        else:
-                            await self._send_frame(frame)
-                    if notification_deadline.expired() or time.monotonic_ns() >= plan.deadline_ns:
+                    timeout_s = max(0, min(remaining_s, self._output_stop_timeout_s))
+                    notify = getattr(self._transport, "send_output_epoch_started", None)
+                    if notify is not None:
+                        if not await self._await_output_control_io(notify(frame), timeout_s=timeout_s,
+                            operation_name="recovery-epoch-notification"):
+                            self._schedule_stop_failure("recovery_epoch_attachment_changed")
+                            return
+                    else:
+                        await self._await_output_control_io(self._send_frame(frame), timeout_s=timeout_s,
+                            operation_name="recovery-epoch-notification")
+                    if time.monotonic_ns() >= plan.deadline_ns:
                         self._schedule_stop_failure("recovery_epoch_notification_deadline")
                         return
                     if self.output_epoch != plan.output_epoch or getattr(self._transport, "is_detached", False):
@@ -798,10 +802,12 @@ class RealtimeWebSocketFrameBridge:
         if not self._precise_output_stop or speech_id is None:
             self._locally_cancelled_generations.add(generation)
             try:
-                await asyncio.wait_for(self._send_frame(
+                await self._await_output_control_io(self._send_frame(
                     AssistantSpeechCancelledFrame(generation=generation, reason=reason)),
-                    timeout=self._output_stop_timeout_s)
+                    timeout_s=self._output_stop_timeout_s, operation_name="legacy-output-stop-command")
             except Exception:
+                if self._closed:
+                    return
                 logger.warning("Legacy output stop command could not reach client", exc_info=True)
                 self._stop_output_failed = True
                 await self._notify_stop_failure("stop_request_send_failed")
@@ -855,13 +861,16 @@ class RealtimeWebSocketFrameBridge:
         # precedes stop delivery. Handoff later joins this bounded write.
         self._ensure_stop_fact_write(stop, "STOP_REQUESTED")
         try:
-            await asyncio.wait_for(self._send_frame(request), timeout=self._output_stop_timeout_s)
+            await self._await_output_control_io(self._send_frame(request),
+                timeout_s=self._output_stop_timeout_s, operation_name="output-stop-command")
         except asyncio.CancelledError:
             if not self._closed:
                 self._fail_stop_handoff(stop, "stop_request_send_cancelled")
                 self._schedule_stop_failure("stop_request_send_cancelled")
             raise
         except Exception:
+            if self._closed:
+                return
             logger.warning("Output stop command could not reach client", exc_info=True)
             self._fail_stop_handoff(stop, "stop_request_send_failed")
             await self._notify_stop_failure("stop_request_send_failed")
@@ -997,6 +1006,31 @@ class RealtimeWebSocketFrameBridge:
             # Cancellation of the owning task still propagates at transport awaits.
             logger.warning("Output stop observation could not be recorded", exc_info=True)
 
+    async def _await_output_control_io(self, operation: Coroutine[Any, Any, _ControlResult], *,
+                                       timeout_s: float, operation_name: str) -> _ControlResult:
+        """Bound caller waiting without pretending a cancelled adapter has exited."""
+        if len(self._output_io_tasks) >= _MAX_PENDING_OUTPUT_CONTROL_TASKS:
+            operation.close()
+            raise RuntimeError("output control operations exceeded their pending capacity")
+        task = asyncio.create_task(operation, name=f"voice-output-{operation_name}:{self._base_context.voice_session_id}")
+        self._output_io_tasks.add(task)
+        task.add_done_callback(self._output_io_task_done)
+        try:
+            done, _ = await asyncio.wait((task,), timeout=max(0, timeout_s))
+            if not done:
+                task.cancel()
+                raise TimeoutError(f"{operation_name} deadline")
+            return task.result()
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+
+    def _output_io_task_done(self, task: asyncio.Task[object]) -> None:
+        self._output_io_tasks.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("Output control operation failed: %s", task.get_name(),
+                exc_info=(type(error), error, error.__traceback__))
+
     async def _notify_stop_failure(self, reason: str) -> None:
         if self._failure_notification_started:
             return
@@ -1005,17 +1039,18 @@ class RealtimeWebSocketFrameBridge:
         try:
             # One failure notice may cross the closed latch; ordinary frames
             # all use _send_frame and cannot start another send after closure.
-            await asyncio.wait_for(self._transport.send(VoiceSessionFailureFrame(
+            await self._await_output_control_io(self._transport.send(VoiceSessionFailureFrame(
                 code="output_stop_evidence_unavailable" if reason.startswith("stop_fact_") else "output_stop_unconfirmed",
                 phase="output", retryable=True, session_disposition="close",
                 safe_message=("无法保存停播证据，请重新打开页面后开始会话。" if reason.startswith("stop_fact_")
                               else "无法确认音频已经停止，请重新打开页面后开始会话。"))),
-                timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
+                timeout_s=_OUTPUT_FAILURE_IO_TIMEOUT_S, operation_name="failure-notification")
         except Exception:
             logger.warning("Stop failure could not reach client: %s", reason, exc_info=True)
         finally:
             try:
-                await asyncio.wait_for(self._transport.close(), timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)
+                await self._await_output_control_io(self._transport.close(),
+                    timeout_s=_OUTPUT_FAILURE_IO_TIMEOUT_S, operation_name="transport-close")
             except Exception:
                 logger.warning("Stop failure transport close did not finish: %s", reason, exc_info=True)
             finally:
@@ -1097,6 +1132,9 @@ class RealtimeWebSocketFrameBridge:
         """Declare normal shutdown before cancellation reaches pending projections."""
         self._closed = True
         self._output_failure.set()
+        for task in tuple(self._output_io_tasks):
+            if not task.done():
+                task.cancel()
         for stop in self._output_stops.values():
             if stop.deadline is not None:
                 stop.deadline.cancel()
@@ -1108,7 +1146,15 @@ class RealtimeWebSocketFrameBridge:
         tasks = tuple(self._stop_tasks)
         for task in tasks:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if tasks:
+            _, residual_notifications = await asyncio.wait(tasks, timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S + .05)
+            if residual_notifications:
+                logger.warning("Output failure notification cleanup remains pending: %s", len(residual_notifications))
+        controls = tuple(self._output_io_tasks)
+        if controls:
+            _, residual_controls = await asyncio.wait(controls, timeout=.05)
+            if residual_controls:
+                logger.warning("Output control operations remain owned after close: %s", len(residual_controls))
         writes = tuple(self._stop_fact_tasks)
         if writes:
             _, pending = await asyncio.wait(writes, timeout=_OUTPUT_FAILURE_IO_TIMEOUT_S)

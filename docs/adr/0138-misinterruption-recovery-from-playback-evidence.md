@@ -31,3 +31,5 @@ STOP_REQUESTED即锁定业务动作，客户端回执更新为STOP_CONFIRMED；�
 ## 2026-10-07实际恢复执行边界
 
 [ADR0146](0146-recovery-execution-and-output-epoch.md)已消费规划并签发既有许可，保留原USER租约和版本，创建新回复/generation/epoch并从已听历史重新续答。Endpoint附着/发送锁和原截止防止恢复通知越界；失败先封锁PCM，再通知关闭。新语音在准备中撤权，完成后重放幂等，下一轮真实输入与连续两次恢复有受控生产回归；真实Chrome文本/语音恢复通过。该增量替代此前“执行未接入”的状态记录，但未知停播/断连/非合作和真实renderer完整验收仍未完成，G4保持开放。
+
+同日[ADR0147](0147-owned-output-control-io-deadlines.md)进一步限制非合作Transport控制IO的调用者等待，保留残留归属至真实退出。恢复/停播/故障通知与关闭覆盖，正常关闭不误报故障；全部异常/实际renderer验收仍开放。

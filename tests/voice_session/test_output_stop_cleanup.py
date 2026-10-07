@@ -33,14 +33,16 @@ class ActiveConversation(WaitingConversation):
         await super().close()
 
 
+@pytest.mark.parametrize("noncooperative", [False, True])
 @pytest.mark.parametrize("slow_notice", [False, True])
-async def test_stop_failure_wakes_endpoint_and_releases_work_when_transport_close_hangs(monkeypatch, slow_notice):
+async def test_stop_failure_wakes_endpoint_and_releases_work_when_transport_close_hangs(monkeypatch, slow_notice, noncooperative):
     class SlowCloseTransport(EpochTransport):
         def __init__(self):
             super().__init__()
             self.receive_cancelled = asyncio.Event()
             self.close_started = asyncio.Event()
             self.close_cancelled = asyncio.Event()
+            self.release = asyncio.Event()
 
         async def receive(self):
             try:
@@ -52,16 +54,23 @@ async def test_stop_failure_wakes_endpoint_and_releases_work_when_transport_clos
 
         async def send(self, frame):
             if slow_notice and isinstance(frame, VoiceSessionFailureFrame):
-                await asyncio.Event().wait()
+                while not self.release.is_set():
+                    try:
+                        await self.release.wait()
+                    except asyncio.CancelledError:
+                        if not noncooperative:
+                            raise
             await super().send(frame)
 
         async def close(self):
             self.close_started.set()
-            try:
-                await asyncio.Event().wait()
-            except asyncio.CancelledError:
-                self.close_cancelled.set()
-                raise
+            while not self.release.is_set():
+                try:
+                    await self.release.wait()
+                except asyncio.CancelledError:
+                    self.close_cancelled.set()
+                    if not noncooperative:
+                        raise
 
     class ShortStopBridge(RealtimeWebSocketFrameBridge):
         def __init__(self, **kwargs):
@@ -106,9 +115,18 @@ async def test_stop_failure_wakes_endpoint_and_releases_work_when_transport_clos
         assert raw_transport.receive_cancelled.is_set()
         assert factory.conversation.closed
         assert all(task.done() for task in factory.conversation.work)
+        if noncooperative:
+            assert any(not task.done() for task in bridge._output_io_tasks)
+            raw_transport.release.set()
+            async with asyncio.timeout(.5):
+                while bridge._output_io_tasks:
+                    await asyncio.sleep(0)
     finally:
+        raw_transport.release.set()
         running.cancel()
         await asyncio.gather(running, return_exceptions=True)
+        if endpoint._bridge is not None:
+            await endpoint._bridge.close()
 
 
 async def test_normal_endpoint_cancellation_during_stop_projection_preserves_fact_without_failure():

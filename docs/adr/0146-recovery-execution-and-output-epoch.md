@@ -27,3 +27,5 @@ Bridge必须已有同 stop_command_id、原 speech/generation/epoch 的 STOP_CON
 失败回归覆盖不支持轮换、CAS失败、截止、目标不符、等待发送锁时换连接、通知阻塞/失败和正常关闭。完整非合作IO/供应商、实际录音/数字人renderer、未知停播及断连组合矩阵仍需按实验计划验收；本批不关闭G4，也不启用既有默认关闭的句末切换开关。
 
 同日提交后补充12项实际生产组合：unknown/stale/缺失回执在反馈前后到达，正式Endpoint和普通transport都保存STOP_UNKNOWN并进入有界失败出口；迟到成功回执不能重开。这是已验证的G4异常子集，不替代全部断连/非合作/renderer矩阵。
+
+后续[ADR0147](0147-owned-output-control-io-deadlines.md)用独立拥有的IO任务替换通知的直接timeout等待，修复吞取消时仍无限等待的缺口。截止不再依赖适配器配合取消；真实退出与调用者返回仍区分。
