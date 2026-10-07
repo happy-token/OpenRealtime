@@ -424,6 +424,24 @@ class ReplyRevisionController:
         self._recovery_plan_basis = None
         return True
 
+    def recovery_review_deadline(self, context: InteractionContext, *, observation_id: str,
+                                 revision: int, text: str, now_ns: int) -> int | None:
+        """Admission for one sealed new-text review, not authority to recover output."""
+        if not self._matches_recovery_observation(context, observation_id):
+            return None
+        anchor, reply, current = self._interruption_recovery, self.reply, self.input
+        assert anchor is not None
+        revised = semantic_text(text)
+        if (reply is None or current is None or now_ns >= anchor.deadline_ns or reply.delivery_permitted
+            or reply.invalidation_reason != "barge_in_floor_claim"
+            or (reply.response_id, reply.reply_version, reply.input_id, reply.input_version) !=
+                (anchor.response_id, anchor.reply_version, anchor.input_id, anchor.input_version)
+            or (current.input_id, current.input_version) != (anchor.input_id, anchor.input_version)
+            or revision != anchor.revision or text != anchor.text or revision <= anchor.stopping_revision
+            or not revised or revised.startswith(anchor.stopping_text)):
+            return None
+        return anchor.deadline_ns
+
     def observe_recovery_feedback(self, context: InteractionContext, *, observation_id: str,
                                   revision: int, text: str, verdict: InterruptionVerdict,
                                   speech_ended: bool, answering_question: bool, confidence_threshold: float) -> bool:

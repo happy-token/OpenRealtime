@@ -175,6 +175,9 @@ class _Input:
     sentence_trigger_text: str = ""
     sentence_wait_initial_ns: int = 0
     sentence_prefetch_started: bool = False
+    recovery_review_revision: int | None = None
+    recovery_sealed_revision: int | None = None
+    recovery_verdict: InterruptionVerdict | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -833,6 +836,14 @@ class CoordinatedTurnManagerSession:
                 })
                 if item.blocked:
                     return
+                if event.kind == "recovery_feedback":
+                    assert isinstance(event.value, InterruptionVerdict)
+                    if self._revisions.recovery_review_deadline(item.context, observation_id=item.identity,
+                        revision=item.revision, text=item.text, now_ns=time.monotonic_ns()) is not None:
+                        item.recovery_verdict = event.value
+                        self._observe_recovery_feedback(item, event.value)
+                    await self._advance(item)
+                    return
                 if isinstance(event.value, EotClassification):
                     if event.chunk_id is None or (chunk is not None and chunk.semantic_end == len(semantic_text(item.text))):
                         item.endpoint = event.value
@@ -911,6 +922,7 @@ class CoordinatedTurnManagerSession:
                         await self._project(item.context)
                         await self._resume_context_repair()
                         return
+                    item.recovery_sealed_revision = item.revision
                     item.stop = item.stop or VadSpeechStopped(
                         context=item.context,
                         audio_timestamp_us=item.timestamp_us,
@@ -1015,7 +1027,7 @@ class CoordinatedTurnManagerSession:
             item = self._input
             if item and not item.commit_pending and item.target_response != event.response_id:
                 self._prefetch.invalidate("target_response_changed")
-                self._cancel("yield_ack", "interruption_model", "interruption", "endpoint_model", "commit")
+                self._cancel("yield_ack", "interruption_model", "recovery_model", "interruption", "endpoint_model", "commit")
                 if self._provider.semantic_chunks_enabled:
                     item.chunks = SemanticChunkScheduler(character_limit=self._provider.interruption_chunk_chars, max_concurrency=self._provider.semantic_chunk_concurrency)
                     self._cancel("chunks")
@@ -1034,6 +1046,9 @@ class CoordinatedTurnManagerSession:
                 item.yield_pending = False
                 item.verdict = None
                 item.verdict_prefix = None
+                item.recovery_review_revision = None
+                item.recovery_sealed_revision = None
+                item.recovery_verdict = None
                 if item.text:
                     self._judge_interruption(item, InterruptionBoundary(item.boundary.value))
             self._awaiting_response = False
@@ -1170,6 +1185,10 @@ class CoordinatedTurnManagerSession:
             item.timestamp_us = max(item.timestamp_us, observation.audio_timestamp_us)
             if isinstance(observation, VadSpeechStarted):
                 self._revisions.invalidate_recovery_planning()
+                self._cancel("recovery_model")
+                item.recovery_review_revision = None
+                item.recovery_sealed_revision = None
+                item.recovery_verdict = None
                 item.speech_started_ns = item.speech_started_ns or time.monotonic_ns()
                 item.speech_ended_ns = None
                 self._prefetch.invalidate("speech_resumed")
@@ -1414,6 +1433,10 @@ class CoordinatedTurnManagerSession:
         item.timestamp_us = max(item.timestamp_us, getattr(event, "audio_timestamp_us", 0))
         if changed:
             self._revisions.observe_interruption_revision(item.context, observation_id=item.identity, revision=event.revision, text=text)
+            self._cancel("recovery_model")
+            item.recovery_review_revision = None
+            item.recovery_sealed_revision = None
+            item.recovery_verdict = None
             self._prefetch.observe_text(text)
             item.text, item.revision = text, event.revision
             if item.sentence_wait is not None and (
@@ -1677,6 +1700,7 @@ class CoordinatedTurnManagerSession:
         item: _Input,
         candidate: InterruptionCandidate,
         rule: InterruptionClassification | None,
+        *, recovery_deadline_ns: int | None = None,
     ) -> None:
         item.last_judged_text = item.text
         cumulative_text = (
@@ -1707,14 +1731,22 @@ class CoordinatedTurnManagerSession:
         )
         identity, revision = item.identity, item.revision
         token = str(uuid.uuid4())
-        self._tasks.register("interruption", item.semantic_chunk.chunk_id if item.semantic_chunk else None, token)
+        result_kind = "recovery_feedback" if recovery_deadline_ns is not None else "interruption"
+        task_family = "recovery_model" if recovery_deadline_ns is not None else "interruption_model"
+        self._tasks.register(result_kind, item.semantic_chunk.chunk_id if item.semantic_chunk else None, token)
         async def judge() -> None:
             started_ns = time.monotonic_ns()
             outcome = TelemetryOutcome.OK
             source = "rule" if rule else "model"
             raw_classification = None
             try:
-                decision = await self._interruption_decider.resolve(request, rule)
+                if recovery_deadline_ns is None:
+                    decision = await self._interruption_decider.resolve(request, rule)
+                else:
+                    # Includes provider/shared-capacity preparation in the original stop deadline.
+                    remaining = max(0, (recovery_deadline_ns - time.monotonic_ns()) / 1_000_000_000)
+                    async with asyncio.timeout(remaining):
+                        decision = await self._interruption_decider.resolve(request, rule)
                 result, source = decision.classification, decision.source
                 raw_classification = result
                 if result.confidence < self._provider._semantic_interruption_threshold:
@@ -1734,11 +1766,12 @@ class CoordinatedTurnManagerSession:
             verdict = InterruptionVerdict(candidate, result, source)  # type: ignore[arg-type]
             self._log_interruption_decision(verdict, item, raw_classification=raw_classification)
             await self._inbox.put(
-                (_Result(identity, revision, "interruption", verdict, token, item.semantic_chunk.chunk_id if item.semantic_chunk else None), None)
+                (_Result(identity, revision, result_kind, verdict, token, item.semantic_chunk.chunk_id if item.semantic_chunk else None), None)
             )
 
-        self._cancel("interruption")
-        self._job("interruption_model" + (":" + item.semantic_chunk.chunk_id if item.semantic_chunk else ""), judge())
+        if recovery_deadline_ns is None:
+            self._cancel("interruption")
+        self._job(task_family + (":" + item.semantic_chunk.chunk_id if item.semantic_chunk else ""), judge())
 
     async def _classify_interruption_timed(
         self, classifier: Any, request: InterruptionRequest, generation: int
@@ -1857,6 +1890,16 @@ class CoordinatedTurnManagerSession:
             )
         )
 
+    def _observe_recovery_feedback(self, item: _Input, verdict: InterruptionVerdict) -> bool:
+        accepted = self._revisions.observe_recovery_feedback(item.context, observation_id=item.identity,
+            revision=item.revision, text=item.text, verdict=verdict,
+            speech_ended=not item.speech_active and item.stop is not None,
+            answering_question=verdict.label is InterruptionLabel.BACKCHANNEL and any(
+                mark in item.assistant_text_at_onset for mark in ("?", "？")),
+            confidence_threshold=self._provider._semantic_interruption_threshold)
+        self._record_recovery_plan()
+        return accepted
+
     async def _advance(self, item: _Input, *, force: bool = False, admission_reason: str | None = None) -> None:
         if item.blocked or item.commit_pending or item.speech_active or item.stop is None or not item.text:
             return
@@ -1884,16 +1927,34 @@ class CoordinatedTurnManagerSession:
                         self._rule_context(item, InterruptionBoundary.SENTENCE_END))
                     explicit_stop = sealed_rule is not None and sealed_rule.label is InterruptionLabel.STOP
                     if sealed_rule is not None and sealed_rule.label in {InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE}:
-                        self._revisions.observe_recovery_feedback(item.context, observation_id=item.identity,
-                            revision=item.revision, text=item.text, verdict=InterruptionVerdict(
-                                InterruptionCandidate(item.text, item.context.generation, item.revision, InterruptionBoundary.SENTENCE_END),
-                                sealed_rule, "rule"), speech_ended=not item.speech_active and item.stop is not None,
-                            answering_question=sealed_rule.label is InterruptionLabel.BACKCHANNEL and any(
-                                mark in item.assistant_text_at_onset for mark in ("?", "？")),
-                            confidence_threshold=self._provider._semantic_interruption_threshold)
-                        self._record_recovery_plan()
-                    action = InterruptionDisposition(False, sealed_rule is None or sealed_rule.label
-                        not in {InterruptionLabel.STOP, InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE})
+                        self._observe_recovery_feedback(item, InterruptionVerdict(
+                            InterruptionCandidate(item.text, item.context.generation, item.revision, InterruptionBoundary.SENTENCE_END),
+                            sealed_rule, "rule"))
+                    feedback_only = sealed_rule is not None and sealed_rule.label in {
+                        InterruptionLabel.STOP, InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE}
+                    deadline = self._revisions.recovery_review_deadline(item.context, observation_id=item.identity,
+                        revision=item.revision, text=item.text, now_ns=time.monotonic_ns())
+                    if sealed_rule is None and deadline is not None and not force:
+                        if item.boundary is not TextBoundary.SENTENCE_END and item.recovery_sealed_revision != item.revision:
+                            # VAD silence alone cannot seal later ASR partials. Their
+                            # existing revision/idle timer establishes a stable snapshot.
+                            if "idle" not in self._jobs:
+                                self._timer("idle", self._provider._asr_idle_stop_s * 1000, item)
+                            return
+                        if item.recovery_review_revision != item.revision:
+                            item.recovery_review_revision = item.revision
+                            snapshot = replace(item, semantic_chunk=None, prior_chunks=(), chunks=None)
+                            self._start_interruption_judge(snapshot, InterruptionCandidate(item.text, item.context.generation,
+                                item.revision, InterruptionBoundary.SENTENCE_END), None, recovery_deadline_ns=deadline)
+                            return
+                        if item.recovery_verdict is None:
+                            return
+                        feedback_only = self._observe_recovery_feedback(item, item.recovery_verdict)
+                        explicit_stop = (item.recovery_verdict.label is InterruptionLabel.STOP
+                            and item.recovery_verdict.source != "fallback"
+                            and item.recovery_verdict.confidence >= self._provider._semantic_interruption_threshold)
+                        feedback_only |= explicit_stop
+                    action = InterruptionDisposition(False, not feedback_only)
                 if (action.admit_input and not action.stop_response
                         and not item.floor_claim_confirmed and not item.yielded):
                     # Keep ambiguous input while playback owns the floor. Natural

@@ -57,6 +57,7 @@ class SemanticTaskRegistry:
             request_kind = {
                 "endpoint_model": "endpoint",
                 "interruption_model": "interruption",
+                "recovery_model": "recovery_feedback",
             }.get(name)
             if request_kind is not None:
                 request_family = request_kind + (separator + chunk_id if separator else "")

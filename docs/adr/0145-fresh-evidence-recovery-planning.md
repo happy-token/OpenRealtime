@@ -18,6 +18,14 @@
 
 ## 范围与下一步
 
-当前真实 actor 只接入封口全文的本地规则反馈。账本接受 model 证据的契约已验证，但新 JEV 复核批尚未接入。事实/反馈两种到达顺序与并发容量 1/2 均有 actor 回归。计划用原输入证据记录 reply_recovery_planned，不发恢复动作。
+首批真实 actor 只接入本地规则反馈；随后同日增量已接入规则未命中时的独立全文模型复核，见下节。事实/反馈两种到达顺序与并发容量 1/2 均有 actor 回归。计划用原输入证据记录 reply_recovery_planned，不发恢复动作。
 
-接下来需接入有界、独立的新全文模型复核，规划消费与执行许可、Core 原输入/已听上下文准入、新回复及物理 epoch 切换、再次打断、幂等和未知停止失败出口。详见[报告](../reports/2026-10-07-misinterruption-recovery-planning.md)。本决策不关闭 ADR0138 或整体计划。
+接下来需接入规划消费与执行许可、Core 原输入/已听上下文准入、新回复及物理 epoch 切换、再次打断、幂等和未知停止失败出口。详见[报告](../reports/2026-10-07-misinterruption-recovery-planning.md)。本决策不关闭 ADR0138 或整体计划。
+
+## 同日：独立全文模型复核已接入
+
+复用现有规则插件、JEV分类适配器和 ClassificationExecutor。只在原停止锁定且生成 yield 已确认后、同观察的实质 ASR 改写、规则未命中时启动；不改原停止裁决，独立 recovery_feedback token/task family。冻结当前全文和输入状态；要求真实 ASR 句尾或当前 revision/acoustic_version 对应的既有 idle 稳定封口，单纯 VAD 停止不能把后续 partial 伪装成完整句。新 partial 撤销在途复核，等待重新封口，不能逐字发请求。
+
+调用准备、共享容量和模型等待仍受首次停止绝对截止限制，并沿用原分类超时。真实任务未退出前占用原槽位，取消/关闭不冒充资源释放。新语音、改写、替换回复、关闭及 force 提交撤销请求；晚结果不得恢复计划。可靠附和/IGNORE进入规划；实际问答、低置信、失败、UNCERTAIN、INTERRUPT/CORRECTION保留输入走既有最终ASR提交；新可靠STOP仅作为控制，不生成回复。
+
+[全文复核报告](../reports/2026-10-07-fresh-recovery-model-review.md)记录先红后绿及封口竞争修复。真实供应商准确率/延迟未测试，实际恢复执行仍未接入。

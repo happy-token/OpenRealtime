@@ -1,5 +1,7 @@
 """Fresh ASR proof and confirmed stop are prerequisites, never playback authority."""
 
+import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import replace
 
 import pytest
@@ -297,3 +299,265 @@ def test_old_partial_foreign_or_unreliable_opposite_feedback_cannot_invalidate_c
     assert not revisions.observe_recovery_feedback(overlap, observation_id="overlap-input", revision=2, text="嗯好的",
         verdict=verdict, speech_ended=True, answering_question=False, confidence_threshold=.8)
     assert revisions.recovery_plan_current(plan, now_ns=101)
+
+
+@pytest.mark.parametrize("chunks", [False, True])
+@pytest.mark.parametrize("concurrency", [1, 2])
+@pytest.mark.parametrize("label,confidence,fail,question", [
+    (InterruptionLabel.BACKCHANNEL, 1, False, False), (InterruptionLabel.IGNORE, 1, False, False),
+    (InterruptionLabel.INTERRUPT, 1, False, False), (InterruptionLabel.CORRECTION, 1, False, False),
+    (InterruptionLabel.STOP, 1, False, False), (InterruptionLabel.UNCERTAIN, 1, False, False),
+    (InterruptionLabel.BACKCHANNEL, .1, False, False), (InterruptionLabel.BACKCHANNEL, 1, True, False),
+    (InterruptionLabel.BACKCHANNEL, 1, False, True),
+])
+async def test_actual_actor_uses_one_fresh_full_model_review_after_material_rewrite(chunks, concurrency, label, confidence, fail, question):
+    from server.realtime.capabilities.turn_manager import (
+        AsrCommitRequested,
+        AsrDiscardRequested,
+        AssistantYieldRequested,
+        ObserveAssistantOutputStop,
+        ObserveAssistantPlayback,
+        ObserveAssistantYielded,
+        ObserveSystemResponseStarted,
+        UserTurnCommitted,
+    )
+    from tests.realtime.test_coordinated_turn_manager import (
+        Endpoint,
+        opened,
+        start,
+        stop,
+        take,
+        text,
+    )
+    from tests.realtime.test_reply_revision_coordination import final
+
+    class Model:
+        def __init__(self):
+            self.requests = []
+
+        async def classify_request(self, request):
+            self.requests.append(request)
+            if request.transcript == "我只是随口附和":
+                if fail:
+                    raise RuntimeError("provider failed")
+                return InterruptionClassification(label, confidence)
+            return InterruptionClassification(InterruptionLabel.INTERRUPT, 1)
+
+    model = Model()
+    actor = await opened(eot_classifier=Endpoint(), semantic_interruption_classifier=model,
+        semantic_chunks_enabled=chunks, semantic_chunk_concurrency=concurrency)
+    stream = actor.events()
+    owner = replace(actor._context, response_id="a")
+    overlap = replace(owner, turn_id="overlap", generation=owner.generation + 1, response_id=None)
+    try:
+        await start(actor, owner)
+        await text(actor, "说两句", ctx=owner)
+        await stop(actor, owner)
+        await take(stream, AsrCommitRequested)
+        await final(actor, owner, "说两句")
+        await take(stream, UserTurnCommitted)
+        await actor.send(ObserveSystemResponseStarted(response_id="a", context=owner))
+        await actor.send(ObserveAssistantPlayback(context=owner, response_id="a", fact=ReplyPlayback(
+            output_epoch="epoch", speech_id="response:a", played_audio_end_us=500000, confirmed_text_end=0,
+            observed_at_ns=50, position_precision="sample", played_position_samples=500, sample_rate_hz=1000)))
+        await start(actor, overlap)
+        await text(actor, "等一下换个问题", ctx=overlap)
+        await take(stream, AssistantYieldRequested)
+        await actor.send(ObserveAssistantYielded(context=replace(overlap, response_id="a")))
+        await actor.send(ObserveAssistantOutputStop(fact=confirmed(replace(requested(), context=owner, operation_sequence=1))))
+        await actor.send(ObserveAssistantPlayback(context=owner, response_id="a", fact=ReplyPlayback(
+            output_epoch="epoch", speech_id="response:a", played_audio_end_us=1200000, confirmed_text_end=4,
+            observed_at_ns=100, position_precision="sample", played_position_samples=1200, sample_rate_hz=1000, terminal=True)))
+        if question:
+            actor._input.assistant_text_at_onset = "你同意吗？"
+        calls_before_rewrite = len(model.requests)
+        await text(actor, "我只是", revision=2, ctx=overlap)
+        await text(actor, "我只是随口", revision=3, ctx=overlap)
+        await text(actor, "我只是随口附和", revision=4, ctx=overlap)
+        assert len(model.requests) == calls_before_rewrite, "rewritten partials cannot each call the model"
+        await stop(actor, overlap)
+        recovery = label in {InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE} and confidence == 1 and not fail and not question
+        control_stop = label is InterruptionLabel.STOP and confidence == 1 and not fail
+        await take(stream, AsrDiscardRequested if recovery or control_stop else AsrCommitRequested)
+        reviews = [r for r in model.requests if r.transcript == "我只是随口附和"]
+        assert len(reviews) == 1, "one independent sealed full-text review, separate from locked old STOP"
+        assert reviews[0].boundary is InterruptionBoundary.SENTENCE_END
+        assert reviews[0].input_state.transcript_revision == 4
+        assert reviews[0].input_state.speech_active is False
+        plan = actor._revisions._recovery_plan
+        if recovery:
+            assert plan is not None and plan.feedback_source == "model" and plan.transcript_revision == 4
+        else:
+            assert plan is None
+            assert actor.snapshot().commit_pending is not control_stop
+        assert not actor.response_delivery_allowed("a"), "feedback does not restore the old reply"
+    finally:
+        await actor.close()
+        await stream.aclose()
+
+
+@asynccontextmanager
+async def recoverable_actor(model, *, concurrency=2, confirm_yield=True):
+    from server.realtime.capabilities.turn_manager import (
+        AsrCommitRequested,
+        AssistantYieldRequested,
+        ObserveAssistantOutputStop,
+        ObserveAssistantPlayback,
+        ObserveAssistantYielded,
+        ObserveSystemResponseStarted,
+        UserTurnCommitted,
+    )
+    from tests.realtime.test_coordinated_turn_manager import (
+        Endpoint,
+        opened,
+        start,
+        stop,
+        take,
+        text,
+    )
+    from tests.realtime.test_reply_revision_coordination import final
+
+    actor = await opened(eot_classifier=Endpoint(), semantic_interruption_classifier=model,
+        semantic_chunks_enabled=True, semantic_chunk_concurrency=concurrency)
+    stream = actor.events()
+    owner = replace(actor._context, response_id="a")
+    overlap = replace(owner, turn_id="overlap", generation=owner.generation + 1, response_id=None)
+    try:
+        await start(actor, owner)
+        await text(actor, "说两句", ctx=owner)
+        await stop(actor, owner)
+        await take(stream, AsrCommitRequested)
+        await final(actor, owner, "说两句")
+        await take(stream, UserTurnCommitted)
+        await actor.send(ObserveSystemResponseStarted(response_id="a", context=owner))
+        await actor.send(ObserveAssistantPlayback(context=owner, response_id="a", fact=ReplyPlayback(
+            output_epoch="epoch", speech_id="response:a", played_audio_end_us=500000, confirmed_text_end=0,
+            observed_at_ns=50, position_precision="sample", played_position_samples=500, sample_rate_hz=1000)))
+        await start(actor, overlap)
+        await text(actor, "等一下换个问题", ctx=overlap)
+        await take(stream, AssistantYieldRequested)
+        if confirm_yield:
+            await actor.send(ObserveAssistantYielded(context=replace(overlap, response_id="a")))
+        await actor.send(ObserveAssistantOutputStop(fact=confirmed(replace(requested(), context=owner, operation_sequence=1))))
+        await actor.send(ObserveAssistantPlayback(context=owner, response_id="a", fact=ReplyPlayback(
+            output_epoch="epoch", speech_id="response:a", played_audio_end_us=1200000, confirmed_text_end=4,
+            observed_at_ns=100, position_precision="sample", played_position_samples=1200, sample_rate_hz=1000, terminal=True)))
+        yield actor, stream, owner, overlap
+    finally:
+        await actor.close()
+        await stream.aclose()
+
+
+class HeldRecoveryModel:
+    def __init__(self):
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.release = asyncio.Event()
+        self.finished = asyncio.Event()
+        self.requests = []
+
+    async def classify_request(self, request):
+        self.requests.append(request)
+        if request.transcript != "我只是随口附和":
+            return InterruptionClassification(InterruptionLabel.INTERRUPT, 1)
+        self.started.set()
+        try:
+            while not self.release.is_set():
+                try:
+                    await self.release.wait()
+                except asyncio.CancelledError:
+                    self.cancelled.set()  # Deliberately noncooperative provider stays owned.
+            return InterruptionClassification(InterruptionLabel.BACKCHANNEL, 1)
+        finally:
+            self.finished.set()
+
+
+@pytest.mark.parametrize("termination", ["rewrite", "speech", "reply", "close", "deadline"])
+@pytest.mark.parametrize("concurrency", [1, 2])
+async def test_actual_actor_bounds_recovery_review_and_fences_late_noncooperative_model(termination, concurrency):
+    from server.realtime.capabilities.turn_manager import (
+        AsrCommitRequested,
+        ObserveSystemResponseStarted,
+    )
+    from tests.realtime.test_coordinated_turn_manager import start, stop, take, text
+
+    model = HeldRecoveryModel()
+    try:
+        async with recoverable_actor(model, concurrency=concurrency) as (actor, stream, owner, overlap):
+            await text(actor, "我只是随口附和", revision=2, ctx=overlap)
+            anchor = actor._revisions._interruption_recovery
+            original_deadline = anchor.deadline_ns
+            await stop(actor, overlap)
+            await asyncio.wait_for(model.started.wait(), .5)
+            assert not actor.snapshot().commit_pending
+            if termination == "rewrite":
+                await text(actor, "现在问北京天气", revision=3, ctx=overlap)
+                await take(stream, AsrCommitRequested)
+            elif termination == "speech":
+                await start(actor, overlap)
+                assert actor._revisions._interruption_recovery is None
+                assert not actor.snapshot().commit_pending
+            elif termination == "reply":
+                await actor.send(ObserveSystemResponseStarted(response_id="b",
+                    context=replace(owner, response_id="b", generation=overlap.generation + 1)))
+            elif termination == "close":
+                await asyncio.wait_for(actor.close(), .5)
+                assert actor._classifier_executor.pending_count == 1, "uncooperative child stays quarantined until exit"
+            else:
+                await take(stream, AsrCommitRequested)
+                assert anchor.deadline_ns == original_deadline
+                assert actor._revisions._recovery_plan is None
+            await asyncio.wait_for(model.cancelled.wait(), .5)
+            assert actor._revisions._recovery_plan is None
+            model.release.set()
+            await asyncio.wait_for(model.finished.wait(), .5)
+            assert actor._revisions._recovery_plan is None, "late success cannot revive any plan"
+    finally:
+        model.release.set()
+        if model.started.is_set():
+            await asyncio.wait_for(model.finished.wait(), .5)
+
+
+@pytest.mark.parametrize("seal", ["endpoint", "idle"])
+@pytest.mark.parametrize("concurrency", [1, 2])
+async def test_vad_stop_before_asr_tail_waits_for_endpoint_or_stable_idle_seal(seal, concurrency):
+    from server.realtime.capabilities.asr import AsrEndpointHint
+    from server.realtime.capabilities.turn_manager import (
+        AsrDiscardRequested,
+        ObserveAsrEvent,
+        ObserveAssistantYielded,
+    )
+    from tests.realtime.test_coordinated_turn_manager import stop, take, text
+
+    class TailModel:
+        def __init__(self):
+            self.requests = []
+            self.release = asyncio.Event()
+
+        async def classify_request(self, request):
+            self.requests.append(request)
+            if not request.transcript.startswith("我只是"):
+                return InterruptionClassification(InterruptionLabel.INTERRUPT, 1)
+            await self.release.wait()
+            return InterruptionClassification(InterruptionLabel.BACKCHANNEL, 1)
+
+    model = TailModel()
+    async with recoverable_actor(model, concurrency=concurrency, confirm_yield=False) as (actor, stream, _owner, overlap):
+        actor._provider._asr_idle_stop_s = .03
+        await stop(actor, overlap)
+        initial_calls = len(model.requests)
+        for revision, transcript in enumerate(["我只是", "我只是随口", "我只是随口附和"], start=2):
+            await text(actor, transcript, revision=revision, ctx=overlap)
+            if revision == 2:
+                await actor.send(ObserveAssistantYielded(context=replace(overlap, response_id="a")))
+            for _ in range(8):
+                await asyncio.sleep(0)
+            assert len(model.requests) == initial_calls, "acoustic stop cannot seal each trailing partial"
+        if seal == "endpoint":
+            await actor.send(ObserveAsrEvent(event=AsrEndpointHint(context=overlap, revision=4, text="我只是随口附和")))
+        model.release.set()
+        await take(stream, AsrDiscardRequested)
+        reviews = model.requests[initial_calls:]
+        assert len(reviews) == 1 and reviews[0].transcript == "我只是随口附和"
+        assert reviews[0].boundary is InterruptionBoundary.SENTENCE_END
+        assert actor._revisions._recovery_plan is not None
