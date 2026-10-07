@@ -34,6 +34,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
 from server.endpoint_session.registry import EndpointSessionRegistry
+from server.observability.recordings import MAX_AUDIO_BYTES, RecordingUnavailable
 from server.observability.telemetry import (
     DebugLogQuery,
     DiagnosticsOverview,
@@ -73,6 +74,8 @@ _SESSION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 VoicePreviewer = Callable[[str, str, int, str], Awaitable[tuple[bytes, str]]]
 SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
 SessionConversationPageReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
+SessionRecordingPageReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
+SessionRecordingAudioReader = Callable[[str, str], Coroutine[Any, Any, bytes]]
 SessionInputEvidenceReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionHistoryDeleter = Callable[[list[str]], Awaitable[dict[str, int]]]
 AvatarAssetHandler = Callable[
@@ -218,15 +221,19 @@ def _build_handler(
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
     session_conversation_page_reader: SessionConversationPageReader | None = None,
+    session_recording_page_reader: SessionRecordingPageReader | None = None,
+    session_recording_audio_reader: SessionRecordingAudioReader | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
             logger.debug("control-plane: " + format, *args)
 
-        def _write_json(self, status: int, payload: object) -> None:
+        def _write_json(self, status: int, payload: object, *, no_store: bool = False) -> None:
             body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            if no_store:
+                self.send_header("Cache-Control", "no-store")
             self.send_header("Access-Control-Allow-Origin", "http://localhost:3000")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -303,6 +310,8 @@ def _build_handler(
             except FutureTimeoutError:
                 logger.warning("control-plane request timed out: path=%s", self.path)
                 self._write_json(504, {"error": "control-plane request timed out"})
+            except RecordingUnavailable as error:
+                self._write_json(error.status, {"error": error.reason}, no_store=True)
             except ValueError:
                 self._write_json(400, {"error": "invalid diagnostics request or cursor"})
             except Exception as error:  # noqa: BLE001 - HTTP error boundary
@@ -475,6 +484,56 @@ def _build_handler(
                     session_input_evidence_reader(session_id, after_sequence, limit), loop
                 )
                 self._write_json(200, evidence_future.result(timeout=_RPC_TIMEOUT_S))
+                return
+            recording_match = re.fullmatch(
+                r"/observability/sessions/([^/]+)/recordings(?:/([^/]+)/audio)?", parsed.path
+            )
+            if recording_match:
+                if (not _is_loopback_host(self.headers.get("Host", ""))
+                    or (self.headers.get("Origin") is not None
+                        and not _is_loopback_origin(self.headers["Origin"]))):
+                    self._write_json(403, {"error": "recording request is not from loopback"}, no_store=True)
+                    return
+                session_id = unquote(recording_match[1])
+                artifact_id = unquote(recording_match[2]) if recording_match[2] else None
+                if any(not _SESSION_ID.fullmatch(value) or value in {".", ".."}
+                       for value in (session_id, artifact_id) if value is not None):
+                    self._write_json(400, {"error": "invalid recording identity"})
+                    return
+                if artifact_id is not None:
+                    if session_recording_audio_reader is None:
+                        raise RecordingUnavailable(503, "recording_audio_not_configured")
+                    recording_audio_future = asyncio.run_coroutine_threadsafe(
+                        session_recording_audio_reader(session_id, artifact_id), loop
+                    )
+                    data = recording_audio_future.result(timeout=_RPC_TIMEOUT_S)
+                    if not isinstance(data, bytes) or not 44 < len(data) <= MAX_AUDIO_BYTES:
+                        raise RecordingUnavailable(503, "recording_integrity_failed")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "audio/wav")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("X-Recording-Session", session_id)
+                    self.send_header("X-Recording-Artifact", artifact_id)
+                    self.send_header("X-Recording-SHA256", hashlib.sha256(data).hexdigest())
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                if session_recording_page_reader is None:
+                    raise RecordingUnavailable(503, "recording_query_not_configured")
+                parameters = parse_qs(parsed.query, keep_blank_values=True)
+                after = parameters.get("after_sequence", ["0"])
+                size = parameters.get("limit", ["200"])
+                if (len(after) != 1 or len(size) != 1
+                    or not re.fullmatch(r"0|[1-9][0-9]{0,18}", after[0])
+                    or not re.fullmatch(r"[1-9][0-9]{0,2}", size[0])
+                    or int(after[0]) > 2**63 - 1 or not 1 <= int(size[0]) <= 200):
+                    raise RecordingUnavailable(400, "invalid_recording_pagination")
+                recording_page_future = asyncio.run_coroutine_threadsafe(
+                    session_recording_page_reader(session_id, int(after[0]), int(size[0])), loop
+                )
+                self._write_json(200, recording_page_future.result(timeout=_RPC_TIMEOUT_S), no_store=True)
                 return
             if parsed.path.startswith("/observability/sessions/") and parsed.path.endswith("/conversation-page"):
                 if session_conversation_page_reader is None:
@@ -697,6 +756,8 @@ def start(
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
     session_conversation_page_reader: SessionConversationPageReader | None = None,
+    session_recording_page_reader: SessionRecordingPageReader | None = None,
+    session_recording_audio_reader: SessionRecordingAudioReader | None = None,
     host: str = "127.0.0.1",
     port: int = 8766,
 ) -> ControlPlaneServer:
@@ -724,6 +785,8 @@ def start(
             diagnostics_health_reader,
             session_input_evidence_reader,
             session_conversation_page_reader,
+            session_recording_page_reader,
+            session_recording_audio_reader,
         ),
         avatar_requests=avatar_requests,
     )

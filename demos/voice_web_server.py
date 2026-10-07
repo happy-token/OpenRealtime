@@ -1815,6 +1815,18 @@ async def _read_session_conversation_page(session_id: str, after_sequence: int, 
     }
 
 
+async def _read_session_recording_page(session_id: str, after_sequence: int, limit: int) -> dict:
+    if _application_runtime is None:
+        raise RuntimeError("application runtime is not started")
+    return await _application_runtime.recordings.read_page(session_id, after_sequence, limit)
+
+
+async def _read_session_recording_audio(session_id: str, artifact_id: str) -> bytes:
+    if _application_runtime is None:
+        raise RuntimeError("application runtime is not started")
+    return await _application_runtime.recordings.read_audio(session_id, artifact_id)
+
+
 async def _read_session_input_evidence(session_id: str, after_sequence: int, limit: int) -> dict:
     if _application_runtime is None:
         raise RuntimeError("application runtime is not started")
@@ -1868,6 +1880,8 @@ if __name__ == "__main__":
         voice_previewer=_preview_voice,
         session_conversation_reader=_read_session_conversation,
         session_conversation_page_reader=_read_session_conversation_page,
+        session_recording_page_reader=_read_session_recording_page,
+        session_recording_audio_reader=_read_session_recording_audio,
         session_input_evidence_reader=_read_session_input_evidence,
         session_history_deleter=_delete_session_history,
         avatar_asset_handler=_handle_avatar_asset_request,

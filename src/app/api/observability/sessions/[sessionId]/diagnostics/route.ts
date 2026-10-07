@@ -55,7 +55,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ ses
     }
     return body;
   }));
-  const report: SessionDiagnosticsReport = { schema_version: 1, session_id: sessionId, telemetry: null, conversation: [], conversation_next_cursor: null, debug_log: null, sources: {} as SessionDiagnosticsReport["sources"], audio: { status: "not-configured" } };
+  const report: SessionDiagnosticsReport = { schema_version: 1, session_id: sessionId, telemetry: null, conversation: [], conversation_next_cursor: null, debug_log: null, sources: {} as SessionDiagnosticsReport["sources"], audio: { status: "not-queried", catalog_url: `/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings` } };
   responses.forEach((result, index) => {
     const name = names[index];
     if (result.status === "fulfilled") {

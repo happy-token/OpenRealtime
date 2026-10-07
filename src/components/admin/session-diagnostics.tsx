@@ -7,6 +7,7 @@ import { buildReplayTurns } from "@/lib/admin-diagnostics";
 import { METRIC_DESCRIPTIONS, formatClock, formatDuration, metricLabel } from "@/lib/observability";
 import { exactDuration, interruptionEvents, measuredSpans, mergeDiagnosticsPage, recordingCollectionNotice, type SessionDiagnosticsReport } from "@/lib/session-diagnostics-report";
 import styles from "./diagnostics-workspace.module.css";
+import { SessionRecordings } from "./session-recordings";
 import { DiagnosticAgentAccess } from "./diagnostic-agent-access";
 
 export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; preview?: SessionDiagnosticsReport }) {
@@ -95,5 +96,6 @@ export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; 
           </div></section>{unassociatedEvents.length ? <section className={styles.panel}><div className={styles.panelhead}><h2>{t("未关联轮次事件")}</h2><span>{unassociatedEvents.length}</span></div>{unassociatedEvents.map(item => <div className={styles.event} key={item.event_id}><strong>{metricLabel(item.name)}</strong><small>{formatClock(item.occurred_at)} · {item.outcome} · {formatDuration(item.duration_ms)}</small><details><summary>{t("查看原始事件")}</summary><pre>{JSON.stringify(item, null, 2)}</pre></details></div>)}</section> : null}<section className={styles.panel}><div className={styles.panelhead}><h2>{t("交给 Agent 排查")}</h2></div><div className={styles.note}><code>GET /api/observability/sessions/{sessionId}/diagnostics</code><p>{t("统一返回对话、模块指标、决策日志及数据源完整度。Agent 使用当前会话专属只读凭据。")}</p><DiagnosticAgentAccess key={sessionId} sessionId={sessionId} preview={Boolean(preview)} /></div></section></div>
       </div>
     </> : null}
+    <SessionRecordings key={`${sessionId}:${revision}`} sessionId={sessionId} preview={Boolean(preview)} />
   </div></WorkspaceShell>;
 }

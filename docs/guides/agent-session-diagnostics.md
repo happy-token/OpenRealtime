@@ -12,7 +12,7 @@ Agent 从文件读取 `endpoint` 和 `authorization_header`，以 `GET` 和 `Aut
 - `conversation`：当前页的已提交对话记录；`conversation_next_cursor` 表示后续页。每条记录的 `journal_sequence` 是十进制字符串，不能转成 JavaScript Number。
 - `debug_log`：决策日志和独立的 `next_cursor`。
 - `sources`：每个来源的可用性和截断状态。缺失数据不代表事件未发生。
-- `audio.status: not-configured`：录音存储尚未接入，不能声称已回放实际语音。
+- `audio.status: not-queried` 与 `audio.catalog_url`：录音目录是独立来源，使用同一请求头查询；该状态不表示录音一定存在或已回放。旧部署可能仍返回 `not-configured`。
 - `collection_health: null`：机器凭据不提供全局采集健康状态。
 
 如 `telemetry.next_cursor` 非空，下次传 `telemetry_cursor`；如 `debug_log.next_cursor` 非空，下次传 `debug_cursor`；如 `conversation_next_cursor` 非空，下次传 `conversation_cursor`。三路分别推进，日志按 `event_id`、对话按 `item_id` 合并去重；没有请求续页的来源不要重复累加。某一路不可用时保留其旧游标和已读记录，成功来源可以继续推进；页面会显示部分失败并允许重试。根据 `sources.*.truncated` 和游标判断是否仍有后续，不能把单页当完整记录。
@@ -24,3 +24,13 @@ HTTP 403 表示授权无效/过期/Session 不匹配；重新联系管理员授�
 部署须同时更新 Next.js 与后台，并由部署者在维护流程中执行新增0035并发索引迁移。自动服务启动不执行迁移；迁移加载器拒绝无效/不兼容索引，详细恢复说明见ADR0149。旧后台没有 `/conversation-page` 时，对话来源明确不可用，不回退未经验证的整线程记录。传统 `/conversation` 数组接口仍保留1000条线程与遥测5000条身份页的保守拒绝策略；统一诊断GET不再使用该旧路径。
 
 管理员授权服务：同源、已登录管理员可以 `POST /api/observability/sessions/{sessionId}/diagnostics/access?agent_id={name}`。响应 201 返回凭据；匿名、非管理员、机器单独调用或来源不匹配返回 403；独立密钥未配置返回 503。凭据绝对有效期 15 分钟，管理员移除权限不立即撤销已签发凭据；轮换独立密钥可以一次撤销全部凭据。当前没有单凭据提前撤销或持久签发审计。
+
+
+[ADR0153](../adr/0153-authorized-session-recording-api-and-player.md)补充当前 Session 录音访问。使用下载文件的 `recordings_endpoint` 或统一响应的 `audio.catalog_url`：
+
+- `GET /api/observability/sessions/{sessionId}/recordings?limit=200&after_sequence=0`，以 `next_cursor` 原样推进 `after_sequence`。序列保持字符串；失败保留游标，不把单页当完整目录。
+- 每条记录包含 `direction`（input/sent）、epoch/speech/stream、sample范围、原轮次/响应、保留期限、临时/持久状态、摘要及保护的 `audio_url`。仅转发白名单字段，不返回对象存储地址。
+- 用相同 Authorization 请求头 GET `audio_url`。到期/删除返回410，缺少原始引用返回404，存储/完整性错误返回503。目录的available表示metadata验证通过，物理对象仍可能读取失败。
+- sent表示物理发送完成，`playback_confirmation=not-inferred`；不能以播放器能播放推断用户当时已听到。客户端确认映射仍待补齐。
+
+管理员详情页的“查看录音”独立加载，可分页、选择一个片段播放；普通Agent凭据无保留/删除能力。Memory存储不跨重启，PG缺对象配置时目录/播放明确不可用。新录音仅适用于更新装配后的新Session，旧Session不回填。部署者需受控执行0035–0037并发索引/保留迁移并同时更新后台与Next；自动启动不执行。真实S3、实际管理员/外部Agent和浏览器音频验收仍待部署验证。

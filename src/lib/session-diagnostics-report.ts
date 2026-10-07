@@ -10,7 +10,7 @@ export interface SessionDiagnosticsReport {
   conversation_next_cursor?: string | null;
   debug_log: DebugLogTimeline | null;
   sources: Record<"telemetry" | "conversation" | "debug_log", { status: "available" | "unavailable" | "not-found"; truncated: boolean; error?: string }>;
-  audio: { status: "not-configured" };
+  audio: { status: "not-configured" | "not-queried"; catalog_url?: string };
 }
 
 /** Only advance requested sources; keep existing records across page retries. */
@@ -54,10 +54,10 @@ export function recordingCollectionNotice(events: TelemetryEvent[]): string {
       || microRemainder(b.occurred_at) - microRemainder(a.occurred_at)
       || (Number.isSafeInteger(b.sequence) ? b.sequence : 0) - (Number.isSafeInteger(a.sequence) ? a.sequence : 0))[0];
   if (latest?.attributes.status === "not-configured") return "此会话未配置录音存储，无法回放。";
-  if (latest?.attributes.status === "failed") return "此会话录音采集异常，已保存的片段可能不完整。回放暂不可用。";
+  if (latest?.attributes.status === "failed") return "此会话录音采集异常，已保存的片段可能不完整。";
   if (latest?.attributes.status === "active" || latest?.attributes.status === "settled") {
-    if (latest.attributes.storage_durable === false) return "此会话使用临时录音存储，服务重启后不保留。回放暂不可用。";
-    if (latest.attributes.storage_durable === true) return "此会话已启用录音采集，回放暂不可用。录音保留 7 天，标记保留的录音可长期保存。";
+    if (latest.attributes.storage_durable === false) return "此会话使用临时录音存储，服务重启后不保留。";
+    if (latest.attributes.storage_durable === true) return "此会话已启用录音采集，录音保留 7 天，标记保留的录音可长期保存。";
   }
   return "当前数据未包含可确认的录音采集状态，无法确认此会话是否已录音。";
 }

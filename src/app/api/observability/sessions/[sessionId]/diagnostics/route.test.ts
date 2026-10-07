@@ -13,7 +13,7 @@ it("rejects malformed session IDs", async () => { expect((await run("../secret")
 it("preserves useful telemetry when conversation and debug log fail", async () => {
   fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [] })).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(Response.json({}, { status: 404 }));
   const response = await run(), report = await response.json();
-  expect(response.status).toBe(200); expect(report.sources.telemetry.status).toBe("available"); expect(report.sources.conversation.status).toBe("unavailable"); expect(report.sources.debug_log.status).toBe("not-found"); expect(report.audio.status).toBe("not-configured");
+  expect(response.status).toBe(200); expect(report.sources.telemetry.status).toBe("available"); expect(report.sources.conversation.status).toBe("unavailable"); expect(report.sources.debug_log.status).toBe("not-found"); expect(report.audio.status).toBe("not-queried");
 });
 it("returns 503 for an infrastructure outage and 404 when no source exists", async () => {
   fetchMock.mockRejectedValue(new Error("offline")); expect((await run()).status).toBe(503);
