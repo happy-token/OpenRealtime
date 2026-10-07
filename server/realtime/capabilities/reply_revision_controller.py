@@ -7,6 +7,7 @@ input and reply; immutable history belongs to the conversation Journal.
 from __future__ import annotations
 
 import hashlib
+import math
 import uuid
 from dataclasses import dataclass, replace
 
@@ -19,10 +20,16 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit, sample_position_us
-from server.core.reply_repair import MAX_CONTEXT_REPAIRS, ReplyRepairPermit
+from server.core.reply_repair import MAX_CONTEXT_REPAIRS, ReplyRecoveryPlan, ReplyRepairPermit
 from server.realtime.protocol.commands import OutputStopFact, transition_output_stop_fact
 from server.realtime.protocol.playback import ReplyPlayback, sentence_identity
 from server.realtime.scope import conversation_scope
+from server.turn_policy.semantic_chunks import semantic_text
+from server.turn_policy.semantic_interruption import (
+    InterruptionBoundary,
+    InterruptionLabel,
+    InterruptionVerdict,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +65,23 @@ class ReplyRevision:
     context_repair_permit: ReplyRepairPermit | None = None
 
 
+@dataclass(slots=True)
+class _InterruptionRecovery:
+    response_id: str
+    owner: InteractionContext
+    input_id: str
+    input_version: int
+    reply_version: int
+    overlap: InteractionContext
+    observation_id: str
+    stopping_revision: int
+    stopping_text: str
+    revision: int
+    text: str
+    deadline_ns: int
+    feedback: InterruptionVerdict | None = None
+
+
 class ReplyRevisionController:
     def __init__(self) -> None:
         self.input: InputRevision | None = None
@@ -65,6 +89,9 @@ class ReplyRevisionController:
         self._reply_context: InteractionContext | None = None
         self._sample_rate_hz: int | None = None
         self._output_stop: OutputStopFact | None = None
+        self._interruption_recovery: _InterruptionRecovery | None = None
+        self._recovery_plan: ReplyRecoveryPlan | None = None
+        self._recovery_plan_basis: tuple[object, ...] | None = None
         self._closed = False
         self._live_started = False
         self._history_sequence = 0
@@ -218,6 +245,7 @@ class ReplyRevisionController:
         self._reply_context = context
         self._sample_rate_hz = None
         self._output_stop = None
+        self._clear_interruption_recovery()
         self.reply = ReplyRevision(
             response_id=response_id, turn_id=context.turn_id, generation=context.generation,
             input_id=current.input_id if current is not None else None,
@@ -290,6 +318,8 @@ class ReplyRevisionController:
             return None
         if self.reply.invalidation_reason == "semantic_stop" and reason in {"response_invalidated", "barge_in_floor_claim"}:
             return self.reply  # Late Core invalidation cannot undo explicit user STOP.
+        if reason != "barge_in_floor_claim":
+            self._clear_interruption_recovery()
         retained = self.reply.sentence_permit if reason == "barge_in_floor_claim" else None
         repair = self.reply.context_repair_permit if reason == "response_invalidated" else None
         if (self.reply.delivery_permitted or self.reply.sentence_permit != retained
@@ -343,6 +373,135 @@ class ReplyRevisionController:
             and fact.current_sentence is not None and fact.current_sentence.sentence_id == permit.sentence_id
             and fact.played_position_samples is not None
             and permit.audio_start_samples < fact.played_position_samples < permit.audio_end_samples)
+
+    def _clear_interruption_recovery(self) -> None:
+        self._interruption_recovery = None
+        self._recovery_plan = None
+        self._recovery_plan_basis = None
+
+    def invalidate_recovery_planning(self) -> None:
+        """New speech/input ownership supersedes any unconsumed recovery intention."""
+        self._clear_interruption_recovery()
+
+    def lock_interruption_recovery(self, response_id: str, overlap: InteractionContext, *,
+                                   observation_id: str, revision: int, text: str,
+                                   stopping_text: str, deadline_ns: int) -> bool:
+        """Freeze the original accepted stop snapshot before revoking delivery."""
+        reply, current, owner = self.reply, self.input, self._reply_context
+        stopping = semantic_text(stopping_text)
+        if (self._closed or self._interruption_recovery is not None or reply is None or current is None or owner is None
+            or reply.response_id != response_id or not reply.delivery_permitted
+            or (reply.input_id, reply.input_version) != (current.input_id, current.input_version)
+            or conversation_scope(overlap) != conversation_scope(owner) or overlap.generation < reply.generation
+            or not observation_id or revision < 1 or deadline_ns < 1
+            or not stopping or not semantic_text(text).startswith(stopping)):
+            return False
+        self._interruption_recovery = _InterruptionRecovery(response_id, owner, current.input_id, current.input_version,
+            reply.reply_version, overlap, observation_id, revision, stopping, revision, text, deadline_ns)
+        return True
+
+    def _matches_recovery_observation(self, context: InteractionContext, observation_id: str) -> bool:
+        anchor = self._interruption_recovery
+        return bool(not self._closed and anchor is not None and observation_id == anchor.observation_id
+            and conversation_scope(context) == conversation_scope(anchor.overlap)
+            and (context.turn_id, context.generation) == (anchor.overlap.turn_id, anchor.overlap.generation))
+
+    def observe_interruption_revision(self, context: InteractionContext, *, observation_id: str,
+                                      revision: int, text: str) -> bool:
+        if not self._matches_recovery_observation(context, observation_id):
+            return False
+        anchor = self._interruption_recovery
+        assert anchor is not None
+        if revision < anchor.revision:
+            return False
+        if revision == anchor.revision:
+            if text != anchor.text:
+                self._clear_interruption_recovery()  # Reused revisions cannot establish fresh proof order.
+                return False
+            return True
+        anchor.revision, anchor.text, anchor.feedback = revision, text, None
+        self._recovery_plan = None
+        self._recovery_plan_basis = None
+        return True
+
+    def observe_recovery_feedback(self, context: InteractionContext, *, observation_id: str,
+                                  revision: int, text: str, verdict: InterruptionVerdict,
+                                  speech_ended: bool, answering_question: bool, confidence_threshold: float) -> bool:
+        """Accept caller-verified full revised feedback, never an old same-batch result."""
+        if isinstance(confidence_threshold, bool) or not math.isfinite(confidence_threshold) or not 0 <= confidence_threshold <= 1:
+            raise ValueError("recovery confidence threshold must be finite and between zero and one")
+        if not self._matches_recovery_observation(context, observation_id):
+            return False
+        anchor = self._interruption_recovery
+        assert anchor is not None
+        revised = semantic_text(text)
+        if (not speech_ended or answering_question or not revised
+            or revision != anchor.revision or text != anchor.text or revision <= anchor.stopping_revision
+            or revised.startswith(anchor.stopping_text)
+            or verdict.source not in {"rule", "model"} or verdict.confidence < confidence_threshold
+            or (verdict.candidate.generation, verdict.candidate.transcript_revision, verdict.candidate.boundary) !=
+                (context.generation, revision, InterruptionBoundary.SENTENCE_END)
+            or semantic_text(verdict.candidate.text) != revised):
+            return False
+        if verdict.label not in {InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE}:
+            # Current complete contrary evidence revokes only the unconsumed plan.
+            # Already-issued physical stop and old delivery revocation stay locked.
+            anchor.feedback = None
+            self._recovery_plan = None
+            self._recovery_plan_basis = None
+            return False
+        anchor.feedback = verdict
+        return True
+
+    def _recovery_state(self, now_ns: int) -> tuple[_InterruptionRecovery, OutputStopFact, ReplyPlayback] | None:
+        anchor, reply, current, stop = self._interruption_recovery, self.reply, self.input, self._output_stop
+        if (self._closed or anchor is None or anchor.feedback is None or reply is None or current is None or stop is None
+            or now_ns >= anchor.deadline_ns or reply.delivery_permitted or reply.invalidation_reason != "barge_in_floor_claim"
+            or (reply.response_id, reply.reply_version, reply.input_id, reply.input_version) !=
+                (anchor.response_id, anchor.reply_version, anchor.input_id, anchor.input_version)
+            or (current.input_id, current.input_version) != (anchor.input_id, anchor.input_version)
+            or stop.state != "STOP_CONFIRMED" or reply.playback is None or not reply.playback.terminal
+            or reply.playback.output_epoch != stop.output_epoch or reply.playback.speech_id != stop.speech_id):
+            return None
+        return anchor, stop, reply.playback
+
+    @staticmethod
+    def _recovery_basis(state: tuple[_InterruptionRecovery, OutputStopFact, ReplyPlayback]) -> tuple[object, ...]:
+        anchor, stop, playback = state
+        return (anchor.observation_id, anchor.revision, anchor.text, anchor.feedback, stop, playback)
+
+    def recovery_plan_current(self, plan: ReplyRecoveryPlan, *, now_ns: int) -> bool:
+        state = self._recovery_state(now_ns)
+        return bool(state is not None and self._recovery_plan == plan and self._recovery_plan_basis == self._recovery_basis(state))
+
+    def plan_misinterruption_recovery(self, *, now_ns: int) -> ReplyRecoveryPlan | None:
+        """Emit one immutable plan per current fact set; execution needs separate admission."""
+        state = self._recovery_state(now_ns)
+        if state is None:
+            return None
+        basis = self._recovery_basis(state)
+        if self._recovery_plan is not None and self._recovery_plan_basis == basis:
+            return None
+        anchor, stop, playback = state
+        assert anchor.feedback is not None
+        exact = (playback.position_precision == "sample" and playback.played_position_samples == stop.played_position_samples
+                 and playback.sample_rate_hz is not None)
+        response_id = str(uuid.uuid4())
+        plan = ReplyRecoveryPlan(plan_id=str(uuid.uuid4()), source_context=anchor.owner, trigger_context=anchor.overlap,
+            response_context=replace(anchor.owner, generation=max(anchor.owner.generation, anchor.overlap.generation) + 1,
+                                     response_id=response_id),
+            predecessor_response_id=anchor.response_id, input_id=anchor.input_id, input_version=anchor.input_version,
+            predecessor_reply_version=anchor.reply_version, observation_id=anchor.observation_id,
+            transcript_revision=anchor.revision, revised_text_sha256=hashlib.sha256(anchor.text.encode("utf-8")).hexdigest(),
+            feedback_label="backchannel" if anchor.feedback.label is InterruptionLabel.BACKCHANNEL else "ignore",
+            feedback_source="rule" if anchor.feedback.source == "rule" else "model", feedback_confidence=anchor.feedback.confidence,
+            stop_command_id=stop.stop_command_id, stopped_output_epoch=stop.output_epoch,
+            operation_sequence=stop.operation_sequence, output_epoch=str(uuid.uuid4()), confirmed_text_end=playback.confirmed_text_end,
+            played_audio_end_us=playback.played_audio_end_us, position_precision="sample" if exact else "unknown",
+            played_position_samples=playback.played_position_samples if exact else None,
+            sample_rate_hz=playback.sample_rate_hz if exact else None, deadline_ns=anchor.deadline_ns)
+        self._recovery_plan, self._recovery_plan_basis = plan, basis
+        return plan
 
     @property
     def output_stop(self) -> OutputStopFact | None:

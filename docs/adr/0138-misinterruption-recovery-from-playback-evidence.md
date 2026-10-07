@@ -23,3 +23,7 @@ STOP_REQUESTED即锁定业务动作，客户端回执更新为STOP_CONFIRMED；�
 ## 2026-10-07前置事实边界
 
 [ADR0144](0144-canonical-output-stop-observation.md)将 canonical 已保存停播事实沿原会话包装链送入现有 actor/ReplyRevisionController，并以服务端操作顺序隔离乱序和旧会话。事实不授予播放/恢复许可；新 ASR 证据的恢复规划、新回复/epoch及完整异常出口尚未实施，G4保持开放。
+
+## 2026-10-07新证据规划边界
+
+[ADR0145](0145-fresh-evidence-recovery-planning.md)已实现原停止快照、实质 ASR 改写、完整可靠反馈及 confirmed stop/终态播放的不可变恢复计划。真实 actor 当前仅规则反馈；计划不发执行许可、不启动新回复、不切换实际 epoch。新模型复核、消费/执行与完整异常出口继续待实施，G4仍开放。

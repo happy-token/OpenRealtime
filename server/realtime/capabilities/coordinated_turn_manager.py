@@ -644,6 +644,7 @@ class CoordinatedTurnManagerSession:
 
     def _ensure_input(self, context: InteractionContext) -> _Input:
         if self._input is None:
+            self._revisions.invalidate_recovery_planning()
             self._input = _Input(str(uuid.uuid4()), context, self._response_id, assistant_text_at_onset=self._assistant_text)
             identity = self._input.identity
 
@@ -712,6 +713,14 @@ class CoordinatedTurnManagerSession:
                 )
             )
             self._state = state
+
+    def _record_recovery_plan(self) -> None:
+        if (self._closed or self._evidence_fault_reported or self._revision_evidence_failure is not None
+            or self._evidence is not None and self._evidence.failure):
+            return
+        plan = self._revisions.plan_misinterruption_recovery(now_ns=time.monotonic_ns())
+        if plan is not None:
+            self._record_revision("reply_recovery_planned", plan.source_context, asdict(plan))
 
     async def _resume_context_repair(self) -> None:
         ready = self._deferred_context_repair
@@ -1055,6 +1064,7 @@ class CoordinatedTurnManagerSession:
                     if detail[field] is not None:
                         detail[field] = detail[field].isoformat()
                 self._record_revision("reply_output_stop_observed", fact.context, detail)
+                self._record_recovery_plan()
             return
         if isinstance(event, ObserveAssistantPlayback):
             item = self._input
@@ -1112,6 +1122,7 @@ class CoordinatedTurnManagerSession:
                     item.sentence_wait_playback = None
                     self._cancel("sentence_expiry", "sentence_stop_ack")
                     await self._advance(item)
+            self._record_recovery_plan()
             return
         if isinstance(event, ObserveAssistantSpokenText):
             reply = self._revisions.reply
@@ -1158,6 +1169,7 @@ class CoordinatedTurnManagerSession:
             item.vad_observed = True
             item.timestamp_us = max(item.timestamp_us, observation.audio_timestamp_us)
             if isinstance(observation, VadSpeechStarted):
+                self._revisions.invalidate_recovery_planning()
                 item.speech_started_ns = item.speech_started_ns or time.monotonic_ns()
                 item.speech_ended_ns = None
                 self._prefetch.invalidate("speech_resumed")
@@ -1401,6 +1413,7 @@ class CoordinatedTurnManagerSession:
         item.provider_endpoint |= isinstance(event, AsrEndpointHint)
         item.timestamp_us = max(item.timestamp_us, getattr(event, "audio_timestamp_us", 0))
         if changed:
+            self._revisions.observe_interruption_revision(item.context, observation_id=item.identity, revision=event.revision, text=text)
             self._prefetch.observe_text(text)
             item.text, item.revision = text, event.revision
             if item.sentence_wait is not None and (
@@ -1828,6 +1841,11 @@ class CoordinatedTurnManagerSession:
         if permit is not None:
             self._prefetch.invalidate("sentence_handoff_wait")
             self._timer("sentence_expiry", (permit.expires_at_ns - time.monotonic_ns()) / 1e6, item)
+        if (item.verdict is not None and item.verdict.label in {InterruptionLabel.INTERRUPT, InterruptionLabel.CORRECTION}
+            and item.verdict.source != "fallback" and item.verdict.confidence >= self._provider._semantic_interruption_threshold):
+            self._revisions.lock_interruption_recovery(item.target_response, item.context, observation_id=item.identity,
+                revision=item.revision, text=item.text, stopping_text=item.verdict.candidate.text,
+                deadline_ns=time.monotonic_ns() + int(self._provider.recovery_timeout_ms * 1_000_000))
         self._revoke_response(item.target_response, reason="barge_in_floor_claim")
         self._timer("yield_ack", self._provider.recovery_timeout_ms, item)
         await self._outbox.put(
@@ -1865,6 +1883,15 @@ class CoordinatedTurnManagerSession:
                     sealed_rule = self._interruption_decider.match_rule(
                         self._rule_context(item, InterruptionBoundary.SENTENCE_END))
                     explicit_stop = sealed_rule is not None and sealed_rule.label is InterruptionLabel.STOP
+                    if sealed_rule is not None and sealed_rule.label in {InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE}:
+                        self._revisions.observe_recovery_feedback(item.context, observation_id=item.identity,
+                            revision=item.revision, text=item.text, verdict=InterruptionVerdict(
+                                InterruptionCandidate(item.text, item.context.generation, item.revision, InterruptionBoundary.SENTENCE_END),
+                                sealed_rule, "rule"), speech_ended=not item.speech_active and item.stop is not None,
+                            answering_question=sealed_rule.label is InterruptionLabel.BACKCHANNEL and any(
+                                mark in item.assistant_text_at_onset for mark in ("?", "？")),
+                            confidence_threshold=self._provider._semantic_interruption_threshold)
+                        self._record_recovery_plan()
                     action = InterruptionDisposition(False, sealed_rule is None or sealed_rule.label
                         not in {InterruptionLabel.STOP, InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE})
                 if (action.admit_input and not action.stop_response
