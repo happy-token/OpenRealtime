@@ -51,7 +51,7 @@ class RecoveryTts:
 
 @pytest.mark.parametrize("endpoint_session", [False, True])
 @pytest.mark.parametrize("facts_first", [False, True])
-@pytest.mark.parametrize("followup", ["none", "replay", "next_input", "new_vad", "stale_vad", "recover_again"])
+@pytest.mark.parametrize("followup", ["none", "replay", "next_input", "new_vad", "stale_vad", "recover_again", "unknown_stop", "stale_stop", "missing_receipt"])
 async def test_actual_pipeline_recovers_original_input_under_new_reply_and_output_epoch(monkeypatch, facts_first, followup, endpoint_session):
     brain = RepairBrain(generation_finished=True)
     journal, store = InMemoryConversationJournal(), InMemorySpeechDeliveryStore()
@@ -89,7 +89,8 @@ async def test_actual_pipeline_recovers_original_input_under_new_reply_and_outpu
     endpoint = InMemoryEndpointSession("recovery-test", transport, transport.receive(), buffer_outbound_frames=False) if endpoint_session else transport
     epoch = endpoint.output_epoch if endpoint_session else "epoch"
     bridge = RealtimeWebSocketFrameBridge(context=context(), conversation=conversation,
-        transport=endpoint, output_epoch=epoch, precise_output_stop=True)
+        transport=endpoint, output_epoch=epoch, precise_output_stop=True,
+        output_stop_timeout_ms=50 if followup == "missing_receipt" else 1500)
 
     started_events = []
 
@@ -121,8 +122,12 @@ async def test_actual_pipeline_recovers_original_input_under_new_reply_and_outpu
         await wait_for(lambda: actor._input.yielded)
 
         async def stopped():
+            if followup == "missing_receipt":
+                return
+            outcome = "unknown" if followup == "unknown_stop" else "stale" if followup == "stale_stop" else "queue_stopped"
             await bridge.handle_inbound(OutputStopResult(output_epoch=epoch, speech_id=speech, generation=1,
-                stop_command_id=request.stop_command_id, outcome="queue_stopped", played_position_samples=2000))
+                stop_command_id=request.stop_command_id, outcome=outcome,
+                played_position_samples=2000 if outcome == "queue_stopped" else None))
 
         if facts_first:
             await stopped()
@@ -132,6 +137,21 @@ async def test_actual_pipeline_recovers_original_input_under_new_reply_and_outpu
         if not facts_first:
             assert len(brain.turns) == 1, "no continuation before actual physical stop and projection"
             await stopped()
+        if followup in {"unknown_stop", "stale_stop", "missing_receipt"}:
+            await wait_for(lambda: bridge._output_failure.is_set() and actor._revisions.output_stop is not None
+                and actor._revisions.output_stop.state == "STOP_UNKNOWN")
+            fact = actor._revisions.output_stop
+            assert fact.stop_command_id == request.stop_command_id
+            assert len(brain.turns) == 1 and not actor.response_delivery_allowed(previous.response_id)
+            assert not any(frame.type == "output_epoch_started" for frame in transport.frames)
+            # A late confirmation cannot turn the immutable failed operation
+            # into recovery permission, even with fresh reliable feedback.
+            await bridge.handle_inbound(OutputStopResult(output_epoch=epoch, speech_id=speech, generation=1,
+                stop_command_id=request.stop_command_id, outcome="queue_stopped", played_position_samples=2000))
+            await asyncio.sleep(0)
+            assert actor._revisions.output_stop == fact
+            assert len(brain.turns) == 1 and bridge._stop_output_failed
+            return
         if followup == "new_vad":
             await wait_for(lambda: new_speech_seen.is_set() and core._response_task is None)
             assert len(brain.turns) == 1

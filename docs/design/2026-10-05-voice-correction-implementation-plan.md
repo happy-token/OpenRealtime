@@ -158,3 +158,5 @@
 同日继续接入[规则未命中的独立全文模型复核](../reports/2026-10-07-fresh-recovery-model-review.md)：仅实质改写在ASR句尾/当前idle稳定封口后发起，不逐partial；独立token隔离旧停止批，共享原分类资源和首次恢复截止。新输入/语音/回复/关闭/超时撤销；可靠STOP纯控制，失败/重要输入保留提交。全量Python2464 passed/69 skipped/3 subtests；实际恢复消费与物理新epoch仍待实施，G4及其他轨道保持开放。
 
 2026-10-07继续完成[实际误打断恢复执行](../reports/2026-10-07-misinterruption-recovery-execution.md)，采用[ADR0146](../adr/0146-recovery-execution-and-output-epoch.md)：原USER租约与执行租约分离，复用许可/原截止及副作用屏障，新版本/播放epoch按已确认停播后有序切换。实际Endpoint发送锁内核附着，失败同步封锁PCM；准备中新语音撤权、旧VAD隔离、完成后幂等、下一轮真实UserText和连续恢复已补。真实Chrome文本/语音恢复及原句末4场景共6项通过。完整未知停播/断连/非合作供应商和renderer矩阵及G4仍开放；其他全量轨道保持原验收要求。
+
+执行批次提交`43bb066`后继续补12项未知/过期/缺失停播回执生产组合与迟到成功不可重开回归。该子集不再列为“完全未覆盖”；完整未知位置策略、断连/失配/非合作/真实renderer矩阵仍按G4验收，阶段4不关闭。

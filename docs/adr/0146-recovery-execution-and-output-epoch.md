@@ -25,3 +25,5 @@ Bridge必须已有同 stop_command_id、原 speech/generation/epoch 的 STOP_CON
 真实受控 Journal/Managed/Core/actor/Bridge/Endpoint覆盖两种证据到达顺序、恢复完成后重放、下一轮 UserText、准备期间新/旧VAD、连续两次恢复及旧epoch回执隔离。真实Chrome/WebSocket/WebAudio验证文本和语音路径的新epoch先于PCM、播放回执使用新epoch、麦克风保持开启；原句末交接四场景继续通过。
 
 失败回归覆盖不支持轮换、CAS失败、截止、目标不符、等待发送锁时换连接、通知阻塞/失败和正常关闭。完整非合作IO/供应商、实际录音/数字人renderer、未知停播及断连组合矩阵仍需按实验计划验收；本批不关闭G4，也不启用既有默认关闭的句末切换开关。
+
+同日提交后补充12项实际生产组合：unknown/stale/缺失回执在反馈前后到达，正式Endpoint和普通transport都保存STOP_UNKNOWN并进入有界失败出口；迟到成功回执不能重开。这是已验证的G4异常子集，不替代全部断连/非合作/renderer矩阵。
