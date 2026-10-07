@@ -254,9 +254,12 @@ class ApplicationRuntime:
         debug_log = self.debug_log.collection_health()
         return {"status": "degraded" if telemetry["status"] != "ok" or debug_log["status"] != "ok" else "ok", "telemetry": telemetry, "debug_log": debug_log}
 
-    async def session_history_scope(self, voice_session_id: str, *, tenant_id: str, user_id: str) -> JournalScope:
+    async def session_history_scope(self, voice_session_id: str, *, tenant_id: str, user_id: str,
+                                    require_complete: bool = False) -> JournalScope:
         """Resolve server-recorded identity, never reconstruct it from the admin account."""
         detail = await self.diagnostics.session_detail(voice_session_id)
+        if require_complete and detail is not None and detail.next_cursor is not None:
+            raise ValueError("session history identity is incomplete")
         if detail is not None and detail.events:
             scopes = {JournalScope(event.tenant_id, event.user_id, event.thread_id) for event in detail.events}
             if len(scopes) != 1:

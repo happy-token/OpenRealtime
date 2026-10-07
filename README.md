@@ -460,6 +460,8 @@ Use `pnpm test:voice:live` only when `DOUBAO_API_KEY` and/or
 
 ## 知识、记忆与数据管理
 
+会话诊断位于设置侧边栏。管理员可在会话详情生成15分钟、仅该Session可用的Agent只读凭据；部署配置和分页排查见[Agent会话诊断说明](docs/guides/agent-session-diagnostics.md)。录音存储接入仍在实施中。
+
 - [数据管理指南](docs/DATA-MANAGEMENT-GUIDE.md)：知识增删改、记忆增加与归零、历史区别、API 和备份恢复。
 - [知识库指南](docs/KNOWLEDGE-BASE-GUIDE.md)：文件和网页导入、检索、角色绑定。
 - [Memory 与续聊](docs/MEMORY-AND-HISTORY-GUIDE.md)：验证多轮上下文与跨会话记忆。

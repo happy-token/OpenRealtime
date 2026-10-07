@@ -9,4 +9,7 @@ it("renders remaining logs without crashing when telemetry is unavailable", () =
   const html = renderToStaticMarkup(<SessionDiagnostics sessionId="test" preview={report} />);
   expect(html).toContain("会话详情");
   expect(html).toContain("没有记录或数据源不可用");
+  expect(html).toContain("生成 Agent 只读凭据");
+  expect(html).toContain("预览页面不签发凭据。");
+  expect(html).toMatch(/<button disabled="">生成 Agent 只读凭据<\/button>/);
 });

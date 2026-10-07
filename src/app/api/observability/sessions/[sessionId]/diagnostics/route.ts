@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentAppAdmin } from "@/lib/admin-server";
+import { isDiagnosticSessionId, verifyDiagnosticsAccess } from "@/lib/diagnostics-access";
 import type { SessionDiagnosticsReport } from "@/lib/session-diagnostics-report";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function GET(request: NextRequest, context: { params: Promise<{ sessionId: string }> }) {
-  try {
-    if (!await currentAppAdmin(request)) return NextResponse.json({ error: "未授权" }, { status: 403 });
-  } catch { return NextResponse.json({ error: "管理员权限服务暂时不可用" }, { status: 503 }); }
   const { sessionId } = await context.params;
-  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(sessionId)) return NextResponse.json({ error: "Session ID 无效" }, { status: 400 });
+  const authorization = request.headers.get("authorization");
+  const machineRequest = authorization !== null;
+  if (machineRequest) {
+    const token = /^Bearer (\S+)$/i.exec(authorization)?.[1];
+    if (!token || !verifyDiagnosticsAccess(token, sessionId, process.env.OPENREALTIME_DIAGNOSTICS_ACCESS_SECRET))
+      return NextResponse.json({ error: "未授权" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  } else {
+    try {
+      if (!await currentAppAdmin(request)) return NextResponse.json({ error: "未授权" }, { status: 403 });
+    } catch { return NextResponse.json({ error: "管理员权限服务暂时不可用" }, { status: 503 }); }
+  }
+  if (!isDiagnosticSessionId(sessionId)) return NextResponse.json({ error: "Session ID 无效" }, { status: 400 });
   const base = process.env.VOICEAGENT_CONTROL_PLANE_URL ?? "http://127.0.0.1:8766";
   const names = ["telemetry", "conversation", "debug_log"] as const;
   const telemetryCursor = request.nextUrl.searchParams.get("telemetry_cursor");
@@ -21,6 +30,13 @@ export async function GET(request: NextRequest, context: { params: Promise<{ ses
     const body = await response.json();
     const valid = index === 0 ? body && body.summary && Array.isArray(body.events) : index === 1 ? Array.isArray(body) : body && Array.isArray(body.entries);
     if (!valid) throw new Error("unavailable");
+    if (machineRequest) {
+      const scoped = index === 0
+        ? body.summary.voice_session_id === sessionId && body.events.every((event: { voice_session_id?: string } | null) => event?.voice_session_id === sessionId)
+        : index === 1 ? body.every((item: { voice_session_id?: string } | null) => item?.voice_session_id === sessionId)
+          : body.voice_session_id === sessionId && body.entries.every((entry: { voice_session_id?: string } | null) => entry?.voice_session_id === sessionId);
+      if (!scoped) throw new Error("unavailable");
+    }
     return body;
   }));
   const report: SessionDiagnosticsReport = { schema_version: 1, session_id: sessionId, telemetry: null, conversation: [], debug_log: null, sources: {} as SessionDiagnosticsReport["sources"], audio: { status: "not-configured" } };
@@ -34,9 +50,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ ses
     } else report.sources[name] = { status: result.reason?.message === "not-found" ? "not-found" : "unavailable", truncated: false, error: "数据源不可用或没有记录" };
   });
   try {
-    const health = await fetch(new URL("/observability/health", base), { cache: "no-store", signal: AbortSignal.timeout(3000) });
-    const body = health.ok ? await health.json() : null;
-    report.collection_health = body?.telemetry && body?.debug_log ? body : null;
+    if (machineRequest) {
+      // Global collection health is outside a single-session grant.
+      report.collection_health = null;
+    } else {
+      const health = await fetch(new URL("/observability/health", base), { cache: "no-store", signal: AbortSignal.timeout(3000) });
+      const body = health.ok ? await health.json() : null;
+      report.collection_health = body?.telemetry && body?.debug_log ? body : null;
+    }
   } catch { report.collection_health = null; }
   const hasContent = Boolean(report.telemetry || report.conversation.length || report.debug_log?.entries.length);
   if (!hasContent && report.sources.telemetry.status === "not-found" && !names.some(name => report.sources[name].status === "unavailable")) return NextResponse.json({ ...report, error: "未找到该会话" }, { status: 404, headers: { "Cache-Control": "no-store" } });

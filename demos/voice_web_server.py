@@ -1744,17 +1744,27 @@ async def _handle_avatar_asset_request(
 
 
 async def _read_session_conversation(session_id: str) -> list[dict]:
-    """Project the authoritative Conversation Journal for admin replay."""
+    """Project only this Voice Session, including when it continued a shared thread."""
     if _application_runtime is None:
         return []
-    scope = JournalScope(
+    await _application_runtime.telemetry.flush()
+    scope = await _application_runtime.session_history_scope(
+        session_id,
         tenant_id=os.environ.get("VOICEAGENT_TENANT_ID", "local"),
         user_id=os.environ.get("VOICEAGENT_USER_ID", "local-user"),
-        thread_id=session_id,
+        require_complete=True,
     )
     items = await _application_runtime.journal.read(scope, limit=1000)
+    if len(items) == 1000 and await _application_runtime.journal.read(
+        scope, after_sequence=items[-1].sequence, limit=1,
+    ):
+        # The legacy array API has no cursor. Do not claim a filtered prefix is
+        # complete, or silently hide a continued Session beyond this window.
+        raise RuntimeError("conversation replay limit exceeded")
     projected: list[dict] = []
     for item in items:
+        if item.context.voice_session_id != session_id:
+            continue
         if item.kind not in {
             ConversationItemKind.USER_INPUT,
             ConversationItemKind.ASSISTANT_OUTPUT,
@@ -1768,6 +1778,7 @@ async def _read_session_conversation(session_id: str) -> list[dict]:
         projected.append(
             {
                 "item_id": item.item_id,
+                "voice_session_id": item.context.voice_session_id,
                 "role": (
                     "user"
                     if item.kind is ConversationItemKind.USER_INPUT
