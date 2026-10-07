@@ -265,6 +265,7 @@ class ManagedRealtimeConversation:
         self._send_lock = asyncio.Lock()
         self._stop_fact_writes: set[asyncio.Task[None]] = set()
         self._close_completed = False
+        self._close_task: asyncio.Task[None] | None = None
         self._active_response_ids: set[str] = set()
         self._active_speech_ids: set[str] = set()
         self._outputs_quiet = asyncio.Event()
@@ -565,22 +566,33 @@ class ManagedRealtimeConversation:
 
     async def close(self) -> None:
         async with self._send_lock:
-            if self._closed:
-                return
-            self._closed = True
-            try:
-                await self._settle_stop_fact_writes()
-                recovery_task = self._recovery_task
-                current_task = asyncio.current_task()
-                if (
-                    recovery_task is not None
-                    and recovery_task is not current_task
-                    and not recovery_task.done()
-                ):
-                    recovery_task.cancel()
-                    await asyncio.gather(recovery_task, return_exceptions=True)
-                await self._conversation.close()
-                await self._event_pump
-            finally:
+            if self._close_task is None:
+                if self._closed:
+                    return
+                self._closed = True
+                self._active_conversations.suspend(context=self._context, conversation=self)
+                self._close_task = asyncio.create_task(self._close_owned(), name="managed-realtime-close")
+                self._close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+            close_task = self._close_task
+        await asyncio.shield(close_task)
+
+    async def _close_owned(self) -> None:
+        delegate_closed = False
+        try:
+            await self._settle_stop_fact_writes()
+            recovery_task = self._recovery_task
+            current_task = asyncio.current_task()
+            if recovery_task is not None and recovery_task is not current_task and not recovery_task.done():
+                recovery_task.cancel()
+                await asyncio.gather(recovery_task, return_exceptions=True)
+            await self._conversation.close()
+            await self._event_pump
+            delegate_closed = True
+        finally:
+            if delegate_closed:
                 self._finish_close_ownership()
-                await self._events.put(_CLOSED)
+            else:
+                self._event_pump.cancel()
+                await asyncio.gather(self._event_pump, return_exceptions=True)
+            # A failed delegate close keeps the suspended deletion guard owned.
+            await self._events.put(_CLOSED)

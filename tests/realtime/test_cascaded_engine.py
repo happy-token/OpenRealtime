@@ -922,8 +922,20 @@ async def test_barge_in_stops_playback_even_after_response_generation_completed(
     await conversation.close()
 
 
-async def test_failed_empty_response_releases_tts_before_the_next_turn() -> None:
-    brain = EmptyThenTextBrain()
+@pytest.mark.parametrize("cache_mode", ["bare", "speech_direct", "speech_prepared"])
+async def test_failed_empty_response_releases_tts_before_the_next_turn(cache_mode) -> None:
+    from server.realtime.capabilities.speculative_speech import SpeculativeSpeechPipeline
+
+    class EmptyFirstTurnBrain:
+        async def stream(self, turn):
+            if turn.text == "第1轮":
+                return
+            yield "第二轮可以正常回复"
+
+    provider = EmptyFirstTurnBrain()
+    tts = EchoDuplexTts()
+    brain = (provider if cache_mode == "bare" else
+             SpeculativeSpeechPipeline(brain=provider, tts=tts))
     core = await CascadedRealtimeEngine(
         vad=LegacyVadCapabilityAdapter(
             lambda: EnergyVad(
@@ -934,7 +946,7 @@ async def test_failed_empty_response_releases_tts_before_the_next_turn() -> None
         turn_manager=LegacyTurnManagerCapabilityAdapter(TurnPolicy),
         brain=LegacyBrainCapabilityAdapter(brain),
         speech_renderer=DeterministicSpeechRenderer(),
-        tts=LegacyTtsCapabilityAdapter(EchoDuplexTts()),
+        tts=LegacyTtsCapabilityAdapter(tts if cache_mode == "bare" else brain),
     ).open(context=context(), profile=None)
     conversation = JournaledRealtimeConversation(
         context=context(),
@@ -966,6 +978,9 @@ async def test_failed_empty_response_releases_tts_before_the_next_turn() -> None
         )
         while not isinstance(await anext(events), ItemProjected):
             pass
+        if cache_mode == "speech_prepared" and generation == 1:
+            turn = await core._turn_for_prefetch("第1轮", generation)
+            await brain.prepare(turn)
         await conversation.send(
             RequestResponse(
                 command_id=f"response-{generation}",

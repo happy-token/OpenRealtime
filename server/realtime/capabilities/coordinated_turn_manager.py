@@ -322,6 +322,7 @@ class CoordinatedTurnManagerSession:
         self._jobs = self._tasks.jobs
         self._all_jobs = self._tasks.all_tasks
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
         self._failure: Exception | None = None
         self._deferred_input: list[ObserveVadEvent | ObserveAsrEvent] = []
         self._evidence_fault_reported = False
@@ -1837,9 +1838,13 @@ class CoordinatedTurnManagerSession:
         await self._project(item.context)
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
+        if self._close_task is None:
+            self._closed = True
+            self._close_task = asyncio.create_task(self._close_owned(), name="coordinated-turn-close")
+            self._close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        await asyncio.shield(self._close_task)
+
+    async def _close_owned(self) -> None:
         self._deferred_context_repair = None
         self._revisions.close()
         tasks = [self._actor, *self._all_jobs]
@@ -1852,17 +1857,26 @@ class CoordinatedTurnManagerSession:
         if pending:
             logger.warning("Turn coordinator closed with %d uncooperative tasks", len(pending))
         self._tasks.clear()
-        residual_classifiers = await self._classifier_executor.close()
-        if residual_classifiers:
-            logger.warning("Turn coordinator closed with %d quarantined classifiers", residual_classifiers)
-        await self._prefetch.close()
+        closers = [self._classifier_executor.close(), self._prefetch.close()]
         if self._evidence is not None:
-            missing = await self._evidence.close()
-            if missing:
-                logger.warning("Input evidence closed with %d uncommitted records", missing)
-        self._input = None
-        self._response_id = None
-        # Closing must not depend on a consumer draining the output queue.
-        while not self._outbox.empty():
-            self._outbox.get_nowait()
-        await self._outbox.put(_CLOSED)
+            closers.append(self._evidence.close())
+        try:
+            results = await asyncio.gather(*closers, return_exceptions=True)
+            errors = [result for result in results if isinstance(result, Exception)]
+            if any(isinstance(result, asyncio.CancelledError) for result in results):
+                errors.append(RuntimeError("turn coordinator resource close was cancelled before confirmation"))
+            if isinstance(results[0], int) and results[0]:
+                logger.warning("Turn coordinator closed with %d quarantined classifiers", results[0])
+            if len(results) > 2 and isinstance(results[2], int) and results[2]:
+                logger.warning("Input evidence closed with %d uncommitted records", results[2])
+            if len(errors) == 1:
+                raise errors[0]
+            if errors:
+                raise ExceptionGroup("turn coordinator resource close failed", errors)
+        finally:
+            self._input = None
+            self._response_id = None
+            # Independent queues/storage still terminate if prefetch close fails.
+            while not self._outbox.empty():
+                self._outbox.get_nowait()
+            self._outbox.put_nowait(_CLOSED)

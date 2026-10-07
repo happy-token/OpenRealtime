@@ -247,6 +247,11 @@ class VoiceRuntimeBrainStreamingAdapter:
         self._last_slow_ack: tuple[int, str, float] | None = None
         self._slow_tool_ack_cursors: dict[str, int] = {}
 
+    async def close(self) -> None:
+        close = getattr(self._chat, "close", None)
+        if close is not None:
+            await close()
+
     async def prepare(self, turn: TurnContent) -> bool:
         """Speculate only on the side-effect-free ordinary-chat branch."""
 

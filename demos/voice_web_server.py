@@ -1233,6 +1233,7 @@ def _build_realtime_session(
                 speculative_speech = SpeculativeSpeechPipeline(
                     brain=base_streaming_brain,
                     tts=tts,
+                    observer=observe_prefetch,
                 )
                 streaming_brain = speculative_speech
                 tts_capability_engine = speculative_speech

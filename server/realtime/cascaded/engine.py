@@ -382,6 +382,7 @@ class CascadedRealtimeConversation:
         self._settled_input_response_ids: set[str] = set()
         self._playback_watchdog_tasks: dict[str, asyncio.Task[None]] = {}
         self._closed = False
+        self._conversation_close_task: asyncio.Task[None] | None = None
         self._input_task = asyncio.create_task(
             self._pump_input(),
             name=f"cascaded-input-{context.voice_session_id}",
@@ -2410,46 +2411,55 @@ class CascadedRealtimeConversation:
                 yield typed_event
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._input_task.cancel()
-        tasks = [self._input_task]
-        if self._plugin_task is not None:
-            self._plugin_task.cancel()
-            tasks.append(self._plugin_task)
-        if self._response_task is not None:
-            self._response_task.cancel()
-            tasks.append(self._response_task)
-        for task in self._detached_response_tasks:
-            task.cancel()
-            tasks.append(task)
-        self._detached_response_tasks.clear()
-        for task in self._tts_stop_tasks.values():
-            if task not in tasks:
+        if self._conversation_close_task is None:
+            self._closed = True
+            self._conversation_close_task = asyncio.create_task(self._close_owned(), name="cascaded-conversation-close")
+            self._conversation_close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        await asyncio.shield(self._conversation_close_task)
+
+    async def _close_owned(self) -> None:
+        try:
+            self._input_task.cancel()
+            tasks = [self._input_task]
+            if self._plugin_task is not None:
+                self._plugin_task.cancel()
+                tasks.append(self._plugin_task)
+            if self._response_task is not None:
+                self._response_task.cancel()
+                tasks.append(self._response_task)
+            for task in self._detached_response_tasks:
+                task.cancel()
                 tasks.append(task)
-        if self._external_tts_task is not None:
-            self._external_tts_task.cancel()
-            tasks.append(self._external_tts_task)
-        for task in self._playback_watchdog_tasks.values():
-            task.cancel()
-            tasks.append(task)
-        self._playback_watchdog_tasks.clear()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await self._speech_lifecycle.close()
-        for speech_id in tuple(self._unsettled_model_speech_ids):
-            await self._speech_deliveries.mark_uncertain(
-                speech_id,
-                reason="conversation_closed_before_playback_terminal",
+            self._detached_response_tasks.clear()
+            for task in self._tts_stop_tasks.values():
+                if task not in tasks:
+                    tasks.append(task)
+            if self._external_tts_task is not None:
+                self._external_tts_task.cancel()
+                tasks.append(self._external_tts_task)
+            for task in self._playback_watchdog_tasks.values():
+                task.cancel()
+                tasks.append(task)
+            self._playback_watchdog_tasks.clear()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._speech_lifecycle.close()
+            for speech_id in tuple(self._unsettled_model_speech_ids):
+                await self._speech_deliveries.mark_uncertain(
+                    speech_id,
+                    reason="conversation_closed_before_playback_terminal",
+                )
+            self._unsettled_model_speech_ids.clear()
+            await asyncio.gather(
+                self._input_pipeline.close(),
+                self._brain.close(),
+                self._tts.close(),
+                *( (self._audio_graph.close(),) if self._audio_graph is not None else () ),
             )
-        self._unsettled_model_speech_ids.clear()
-        await asyncio.gather(
-            self._input_pipeline.close(),
-            self._brain.close(),
-            self._tts.close(),
-            *( (self._audio_graph.close(),) if self._audio_graph is not None else () ),
-        )
-        await self._events.put(_CLOSED)
+        finally:
+            if self._events.full():
+                while not self._events.empty():
+                    self._events.get_nowait()
+            self._events.put_nowait(_CLOSED)
 
 
 def _profile_binding(

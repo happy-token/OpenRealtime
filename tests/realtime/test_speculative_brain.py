@@ -75,7 +75,8 @@ async def test_uncooperative_producer_does_not_block_invalidation():
     try:
         await entered.wait()
         await asyncio.wait_for(brain.invalidate(1, reason="rewrite"), 0.3)
-        assert cancelled.is_set()
+        # No destructive cancellation of a candidate's unknown provider await.
+        assert not cancelled.is_set() and not producer.done()
         assert brain._state is None
     finally:
         release.set()

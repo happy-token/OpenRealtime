@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,6 +47,7 @@ class ResponsePrefetchController:
         self._tasks: set[asyncio.Task[None]] = set()
         self._owned_generation: int | None = None
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     def set_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
         self._builder = builder
@@ -58,7 +59,7 @@ class ResponsePrefetchController:
             except Exception:
                 logger.warning("Response prefetch observer failed", exc_info=True)
 
-    def _spawn(self, operation: Awaitable[None]) -> asyncio.Task[None]:
+    def _spawn(self, operation: Coroutine[Any, Any, None]) -> asyncio.Task[None]:
         task = asyncio.create_task(operation, name="response-prefetch")
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -86,15 +87,16 @@ class ResponsePrefetchController:
 
     def invalidate(self, reason: str) -> None:
         candidate = self._candidate
-        if self._closed or candidate is None:
+        if self._closed or candidate is None or self._provider is None:
             return
+        provider = self._provider
         self._candidate = None
         self.cancel_pending()
 
         async def cleanup() -> None:
             try:
                 async with self._lock:
-                    await self._provider.invalidate(candidate.generation, reason=reason)
+                    await provider.invalidate(candidate.generation, reason=reason)
                 self._notify("invalidated", candidate.generation, reason=reason)
             except Exception:
                 logger.warning("Response prefetch invalidation failed", exc_info=True)
@@ -116,6 +118,7 @@ class ResponsePrefetchController:
             ("。", "！", "？", ".", "!", "?")
         ):
             return
+        provider = self._provider
         current = self._candidate
         if (
             current is not None
@@ -139,7 +142,7 @@ class ResponsePrefetchController:
                     if self._closed or version != self._version or not self._is_current(candidate):
                         return
                     self._owned_generation = candidate.generation
-                    prepared = await self._provider.prepare(turn)
+                    prepared = await provider.prepare(turn)
                     self._notify(
                         "prepared" if prepared else "skipped",
                         candidate.generation,
@@ -154,9 +157,13 @@ class ResponsePrefetchController:
         self._prepare_task = self._spawn(prepare())
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
+        if self._close_task is None:
+            self._closed = True
+            self._close_task = asyncio.create_task(self._close_owned(), name="response-prefetch-close")
+            self._close_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        await asyncio.shield(self._close_task)
+
+    async def _close_owned(self) -> None:
         self.cancel_pending()
         tasks = tuple(self._tasks)
         for task in tasks:
@@ -172,9 +179,10 @@ class ResponsePrefetchController:
                 )
             if pending:
                 logger.warning("Prefetch controller closed with unfinished operations")
-        if self._provider is not None and self._owned_generation is not None:
-            try:
+        if self._provider is not None:
+            close = getattr(self._provider, "close", None)
+            if close is not None:
+                await close()
+            elif self._owned_generation is not None:
                 await self._provider.invalidate(self._owned_generation, reason="session_closed")
-            except Exception:
-                logger.warning("Response prefetch shutdown failed", exc_info=True)
         self._candidate = None
