@@ -7,9 +7,9 @@ Adapter.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from server.voice_session.public_admission import VoiceAdmissionBinding
@@ -44,3 +44,18 @@ class TransportAdapter(Protocol):
     async def send(self, frame: OutboundFrame) -> None: ...
 
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class ObservedFrameSender(Protocol):
+    """Optional live-send seam: no buffering, guard inside physical send lock.
+
+    on_sent means the adapter write returned, never device playback. The
+    caller freezes frame provenance before yielding; reattach cannot relabel it.
+    """
+
+    async def send_observed(
+        self, frame: OutboundFrame, *, expected_output_epoch: str,
+        can_send: Callable[[], bool], on_admitted: Callable[[], None] | None,
+        on_sent: Callable[[], None] | None,
+    ) -> bool: ...

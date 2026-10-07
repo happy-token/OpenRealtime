@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from uuid import uuid4
 
 from server.transport.base import (
@@ -85,18 +85,8 @@ class InMemoryEndpointSession:
 
     async def send(self, frame: OutboundFrame) -> None:
         async with self._send_lock:
-            transport = self._transport
-            if transport is not None:
-                try:
-                    await transport.send(frame)
-                    self._touch_activity()
-                    return
-                except TransportDisconnected:
-                    if self._transport is transport:
-                        self._transport = None
-                        self._frame_iterator = None
-                        self._reattached.clear()
-                        self._detached_event.set()
+            if await self._send_live(frame):
+                return
             if not self._buffer_outbound_frames:
                 logger.info(
                     "Endpoint session %s discarded detached raw frame type=%r; "
@@ -115,6 +105,42 @@ class InMemoryEndpointSession:
                     dropped.type,
                 )
             self._buffer.append(frame)
+
+    async def _send_live(
+        self, frame: OutboundFrame, *,
+        on_admitted: Callable[[], None] | None = None,
+        on_sent: Callable[[], None] | None = None,
+    ) -> bool:
+        # Caller holds _send_lock. A detached/buffered packet is never sent.
+        transport = self._transport
+        if transport is None:
+            return False
+        if on_admitted is not None:
+            on_admitted()
+        try:
+            await transport.send(frame)
+        except TransportDisconnected:
+            if self._transport is transport:
+                self._transport = None
+                self._frame_iterator = None
+                self._reattached.clear()
+                self._detached_event.set()
+            return False
+        self._touch_activity()
+        if on_sent is not None:
+            on_sent()
+        return True
+
+    async def send_observed(
+        self, frame: OutboundFrame, *, expected_output_epoch: str,
+        can_send: Callable[[], bool], on_admitted: Callable[[], None] | None,
+        on_sent: Callable[[], None] | None,
+    ) -> bool:
+        async with self._send_lock:
+            if (self._closed.is_set() or self._output_epoch != expected_output_epoch
+                    or self._transport is None or not can_send()):
+                return False
+            return await self._send_live(frame, on_admitted=on_admitted, on_sent=on_sent)
 
     async def close(self) -> None:
         if self._closed.is_set():

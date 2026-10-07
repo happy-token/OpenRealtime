@@ -1617,6 +1617,7 @@ def _build_realtime_session(
     from server.observability.session_connection import SessionConnectionObserver
     return VoiceSessionWebSocketSession(
         diagnostic_observer=SessionConnectionObserver(telemetry),
+        recording_factory=_application_runtime.open_recording,
         identity=identity,
         context=context,
         profile=profile,

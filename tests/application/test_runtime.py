@@ -188,7 +188,7 @@ async def test_runtime_deletes_session_telemetry_and_conversation_history() -> N
         ["voice-delete"], tenant_id="local", user_id="user"
     )
 
-    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1, "deleted_evidence_threads": 1, "deleted_output_stop_facts": 0}
+    assert result == {"requested": 1, "deleted_sessions": 1, "deleted_threads": 1, "deleted_evidence_threads": 1, "deleted_recording_threads": 0, "deleted_output_stop_facts": 0}
     assert await runtime.journal.read(input_evidence_scope(context)) == ()
     assert not await runtime.debug_log_query.session_timeline("voice-delete")
     assert len(await runtime.debug_log_query.session_timeline("voice-keep")) == 1

@@ -42,3 +42,22 @@ export function exactDuration(events: TelemetryEvent[], name: string): number | 
 export function interruptionEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   return events.filter(event => event.name.startsWith("barge_in.") || event.name.startsWith("playback.stop_") || event.name.includes("interrupt"));
 }
+
+
+/** Collection status is separate from the still-unavailable audio replay API. */
+export function recordingCollectionNotice(events: TelemetryEvent[]): string {
+  // Python timestamps retain microseconds; Date.parse alone would hide a
+  // failure recorded later within the same millisecond. Sequence breaks exact ties.
+  const microRemainder = (at: string) => Number((at.match(/\.(\d{1,6})(?:Z|[+-]\d{2}:\d{2})$/)?.[1] ?? "").padEnd(6, "0").slice(3));
+  const latest = events.filter(event => event.name === "recording.status" && Number.isFinite(Date.parse(event.occurred_at)))
+    .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)
+      || microRemainder(b.occurred_at) - microRemainder(a.occurred_at)
+      || (Number.isSafeInteger(b.sequence) ? b.sequence : 0) - (Number.isSafeInteger(a.sequence) ? a.sequence : 0))[0];
+  if (latest?.attributes.status === "not-configured") return "此会话未配置录音存储，无法回放。";
+  if (latest?.attributes.status === "failed") return "此会话录音采集异常，已保存的片段可能不完整。回放暂不可用。";
+  if (latest?.attributes.status === "active" || latest?.attributes.status === "settled") {
+    if (latest.attributes.storage_durable === false) return "此会话使用临时录音存储，服务重启后不保留。回放暂不可用。";
+    if (latest.attributes.storage_durable === true) return "此会话已启用录音采集，回放暂不可用。录音保留 7 天，标记保留的录音可长期保存。";
+  }
+  return "当前数据未包含可确认的录音采集状态，无法确认此会话是否已录音。";
+}

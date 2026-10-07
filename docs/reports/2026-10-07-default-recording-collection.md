@@ -1,0 +1,15 @@
+# Default recording collection and lifecycle increment
+
+The approved default recording now has production Voice Session wiring. Accepted input and successfully written output produce separately indexed, verified WAV segments under the original Session identity. Storage stays off the media path; unsupported/budget/timeout failures are explicit. Sent bytes remain separate from confirmed playback evidence.
+
+Implementation and limits are specified in [ADR0151](../adr/0151-bounded-session-audio-recording.md). There are two implementation modules: the recording worker and the Application resource owner. Neither decides turn completion, interruption, correction or playback. Existing Artifact/Journal/Endpoint seams continue to own their respective facts.
+
+Review-driven regressions first reproduced and then fixed: substituted Artifact IDs, callback exception escape, non-hard time/metadata limits, queued stale text, wire-sequence false gaps, recording-factory resource leakage, and cancellation-poisoned shutdown. Pending uploads, manifests and cleanup operations retain real ownership; history purge and pool closure cannot overtake those writes.
+
+The diagnostic detail notice now reads recorded collection status. Missing evidence remains unknown, absent storage is unavailable, temporary storage is identified, and failures warn of incomplete segments. The replay API is still unavailable. Default collection applies to newly composed Sessions with configured storage; it does not backfill older Sessions or prove the user's currently running server was restarted.
+
+History deletion counts removed manifest threads. WAVs still follow seven-day retention; pinned WAVs remain retained. No immediate byte erasure is claimed. The completed PostgreSQL fixture checks this distinction, restricted access, both WAV tracks, verified upload completion and cleanup deadlines.
+
+Full Python verification: **2594 passed, 85 skipped, 3 subtests passed (61.04s)**. Real isolated PostgreSQL verification: **22 passed (2.60s)**, including the default dual-track Runtime fixture and 21 Artifact tests. Frontend verification: **18 targeted diagnostic status/render tests passed (523ms)**, TypeScript and scoped ESLint passed. Same-millisecond active-to-failed status changes retain Python microsecond precision across reversed pages, even when independent telemetry bindings reset sequence. Seven production modules pass Mypy with `--ignore-missing-imports` (asyncpg lacks typed metadata), scoped Ruff and diff checks pass. The PostgreSQL fixture uses a real local database and an in-memory object client, not real S3. No user service restart, real JEV/ASR/LLM/TTS/S3 request, production migration, secret enablement or push was performed.
+
+Remaining: Session manifest query/pagination, access-controlled replay/audio references, preservation UI and confirmed-playback joins; full OBS02 input-evidence aggregation, error causal deduplication and cold/warm/reconnect measurement; all outstanding real experiment and behavior gates G0–G5. This completes one increment and keeps the original implementation plan active.

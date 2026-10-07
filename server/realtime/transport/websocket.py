@@ -64,8 +64,9 @@ from server.realtime.protocol.events import (
     SpeechTextCommitted,
 )
 from server.realtime.protocol.playback import SentenceSpan, sentence_identity
+from server.realtime.recording import SessionAudioRecorder
 from server.realtime.transport.output_stop import OutputStopObservation
-from server.transport.base import TransportAdapter
+from server.transport.base import ObservedFrameSender, TransportAdapter
 from server.transport.frames import (
     AssistantAudioChunkFrame,
     AssistantResponseCompletedFrame,
@@ -182,8 +183,10 @@ class RealtimeWebSocketFrameBridge:
         precise_output_stop: bool = False,
         output_stop_timeout_ms: int = 1500,
         diagnostic_observer: Callable[[object], None] | None = None,
+        recording: SessionAudioRecorder | None = None,
     ) -> None:
         self._base_context = context
+        self._recording = recording
         if output_epoch == "":
             raise ValueError("output epoch must be non-empty")
         self._output_epoch = output_epoch or str(uuid.uuid4())
@@ -617,11 +620,14 @@ class RealtimeWebSocketFrameBridge:
             channels=audio_format.channels,
             data=pcm,
         )
+        input_context = self._turn_context(self._generation)
+        if self._recording is not None:
+            self._recording.capture("input", audio, context=input_context, epoch=frame.input_epoch)
         await self._conversation.send(
             AppendAudio(
                 command_id=f"audio:{frame.input_epoch}:{frame.sequence}",
                 idempotency_key=f"audio:{frame.input_epoch}:{frame.sequence}",
-                context=self._turn_context(self._generation),
+                context=input_context,
                 frame=audio,
             )
         )
@@ -725,7 +731,14 @@ class RealtimeWebSocketFrameBridge:
             return
         if playback.sample_rate_hz is not None and playback.sample_rate_hz != frame.sample_rate_hz:
             raise ValueError("sample rate cannot change within one speech")
+        output_epoch = self.output_epoch
+        recording_frame: AudioFrame | None = None
+
         def admitted() -> None:
+            nonlocal recording_frame
+            if self._recording is not None:
+                recording_frame = replace(frame, stream_id=speech_id, sequence=sequence,
+                    timestamp_us=sample_position_us(playback.audio_samples, frame.sample_rate_hz))
             # Publish the wire-admitted clock before send can yield to an
             # immediate playback receipt; rejected packets consume no samples.
             observe_output_admitted(self._conversation, source)
@@ -733,6 +746,11 @@ class RealtimeWebSocketFrameBridge:
             playback.audio_samples += len(frame.data) // (2 * frame.channels)
             playback.sample_rate_hz = frame.sample_rate_hz
             playback.next_sequence = max(playback.next_sequence, sequence + 1)
+
+        def sent() -> None:
+            if self._recording is not None and recording_frame is not None:
+                self._recording.capture("sent", recording_frame, context=playback.context,
+                                        epoch=output_epoch, speech_id=speech_id)
 
         await self._send_frame(
             AssistantAudioChunkFrame(
@@ -743,7 +761,7 @@ class RealtimeWebSocketFrameBridge:
                 sequence=sequence,
                 # A provider segment boundary is not the end of the reply.
                 is_final=False,
-            ), source=source, on_admitted=admitted,
+            ), source=source, on_admitted=admitted, on_sent=sent, expected_output_epoch=output_epoch,
         )
 
     async def _send_terminal_audio(self, generation: int, speech_id: str, *, source: RealtimeEvent | None = None) -> None:
@@ -785,12 +803,33 @@ class RealtimeWebSocketFrameBridge:
         await self._output_failure.wait()
 
     async def _send_frame(self, frame: OutboundFrame, *, source: RealtimeEvent | None = None,
-                          on_admitted: Callable[[], None] | None = None) -> None:
-        if self._closed or source is not None and not is_output_context_current(self._conversation, source):
+                          on_admitted: Callable[[], None] | None = None,
+                          on_sent: Callable[[], None] | None = None,
+                          expected_output_epoch: str | None = None) -> None:
+        epoch = expected_output_epoch or self.output_epoch
+
+        def can_send() -> bool:
+            if self._closed or self.output_epoch != epoch:
+                return False
+            if source is not None and not is_output_context_current(self._conversation, source):
+                return False
+            if isinstance(frame, AssistantAudioChunkFrame):
+                return (frame.generation not in self._locally_cancelled_generations
+                        and frame.speech_id not in self._locally_cancelled_speech
+                        and (source is None or frame.is_final or is_output_deliverable(self._conversation, source)))
+            return True
+
+        if not can_send():
+            return
+        if isinstance(self._transport, ObservedFrameSender):
+            await self._transport.send_observed(frame, expected_output_epoch=epoch,
+                can_send=can_send, on_admitted=on_admitted, on_sent=on_sent)
             return
         if on_admitted is not None:
             on_admitted()
         await self._transport.send(frame)
+        if on_sent is not None:
+            on_sent()
 
     async def _request_output_stop(self, generation: int, speech_id: str | None,
                                    reason: Literal["interrupted", "failed", "cancelled"] = "interrupted", *,
@@ -1164,6 +1203,9 @@ class RealtimeWebSocketFrameBridge:
                 _, residual = await asyncio.wait(pending, timeout=0.05)
                 if residual:
                     logger.warning("Stop fact writes did not cancel cooperatively: %s", len(residual))
+
+        if self._recording is not None:
+            await self._recording.close()
 
     def _begin_playback(self, generation: int, speech_id: str, *, context: InteractionContext) -> _PlaybackState | None:
         if speech_id in self._retired_speech_ids:

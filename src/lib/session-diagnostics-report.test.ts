@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exactDuration, interruptionEvents, measuredSpans, mergeDiagnosticsPage, type SessionDiagnosticsReport } from "./session-diagnostics-report";
+import { exactDuration, interruptionEvents, measuredSpans, mergeDiagnosticsPage, recordingCollectionNotice, type SessionDiagnosticsReport } from "./session-diagnostics-report";
 import type { TelemetryEvent } from "./observability";
 function event(id: string, name: string, at: number, duration: number | null): TelemetryEvent {
   return { event_id: id, name, occurred_at: new Date(at).toISOString(), duration_ms: duration, generation: 1, attributes: {}, outcome: "ok" } as TelemetryEvent;
@@ -78,4 +78,47 @@ it("advances successful pages while retaining failed source rows and retry curso
   const failed = mergeDiagnosticsPage(previous, next, new URLSearchParams({ conversation_cursor: "1" }));
   expect(failed.conversation).toBe(previous.conversation);
   expect(failed.conversation_next_cursor).toBe("1");
+});
+
+
+describe("recording collection status without inventing replay availability", () => {
+  it.each([
+    ["not-configured", false, "未配置录音存储"],
+    ["failed", true, "可能不完整"],
+    ["active", false, "临时录音存储"],
+    ["settled", false, "临时录音存储"],
+    ["active", true, "已启用录音采集"],
+    ["settled", true, "已启用录音采集"],
+  ])("reports %s with durable=%s", (status, durable, expected) => {
+    const item = event("recording", "recording.status", 1000, null);
+    item.attributes = { status, storage_durable: durable };
+    const notice = recordingCollectionNotice([item]);
+    expect(notice).toContain(expected);
+    expect(notice).not.toContain("该策略尚未启用");
+  });
+  it("uses the latest valid observation even across out-of-order pages", () => {
+    const old = event("old", "recording.status", 1000, null); old.attributes = { status: "active", storage_durable: true };
+    const recent = event("recent", "recording.status", 2000, null); recent.attributes = { status: "failed" };
+    const invalid = { ...old, occurred_at: "invalid" };
+    expect(recordingCollectionNotice([old, recent, invalid])).toContain("录音采集异常");
+    expect(recordingCollectionNotice([])).toContain("无法确认");
+  });
+});
+
+it("preserves an authoritative failure later within the same millisecond across pages", () => {
+  const active = event("active", "recording.status", 1000, null);
+  active.occurred_at = "2026-10-07T00:00:00.123100+00:00";
+  active.sequence = 1; active.attributes = { status: "active", storage_durable: true };
+  const failed = { ...active, event_id: "failed", occurred_at: "2026-10-07T00:00:00.123900+00:00", sequence: 2, attributes: { status: "failed" } };
+  expect(recordingCollectionNotice([active, failed])).toContain("录音采集异常");
+  expect(recordingCollectionNotice([failed, active])).toContain("录音采集异常");
+});
+
+it("preserves microsecond ordering even when separate telemetry bindings reset sequence", () => {
+  const active = event("active", "recording.status", 1000, null);
+  active.sequence = 1; active.occurred_at = "2026-10-07T00:00:00.123100+00:00";
+  active.attributes = { status: "active", storage_durable: true };
+  const failed = { ...active, event_id: "failed", occurred_at: "2026-10-07T00:00:00.123900+00:00", attributes: { status: "failed" } };
+  expect(recordingCollectionNotice([active, failed])).toContain("录音采集异常");
+  expect(recordingCollectionNotice([failed, active])).toContain("录音采集异常");
 });

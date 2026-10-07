@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from server.agent_session.work_registry import AgentWorkRegistry
+from server.application.recording import ApplicationRecordingOwner
+from server.artifacts import InMemoryArtifactStore
+from server.artifacts.protocol import ArtifactStore, S3ObjectClient
 from server.conversation_journal import (
     ConversationHistoryRetention,
     ConversationJournal,
@@ -18,6 +21,7 @@ from server.conversation_journal import (
 )
 from server.conversation_journal.input_evidence import input_evidence_thread_id
 from server.conversation_journal.journal import SessionOwnedHistoryRetention
+from server.core.interaction_context import InteractionContext
 from server.observability.telemetry import (
     DebugLogQuery,
     DiagnosticsQuery,
@@ -38,6 +42,7 @@ from server.persistence.postgres import (
 from server.persistence.postgres.conversation_journal import PostgresConversationJournal
 from server.persistence.postgres.schema import validate_schema_name
 from server.persistence.unit_of_work import AgentPersistence
+from server.realtime.recording import SessionAudioRecorder
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.speech import InMemorySpeechDeliveryStore, SpeechDeliveryStore
 from server.voice_session.admission import (
@@ -180,6 +185,8 @@ class ApplicationRuntime:
         debug_log: RuntimeDebugLog | None = None,
         speech_deliveries: SpeechDeliveryStore | None = None,
         voice_session_admission: LocalVoiceSessionAdmissionController | None = None,
+        artifacts: ArtifactStore | None = None,
+        recording_storage_durable: bool = False,
         pool: Any | None = None,
         postgres_schema: str = "voiceagent",
     ) -> None:
@@ -204,12 +211,18 @@ class ApplicationRuntime:
         self._pool = pool
         self._postgres_schema = validate_schema_name(postgres_schema)
         self._closed = False
+        self._closing = False
+        self._close_lock = asyncio.Lock()
+        self._close_task: asyncio.Task[None] | None = None
+        self.recordings = ApplicationRecordingOwner(journal=persistence.journal, telemetry=telemetry,
+            artifacts=artifacts, storage_durable=recording_storage_durable)
 
     async def start(self) -> None:
-        if self._closed:
-            raise RuntimeError("application runtime is closed")
+        if self._closed or self._closing:
+            raise RuntimeError("application runtime is closed or closing")
         if self._agent_result_delivery_task is not None:
             return
+        self.recordings.start()
         self._agent_result_delivery_task = asyncio.create_task(
             self._run_agent_result_delivery(),
             name="agent-result-delivery",
@@ -236,6 +249,9 @@ class ApplicationRuntime:
                 )
             except TimeoutError:
                 pass
+
+    def open_recording(self, context: InteractionContext) -> SessionAudioRecorder | None:
+        return self.recordings.open(context)
 
     @property
     def journal(self) -> ConversationJournal:
@@ -291,11 +307,15 @@ class ApplicationRuntime:
                          thread_id=input_evidence_thread_id(scope.thread_id, session_id))
             for scope, session_id in zip(resolved, selected)
         )
+        recording_scopes = tuple(
+            JournalScope(scope.tenant_id, scope.user_id, f"{scope.thread_id}::recording:{session_id}")
+            for scope, session_id in zip(resolved, selected))
         candidates = tuple((scope.tenant_id, scope.user_id, scope.thread_id)
                            for scope, session_id in zip(resolved, selected) if scope.thread_id == session_id)
         sessions = tuple((scope.tenant_id, scope.user_id, session_id)
                          for scope, session_id in zip(resolved, selected))
         with (
+            self.recordings.deletion_guard(sessions),
             self.active_realtime_conversations.session_deletion_guard(sessions),
             self.active_realtime_conversations.thread_deletion_guard(candidates) as reserved,
         ):
@@ -309,6 +329,7 @@ class ApplicationRuntime:
                     await PostgresDebugLogStore(connection, schema=self._postgres_schema).delete_sessions(selected)
                     deleted_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_session_owned_threads(scopes, selected)
                     deleted_evidence_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(evidence_scopes)
+                    deleted_recording_threads = await PostgresConversationJournal(connection, schema=self._postgres_schema).delete_threads(recording_scopes)
                     stop_store = PostgresSpeechDeliveryStore(connection, schema=self._postgres_schema)
                     deleted_output_stop_facts = sum([
                         await stop_store.delete_output_stop_facts(
@@ -317,10 +338,11 @@ class ApplicationRuntime:
                         for scope, session_id in zip(resolved, selected)
                     ])
                     deleted_sessions = await PostgresTelemetryStore(connection, schema=self._postgres_schema).delete_sessions(selected)
-                return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads, "deleted_output_stop_facts": deleted_output_stop_facts}
+                return {"requested": len(selected), "deleted_sessions": deleted_sessions, "deleted_threads": deleted_threads, "deleted_evidence_threads": deleted_evidence_threads, "deleted_recording_threads": deleted_recording_threads, "deleted_output_stop_facts": deleted_output_stop_facts}
             await self.debug_log.delete_sessions(selected)
             deleted_threads = await journal.delete_session_owned_threads(scopes, selected) if isinstance(journal, SessionOwnedHistoryRetention) else 0
             deleted_evidence_threads = await journal.delete_threads(evidence_scopes)
+            deleted_recording_threads = await journal.delete_threads(recording_scopes)
             deleted_output_stop_facts = sum([
                 await self.speech_deliveries.delete_output_stop_facts(
                     tenant_id=scope.tenant_id, user_id=scope.user_id,
@@ -333,35 +355,53 @@ class ApplicationRuntime:
                 "deleted_sessions": deleted_sessions,
                 "deleted_threads": deleted_threads,
                 "deleted_evidence_threads": deleted_evidence_threads,
+                "deleted_recording_threads": deleted_recording_threads,
                 "deleted_output_stop_facts": deleted_output_stop_facts,
             }
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._agent_result_delivery_stop.set()
-        if self._agent_result_delivery_task is not None:
-            self._agent_result_delivery_task.cancel()
-            await asyncio.gather(
-                self._agent_result_delivery_task,
-                return_exceptions=True,
-            )
-            self._agent_result_delivery_task = None
-        try:
-            await self.telemetry.close()
-        finally:
+        if self._close_task is None or (self._close_task.done() and not self._closed):
+            self._close_task = asyncio.create_task(self._close_resources(), name="application-resource-close")
+            self._close_task.add_done_callback(self._close_completed)
+        await asyncio.shield(self._close_task)
+
+    @staticmethod
+    def _close_completed(task: asyncio.Task[None]) -> None:
+        if not task.cancelled():
+            task.exception()  # Retrieve a late failure even after a caller leaves.
+
+    async def _close_resources(self) -> None:
+        async with self._close_lock:
+            if self._closed:
+                return
+            self._closing = True
+            # A timed-out write may still need metadata/Journal after object put.
+            # Keep resources open and allow a later close retry after actual exit.
+            await self.recordings.close()
+            self._agent_result_delivery_stop.set()
+            if self._agent_result_delivery_task is not None:
+                self._agent_result_delivery_task.cancel()
+                await asyncio.gather(
+                    self._agent_result_delivery_task,
+                    return_exceptions=True,
+                )
+                self._agent_result_delivery_task = None
             try:
-                await self.debug_log.close()
+                await self.telemetry.close()
             finally:
-                if self._pool is not None:
-                    await self._pool.close()
+                try:
+                    await self.debug_log.close()
+                finally:
+                    if self._pool is not None:
+                        await self._pool.close()
+            self._closed = True
 
 
 async def build_application_runtime(
     config: ApplicationRuntimeConfig | None = None,
     *,
     postgres_pool_factory: PostgresPoolFactory | None = None,
+    object_client_factory: Callable[[], S3ObjectClient] | None = None,
 ) -> ApplicationRuntime:
     resolved = config or ApplicationRuntimeConfig.from_env()
     if resolved.state_backend == "memory":
@@ -373,6 +413,7 @@ async def build_application_runtime(
             InMemoryPersistence(),
             telemetry,
             debug_log=debug_log,
+            artifacts=InMemoryArtifactStore(),
             voice_session_admission=_voice_session_admission(
                 telemetry,
                 resolved.voice_capacity_limits(),
@@ -393,6 +434,14 @@ async def build_application_runtime(
                 "PostgreSQL state requires the 'postgres' optional dependency"
             ) from error
         postgres_pool_factory = asyncpg.create_pool
+    # Configure storage before opening process resources. Partial explicit S3
+    # configuration is an error; no secrets configured is observable unavailability.
+    objects = None
+    if object_client_factory is not None:
+        objects = object_client_factory()
+    elif any(os.environ.get(name, "").strip() for name in ("S3_ENDPOINT_URL", "S3_BUCKET", "S3_AK", "S3_SK")):
+        from server.artifacts.boto3_factory import build_s3_object_client_from_env
+        objects = build_s3_object_client_from_env()
     pool = await postgres_pool_factory(
         dsn=resolved.postgres_dsn,
         min_size=resolved.postgres_pool_min_size,
@@ -406,6 +455,8 @@ async def build_application_runtime(
         PostgresDebugLogStore(pool, schema=resolved.postgres_schema)
     )
     await debug_log.start()
+    from server.persistence.postgres.artifact_store import PostgresArtifactStore
+
     runtime = ApplicationRuntime(
         PostgresPersistence(pool, schema=resolved.postgres_schema),
         telemetry,
@@ -418,6 +469,8 @@ async def build_application_runtime(
             telemetry,
             resolved.voice_capacity_limits(),
         ),
+        artifacts=PostgresArtifactStore(pool, objects=objects, schema=resolved.postgres_schema) if objects is not None else None,
+        recording_storage_durable=objects is not None,
         pool=pool,
         postgres_schema=resolved.postgres_schema,
     )

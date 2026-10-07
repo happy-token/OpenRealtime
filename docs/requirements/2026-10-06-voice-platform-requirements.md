@@ -18,7 +18,7 @@ Token 用量和费用是辅助信息。不能通过减少有效输入、把失�
 |NAV02|管理员的对话记录显示可点击 Session ID|跳转对应会话详情；非管理员不显示；诊断接口和管理员链接校验权限|已有实现和测试，不能只靠前端隐藏；不要求普通会话协议移除内部身份|
 |OBS01|整体看板与逐会话详情页，风格跟项目一致|以数字为主；悬停和键盘聚焦解释口径；每个会话可查看输入、判断、生成、播放、异常|已有页面；采集完整度仍需补齐|
 |OBS02|统一接口给 Agent 排查|凭 Session ID 获取对话、事件、指标、来源完整度和证据引用；可继续获取分页；有访问控制|已有 diagnostics GET/JSON 导出；[ADR0148](../adr/0148-session-scoped-agent-diagnostic-access.md)补管理员签发的15分钟单Session只读机器凭据与真实页面按钮；[ADR0149](../adr/0149-session-journal-diagnostic-pagination.md)补Journal原始Session身份与三路独立续页；部署/外部Agent调用、完整输入证据与录音仍待验收|
-|OBS03|默认录音，支持复盘实际交互|建议保存输入与实际交付输出音轨并映射 renderer 时间线；明确缺失/过期；不把合成音频当设备实听回录|[ADR0150](../adr/0150-recording-artifact-retention-and-upload-ownership.md)补Artifact录音到期清理、标记保留及真实上传归属前置；双路采集/默认开启/Runtime与维护调度/播放映射尚未接入，现有页面仍是策略说明|
+|OBS03|默认录音，支持复盘实际交互|建议保存输入与实际交付输出音轨并映射 renderer 时间线；明确缺失/过期；不把合成音频当设备实听回录|[ADR0150](../adr/0150-recording-artifact-retention-and-upload-ownership.md)补Artifact录音到期清理、标记保留及真实上传归属前置；[ADR0151](../adr/0151-bounded-session-audio-recording.md)已接有界输入/真实sent双轨、默认生产装配与Runtime维护/关闭/删除归属；缺存储明确不可用；Session录音查询/授权回放/保留UI/confirmed播放映射仍待验收，不代表sent已听或历史删除已擦除WAV|
 |LAT01|用户说完到开始听见回复|主看 P50，附 P95、样本数及估算/采集说明；与模型调用时间区分|已有服务端 VAD/回执估算；客户端边界测量待补|
 |LAT02|用户有效打断开始到旧声音停止|包含检测、封口、分类和停播；附和、自然结束、主动挂断不能当有效打断样本|缺少真实说话打断实验，不能用 JEV 耗时替代|
 |LAT03|统计每个模块的响应延迟及建连|ASR 建连/首包/尾包，语义判停/打断，LLM 首文本，TTS 建连/首包，交付与恢复|已有部分采集；TTS 异常重连、播放阶段等须逐项核查|

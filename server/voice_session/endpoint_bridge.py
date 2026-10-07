@@ -21,6 +21,7 @@ from server.realtime.protocol.engine import (
     observe_output_admitted,
 )
 from server.realtime.protocol.events import AudioDelta, RealtimeCapabilityFailed, SpeechAudioDelta
+from server.realtime.recording import SessionAudioRecorder
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.runtime import RealtimeRuntimeFactory
 from server.realtime.transport.websocket import (
@@ -318,6 +319,7 @@ class VoiceSessionWebSocketSession:
         initial_frames: tuple[OutboundFrame, ...] = (),
         provider_credential_sources: dict[str, str] | None = None,
         diagnostic_observer: Callable[[object], None] | None = None,
+        recording_factory: Callable[[InteractionContext], SessionAudioRecorder | None] | None = None,
     ) -> None:
         self._identity = identity
         self._context = context
@@ -333,6 +335,7 @@ class VoiceSessionWebSocketSession:
         self._initial_frames = initial_frames
         self._provider_credential_sources = provider_credential_sources
         self._diagnostic_observer = diagnostic_observer
+        self._recording_factory = recording_factory
         self._journal_recovery = _JournalRecovery(
             journal=journal,
             scope=JournalScope.from_context(context),
@@ -392,33 +395,36 @@ class VoiceSessionWebSocketSession:
         await asyncio.gather(opened_wait, return_exceptions=True)
         conversation = conversations.conversation
         self._conversation = conversation
-        bridge = RealtimeWebSocketFrameBridge(
-            context=self._context,
-            conversation=conversation,
-            transport=self._transport,
-            precise_output_stop=True,
-            diagnostic_observer=self._diagnostic_observer,
-            inbound_fallback=self._inbound_fallback,
-            input_epoch_started=self._accept_input_epoch,
-            confirmation_decision_handler=(
-                self._accept_confirmation_decision
-                if self._confirmation_decision_handler is not None
-                else None
-            ),
-        )
-        self._bridge = bridge
-        for frame in self._initial_frames:
-            await self._transport.send(frame)
-        tasks = (
-            asyncio.create_task(self._pump_inbound(bridge), name="voice-session-inbound"),
-            asyncio.create_task(
-                self._pump_realtime_events(conversation, bridge),
-                name="voice-session-realtime-events",
-            ),
-            voice_events,
-            asyncio.create_task(bridge.wait_for_output_failure(), name="voice-session-output-failure"),
-        )
+        bridge: RealtimeWebSocketFrameBridge | None = None
+        tasks: tuple[asyncio.Task[None], ...] = (voice_events,)
         try:
+            bridge = RealtimeWebSocketFrameBridge(
+                context=self._context,
+                conversation=conversation,
+                transport=self._transport,
+                precise_output_stop=True,
+                diagnostic_observer=self._diagnostic_observer,
+                recording=self._recording_factory(self._context) if self._recording_factory is not None else None,
+                inbound_fallback=self._inbound_fallback,
+                input_epoch_started=self._accept_input_epoch,
+                confirmation_decision_handler=(
+                    self._accept_confirmation_decision
+                    if self._confirmation_decision_handler is not None
+                    else None
+                ),
+            )
+            self._bridge = bridge
+            for frame in self._initial_frames:
+                await self._transport.send(frame)
+            tasks = (
+                asyncio.create_task(self._pump_inbound(bridge), name="voice-session-inbound"),
+                asyncio.create_task(
+                    self._pump_realtime_events(conversation, bridge),
+                    name="voice-session-realtime-events",
+                ),
+                voice_events,
+                asyncio.create_task(bridge.wait_for_output_failure(), name="voice-session-output-failure"),
+            )
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 task.result()
@@ -446,14 +452,16 @@ class VoiceSessionWebSocketSession:
                 )
         finally:
             self._closed = True
-            bridge.begin_close()
+            if bridge is not None:
+                bridge.begin_close()
             for task in tasks:
                 if not task.done():
                     task.cancel()
             if not start_task.done():
                 start_task.cancel()
             await asyncio.gather(*tasks, start_task, return_exceptions=True)
-            await bridge.close()
+            if bridge is not None:
+                await bridge.close()
             await runtime.stop(reason="endpoint_closed")
             finalize_diagnostics = getattr(self._diagnostic_observer, "close", None)
             if finalize_diagnostics is not None:

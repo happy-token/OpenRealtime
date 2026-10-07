@@ -36,3 +36,8 @@ Execute0036 through the controlled migration utility before deploying a Store us
 Formal controlled tests cover seven-day expiry, unrelated artifacts, marked retention, pin-before/after delete, retries across reconstructed Stores, late put before physical write, orphan-delete failure, completion-before-crash ordering, stale cleanup token, SDK thread cancellation and all64 owned tasks retaining capacity. Fake clocks model expiry; actual local PostgreSQL and the production boto3 adapter with an injected local synchronous SDK exercise persistence/worker seams. They do not benchmark live S3, voice latency or real acoustic playback.
 
 The recording consumer, bounded segment/media bytes, authoritative Session scope, input/sent timelines, confirmed renderer ranges, runtime Store lifetime/draining, maintenance scheduling, read-only audio references and user-facing expired/failed states remain the next OBS03 tasks. No business reply module or default feature switch is introduced here; G0–G5 and the rest of OBS02/OBS03 remain open.
+
+
+## Collection follow-up (2026-10-07)
+
+[ADR0151](0151-bounded-session-audio-recording.md) wires the bounded input/actual-send collector, default Application/Voice Session composition and owned expiry scheduling. The earlier statements describe the scope at ADR0150 adoption. Recording query/replay/preservation UI and confirmed-playback joins remain open; retention policy continues to apply when a history manifest is deleted.
