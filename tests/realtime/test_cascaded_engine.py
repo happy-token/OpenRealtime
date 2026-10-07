@@ -3163,8 +3163,8 @@ async def test_immediate_preparing_yield_cancels_the_admitted_response(monkeypat
     events = conversation.events()
     original = core._input_pipeline.response_started
 
-    async def yield_on_preparing(response_id, *, context=None, preparing=False, repair=None):
-        await original(response_id, context=context, preparing=preparing, repair=repair)
+    async def yield_on_preparing(response_id, *, context=None, preparing=False, repair=None, input_item=None):
+        await original(response_id, context=context, preparing=preparing, repair=repair, input_item=input_item)
         if preparing:
             await core._input_pipeline._events.put(CapabilityYield(
                 context=replace(context, response_id=response_id), reason="barge_in_floor_claim"))

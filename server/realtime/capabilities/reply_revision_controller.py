@@ -14,6 +14,7 @@ from server.conversation_journal import (
     ConversationItem,
     ConversationItemKind,
     ConversationItemStatus,
+    ConversationVisibility,
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
@@ -224,6 +225,26 @@ class ReplyRevisionController:
             context_repair_deadline_ns=repair.deadline_ns if repair is not None else None,
         )
         return self.reply
+
+    def admit_projected_input(self, item: ConversationItem, context: InteractionContext) -> bool:
+        """Bind trusted, already durable manual text without replaying ASR history."""
+        text = "\n".join(part.text for part in item.content if isinstance(part, TextContent))
+        if (self._closed or item.kind is not ConversationItemKind.USER_INPUT
+            or item.status is not ConversationItemStatus.COMPLETED or not text.strip()
+            or ConversationVisibility.MODEL not in item.visibility
+            or conversation_scope(item.context) != conversation_scope(context)
+            or (item.context.turn_id, item.context.generation) != (context.turn_id, context.generation)):
+            return False
+        previous = self.input
+        if previous is not None and (previous.turn_id, previous.generation) == (context.turn_id, context.generation):
+            return previous.text_sha256 == hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if (previous is not None and context.generation <= previous.generation
+            or item.provider_metadata.get("input_id") is not None
+            or item.provider_metadata.get("input_version") is not None):
+            return False  # Old/mismatched ASR identities cannot become a new manual input.
+        self.commit_input(input_id=item.item_id, context=context, text=text, transcript_revision=1,
+                          continuation_of_turn_id=None, admission_reason="manual_text_committed")
+        return True
 
     def offer_context_repair(self, response_id: str, context: InteractionContext, *,
                              minimum_thread_sequence: int, deadline_ns: int, now_ns: int) -> ReplyRepairPermit | None:

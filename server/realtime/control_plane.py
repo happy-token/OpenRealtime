@@ -109,7 +109,12 @@ class RealtimeTurnController:
         self._response_output_item_ids: dict[str, str] = {}
         self._direct_delivery_responses: set[str] = set()
         self._speech_drafts: dict[str, _SpeechDraft] = {}
-        self._automatic_request: RequestResponse | None = None
+        self._repairable_request: RequestResponse | None = None
+        self._repair_request_revision = 0
+        self._pending_model_deliveries: dict[str, int] = {}
+        self._started_model_deliveries: dict[str, RequestResponse] = {}
+        self._reply_commands_by_id: dict[str, RequestResponse | DeliverItem] = {}
+        self._control_admissions: dict[str, tuple[RealtimeCommand, asyncio.Future[None]]] = {}
         self._closed = False
         self._pump_task = asyncio.create_task(
             self._pump_events(), name="realtime-turn-controller"
@@ -120,26 +125,93 @@ class RealtimeTurnController:
             raise RuntimeError("realtime turn controller is closed")
         if conversation_scope(command.context) != conversation_scope(self._context):
             raise ValueError("command belongs to a different realtime conversation scope")
+        if not isinstance(command, (RequestResponse, DeliverItem, AppendItem, CancelResponse)):
+            await self._conversation.send(command)
+            return
+        previous = self._control_admissions.get(command.idempotency_key)
+        if previous is not None:
+            original, admitted = previous
+            if original != command:
+                raise ValueError("idempotency key was reused with different command content")
+            await asyncio.shield(admitted)
+            return  # Replays cannot acquire fresh repair authority.
+        admitted = asyncio.get_running_loop().create_future()
+        self._control_admissions[command.idempotency_key] = (command, admitted)
+        try:
+            await self._send_control(command)
+        except (Exception, asyncio.CancelledError) as error:
+            self._control_admissions.pop(command.idempotency_key, None)
+            response_id = (command.response_id if isinstance(command, RequestResponse)
+                else f"delivery:{command.delivery_id}" if isinstance(command, DeliverItem) and command.mode is DeliveryMode.MODEL_RESPONSE else None)
+            if response_id is not None and self._reply_commands_by_id.get(response_id) is command:
+                self._reply_commands_by_id.pop(response_id, None)
+            if isinstance(error, asyncio.CancelledError):
+                admitted.cancel()
+            else:
+                admitted.set_exception(error)
+                admitted.exception()  # Observe even when there are no replay waiters.
+            raise
+        else:
+            admitted.set_result(None)
+
+    async def _send_control(self, command: RealtimeCommand) -> None:
+        previous_request = self._repairable_request
+        previous_revision = self._repair_request_revision
+        previous_deliveries = dict(self._pending_model_deliveries)
         if isinstance(command, RequestResponse):
-            self._automatic_request = None
+            self._claim_reply_command(command, command.response_id)
             output_item_id = command.output_item_id or self._stable_id(
                 command.context,
                 f"assistant-output:{command.response_id}",
             )
             self._response_output_item_ids[command.response_id] = output_item_id
             command = replace(command, output_item_id=output_item_id)
+            self._track_repairable_request(command)
+        elif isinstance(command, AppendItem) and command.draft.kind is ConversationItemKind.USER_INPUT:
+            self._track_repairable_request(None)
         elif isinstance(command, DeliverItem) and command.mode is DeliveryMode.MODEL_RESPONSE:
-            self._automatic_request = None
             response_id = f"delivery:{command.delivery_id}"
+            self._claim_reply_command(command, response_id)
             output_item_id = command.output_item_id or self._stable_id(
                 command.context,
                 f"assistant-output:{response_id}",
             )
             self._response_output_item_ids[response_id] = output_item_id
             command = replace(command, output_item_id=output_item_id)
-        elif isinstance(command, CancelResponse) and self._automatic_request is not None and command.response_id == self._automatic_request.response_id:
-            self._automatic_request = None
-        await self._conversation.send(command)
+            self._pending_model_deliveries[command.delivery_id] = self._repair_request_revision
+        elif isinstance(command, CancelResponse) and self._repairable_request is not None and command.response_id == self._repairable_request.response_id:
+            self._track_repairable_request(None)
+        assignment_revision = self._repair_request_revision
+        try:
+            await self._conversation.send(command)
+        except (Exception, asyncio.CancelledError):
+            if isinstance(command, DeliverItem) and command.mode is DeliveryMode.MODEL_RESPONSE:
+                self._pending_model_deliveries.pop(command.delivery_id, None)
+            if assignment_revision != previous_revision and self._repair_request_revision == assignment_revision:
+                valid_deliveries = {key for key, revision in previous_deliveries.items() if revision == previous_revision}
+                started = [request for key, request in self._started_model_deliveries.items() if key in valid_deliveries]
+                # A valid delivery may have started while this failed request
+                # temporarily fenced it. Its Started fact must not be lost.
+                self._track_repairable_request(started[-1] if started else previous_request)
+                self._pending_model_deliveries.update({key: self._repair_request_revision
+                    for key in valid_deliveries if key not in self._started_model_deliveries})
+            raise
+
+    def _claim_reply_command(self, command: RequestResponse | DeliverItem, response_id: str) -> None:
+        if response_id in self._reply_commands_by_id:
+            raise ValueError("response identity cannot be reused with another command; use a new reply version")
+        self._reply_commands_by_id[response_id] = command
+
+    def _track_repairable_request(self, request: RequestResponse | None, *, preserve_deliveries: bool = False) -> None:
+        previous_revision = self._repair_request_revision
+        self._repairable_request = request
+        self._repair_request_revision += 1
+        # Starting a valid queued delivery changes the current reply owner,
+        # without invalidating its legal successors. New input/request/cancel
+        # does invalidate the queue's authority.
+        self._pending_model_deliveries = {key: self._repair_request_revision
+            for key, revision in self._pending_model_deliveries.items()
+            if preserve_deliveries and revision == previous_revision}
 
     async def _pump_events(self) -> None:
         try:
@@ -154,12 +226,26 @@ class RealtimeTurnController:
 
     async def _handle_event(self, event: RealtimeEvent) -> None:
         if isinstance(event, InputTranscriptCompleted):
-            self._automatic_request = None
+            self._track_repairable_request(None)
             await self._commit_user_transcript(event)
         elif isinstance(event, ItemProjected):
             await self._request_response_for_projected_user(event)
         elif isinstance(event, ItemDeliveryStarted):
-            if event.mode is not DeliveryMode.MODEL_RESPONSE:
+            if event.mode is DeliveryMode.MODEL_RESPONSE:
+                response_id = f"delivery:{event.delivery_id}"
+                self._response_parents[response_id] = event.item_id
+                request = RequestResponse(
+                    command_id=f"delivery-response:{event.delivery_id}",
+                    idempotency_key=f"delivery-response:{event.delivery_id}",
+                    context=replace(event.context, response_id=response_id), response_id=response_id,
+                    minimum_thread_sequence=event.minimum_thread_sequence,
+                    output_item_id=self._response_output_item_ids.get(response_id),
+                )
+                self._started_model_deliveries[event.delivery_id] = request
+                revision = self._pending_model_deliveries.pop(event.delivery_id, None)
+                if revision == self._repair_request_revision:
+                    self._track_repairable_request(request, preserve_deliveries=True)
+            else:
                 self._direct_delivery_responses.add(f"delivery:{event.delivery_id}")
         elif isinstance(event, SpeechStarted):
             self._speech_drafts[event.speech_id] = _SpeechDraft(
@@ -183,8 +269,8 @@ class RealtimeTurnController:
                 status=ConversationItemStatus.INTERRUPTED,
             )
         elif isinstance(event, ResponseStarted):
-            if self._automatic_request is not None and event.response_id != self._automatic_request.response_id:
-                self._automatic_request = None
+            if event.source_item_id is not None:
+                self._response_parents.setdefault(event.response_id, event.source_item_id)
             self._response_drafts[event.response_id] = _ResponseDraft(
                 context=event.context,
                 parent_item_id=self._response_parents.get(event.response_id),
@@ -205,7 +291,7 @@ class RealtimeTurnController:
         elif isinstance(event, ResponseFailed):
             await self._settle_response(event, ConversationItemStatus.FAILED)
         elif isinstance(event, ResponseRepairRequested):
-            await self._repair_automatic_response(event)
+            await self._repair_context_response(event)
 
         await self._events.put(event)
 
@@ -268,15 +354,14 @@ class RealtimeTurnController:
                 minimum_thread_sequence=event.thread_sequence,
                 output_item_id=output_item_id,
             )
-        self._automatic_request = request
         await self._send_internal(request)
 
-    async def _repair_automatic_response(self, event: ResponseRepairRequested) -> None:
-        permit, previous = event.permit, self._automatic_request
+    async def _repair_context_response(self, event: ResponseRepairRequested) -> None:
+        permit, previous = event.permit, self._repairable_request
         if (self._closed or previous is None or previous.response_id != permit.predecessor_response_id
             or previous.minimum_thread_sequence != permit.minimum_thread_sequence
             or (previous.context.turn_id, previous.context.generation) != (permit.context.turn_id, permit.context.generation)):
-            return  # Manual/delivery requests retain their caller's orchestration.
+            return  # Only the current request can consume an actor-issued permit.
         parent_item_id = self._response_parents.get(previous.response_id)
         if parent_item_id is None:
             return
@@ -284,14 +369,13 @@ class RealtimeTurnController:
         request = replace(previous, command_id=f"repair:{permit.permit_id}", idempotency_key=f"repair:{permit.permit_id}",
             context=replace(previous.context, response_id=permit.response_id), response_id=permit.response_id,
             output_item_id=output_item_id, repair=permit)
-        self._automatic_request = request
         self._response_parents[request.response_id] = parent_item_id
         self._response_output_item_ids[request.response_id] = output_item_id
         try:
             await self._send_internal(request)
         except Exception as error:  # noqa: BLE001 - a raced repair must not end the event pump
-            if self._automatic_request is request:
-                self._automatic_request = previous
+            if self._repairable_request is request:
+                self._track_repairable_request(previous)
             await self._events.put(RealtimeCapabilityFailed(event_id=str(uuid.uuid4()), context=request.context,
                 conversation_sequence=event.conversation_sequence, occurred_at=event.occurred_at,
                 capability="response_context_repair", error=str(error).strip() or type(error).__name__))
@@ -410,7 +494,7 @@ class RealtimeTurnController:
         )
 
     async def _send_internal(self, command: RealtimeCommand) -> None:
-        await self._conversation.send(command)
+        await self.send(command)
         if self._observer is not None:
             self._observer.observe_command(command)
 

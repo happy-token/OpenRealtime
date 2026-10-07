@@ -947,6 +947,31 @@ class CoordinatedTurnManagerSession:
             return
         if isinstance(event, ObserveSystemResponseStarted):
             preparing_ns = time.monotonic_ns()
+            if event.input_item is not None and event.repair is None:
+                supplied_context = event.context or self._context
+                previous_input = self._revisions.input
+                if (self._input is not None and self._input.context.generation > supplied_context.generation
+                    and (previous_input is None or (previous_input.turn_id, previous_input.generation)
+                         != (supplied_context.turn_id, supplied_context.generation))):
+                    return
+                if not self._revisions.admit_projected_input(event.input_item, supplied_context):
+                    return  # Expected stale admission; do not terminate the actor.
+                if self._revisions.input is not previous_input:
+                    manual_text = "\n".join(part.text for part in event.input_item.content if isinstance(part, TextContent))
+                    self._last_committed = (supplied_context.turn_id, manual_text)
+                    # A new durable manual commit supersedes older uncommitted
+                    # ASR, but starting an ASR-backed reply never discards its
+                    # subsequent voice supplement.
+                    if self._input is not None:
+                        self._record_input_evidence(self._input, "manual_input_superseded", {
+                            "text": self._input.text, "replacement_item_id": event.input_item.item_id,
+                        }, snapshot=self._input.text)
+                        if self._input.blocked:
+                            return  # Retain failed evidence ownership and its explicit rejection.
+                        await self._outbox.put(AsrDiscardRequested(context=self._input.context, reason="manual_text_committed"))
+                        self._input = None
+                        self._tasks.clear()
+                        self._prefetch.invalidate("manual_text_committed")
             if event.repair is not None and (self._input is not None or self._awaiting_response
                 or self._revision_evidence_failure is not None
                 or not self._revisions.context_repair_permit_current(event.repair, now_ns=preparing_ns)):

@@ -1050,6 +1050,15 @@ class CascadedRealtimeConversation:
             generation=command.context.generation,
             repair=command.repair,
         )
+        # Results trigger model delivery; the same-lease durable user item
+        # remains the authority for reply revisions.
+        input_item = next((item for sequence in range(command.minimum_thread_sequence, 0, -1)
+            if (item := self._projected_items.get(sequence)) is not None
+            and item.kind is ConversationItemKind.USER_INPUT
+            and item.status is ConversationItemStatus.COMPLETED
+            and ConversationVisibility.MODEL in item.visibility
+            and conversation_scope(item.context) == conversation_scope(command.context)
+            and (item.context.turn_id, item.context.generation) == (command.context.turn_id, command.context.generation)), None)
         self._active_response_id = command.response_id
         self._response_admitted_by_id[command.response_id] = asyncio.Event()
         ready = asyncio.Event()
@@ -1061,9 +1070,10 @@ class CascadedRealtimeConversation:
         # cancellation target and task must exist before publishing it.
         try:
             await self._input_pipeline.response_started(command.response_id, context=command.context,
-                preparing=True, repair=command.repair)
-            if command.repair is not None and not self._input_pipeline.response_delivery_allowed(command.response_id):
-                raise ValueError("reply repair permission expired or was replaced before admission")
+                preparing=True, repair=command.repair, input_item=input_item)
+            if ((command.repair is not None and not self._input_pipeline.response_delivery_allowed(command.response_id))
+                or (input_item is not None and not self._input_pipeline.response_input_admitted(command.response_id))):
+                raise ValueError("reply input or repair permission expired or was replaced before admission")
         except BaseException:
             # Preparing failed before Brain admission. Do not release a request
             # the caller was told had failed; clean up the already visible task.
@@ -1215,7 +1225,9 @@ class CascadedRealtimeConversation:
                 and any(isinstance(part, TextContent) and part.text for part in item.content)):
                 if repair is not None:
                     if item.kind is not ConversationItemKind.USER_INPUT:
-                        raise ValueError("reply repair must retain its original user input")
+                        continue  # Durable results are context, never new user authority.
+                    if (item.context.turn_id, item.context.generation) != (repair.context.turn_id, repair.context.generation):
+                        raise ValueError("reply repair must retain its original user input lease")
                     # Tool/delegation outcomes and heard projections may have
                     # committed after this input. They are context, not a new
                     # current utterance or fresh execution authorization.
@@ -1852,7 +1864,9 @@ class CascadedRealtimeConversation:
                     self._published_brain_output = _PublishedBrainOutput(command=command, turn=attempt.turn,
                         changed=attempt.context_invalidated, deadline_ns=attempt.deadline_ns)
                     await self._input_pipeline.response_started(command.response_id, context=command.context)
-                    await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id)
+                    _, source = self._response_projection_snapshot(command.minimum_thread_sequence, repair=command.repair)
+                    await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id,
+                                              source_item_id=source.item_id)
                 await self._require_brain_context_current(command, attempt, stage="after response publication")
             if isinstance(event, BrainTextDelta):
                 if tts_task is None:

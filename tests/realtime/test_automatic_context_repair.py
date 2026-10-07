@@ -54,11 +54,12 @@ class RepairBrain:
 
 
 @asynccontextmanager
-async def automatic_reply(monkeypatch, *, generation_finished=True, brain=None, timeout_s=None, tool_handler_factory=None, supervisor=None):
+async def automatic_reply(monkeypatch, *, generation_finished=True, brain=None, timeout_s=None, tool_handler_factory=None, supervisor=None, evidence=False):
     brain = brain or RepairBrain(generation_finished=generation_finished)
     journal, store = InMemoryConversationJournal(), InMemorySpeechDeliveryStore()
     core = await open_core(brain=brain, tts=Provider(), speech_deliveries=store, interaction_context=context(),
-        turn_manager=CoordinatedTurnManagerCapabilityAdapter(TurnPolicy, eot_classifier=Endpoint(), semantic_interruption_classifier=Interrupt()))
+        turn_manager=CoordinatedTurnManagerCapabilityAdapter(TurnPolicy, eot_classifier=Endpoint(), semantic_interruption_classifier=Interrupt(),
+                                                           input_evidence_journal=journal if evidence else None))
     if timeout_s is not None:
         core._response_timeout_s = timeout_s
     actor = core._input_pipeline._turn_manager

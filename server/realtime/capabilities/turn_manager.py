@@ -92,6 +92,7 @@ class ObserveSystemResponseStarted:
     context: InteractionContext | None = None
     preparing: bool = False
     repair: ReplyRepairPermit | None = None
+    input_item: ConversationItem | None = None
 
     def __post_init__(self) -> None:
         if not self.response_id:

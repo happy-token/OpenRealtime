@@ -174,6 +174,11 @@ class CascadedInputPipeline:
         gate = getattr(self._turn_manager, "sentence_playback_permit_current", None)
         return not self._closed and bool(gate(permit)) if gate is not None else False
 
+    def response_input_admitted(self, response_id: str) -> bool:
+        """Distinguish rejected input admission from later delivery revocation."""
+        read = getattr(self._turn_manager, "response_revision", None)
+        return read is None or read(response_id) is not None
+
     def response_revision(self, response_id: str) -> ReplyRevision | None:
         read = getattr(self._turn_manager, "response_revision", None)
         return read(response_id) if read is not None else None
@@ -219,12 +224,14 @@ class CascadedInputPipeline:
         context: InteractionContext | None = None,
         preparing: bool = False,
         repair: ReplyRepairPermit | None = None,
+        input_item: ConversationItem | None = None,
     ) -> None:
         if self._closed:
             raise RuntimeError("cascaded input pipeline is closed")
         self._latest_assistant_text = ""
         await self._turn_manager.send(
-            ObserveSystemResponseStarted(response_id=response_id, context=context, preparing=preparing, repair=repair)
+            ObserveSystemResponseStarted(response_id=response_id, context=context, preparing=preparing,
+                                         repair=repair, input_item=input_item)
         )
         self._response_active = True
 

@@ -572,6 +572,7 @@ class ResponseStarted:
     input_version: int | None = None
     reply_version: int | None = None
     supersedes_response_id: str | None = None
+    source_item_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_response_event(
