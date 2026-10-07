@@ -461,8 +461,11 @@ class ManagedRealtimeConversation:
         )
 
     async def _recover_from(self, event: RealtimeCapabilityFailed) -> None:
+        recovery = self._failure_recovery
+        if recovery is None:
+            return
         try:
-            profile = await self._failure_recovery.recovery_profile(
+            profile = await recovery.recovery_profile(
                 current_profile=self._profile,
                 event=event,
             )

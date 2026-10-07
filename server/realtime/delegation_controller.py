@@ -22,6 +22,7 @@ from server.realtime.protocol import (
     RealtimeEvent,
 )
 from server.realtime.protocol.engine import (
+    CommittedItemProjection,
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
@@ -48,7 +49,7 @@ class RealtimeDelegationController:
         *,
         context: InteractionContext,
         conversation: RealtimeConversation,
-        committed_projection: RealtimeConversation,
+        committed_projection: CommittedItemProjection,
         supervisor: AgentTaskSubmitter,
         request_factory: DelegationRequestFactory,
     ) -> None:

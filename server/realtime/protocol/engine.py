@@ -7,7 +7,7 @@ from typing import Protocol, TypeVar
 
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
-from server.realtime.protocol.commands import RealtimeCommand
+from server.realtime.protocol.commands import ProjectCommittedItem, RealtimeCommand
 from server.realtime.protocol.events import (
     AgentDelegationRequestProposed,
     AudioDelta,
@@ -64,6 +64,12 @@ class RealtimeConversation(Protocol):
     def events(self) -> AsyncIterator[RealtimeEvent]: ...
 
     async def close(self) -> None: ...
+
+
+class CommittedItemProjection(Protocol):
+    """Journal writers project committed facts without owning media lifecycle."""
+
+    async def send(self, command: ProjectCommittedItem) -> None: ...
 
 
 ProfileT_contra = TypeVar("ProfileT_contra", contravariant=True)

@@ -121,11 +121,10 @@ class _ReconnectableConversation:
         observed_generation = 0
         while True:
             async with self._changed:
-                await self._changed.wait_for(
-                    lambda generation=observed_generation: (
-                        self._closed or self._generation > generation
-                    )
-                )
+                def generation_changed(generation: int = observed_generation) -> bool:
+                    return self._closed or self._generation > generation
+
+                await self._changed.wait_for(generation_changed)
                 if self._closed:
                     return
                 conversation = self._current
@@ -341,7 +340,7 @@ class VoiceSessionWebSocketSession:
         self._active_conversations = active_conversations
         self._agent_work_registry = agent_work_registry
         self._runtime: VoiceSessionRuntime | None = None
-        self._conversation: RealtimeConversation | None = None
+        self._conversation: _ReconnectableConversation | None = None
         self._bridge: RealtimeWebSocketFrameBridge | None = None
         self._closed = False
 
@@ -603,7 +602,7 @@ class VoiceSessionWebSocketSession:
                 )
             )
             return
-        visible_events = []
+        visible_events: list[VoiceSessionPhaseChangedFrame | VoiceSessionReadyFrame] = []
         for event in plan.events:
             if isinstance(event, VoiceSessionPhaseChanged):
                 visible_events.append(

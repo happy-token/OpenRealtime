@@ -6,7 +6,7 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Literal, Protocol, cast
 
 from server.conversation_journal import (
     ConversationItem,
@@ -25,7 +25,7 @@ class PendingConfirmationProjection:
     confirmation_id: str
     action_digest: str
     action_summary: str
-    required_channel: str
+    required_channel: Literal["voice", "strong"]
     expires_at: datetime
     generation: int
     requires_restatement: bool = field(default=True, init=False)
@@ -294,17 +294,14 @@ def _pending_confirmation(item: ConversationItem) -> PendingConfirmationProjecti
         expires_at_value = payload["expires_at"]
     except KeyError as error:
         raise ValueError("Confirmation Journal item is incomplete") from error
-    if not all(
-        isinstance(value, str)
-        for value in (
-            confirmation_id,
-            action_digest,
-            action_summary,
-            required_channel,
-            expires_at_value,
-        )
+    if not (
+        isinstance(confirmation_id, str)
+        and isinstance(action_digest, str)
+        and isinstance(action_summary, str)
+        and isinstance(required_channel, str)
+        and isinstance(expires_at_value, str)
     ):
-        raise ValueError("Confirmation Journal item fields have invalid types")
+        raise ValueError("Confirmation Journal item fields have invalid types")  # noqa: TRY004 - preserve Journal validation contract
     try:
         expires_at = datetime.fromisoformat(expires_at_value)
     except ValueError as error:
@@ -313,7 +310,9 @@ def _pending_confirmation(item: ConversationItem) -> PendingConfirmationProjecti
         confirmation_id=confirmation_id,
         action_digest=action_digest,
         action_summary=action_summary,
-        required_channel=required_channel,
+        # __post_init__ remains the validation authority and preserves the
+        # identity/digest/channel failure order for malformed Journal records.
+        required_channel=cast(Literal["voice", "strong"], required_channel),
         expires_at=expires_at,
         generation=item.context.generation,
     )

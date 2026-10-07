@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 from server.conversation_journal import (
+    ConversationItem,
     ConversationItemDraft,
     ConversationItemKind,
     ConversationItemStatus,
@@ -35,6 +36,7 @@ from server.realtime.protocol import (
     ToolRequested,
 )
 from server.realtime.protocol.engine import (
+    CommittedItemProjection,
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
@@ -61,7 +63,7 @@ class RealtimeToolController:
         *,
         context: InteractionContext,
         conversation: RealtimeConversation,
-        committed_projection: RealtimeConversation | None = None,
+        committed_projection: CommittedItemProjection | None = None,
         tool_control_handler_factory: Callable[[], ToolControlHandler],
     ) -> None:
         self._context = context
@@ -319,7 +321,7 @@ def _tool_result_command(
     )
 
 
-def _confirmation_event(event: ToolRequested, item) -> ConfirmationRequested:
+def _confirmation_event(event: ToolRequested, item: ConversationItem) -> ConfirmationRequested:
     structured = next(
         (part.value for part in item.content if isinstance(part, StructuredContent)),
         None,
@@ -331,15 +333,12 @@ def _confirmation_event(event: ToolRequested, item) -> ConfirmationRequested:
     summary = structured.get("action_summary")
     required_channel = structured.get("required_channel")
     expires_at = structured.get("expires_at")
-    if not all(
-        isinstance(value, str)
-        for value in (
-            confirmation_id,
-            action_digest,
-            summary,
-            required_channel,
-            expires_at,
-        )
+    if not (
+        isinstance(confirmation_id, str)
+        and isinstance(action_digest, str)
+        and isinstance(summary, str)
+        and isinstance(required_channel, str)
+        and isinstance(expires_at, str)
     ):
         raise TypeError("confirmation item authority fields are invalid")
     return ConfirmationRequested(

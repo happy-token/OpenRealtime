@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from server.conversation_journal import (
     ConversationItemDraft,
     ConversationItemKind,
@@ -215,3 +217,35 @@ async def test_journal_control_recovery_restates_only_the_frozen_pending_prefix(
     )
     assert frozen.pending_confirmation.requires_restatement is True
     assert current.pending_confirmation is None
+
+
+@pytest.mark.parametrize(("invalid_fields", "message"), [
+    ({"confirmation_id": "", "required_channel": "unknown"}, "must be identified"),
+    ({"action_digest": "bad", "required_channel": "unknown"}, "digest must be sha256"),
+    ({"required_channel": "unknown"}, "channel is unsupported"),
+    ({"expires_at": "bad", "required_channel": "unknown"}, "expiry is invalid"),
+])
+async def test_journal_confirmation_validation_preserves_failure_precedence(
+    invalid_fields: dict[str, str], message: str,
+) -> None:
+    journal = InMemoryConversationJournal()
+    context = InteractionContext(
+        tenant_id="tenant-1", user_id="user-1", device_id="device-1",
+        voice_session_id="voice-1", thread_id="thread-1", turn_id="turn-3", generation=3,
+    )
+    payload = {
+        "confirmation_id": "confirmation-1", "action_digest": ACTION_DIGEST,
+        "action_summary": "删除文件", "required_channel": "voice",
+        "expires_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+        **invalid_fields,
+    }
+    committed = await journal.append(ConversationItemDraft(
+        item_id="invalid-confirmation", context=context,
+        kind=ConversationItemKind.CONFIRMATION_REQUESTED,
+        status=ConversationItemStatus.COMMITTED, producer="test",
+        content=(StructuredContent(payload),),
+        visibility=frozenset({ConversationVisibility.USER, ConversationVisibility.MODEL}),
+    ))
+    restorer = JournalControlStateRestorer(identity=identity(), journal=journal)
+    with pytest.raises(ValueError, match=message):
+        await restorer.restore(target_thread_sequence=committed.item.sequence)
