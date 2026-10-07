@@ -58,6 +58,7 @@ from server.realtime.protocol.engine import (
 from server.realtime.protocol.events import (
     RealtimeCapabilityFailed,
     SpeechAudioCompleted,
+    SpeechCancelled,
     SpeechStarted,
     SpeechTextAccepted,
     SpeechTextAlignment,
@@ -65,6 +66,7 @@ from server.realtime.protocol.events import (
 )
 from server.realtime.protocol.playback import SentenceSpan, sentence_identity
 from server.realtime.recording import SessionAudioRecorder
+from server.realtime.scope import conversation_scope
 from server.realtime.transport.output_stop import OutputStopObservation
 from server.transport.base import ObservedFrameSender, TransportAdapter
 from server.transport.frames import (
@@ -490,6 +492,22 @@ class RealtimeWebSocketFrameBridge:
                 frame=event.frame,
                 sequence=event.segment_index + 1,
             )
+            return
+        if isinstance(event, SpeechCancelled):
+            playback = self._playback_by_speech.get(event.speech_id)
+            if playback is None or conversation_scope(event.context) != conversation_scope(playback.context):
+                return
+            # A new input lease can cancel an older speech. Stop its original
+            # playback identity; the terminal event's generation is not the
+            # output generation. Legacy controls cannot target an old speech
+            # once another speech has replaced it on the same generation.
+            if (not self._precise_output_stop
+                and (self._latest_speech_by_generation.get(playback.generation) != event.speech_id
+                     or playback.generation in self._locally_cancelled_generations)):
+                return
+            await self._request_output_stop(playback.generation, event.speech_id,
+                "interrupted" if event.reason == "barge_in_floor_claim" else "cancelled",
+                target_context=playback.context, force_immediate=event.reason != "barge_in_floor_claim")
             return
         if isinstance(event, SpeechAudioCompleted):
             await self._send_terminal_audio(event.context.generation, event.speech_id, source=event)

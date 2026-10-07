@@ -216,7 +216,7 @@ async def main() -> None:
 
             from tests.browser_recording_playback_fixture import RecordingRendererFixture
 
-            renderer = RecordingRendererFixture(runtime, ctx)
+            renderer = RecordingRendererFixture(runtime, ctx, scenario=os.environ.get("RECORDING_BROWSER_SCENARIO", "normal"))
             websocket_server = await serve(renderer.handle, "127.0.0.1", 0, process_request=renderer.http)
             renderer_port = websocket_server.sockets[0].getsockname()[1]
         else:
@@ -229,6 +229,8 @@ async def main() -> None:
         server = start(
             EndpointSessionRegistry(),
             port=0,
+            diagnostics=runtime.diagnostics,
+            diagnostics_health_reader=runtime.diagnostics_health,
             session_recording_page_reader=runtime.recordings.read_page,
             session_recording_audio_reader=runtime.recordings.read_audio,
             session_recording_preserver=preserve,

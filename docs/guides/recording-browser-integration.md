@@ -49,3 +49,11 @@ pnpm exec playwright test tests-e2e/recording-renderer-integration.spec.ts
 不要在此模式运行要求800/1600受控回执的旧集成用例；两种模式各自使用新夹具/schema。新用例实际打开`/conversation`，重定向真实WebSocket到测试端口，让生产WebAudio播放两段200ms音频并自行产生6400采样结束回执，离开对话后读取实际Settings录音投影，再用无Cookie Agent读取并比对WAV/真实wire PCM。测试保留原始失败，收尾取证有独立超时，附件`recording-renderer.json`包含实际前端、canonical和目录证据。
 
 这个增量覆盖正常WebAudio链路；输入PCM仍预先生成，不证明端到端麦克风、物理扬声器/用户听到、所有数字人renderer、打断/断连、真实供应商或S3。参见[报告](../reports/2026-10-07-browser-recording-renderer.md)和[ADR0159](../adr/0159-browser-recording-renderer-sample-clock.md)。按上述方法停止夹具并等待owned schema删除，不修改运行中的用户服务。
+
+## 实际停播、回执丢失与断连
+
+在两个终端都设置相同的 `RECORDING_BROWSER_SCENARIO`，可选 `normal`（默认）、`stop`、`missing`、`disconnect`。每个场景重新创建夹具及随机schema，再按上面的 renderer 命令运行。已开始的夹具不允许重用；每次结束必须停止并确认其退出/owned schema清理。
+
+`stop`使用实际CancelSpeech终态触发原speech停播，两段2秒PCM尚未完成生成；浏览器停止实际WebAudio队列，Settings/Agent核对精确回执前缀。`missing`只丢弃浏览器实际产生的stop回执wire，验证截止后STOP_UNKNOWN及原正证据前缀；`disconnect`在丢弃回执后主动断开测试socket，验证transport_detached未知状态。三种场景都注入取消后的迟到PCM，不能发送或写入WAV；完整sent录音仍4秒，不可声称已经听完。
+
+附件现在也包括统一diagnostics事件、实际共享stop存储终态及其位置。成功command→receipt span不等于用户有效语音打断延迟；失败/断连不得产生成功span。参见[ADR0160](../adr/0160-direct-speech-cancellation-playback.md)及[报告](../reports/2026-10-07-direct-speech-cancellation-playback.md)。这补充了前述normal覆盖范围，但仍不覆盖物理听到、所有数字人、真实provider/端到端麦克风、S3或部署。

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -17,9 +18,11 @@ from websockets.http11 import Request, Response
 
 from server.application.runtime import ApplicationRuntime
 from server.core.interaction_context import InteractionContext
+from server.observability.session_connection import SessionConnectionObserver
 from server.observability.telemetry import TelemetryIdentity
 from server.realtime import (
     AppendSpeechText,
+    CancelSpeech,
     CommitSpeech,
     InMemoryRealtimeConversation,
     StartSpeech,
@@ -33,12 +36,20 @@ from server.realtime.protocol.events import (
     SpeechPlaybackProgress,
 )
 from server.realtime.transport import RealtimeWebSocketFrameBridge
+from server.realtime.transport.output_stop import OutputStopObservation
 from server.transport.frame_parsing import parse_inbound_frame
 from server.transport.frames import InboundFrame, OutboundFrame
 
 
 class RecordingRendererFixture:
-    def __init__(self, runtime: ApplicationRuntime, context: InteractionContext) -> None:
+    def __init__(self, runtime: ApplicationRuntime, context: InteractionContext, *, scenario: str = "normal") -> None:
+        if scenario not in {"normal", "stop", "missing", "disconnect"}:
+            raise ValueError("unknown recording renderer scenario")
+        self.scenario = scenario
+        self.chunk_samples = 3200 if scenario == "normal" else 32000
+        self.stop_requested = False
+        self.stop_observations: list[dict] = []
+        self.control_socket: ServerConnection | None = None
         self.runtime = runtime
         self.context = context
         self.active = False
@@ -67,12 +78,30 @@ class RecordingRendererFixture:
             except Exception as error:
                 self.error = str(error)
                 raise
+        elif path == "/stop":
+            if not self.ready or not self.started or self.stop_requested or self.conversation is None:
+                return connection.respond(409, "scenario not ready")
+            self.stop_requested = True
+            await self.conversation.send(CancelSpeech(command_id="cancel", idempotency_key="cancel",
+                context=replace(self.context, generation=self.context.generation + 1, turn_id="fixture-new-input"),
+                speech_id="fixture-speech", reason="cancelled"))
+        elif path == "/disconnect":
+            if not self.stop_requested or self.control_socket is None:
+                return connection.respond(409, "scenario not ready")
+            await self.control_socket.close(code=1000, reason="fixture fault disconnect")
+        elif path == "/late":
+            if not self.stop_requested or self.bridge is None:
+                return connection.respond(409, "scenario not ready")
+            await self.bridge.handle_event(SpeechAudioDelta(event_id="late-audio", context=self.context,
+                conversation_sequence=7, occurred_at=datetime.now(UTC), speech_id="fixture-speech", segment_index=2,
+                frame=AudioFrame("provider-stream", 2, self.chunk_samples * 2 * 1_000_000 // 16000, 100_000,
+                    AudioEncoding.PCM_S16LE, 16000, 1, b"\x02\x00" * 1600)))
         elif path != "/evidence":
             return None
         response = connection.respond(200, json.dumps({
             "connections": self.connections, "ready": self.ready, "started": self.started, "closed": self.closed,
             "error": self.error, "sent": self.sent, "receipts": self.receipts,
-            "canonical": self.canonical,
+            "canonical": self.canonical, "scenario": self.scenario, "stop_observations": self.stop_observations,
         }))
         response.headers["Content-Type"] = "application/json"
         return response
@@ -102,24 +131,26 @@ class RecordingRendererFixture:
                         "generation": event.context.generation,
                         "played_position_samples": event.played_position_samples,
                         "sample_rate_hz": event.sample_rate_hz,
-                        "completed": event.completed,
+                        "completed": event.completed, "stopped": event.stopped,
                     })
                 await bridge.handle_event(event)
         self.pump = asyncio.create_task(drain())
         # Two distinguishable contiguous chunks, deliberately using a provider
         # stream name. Bridge normalization must retain the speech-local clock.
+        duration_us = self.chunk_samples * 1_000_000 // 16000
         for index, amplitude in enumerate((1000, -1000)):
             await bridge.handle_event(SpeechAudioDelta(
                 event_id=f"audio-{index}", context=ctx, conversation_sequence=4 + index,
                 occurred_at=datetime.now(UTC), speech_id="fixture-speech", segment_index=index,
-                frame=AudioFrame("provider-stream", index, index * 200_000, 200_000,
+                frame=AudioFrame("provider-stream", index, index * duration_us, duration_us,
                                  AudioEncoding.PCM_S16LE, 16000, 1,
-                                 amplitude.to_bytes(2, "little", signed=True) * 3200),
+                                 amplitude.to_bytes(2, "little", signed=True) * self.chunk_samples),
             ))
-        await bridge.handle_event(SpeechAudioCompleted(
-            event_id="audio-complete", context=ctx, conversation_sequence=6,
-            occurred_at=datetime.now(UTC), speech_id="fixture-speech",
-        ))
+        if self.scenario == "normal":
+            await bridge.handle_event(SpeechAudioCompleted(
+                event_id="audio-complete", context=ctx, conversation_sequence=6,
+                occurred_at=datetime.now(UTC), speech_id="fixture-speech",
+            ))
 
     async def handle(self, socket: ServerConnection) -> None:
         # React development initialization may discard a connection before
@@ -131,7 +162,8 @@ class RecordingRendererFixture:
         self.active = True
         self.closed = False
         self.connections += 1
-        conversation = InMemoryRealtimeConversation(context=self.context)
+        self.control_socket = socket
+        conversation = InMemoryRealtimeConversation(context=self.context, speech_deliveries=self.runtime.speech_deliveries)
         self.conversation = conversation
         recorder = self.runtime.open_recording(self.context)
         if recorder is None:
@@ -144,6 +176,18 @@ class RecordingRendererFixture:
             thread_id=self.context.thread_id,
         )))
         fixture = self
+        connection_observer = SessionConnectionObserver(self.runtime.telemetry.bind(TelemetryIdentity(
+            tenant_id=self.context.tenant_id, user_id=self.context.user_id,
+            device_id=self.context.device_id, voice_session_id=self.context.voice_session_id,
+            thread_id=self.context.thread_id,
+        )))
+
+        def observe_stop(event: object) -> None:
+            connection_observer(event)
+            if isinstance(event, OutputStopObservation):
+                self.stop_observations.append({"phase": event.phase, "state": event.state,
+                    "reason": event.reason, "stop_command_id": event.request.stop_command_id,
+                    "played_position_samples": event.played_position_samples})
 
         class Transport:
             # handle() owns the sole incoming socket iterator.
@@ -159,7 +203,8 @@ class RecordingRendererFixture:
                 fixture.sent.append(frame.model_dump())
 
         self.bridge = RealtimeWebSocketFrameBridge(context=self.context, conversation=conversation,
-            transport=Transport(), recording=recorder, output_epoch="fixture-renderer-output")
+            transport=Transport(), recording=recorder, output_epoch="fixture-renderer-output",
+            precise_output_stop=True, diagnostic_observer=observe_stop, output_stop_timeout_ms=500)
         try:
             hello = json.loads(await socket.recv())
             if hello.get("type") != "session_hello":
@@ -172,7 +217,7 @@ class RecordingRendererFixture:
             self.ready = True
             async for raw in socket:
                 value = json.loads(raw)
-                if value.get("type") == "playback_progress_v2":
+                if value.get("type") in {"playback_progress_v2", "output_stop_result"}:
                     self.receipts.append(value)
                     frame = parse_inbound_frame(raw)
                     if frame is None:
@@ -189,6 +234,7 @@ class RecordingRendererFixture:
                     result = (await asyncio.gather(self.pump, return_exceptions=True))[0]
                     if isinstance(result, Exception):
                         self.error = str(result)
+                await self.bridge.handle_detached()
                 await self.bridge.close()
             except BaseException as error:
                 self.error = str(error) or type(error).__name__
@@ -197,6 +243,11 @@ class RecordingRendererFixture:
                 try:
                     await conversation.close()
                     await self.runtime.telemetry.flush()
+                    for observation in self.stop_observations:
+                        fact = await self.runtime.speech_deliveries.get_output_stop(self.context, observation["stop_command_id"])
+                        if fact is not None:
+                            observation["saved_state"] = fact.state
+                            observation["saved_position_samples"] = fact.played_position_samples
                     if not recorder.settled:
                         raise RuntimeError("renderer recording did not settle")
                     self.closed = True
