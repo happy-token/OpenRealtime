@@ -48,6 +48,16 @@ def is_sentence_permit_current(conversation: RealtimeConversation | None, permit
     return bool(gate(permit)) if gate is not None else False
 
 
+def is_output_context_current(conversation: RealtimeConversation, event: RealtimeEvent) -> bool:
+    """Read permission for payload derived from an event, including completion.
+
+    Terminal facts still drain through is_output_deliverable; their synthetic
+    subtitles/audio must not bypass the generation's context permission.
+    """
+    gate = getattr(conversation, "output_context_current", None)
+    return bool(gate(event)) if gate is not None else True
+
+
 class RealtimeConversation(Protocol):
     async def send(self, command: RealtimeCommand) -> None: ...
 

@@ -15,6 +15,7 @@ from server.realtime.protocol.commands import (
 )
 from server.realtime.protocol.engine import (
     RealtimeConversation,
+    is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
 )
@@ -146,6 +147,9 @@ class JournaledRealtimeConversation:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return is_sentence_permit_current(self._engine_conversation, permit)
+
+    def output_context_current(self, event: RealtimeEvent) -> bool:
+        return is_output_context_current(self._engine_conversation, event)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._engine_conversation, event)

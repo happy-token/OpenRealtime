@@ -8,7 +8,7 @@ import logging
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator, Callable
-from dataclasses import asdict, dataclass, is_dataclass, replace
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import UTC, datetime
 from typing import cast
 
@@ -63,6 +63,7 @@ from server.realtime.capabilities import (
 )
 from server.realtime.capabilities.asr import AsrCapabilityProvider
 from server.realtime.capabilities.brain import BrainEvent
+from server.realtime.capabilities.tts import TtsCommand
 from server.realtime.capabilities.turn_manager import (
     SemanticInputRejected,
     TurnManagerCapabilityProvider,
@@ -160,6 +161,15 @@ class _BrainAttempt:
     semantic_published: bool = False
     cleanup_error: str | None = None
     cancel_task: asyncio.Task[None] | None = None
+    context_invalidated: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+@dataclass(slots=True)
+class _PublishedBrainOutput:
+    command: RequestResponse
+    turn: TurnContent
+    changed: asyncio.Event
+    invalidated: bool = False
 
 
 class CascadedRealtimeEngine:
@@ -343,6 +353,7 @@ class CascadedRealtimeConversation:
         self._cancel_reason_by_response_id: dict[str, str] = {}
         self._response_admitted_by_id: dict[str, asyncio.Event] = {}
         self._brain_attempts: dict[str, _BrainAttempt] = {}
+        self._published_brain_output: _PublishedBrainOutput | None = None
         self._brain_protocol_failed = False
         self._tts_cleanup_unconfirmed = False
         self._tts_stop_tasks: dict[str, asyncio.Task[None]] = {}
@@ -681,6 +692,7 @@ class CascadedRealtimeConversation:
         self._last_projected_thread_sequence = max(
             self._last_projected_thread_sequence, item.sequence
         )
+        self._refresh_output_context_permission()
         await self._input_pipeline.observe_conversation_item(item)
         await self._emit(
             ItemProjected(
@@ -988,6 +1000,8 @@ class CascadedRealtimeConversation:
         )
 
     async def _request_response(self, command: RequestResponse) -> None:
+        if command.response_id in self._response_sequence_by_id:
+            raise ValueError("a published response identity cannot be reused; use a new reply version")
         if command.minimum_thread_sequence > self._last_projected_thread_sequence:
             raise ContextVisibilityError(
                 "response requires thread sequence "
@@ -1474,11 +1488,36 @@ class CascadedRealtimeConversation:
     async def _require_brain_context_current(
         self, command: RequestResponse, attempt: _BrainAttempt, *, stage: str,
     ) -> None:
-        if attempt.semantic_published and not self._brain_turn_matches(command, attempt.turn):
+        if attempt.semantic_published and (attempt.context_invalidated.is_set() or not self._brain_turn_matches(command, attempt.turn)):
             await self._revoke_brain_output(command)
             raise ContextVisibilityError(
                 f"heard context changed {stage}; requires a new reply version"
             )
+
+    def _refresh_output_context_permission(self) -> None:
+        basis = self._published_brain_output
+        if basis is None or basis.invalidated or self._brain_turn_matches(basis.command, basis.turn):
+            return
+        # Projection writers revoke the read-only permission synchronously,
+        # before an actor mailbox or output queue can yield execution.
+        basis.invalidated = True
+        if not self._input_pipeline.response_delivery_allowed(basis.command.response_id):
+            return  # Ordinary floor claims retain their separate sentence permit.
+        basis.changed.set()
+
+        async def invalidate() -> None:
+            try:
+                await self._revoke_brain_output(basis.command)
+                if basis.command.response_id not in self._brain_attempts:
+                    await self._emit_capability_failure(context=replace(basis.command.context, response_id=basis.command.response_id),
+                        capability="response_context", error="heard context changed after generation; requires a new reply version")
+            except Exception as error:  # noqa: BLE001 - preserve a fenced asynchronous control failure
+                await self._emit_capability_failure(context=replace(basis.command.context, response_id=basis.command.response_id),
+                    capability="response_context_invalidation", error=str(error))
+
+        task = asyncio.create_task(invalidate(), name=f"output-context-{basis.command.response_id}")
+        self._detached_response_tasks.add(task)
+        task.add_done_callback(self._observe_detached_response_task)
 
     async def _revoke_brain_output(self, command: RequestResponse) -> None:
         if command.response_id in self._revoked_brain_response_ids:
@@ -1563,14 +1602,15 @@ class CascadedRealtimeConversation:
 
     async def _next_brain_output(
         self, command: RequestResponse, brain_events: AsyncIterator[BrainEvent],
-        tts_task: asyncio.Task[None] | None,
+        tts_task: asyncio.Task[None] | None, attempt: _BrainAttempt,
     ) -> BrainEvent:
-        if tts_task is None:
-            return await anext(brain_events)
         pending = asyncio.ensure_future(anext(brain_events))
+        changed = asyncio.create_task(attempt.context_invalidated.wait())
         try:
-            await asyncio.wait({pending, tts_task}, return_when=asyncio.FIRST_COMPLETED)
-            if tts_task.done():
+            await asyncio.wait({pending, changed, *([tts_task] if tts_task is not None else [])}, return_when=asyncio.FIRST_COMPLETED)
+            if attempt.context_invalidated.is_set():
+                raise ContextVisibilityError("heard context changed while awaiting response output; requires a new reply version")
+            if tts_task is not None and tts_task.done():
                 try:
                     await tts_task
                 except Exception as error:
@@ -1578,11 +1618,46 @@ class CascadedRealtimeConversation:
                     if not isinstance(error, ContextVisibilityError):
                         await self._emit_capability_failure(context=command.context, capability="tts", error=str(error))
                     raise
+            if not pending.done():
+                await asyncio.wait({pending, changed}, return_when=asyncio.FIRST_COMPLETED)
+                if attempt.context_invalidated.is_set():
+                    raise ContextVisibilityError("heard context changed while awaiting response output; requires a new reply version")
             return await pending
         finally:
             if not pending.done():
                 pending.cancel()
-            await asyncio.gather(pending, return_exceptions=True)
+            changed.cancel()
+            await asyncio.gather(pending, changed, return_exceptions=True)
+
+    async def _await_tts_with_context(self, task: asyncio.Task[None], attempt: _BrainAttempt) -> None:
+        changed = asyncio.create_task(attempt.context_invalidated.wait())
+        try:
+            await asyncio.wait({task, changed}, return_when=asyncio.FIRST_COMPLETED)
+            if attempt.context_invalidated.is_set():
+                raise ContextVisibilityError("heard context changed while awaiting TTS output; requires a new reply version")
+            await task
+        finally:
+            changed.cancel()
+            await asyncio.gather(changed, return_exceptions=True)
+
+    async def _send_tts_with_context(self, command: TtsCommand, attempt: _BrainAttempt,
+                                     *, before_send: Callable[[], None] | None = None) -> None:
+        async def send_owned() -> None:
+            if attempt.context_invalidated.is_set():
+                raise ContextVisibilityError("heard context changed before TTS input; requires a new reply version")
+            if before_send is not None:
+                before_send()  # Cleanup owns a start even if its acknowledgement yields.
+            await self._tts.send(command)
+
+        if attempt.context_invalidated.is_set():
+            raise ContextVisibilityError("heard context changed before TTS input; requires a new reply version")
+        send = asyncio.create_task(send_owned())
+        try:
+            await self._await_tts_with_context(send, attempt)
+        finally:
+            if not send.done():
+                send.cancel()
+            await asyncio.gather(send, return_exceptions=True)
 
     async def _route_response(self, command: RequestResponse, attempt: _BrainAttempt, *, first_text_deadline: float) -> str | None:
         response_context = replace(command.context, response_id=command.response_id)
@@ -1602,9 +1677,9 @@ class CascadedRealtimeConversation:
                         raise _FirstResponseTextDeadlineExceeded
                     event_deadline = asyncio.timeout_at(first_text_deadline)
                     async with event_deadline:
-                        event = await self._next_brain_output(command, brain_events, tts_task)
+                        event = await self._next_brain_output(command, brain_events, tts_task, attempt)
                 else:
-                    event = await self._next_brain_output(command, brain_events, tts_task)
+                    event = await self._next_brain_output(command, brain_events, tts_task, attempt)
             except StopAsyncIteration:
                 break
             except TimeoutError as error:
@@ -1640,6 +1715,10 @@ class CascadedRealtimeConversation:
                     # Lock before the first publication side effect can await.
                     # Tools/delegations must never be replayed under this ID.
                     attempt.semantic_published = True
+                    previous = self._published_brain_output
+                    if previous is not None and previous.command.response_id != command.response_id:
+                        self._revoked_brain_response_ids.add(previous.command.response_id)
+                    self._published_brain_output = _PublishedBrainOutput(command=command, turn=attempt.turn, changed=attempt.context_invalidated)
                     await self._input_pipeline.response_started(command.response_id, context=command.context)
                     await self._emit_response(ResponseStarted, context=response_context, response_id=command.response_id)
                 await self._require_brain_context_current(command, attempt, stage="after response publication")
@@ -1647,14 +1726,15 @@ class CascadedRealtimeConversation:
                 if tts_task is None:
                     await self._start_model_speech(command, context=response_context, speech_id=speech_id)
                     self._require_tts_available()
-                    await self._tts.send(
-                        StartTts(speech_id=speech_id, context=command.context)
-                    )
-                    tts_task = asyncio.create_task(
-                        self._pump_tts(command, speech_id=speech_id),
-                        name=f"cascaded-tts-{speech_id}",
-                    )
-                    self._tts_task_by_response_id[command.response_id] = tts_task
+
+                    def own_tts_start() -> None:
+                        nonlocal tts_task
+                        tts_task = asyncio.create_task(self._pump_tts(command, speech_id=speech_id),
+                            name=f"cascaded-tts-{speech_id}")
+                        self._tts_task_by_response_id[command.response_id] = tts_task
+
+                    await self._send_tts_with_context(StartTts(speech_id=speech_id, context=command.context),
+                        attempt, before_send=own_tts_start)
                 text_sequence += 1
                 await self._speech_deliveries.append_text(speech_id, event.delta)
                 await self._emit_response(
@@ -1669,12 +1749,12 @@ class CascadedRealtimeConversation:
                     response_id=command.response_id,
                     delta=event.delta,
                 )
-                await self._tts.send(
+                await self._send_tts_with_context(
                     AppendTtsText(
                         speech_id=speech_id,
                         text_sequence=text_sequence,
                         delta=event.delta,
-                    )
+                    ), attempt,
                 )
             elif isinstance(event, BrainToolRequested):
                 waiting_for_tool = True
@@ -1713,9 +1793,9 @@ class CascadedRealtimeConversation:
                         return None
                     raise RuntimeError("Brain completed before starting the response: no accepted text")
                 await self._speech_deliveries.commit_text(speech_id)
-                await self._tts.send(CommitTts(speech_id=speech_id))
+                await self._send_tts_with_context(CommitTts(speech_id=speech_id), attempt)
                 try:
-                    await tts_task
+                    await self._await_tts_with_context(tts_task, attempt)
                 except Exception as error:  # noqa: BLE001 - capability error becomes event
                     failure = str(error)
                     await self._revoke_brain_output(command)
@@ -1861,6 +1941,7 @@ class CascadedRealtimeConversation:
             item,
             content=project_assistant_context(item, delivery),
         )
+        self._refresh_output_context_permission()
         await self._input_pipeline.observe_conversation_item(
             self._projected_items[sequence]
         )
@@ -2195,13 +2276,22 @@ class CascadedRealtimeConversation:
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         if not isinstance(event, VERSIONED_OUTPUT_EVENTS):
             return True  # Cancellation/failure/completion facts must still drain.
+        return self.output_context_current(event)
+
+    def output_context_current(self, event: RealtimeEvent) -> bool:
+        if self._closed:
+            return False
         response_id: str | None
-        if isinstance(event, (SpeechStarted, SpeechTextAccepted, SpeechTextCommitted, SpeechAudioDelta)) or isinstance(event, SpeechTextAlignment) and event.speech_id not in self._model_speech_ids:
+        if isinstance(event, (SpeechStarted, SpeechTextAccepted, SpeechTextCommitted, SpeechAudioDelta, SpeechAudioCompleted)) or isinstance(event, SpeechTextAlignment) and event.speech_id not in self._model_speech_ids:
             response_id = event.speech_id
         else:
             response_id = (event.context.response_id or getattr(event, "response_id", None)
                            or getattr(event, "speech_id", None))
-        return response_id is None or (response_id not in self._revoked_brain_response_ids
+        if response_id is None:
+            return True
+        basis = self._published_brain_output
+        return (response_id not in self._revoked_brain_response_ids
+            and (basis is None or basis.command.response_id != response_id or not basis.invalidated)
             and self._input_pipeline.response_delivery_allowed(response_id))
 
     def _next_sequence(self) -> int:

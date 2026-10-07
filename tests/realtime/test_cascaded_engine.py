@@ -1817,20 +1817,28 @@ async def test_duplex_tts_emits_audio_before_brain_text_stream_completes() -> No
         )
     )
 
-    before_release = [
-        await asyncio.wait_for(anext(events), timeout=0.2)
-        for _ in range(4)
-    ]
-    assert isinstance(before_release[0], ResponseStarted)
-    assert isinstance(before_release[1], DisplayContentDelta)
-    assert isinstance(before_release[2], SpokenContentDelta)
-    assert isinstance(before_release[3], AudioDelta)
-    assert before_release[3].frame.data == "第一段".encode()
+    try:
+        before_release = []
+        async with asyncio.timeout(.2):
+            while len(before_release) < 4:
+                event = await anext(events)
+                assert not isinstance(event, (ResponseCompleted, ResponseFailed))
+                if isinstance(event, (ResponseStarted, DisplayContentDelta, SpokenContentDelta, AudioDelta)):
+                    before_release.append(event)
+        # Actor state diagnostics can interleave; the four actual output facts
+        # still precede model completion and retain their required order.
+        assert isinstance(before_release[0], ResponseStarted)
+        assert isinstance(before_release[1], DisplayContentDelta)
+        assert isinstance(before_release[2], SpokenContentDelta)
+        assert isinstance(before_release[3], AudioDelta)
+        assert before_release[3].frame.data == "第一段".encode()
 
-    brain.release.set()
-    while not isinstance(await anext(events), ResponseCompleted):
-        pass
-    await conversation.close()
+        brain.release.set()
+        while not isinstance(await anext(events), ResponseCompleted):
+            pass
+    finally:
+        brain.release.set()
+        await conversation.close()
 
 
 async def test_cancel_response_stops_brain_and_tts_with_one_cancelled_terminal() -> None:

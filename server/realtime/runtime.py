@@ -39,6 +39,7 @@ from server.realtime.protocol.engine import (
     VERSIONED_OUTPUT_EVENTS,
     RealtimeConversation,
     RealtimeEngine,
+    is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
 )
@@ -535,6 +536,9 @@ class ManagedRealtimeConversation:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return not self._closed and is_sentence_permit_current(self._conversation, permit)
+
+    def output_context_current(self, event: RealtimeEvent) -> bool:
+        return not self._closed and is_output_context_current(self._conversation, event)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return is_output_deliverable(self._conversation, event)

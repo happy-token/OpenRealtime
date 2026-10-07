@@ -14,7 +14,11 @@ from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
 from server.observability.log_context import bind_voice_session_log_context
 from server.realtime.protocol import RealtimeCommand, RealtimeConversation, RealtimeEvent
-from server.realtime.protocol.engine import is_output_deliverable, is_sentence_permit_current
+from server.realtime.protocol.engine import (
+    is_output_context_current,
+    is_output_deliverable,
+    is_sentence_permit_current,
+)
 from server.realtime.protocol.events import RealtimeCapabilityFailed
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.runtime import RealtimeRuntimeFactory
@@ -106,6 +110,9 @@ class _ReconnectableConversation:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return not self._closed and is_sentence_permit_current(self._current, permit)
+
+    def output_context_current(self, event: RealtimeEvent) -> bool:
+        return self._current is not None and is_output_context_current(self._current, event)
 
     def output_delivery_allowed(self, event: RealtimeEvent) -> bool:
         return self._current is not None and is_output_deliverable(self._current, event)

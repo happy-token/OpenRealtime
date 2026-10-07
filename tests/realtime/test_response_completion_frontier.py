@@ -71,6 +71,10 @@ async def test_late_prior_playback_after_last_text_invalidates_response_completi
         await position(bridge, 500)
         await conversation.send(await next_input(core, conversation))
         await asyncio.wait_for(entered.wait(), 1)
+        if stage == "model_completion":
+            from tests.realtime.test_input_association_production import wait_for
+
+            await wait_for(lambda: core._brain_attempts["next-response"].semantic_published)
         await position(bridge, 2000 if heard_text_changes else 700)
         release.set()
         received = await terminal(conversation)
@@ -147,7 +151,7 @@ async def test_tts_detected_frontier_failure_finishes_owner_and_drains_full_queu
         async with asyncio.timeout(.5):
             received = await terminal(conversation)
         assert isinstance(received[-1], ResponseFailed)
-        assert "during TTS delivery" in received[-1].error
+        assert "heard context changed" in received[-1].error
         assert "deadline exceeded" not in received[-1].error
         assert "TTS cleanup failed" not in received[-1].error
         assert asyncio.get_running_loop().time() - began < .5
@@ -255,7 +259,7 @@ async def test_unconfirmed_tts_cleanup_preserves_failure_and_rejects_new_request
         async with asyncio.timeout(.5):
             received = await terminal(conversation)
         assert isinstance(received[-1], ResponseFailed)
-        assert "during TTS delivery" in received[-1].error
+        assert "heard context changed" in received[-1].error
         assert "TTS cleanup failed" in received[-1].error
         assert cleanup_entered.is_set() and not cleaned.is_set()
         assert core._tts_cleanup_unconfirmed

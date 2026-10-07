@@ -45,7 +45,7 @@ class Provider:
                 yield chunk
 
 
-async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False, tts=None):
+async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False, tts=None, wrappers="none"):
     core = await open_core(
         brain=brain or Brain(),
         asr=asr, turn_manager=turn_manager,
@@ -62,6 +62,9 @@ async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None
         conversation = await RealtimeRuntimeFactory(
             engine=FixedEngine(), journal=InMemoryConversationJournal(), speech_deliveries=speech_deliveries,
             active_conversations=ActiveRealtimeConversations(),
+            tool_control_handler_factory=(lambda: object()) if wrappers != "none" else None,
+            agent_task_supervisor=object() if wrappers == "tools_and_agents" else None,
+            delegation_request_factory=(lambda event: None) if wrappers == "tools_and_agents" else None,
         ).open(context=context(), profile=None)
     bridge = RealtimeWebSocketFrameBridge(
         context=context(),
