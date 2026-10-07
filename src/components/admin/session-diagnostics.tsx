@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { useLanguage } from "@/components/language/language-provider";
 import { buildReplayTurns } from "@/lib/admin-diagnostics";
 import { METRIC_DESCRIPTIONS, formatClock, formatDuration, metricLabel } from "@/lib/observability";
-import { exactDuration, interruptionEvents, measuredSpans, type SessionDiagnosticsReport } from "@/lib/session-diagnostics-report";
+import { exactDuration, interruptionEvents, measuredSpans, mergeDiagnosticsPage, type SessionDiagnosticsReport } from "@/lib/session-diagnostics-report";
 import styles from "./diagnostics-workspace.module.css";
 import { DiagnosticAgentAccess } from "./diagnostic-agent-access";
 
@@ -18,34 +18,43 @@ export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; 
   const [tab, setTab] = useState("chain");
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const [paging, setPaging] = useState(false);
+  const pagingRequest = useRef<AbortController | null>(null);
   const loadMore = async () => {
-    if (!report || paging) return;
+    if (!report || pagingRequest.current) return;
     const params = new URLSearchParams();
     if (report.telemetry?.next_cursor) params.set("telemetry_cursor", report.telemetry.next_cursor);
     if (report.debug_log?.next_cursor) params.set("debug_cursor", report.debug_log.next_cursor);
+    if (report.conversation_next_cursor) params.set("conversation_cursor", report.conversation_next_cursor);
     if (!params.size) return;
     setPaging(true); setError("");
+    const controller = new AbortController(); pagingRequest.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/diagnostics?${params}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/diagnostics?${params}`, { cache: "no-store", signal: controller.signal });
       const next: SessionDiagnosticsReport = await response.json();
-      if (!response.ok || (params.has("telemetry_cursor") && !next.telemetry) || (params.has("debug_cursor") && !next.debug_log)) throw new Error("日志续页读取失败，请重试");
-      setReport(previous => {
-        if (!previous || previous.session_id !== next.session_id) return previous;
-        const merge = <T extends { event_id: string },>(before: T[], after: T[]) => [...new Map([...before, ...after].map(item => [item.event_id, item])).values()];
-        return { ...previous, collection_health: next.collection_health, sources: { ...previous.sources, ...(params.has("telemetry_cursor") ? { telemetry: next.sources.telemetry } : {}), ...(params.has("debug_cursor") ? { debug_log: next.sources.debug_log } : {}) }, telemetry: params.has("telemetry_cursor") && next.telemetry ? { ...next.telemetry, events: merge(previous.telemetry?.events ?? [], next.telemetry.events) } : previous.telemetry, debug_log: params.has("debug_cursor") && next.debug_log ? { ...next.debug_log, entries: merge(previous.debug_log?.entries ?? [], next.debug_log.entries) } : previous.debug_log };
-      });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "日志续页读取失败"); } finally { setPaging(false); }
+      if (controller.signal.aborted || pagingRequest.current !== controller) return;
+      if (!response.ok) throw new Error("日志续页读取失败，请重试");
+      setReport(previous => previous ? mergeDiagnosticsPage(previous, next, params) : previous);
+      if ((params.has("telemetry_cursor") && !next.telemetry) || (params.has("debug_cursor") && !next.debug_log)
+        || (params.has("conversation_cursor") && next.sources?.conversation?.status !== "available")) setError("部分日志续页读取失败，已保留成功数据，可重试");
+    } catch (cause) {
+      if (pagingRequest.current === controller) setError(controller.signal.aborted ? "日志续页读取超时，请重试" : cause instanceof Error ? cause.message : "日志续页读取失败");
+    } finally {
+      clearTimeout(timeout);
+      if (pagingRequest.current === controller) { pagingRequest.current = null; setPaging(false); }
+    }
   };
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (preview) return;
+    pagingRequest.current?.abort(); pagingRequest.current = null; setPaging(false);
     const controller = new AbortController(); setLoading(true); setReport(null); setError(""); setGeneration(null); setSelectedEvent(null);
     void fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/diagnostics`, { cache: "no-store", signal: controller.signal }).then(async response => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? (response.status === 404 ? "未找到该会话" : "诊断数据暂时不可用"));
       if (!controller.signal.aborted) setReport(data);
     }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "诊断读取失败"); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    return () => { controller.abort(); pagingRequest.current?.abort(); pagingRequest.current = null; };
   }, [sessionId, revision, preview]);
   const turns = useMemo(() => {
     if (!report) return [];
@@ -76,7 +85,7 @@ export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; 
       <div className={styles.metadata}><span>{turns.length} {t("轮对话")}</span><span>{t("开始时间")} {formatClock(report.telemetry?.summary.first_event_at ?? "")}</span><span>{t("事件")} {report.telemetry?.events.length ?? "—"}</span><span>{t("决策日志")} {report.debug_log?.entries.length ?? "—"}</span></div>
       {!preview && report.collection_health?.status !== "ok" ? <div className={styles.error} role="status">{report.collection_health ? "日志采集存在丢弃或写入异常，当前会话记录可能不完整。" : "采集健康状态不可用，无法确认日志完整性。"}</div> : null}
       {Object.entries(report.sources).filter(([, source]) => source.status !== "available" || source.truncated).map(([name, source]) => <div className={styles.error} role="status" key={name}>{name}: {source.status !== "available" ? t("没有记录或数据源不可用") : t("已达到查询上限，当前内容可能不完整")}</div>)}
-      {!preview && (report.telemetry?.next_cursor || report.debug_log?.next_cursor) ? <button className={styles.button} disabled={paging} onClick={loadMore}>{paging ? "正在加载…" : "加载更多日志"}</button> : null}
+      {!preview && (report.telemetry?.next_cursor || report.debug_log?.next_cursor || report.conversation_next_cursor) ? <button className={styles.button} disabled={paging} onClick={loadMore}>{paging ? "正在加载…" : "加载更多日志"}</button> : null}
       <div className={styles.detailgrid}><section className={styles.panel}><div className={styles.panelhead}><h2>{t("对话与音频")}</h2><span className={styles.muted}>{turns.length} turns</span></div><div className={styles.audio}>{t("双向音频尚未接入录制存储，当前无法回放。")}<br />{t("已确认的录音策略：所有会话默认录音，保留 7 天，标记会话可长期保留。该策略尚未启用。")}</div><div className={styles.turnlist}>{turns.map(turn => <button className={styles.turn} key={turn.generation} aria-pressed={selected?.generation === turn.generation} onClick={() => { setGeneration(turn.generation); setSelectedEvent(null); }}><small>{t("轮次")} {turn.generation} · {turn.events.length} {t("事件")}</small>{turn.messages.map(message => <p key={message.item_id}><small>{message.role === "user" ? t("用户") : t("助手")}</small><br />{message.text}</p>)}{!turn.messages.length ? <p>{t("该轮没有已提交的对话文本。")}</p> : null}</button>)}{!turns.length ? <p className={styles.empty}>{t("没有可关联的轮次。")}</p> : null}</div></section>
         <div><section className={styles.panel}><div className={styles.panelhead}><h2>{selected ? `${t("轮次")} ${selected.generation} · ${t("诊断详情")}` : t("会话事件")}</h2><span className={styles.muted}>{selected?.events.length ?? 0} {t("事件")}</span></div><div className={styles.tabs} role="tablist" aria-label={t("诊断视图")}>{[["chain", "模块链路"], ["stop", "打断过程"], ["logs", "原始日志"]].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => setTab(id)}>{t(label)}</button>)}</div>
           <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>

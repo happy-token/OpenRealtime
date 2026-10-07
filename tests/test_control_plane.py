@@ -618,6 +618,27 @@ async def test_session_conversation_endpoint_exposes_admin_replay_items() -> Non
         server.shutdown()
 
 
+async def test_session_conversation_pagination_endpoint_validates_bounded_cursors() -> None:
+    calls = []
+    async def read_page(session_id: str, after: int, limit: int) -> dict:
+        calls.append((session_id, after, limit))
+        return {"voice_session_id": session_id, "items": [], "next_cursor": "42"}
+    server = control_plane_http.start(EndpointSessionRegistry(), session_conversation_page_reader=read_page, port=0)
+    port = server.server_address[1]
+    base = f"http://127.0.0.1:{port}/observability/sessions/voice-replay/conversation-page"
+    try:
+        status, body = await asyncio.to_thread(_get, base + "?after_sequence=20&limit=2")
+        assert status == 200 and body["next_cursor"] == "42"
+        assert calls == [("voice-replay", 20, 2)]
+        for query in ["after_sequence=-1", "after_sequence=9223372036854775808", "limit=1001",
+                      "after_sequence=1&after_sequence=2", "after_sequence=01", "limit=0", "limit=", "after_sequence=+"]:
+            status, _ = await asyncio.to_thread(_get, base + "?" + query)
+            assert status == 400
+        assert len(calls) == 1
+    finally:
+        server.shutdown()
+
+
 async def test_batch_delete_observability_sessions_calls_history_retention() -> None:
     calls: list[list[str]] = []
 

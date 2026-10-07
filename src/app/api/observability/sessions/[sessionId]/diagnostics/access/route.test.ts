@@ -29,7 +29,7 @@ it("delegates only one Session to a machine, independent of browser/admin servic
   expect(grant).toMatchObject({ session_id: "session-1", agent_id: "debug-agent", scope: "session-diagnostics:read", token_type: "Bearer" });
   authorize.mockReset().mockRejectedValue(new Error("admin DB offline"));
   fetchMock.mockResolvedValueOnce(Response.json({ summary: { voice_session_id: "session-1" }, events: [], next_cursor: "more-events" }))
-    .mockResolvedValueOnce(Response.json([{ voice_session_id: "session-1", generation: 1, text: "test" }]))
+    .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [{ voice_session_id: "session-1", item_id: "user-1", journal_sequence: "1", generation: 1, role: "user", text: "test", status: "committed", occurred_at: "2026-10-07T00:00:00Z" }], next_cursor: null }))
     .mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", entries: [], next_cursor: "more-debug" }));
   const reportResponse = await read(grant.access_token, "session-1", "?telemetry_cursor=event-1&debug_cursor=debug-1");
   expect(reportResponse.status).toBe(200);
@@ -105,7 +105,7 @@ it.each(["telemetry", "conversation", "debug_log"] as const)("refuses wrong-sess
   const telemetry = { summary: { voice_session_id: "session-1" }, events: source === "telemetry" ? [{ voice_session_id: "session-2", text: "foreign secret" }] : [] };
   const conversation = source === "conversation" ? [{ voice_session_id: "session-2", text: "foreign secret" }] : [];
   const debug = { voice_session_id: "session-1", entries: source === "debug_log" ? [{ voice_session_id: "session-2", text: "foreign secret" }] : [] };
-  for (const value of [telemetry, conversation, debug]) fetchMock.mockResolvedValueOnce(Response.json(value));
+  for (const value of [telemetry, { voice_session_id: "session-1", items: conversation, next_cursor: null }, debug]) fetchMock.mockResolvedValueOnce(Response.json(value));
   const response = await read(token), report = await response.json();
   expect(response.status).toBe(200);
   expect(report.sources[source].status).toBe("unavailable");

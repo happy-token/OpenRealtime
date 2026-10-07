@@ -72,6 +72,7 @@ _MAX_PROVIDER_PROBE_BODY_BYTES = 2_048
 _SESSION_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 VoicePreviewer = Callable[[str, str, int, str], Awaitable[tuple[bytes, str]]]
 SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
+SessionConversationPageReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionInputEvidenceReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionHistoryDeleter = Callable[[list[str]], Awaitable[dict[str, int]]]
 AvatarAssetHandler = Callable[
@@ -216,6 +217,7 @@ def _build_handler(
     debug_log_query: DebugLogQuery | None = None,
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
+    session_conversation_page_reader: SessionConversationPageReader | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -474,6 +476,28 @@ def _build_handler(
                 )
                 self._write_json(200, evidence_future.result(timeout=_RPC_TIMEOUT_S))
                 return
+            if parsed.path.startswith("/observability/sessions/") and parsed.path.endswith("/conversation-page"):
+                if session_conversation_page_reader is None:
+                    self._write_json(404, {"error": "session conversation pagination is not configured"})
+                    return
+                session_id = unquote(parsed.path.removeprefix("/observability/sessions/").removesuffix("/conversation-page"))
+                parameters = parse_qs(parsed.query, keep_blank_values=True)
+                after = parameters.get("after_sequence", ["0"])
+                size = parameters.get("limit", ["200"])
+                if not _SESSION_ID.fullmatch(session_id) or session_id in {".", ".."}:
+                    self._write_json(400, {"error": "invalid session id"})
+                    return
+                if (len(after) != 1 or len(size) != 1
+                    or not re.fullmatch(r"0|[1-9][0-9]{0,18}", after[0])
+                    or not re.fullmatch(r"[1-9][0-9]{0,3}", size[0])
+                    or int(after[0]) > 2**63 - 1 or not 1 <= int(size[0]) <= 1000):
+                    self._write_json(400, {"error": "invalid session conversation pagination"})
+                    return
+                page_future = asyncio.run_coroutine_threadsafe(
+                    session_conversation_page_reader(session_id, int(after[0]), int(size[0])), loop,
+                )
+                self._write_json(200, page_future.result(timeout=_RPC_TIMEOUT_S))
+                return
             if parsed.path.startswith("/observability/sessions/") and parsed.path.endswith("/conversation"):
                 if session_conversation_reader is None:
                     self._write_json(404, {"error": "conversation replay is not configured"})
@@ -672,6 +696,7 @@ def start(
     debug_log_query: DebugLogQuery | None = None,
     diagnostics_health_reader: Callable[[], dict[str, Any]] | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
+    session_conversation_page_reader: SessionConversationPageReader | None = None,
     host: str = "127.0.0.1",
     port: int = 8766,
 ) -> ControlPlaneServer:
@@ -698,6 +723,7 @@ def start(
             debug_log_query,
             diagnostics_health_reader,
             session_input_evidence_reader,
+            session_conversation_page_reader,
         ),
         avatar_requests=avatar_requests,
     )

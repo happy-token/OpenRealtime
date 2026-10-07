@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from bisect import bisect_right
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
@@ -10,9 +11,11 @@ from server.conversation_journal.models import (
     AppendResult,
     ConversationItem,
     ConversationItemDraft,
+    ConversationItemKind,
     ConversationProjection,
     ConversationVisibility,
     JournalScope,
+    SessionConversationPage,
     item_from_draft,
     utc_now,
 )
@@ -66,6 +69,13 @@ class SessionOwnedHistoryRetention(Protocol):
     async def delete_session_owned_threads(self, scopes: Sequence[JournalScope], voice_session_ids: Sequence[str]) -> int: ...
 
 
+@runtime_checkable
+class SessionConversationQuery(Protocol):
+    async def read_session_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionConversationPage: ...
+
+
 class InMemoryConversationJournal:
     """A concurrency-safe test conformer; it is deliberately not durable."""
 
@@ -74,6 +84,7 @@ class InMemoryConversationJournal:
     def __init__(self) -> None:
         self._items_by_id: dict[str, ConversationItem] = {}
         self._threads: dict[JournalScope, list[ConversationItem]] = {}
+        self._session_replay: dict[str, dict[JournalScope, list[ConversationItem]]] = {}
         self._lock = asyncio.Lock()
 
     async def append(
@@ -110,7 +121,35 @@ class InMemoryConversationJournal:
             )
             thread.append(item)
             self._items_by_id[item.item_id] = item
+            if item.kind in {ConversationItemKind.USER_INPUT, ConversationItemKind.ASSISTANT_OUTPUT}:
+                self._session_replay.setdefault(item.context.voice_session_id, {}).setdefault(draft.scope, []).append(item)
             return AppendResult(item=item, created=True)
+
+    async def read_session_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionConversationPage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        async with self._lock:
+            scopes = self._session_replay.get(voice_session_id, {})
+            if len(scopes) > 1:
+                raise ValueError("session conversation identity is ambiguous")
+            items = next(iter(scopes.values()), [])
+            start = bisect_right(items, after_sequence, key=lambda item: item.sequence)
+            page = tuple(items[start:start + limit])
+            more = start + len(page) < len(items)
+            return SessionConversationPage(page, page[-1].sequence if more else None)
+
+    def _remove_thread_items(self, scope: JournalScope, items: Sequence[ConversationItem]) -> None:
+        sessions = set()
+        for item in items:
+            self._items_by_id.pop(item.item_id, None)
+            sessions.add(item.context.voice_session_id)
+        for session_id in sessions:
+            scopes = self._session_replay.get(session_id)
+            if scopes is not None:
+                scopes.pop(scope, None)
+                if not scopes:
+                    self._session_replay.pop(session_id)
 
     async def read(
         self,
@@ -139,8 +178,7 @@ class InMemoryConversationJournal:
             existing = selected.intersection(self._threads)
             for scope in existing:
                 items = self._threads.pop(scope)
-                for item in items:
-                    self._items_by_id.pop(item.item_id, None)
+                self._remove_thread_items(scope, items)
         return len(existing)
 
     async def delete_session_owned_threads(self, scopes: Sequence[JournalScope], voice_session_ids: Sequence[str]) -> int:
@@ -149,8 +187,7 @@ class InMemoryConversationJournal:
             owned = {scope for scope in scopes if scope in self._threads
                      and all(item.context.voice_session_id in allowed for item in self._threads[scope])}
             for scope in owned:
-                for item in self._threads.pop(scope):
-                    self._items_by_id.pop(item.item_id, None)
+                self._remove_thread_items(scope, self._threads.pop(scope))
         return len(owned)
 
     async def project_for_model(
@@ -179,3 +216,12 @@ def _validate_window(after_sequence: int, limit: int) -> None:
         raise ValueError("after_sequence must be non-negative")
     if not 1 <= limit <= 1000:
         raise ValueError("limit must be between 1 and 1000")
+
+
+def validate_session_window(voice_session_id: str, after_sequence: int, limit: int) -> None:
+    if not voice_session_id or len(voice_session_id) > 128:
+        raise ValueError("invalid voice session identity")
+    if type(after_sequence) is not int or not 0 <= after_sequence <= 2**63 - 1:
+        raise ValueError("session cursor must be a non-negative signed bigint")
+    if type(limit) is not int or not 1 <= limit <= 1000:
+        raise ValueError("session page limit must be between 1 and 1000")

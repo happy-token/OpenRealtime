@@ -135,6 +135,97 @@ async def test_postgres_journal_round_trips_typed_semantic_item(postgres) -> Non
 
 
 @pytest.mark.asyncio
+async def test_postgres_session_query_pages_only_original_session_and_rejects_ambiguity(postgres) -> None:
+    pool, schema = postgres
+    journal = PostgresConversationJournal(pool, schema=schema)
+    original = item("A-1")
+    await journal.append(original)
+    await journal.append(replace(item("B-1"), context=replace(context(), voice_session_id="continued")))
+    await journal.append(item("A-2"))
+    await journal.append(item("A-3"))
+    # Input evidence may use a distinct Journal thread; it is not dialogue identity.
+    await journal.append(replace(item("evidence"), kind=ConversationItemKind.CORRECTION,
+                                 context=replace(context(), thread_id="evidence-thread")))
+    first = await journal.read_session_page("voice-1", limit=2)
+    assert [entry.item_id for entry in first.items] == ["A-1", "A-2"]
+    assert first.next_sequence == 3
+    final = await journal.read_session_page("voice-1", after_sequence=first.next_sequence, limit=2)
+    assert [entry.item_id for entry in final.items] == ["A-3"] and final.next_sequence is None
+    continued = await journal.read_session_page("continued")
+    assert [entry.item_id for entry in continued.items] == ["B-1"]
+    assert (await journal.read_session_page("missing")).items == ()
+    await journal.append(replace(item("other"), context=replace(context(), tenant_id="other-tenant")))
+    with pytest.raises(ValueError, match="ambiguous"):
+        await journal.read_session_page("voice-1")
+
+
+@pytest.mark.asyncio
+async def test_postgres_session_index_is_valid_idempotent_and_query_uses_it(postgres) -> None:
+    pool, schema = postgres
+    async with pool.acquire() as connection:
+        await apply_migrations(connection, schema=schema)
+        index = await connection.fetchrow(
+            "SELECT i.indisvalid, pg_get_indexdef(i.indexrelid) AS definition FROM pg_index i "
+            "JOIN pg_class c ON c.oid = i.indexrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = $1 AND c.relname = 'conversation_items_session_read_idx'", schema,
+        )
+        assert index is not None and index["indisvalid"] is True
+        assert "voice_session_id, tenant_id, user_id, thread_id, sequence" in index["definition"]
+        async with connection.transaction():
+            await connection.execute("SET LOCAL enable_seqscan = off")
+            plan = await connection.fetch(
+                f'EXPLAIN SELECT * FROM "{schema}".conversation_items '
+                "WHERE voice_session_id = $1 AND tenant_id = $2 AND user_id = $3 AND thread_id = $4 "
+                "AND kind IN ('user.input', 'assistant.output') AND sequence > $5 ORDER BY sequence LIMIT $6",
+                "voice-1", "tenant-1", "user-1", "thread-1", 0, 3,
+            )
+        assert "conversation_items_session_read_idx" in str(plan)
+
+
+@pytest.mark.asyncio
+async def test_postgres_session_cursor_boundaries_and_delete_remove_query_results(postgres) -> None:
+    pool, schema = postgres
+    journal = PostgresConversationJournal(pool, schema=schema)
+    await journal.append(item("A-1"))
+    for after, limit in [(-1, 2), (2**63, 2), (0, 0), (0, 1001)]:
+        with pytest.raises(ValueError):
+            await journal.read_session_page("voice-1", after_sequence=after, limit=limit)
+    assert await journal.delete_threads((JournalScope.from_context(context()),)) == 1
+    assert (await journal.read_session_page("voice-1")).items == ()
+
+
+@pytest.mark.asyncio
+async def test_postgres_session_page_works_inside_caller_transaction_without_timeout_leak(postgres) -> None:
+    pool, schema = postgres
+    async with pool.acquire() as connection:
+        journal = PostgresConversationJournal(connection, schema=schema)
+        async with connection.transaction():
+            await connection.execute("SET LOCAL statement_timeout = '100ms'")
+            await journal.append(item("nested-item"))
+            page = await journal.read_session_page("voice-1")
+            assert len(page.items) == 1
+            assert await connection.fetchval("SHOW statement_timeout") == "100ms"
+            await journal.append(item("next-item"))
+
+
+@pytest.mark.asyncio
+async def test_postgres_migration_refuses_index_left_invalid_by_failed_concurrent_build(postgres) -> None:
+    pool, schema = postgres
+    journal = PostgresConversationJournal(pool, schema=schema)
+    await journal.append(item("one"))
+    await journal.append(replace(item("two"), context=replace(context(), thread_id="thread-two")))
+    asyncpg = pytest.importorskip("asyncpg")
+    async with pool.acquire() as connection:
+        await connection.execute(f'DROP INDEX CONCURRENTLY "{schema}".conversation_items_session_read_idx')
+        with pytest.raises(asyncpg.UniqueViolationError):
+            await connection.execute(f'CREATE UNIQUE INDEX CONCURRENTLY conversation_items_session_read_idx ON "{schema}".conversation_items(sequence)')
+        with pytest.raises(RuntimeError, match="invalid or incompatible"):
+            await apply_migrations(connection, schema=schema)
+        await connection.execute(f'DROP INDEX CONCURRENTLY "{schema}".conversation_items_session_read_idx')
+        await apply_migrations(connection, schema=schema)
+
+
+@pytest.mark.asyncio
 async def test_postgres_journal_round_trips_display_and_spoken_representations(postgres) -> None:
     pool, schema = postgres
     journal = PostgresConversationJournal(pool, schema=schema)

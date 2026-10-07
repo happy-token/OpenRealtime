@@ -36,3 +36,7 @@ The capability authorizes access for its holder; `agent_id` is an admin-assigned
 Tests cover signed identity, exact Session, absolute expiry/future issuance, rotation, tampering/oversize/malformed headers, wrong scope/audience, disabled configuration, admin/Origin enforcement, machine-only denial of issuance, unavailable admin services, independent paginated retrieval, no cross-Session/global health query, no credential forwarding or report echo, and disabled demo issuance. The accepted code must also receive independent review and TypeScript/lint checks.
 
 Deploy-time secret setup, actual administrator button/download and external Agent HTTPS calls remain release acceptance. This does not complete OBS02 recording/evidence completeness, OBS03 dual recording, or G0–G5 runtime/real-provider experiments.
+
+## Follow-up: ADR0149
+
+The conversation query and pagination limitations above describe the initial implementation and the retained legacy `/conversation` reader. [ADR0149](0149-session-journal-diagnostic-pagination.md) replaces the unified diagnostics GET conversation source with a Journal-authoritative, exact-Session paginated query, including a third independent conversation cursor. Legacy conservative refusal remains for old callers. Access claims, absolute expiry and revocation limits are unchanged.

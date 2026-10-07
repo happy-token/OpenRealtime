@@ -21,7 +21,7 @@ export function DiagnosticAgentAccess({ sessionId, preview = false }: { sessionI
       const bundle = {
         ...grant, endpoint: new URL(endpoint, window.location.origin).href,
         method: "GET", authorization_header: `Bearer ${grant.access_token}`,
-        pagination: { telemetry: "telemetry.next_cursor → telemetry_cursor", debug_log: "debug_log.next_cursor → debug_cursor" },
+        pagination: { telemetry: "telemetry.next_cursor → telemetry_cursor", debug_log: "debug_log.next_cursor → debug_cursor", conversation: "conversation_next_cursor → conversation_cursor" },
         instruction: "仅查询此 Session；凭据15分钟内有效。通过 Authorization 请求头使用，不要放入链接或日志。数据源缺失或截断必须保留说明。录音尚未接入。",
       };
       const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));

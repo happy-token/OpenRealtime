@@ -61,6 +61,7 @@ export interface DiagnosticLogEntry {
 export interface ConversationReplayItem {
   item_id: string;
   voice_session_id?: string;
+  journal_sequence?: string;
   role: "user" | "assistant";
   text: string;
   generation: number;

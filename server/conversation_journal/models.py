@@ -176,6 +176,14 @@ class JournalScope:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionConversationPage:
+    """A bounded original-Session view of user and assistant Journal items."""
+
+    items: tuple[ConversationItem, ...]
+    next_sequence: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ConversationItemDraft:
     item_id: str
     context: InteractionContext

@@ -89,8 +89,10 @@ from server.brain.session_memory import SessionMemory
 from server.brain.tool_calling_brain import ToolCallingBrain
 from server.cli.harness import run_app
 from server.conversation_journal import (
+    ConversationItem,
     ConversationItemKind,
     JournalScope,
+    SessionConversationQuery,
     TextContent,
 )
 from server.conversation_journal.input_evidence import read_input_evidence
@@ -1761,6 +1763,10 @@ async def _read_session_conversation(session_id: str) -> list[dict]:
         # The legacy array API has no cursor. Do not claim a filtered prefix is
         # complete, or silently hide a continued Session beyond this window.
         raise RuntimeError("conversation replay limit exceeded")
+    return _project_session_conversation(items, session_id)
+
+
+def _project_session_conversation(items: tuple[ConversationItem, ...], session_id: str) -> list[dict]:
     projected: list[dict] = []
     for item in items:
         if item.context.voice_session_id != session_id:
@@ -1779,6 +1785,7 @@ async def _read_session_conversation(session_id: str) -> list[dict]:
             {
                 "item_id": item.item_id,
                 "voice_session_id": item.context.voice_session_id,
+                "journal_sequence": str(item.sequence),
                 "role": (
                     "user"
                     if item.kind is ConversationItemKind.USER_INPUT
@@ -1791,6 +1798,20 @@ async def _read_session_conversation(session_id: str) -> list[dict]:
             }
         )
     return projected
+
+
+async def _read_session_conversation_page(session_id: str, after_sequence: int, limit: int) -> dict:
+    if _application_runtime is None:
+        raise RuntimeError("application runtime is not started")
+    journal = _application_runtime.journal
+    if not isinstance(journal, SessionConversationQuery):
+        raise TypeError("Journal does not support session conversation pagination")
+    page = await journal.read_session_page(session_id, after_sequence=after_sequence, limit=limit)
+    return {
+        "voice_session_id": session_id,
+        "items": _project_session_conversation(page.items, session_id),
+        "next_cursor": str(page.next_sequence) if page.next_sequence is not None else None,
+    }
 
 
 async def _read_session_input_evidence(session_id: str, after_sequence: int, limit: int) -> dict:
@@ -1845,6 +1866,7 @@ if __name__ == "__main__":
         diagnostics_health_reader=lambda: _application_runtime.diagnostics_health() if _application_runtime is not None else {"status": "unavailable"},
         voice_previewer=_preview_voice,
         session_conversation_reader=_read_session_conversation,
+        session_conversation_page_reader=_read_session_conversation_page,
         session_input_evidence_reader=_read_session_input_evidence,
         session_history_deleter=_delete_session_history,
         avatar_asset_handler=_handle_avatar_asset_request,

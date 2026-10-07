@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -18,11 +20,13 @@ from server.conversation_journal import (
     DisplayContent,
     JournalConflict,
     JournalScope,
+    SessionConversationPage,
     SpokenContent,
     StructuredContent,
     TextContent,
     ThreadVersionConflict,
 )
+from server.conversation_journal.journal import validate_session_window
 from server.conversation_journal.models import ConversationContent, utc_now
 from server.core.interaction_context import InteractionContext
 from server.persistence.postgres._connection import connection_scope
@@ -198,6 +202,39 @@ class PostgresConversationJournal:
                 scope.thread_id,
             )
             return int(version or 0)
+
+    async def read_session_page(
+        self, voice_session_id: str, *, after_sequence: int = 0, limit: int = 200,
+    ) -> SessionConversationPage:
+        validate_session_window(voice_session_id, after_sequence, limit)
+        async with asyncio.timeout(4), connection_scope(self._executor) as connection, connection.transaction():
+            previous_timeout = await connection.fetchval("SHOW statement_timeout")
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", _session_statement_timeout(previous_timeout))
+            rows = await connection.fetch(
+                f"""WITH scopes AS MATERIALIZED (
+                        SELECT DISTINCT tenant_id, user_id, thread_id FROM {self._items}
+                        WHERE voice_session_id = $1 AND kind IN ('user.input', 'assistant.output')
+                        ORDER BY tenant_id, user_id, thread_id LIMIT 2
+                    ), identity AS (SELECT count(*) AS scope_count FROM scopes)
+                    SELECT identity.scope_count, page.* FROM identity
+                    LEFT JOIN LATERAL (
+                        SELECT item.* FROM {self._items} item
+                        JOIN scopes s ON item.tenant_id = s.tenant_id AND item.user_id = s.user_id AND item.thread_id = s.thread_id
+                        WHERE identity.scope_count = 1 AND item.voice_session_id = $1
+                          AND item.kind IN ('user.input', 'assistant.output') AND item.sequence > $2
+                        ORDER BY item.sequence LIMIT $3
+                    ) page ON true ORDER BY page.sequence""",
+                voice_session_id, after_sequence, limit + 1,
+            )
+            # A nested SAVEPOINT retains successful SET LOCAL changes in
+            # its caller's transaction unless explicitly restored.
+            await connection.execute("SELECT set_config('statement_timeout', $1, true)", previous_timeout)
+            if rows[0]["scope_count"] > 1:
+                raise ValueError("session conversation identity is ambiguous")
+            if rows[0]["item_id"] is None:
+                return SessionConversationPage((), None)
+            page = tuple(self._item(row) for row in rows[:limit])
+            return SessionConversationPage(page, page[-1].sequence if len(rows) > limit else None)
 
     async def delete_threads(self, scopes: Sequence[JournalScope]) -> int:
         return await self._delete_threads(scopes)
@@ -384,6 +421,14 @@ def _json(value: Any) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
+
+
+def _session_statement_timeout(previous: str) -> str:
+    match = re.fullmatch(r"([0-9]+)(ms|s|min|h|d)?", previous)
+    if match is None:
+        raise ValueError("unsupported statement timeout format")
+    milliseconds = int(match[1]) * {None: 1, "ms": 1, "s": 1000, "min": 60_000, "h": 3_600_000, "d": 86_400_000}[match[2]]
+    return str(min(milliseconds, 3000) if milliseconds else 3000)
 
 
 def _validate_window(after_sequence: int, limit: int) -> None:

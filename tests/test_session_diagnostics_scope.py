@@ -1,11 +1,15 @@
 """Exercise the production reader with real Journal and telemetry authorities."""
 
+import asyncio
+import json
+import urllib.request
 from dataclasses import replace
 
 import pytest
 
 from demos import voice_web_server
 from server.application.runtime import ApplicationRuntimeConfig, build_application_runtime
+from server.control_plane import http as control_plane_http
 from server.conversation_journal import (
     ConversationItemDraft,
     ConversationItemKind,
@@ -13,6 +17,7 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.core.interaction_context import InteractionContext
+from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.telemetry import TelemetryIdentity
 
 
@@ -121,4 +126,52 @@ async def test_identity_on_a_later_telemetry_page_cannot_be_claimed_unambiguous(
         with pytest.raises(ValueError, match="identity is incomplete"):
             await voice_web_server._read_session_conversation("many-events")
     finally:
+        await runtime.close()
+
+
+async def test_paged_production_reader_reads_large_continued_thread_without_telemetry(monkeypatch):
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
+    context = InteractionContext(tenant_id="public-tenant", user_id="public-user", device_id="device",
+                                 voice_session_id="earlier", thread_id="shared", turn_id="turn", generation=1)
+    continued = replace(context, voice_session_id="continued")
+    try:
+        for i in range(1005):
+            await append(runtime, context, f"earlier-{i}", "other Session")
+        for i in range(3):
+            await append(runtime, continued, f"continued-{i}", f"mine {i}")
+        page = await voice_web_server._read_session_conversation_page("continued", 0, 2)
+        assert [row["text"] for row in page["items"]] == ["mine 0", "mine 1"]
+        assert page["next_cursor"] == "1007"
+        final = await voice_web_server._read_session_conversation_page("continued", int(page["next_cursor"]), 2)
+        assert [row["text"] for row in final["items"]] == ["mine 2"]
+        assert final["next_cursor"] is None
+        assert all(row["voice_session_id"] == "continued" for row in page["items"] + final["items"])
+    finally:
+        await runtime.close()
+
+
+async def test_real_http_pagination_runs_production_reader_and_conversation_query(monkeypatch):
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    monkeypatch.setattr(voice_web_server, "_application_runtime", runtime)
+    context = InteractionContext(tenant_id="tenant", user_id="user", device_id="device",
+                                 voice_session_id="A", thread_id="shared", turn_id="turn", generation=1)
+    server = control_plane_http.start(EndpointSessionRegistry(),
+        session_conversation_page_reader=voice_web_server._read_session_conversation_page, port=0)
+    base = f"http://127.0.0.1:{server.server_address[1]}/observability/sessions/A/conversation-page?limit=1"
+    def get(url):
+        with urllib.request.urlopen(url, timeout=3) as response:
+            return response.status, json.loads(response.read())
+    try:
+        await append(runtime, context, "A-1", "first")
+        await append(runtime, replace(context, voice_session_id="B"), "B-1", "not A")
+        await append(runtime, context, "A-2", "second")
+        status, first = await asyncio.to_thread(get, base)
+        assert status == 200 and first["next_cursor"] == "1"
+        status, second = await asyncio.to_thread(get, base + "&after_sequence=" + first["next_cursor"])
+        assert status == 200 and second["next_cursor"] is None
+        assert [first["items"][0]["text"], second["items"][0]["text"]] == ["first", "second"]
+    finally:
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
         await runtime.close()

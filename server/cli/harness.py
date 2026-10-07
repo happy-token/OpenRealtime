@@ -26,7 +26,11 @@ from typing import Any, Protocol
 
 from server.cli.lifecycle import LifecycleHook, invoke_lifecycle_hook
 from server.control_plane import http as control_plane_http
-from server.control_plane.http import AvatarAssetHandler, SessionInputEvidenceReader
+from server.control_plane.http import (
+    AvatarAssetHandler,
+    SessionConversationPageReader,
+    SessionInputEvidenceReader,
+)
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.log_context import VoiceSessionLogFilter
 from server.observability.telemetry import DebugLogQuery, DiagnosticsQuery
@@ -132,6 +136,7 @@ async def _run(
     voice_previewer: VoicePreviewer | None = None,
     session_conversation_reader: SessionConversationReader | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
+    session_conversation_page_reader: SessionConversationPageReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
 ) -> None:
@@ -159,6 +164,7 @@ async def _run(
                 voice_previewer=voice_previewer,
                 session_conversation_reader=session_conversation_reader,
                 session_input_evidence_reader=session_input_evidence_reader,
+                session_conversation_page_reader=session_conversation_page_reader,
                 session_history_deleter=session_history_deleter,
                 avatar_asset_handler=avatar_asset_handler,
                 debug_log_query=debug_log_query,
@@ -224,6 +230,7 @@ def run_app(
     voice_previewer: VoicePreviewer | None = None,
     session_conversation_reader: SessionConversationReader | None = None,
     session_input_evidence_reader: SessionInputEvidenceReader | None = None,
+    session_conversation_page_reader: SessionConversationPageReader | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
     log_format: str = _DEFAULT_LOG_FORMAT,
@@ -283,6 +290,7 @@ def run_app(
                 voice_previewer=voice_previewer,
                 session_conversation_reader=session_conversation_reader,
                 session_input_evidence_reader=session_input_evidence_reader,
+                session_conversation_page_reader=session_conversation_page_reader,
                 session_history_deleter=session_history_deleter,
                 avatar_asset_handler=avatar_asset_handler,
             )

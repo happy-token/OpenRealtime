@@ -5,6 +5,7 @@ from server.conversation_journal.journal import (
     ConversationJournal,
     InMemoryConversationJournal,
     JournalConflict,
+    SessionConversationQuery,
     ThreadVersionConflict,
 )
 from server.conversation_journal.models import (
@@ -20,6 +21,7 @@ from server.conversation_journal.models import (
     ConversationVisibility,
     DisplayContent,
     JournalScope,
+    SessionConversationPage,
     SpokenContent,
     StructuredContent,
     TextContent,
@@ -42,6 +44,8 @@ __all__ = [
     "InMemoryConversationJournal",
     "JournalConflict",
     "JournalScope",
+    "SessionConversationPage",
+    "SessionConversationQuery",
     "SpokenContent",
     "StructuredContent",
     "TextContent",

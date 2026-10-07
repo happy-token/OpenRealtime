@@ -15,6 +15,8 @@
 
 2026-10-07横向增量采用[ADR0148](../adr/0148-session-scoped-agent-diagnostic-access.md)：管理员同源签发、独立机器身份、15分钟单Session只读授权、既有GET独立分页及页面下载按钮已接通；无效Bearer不回退Cookie，不查全局health、不转发凭据。默认独立密钥留空，部署与实际Agent调用尚未验收；录音/证据完整度、故障去重/建连指标和全量G0–G5继续开放。[操作说明](../guides/agent-session-diagnostics.md)说明绝对期限、全量密钥轮换撤销及没有单凭据提前撤销/持久审计的限制。
 
+随后采用[ADR0149](../adr/0149-session-journal-diagnostic-pagination.md)补齐对话分页：Journal按原始Session及唯一对话scope回读，不依赖遥测第一页，memory索引与PG并发部分索引复用既有Seam；私有HTTP/统一GET/页面/Agent文件接通第三个独立游标，失败来源不阻塞成功来源推进。外部事务的查询超时恢复及无效并发索引拒绝均经隔离PG验证。尚未执行生产迁移或部署；完整输入证据/录音/实际播放映射、故障去重与冷暖建连指标和全部G0–G5继续开放。
+
 ## 阶段0：先完成契约与实验基线
 
 - 冻结逻辑输入、ASR修订、分类批次、回复版本、播放epoch、句段、停播命令的身份链；既有Generation保持执行租约。
