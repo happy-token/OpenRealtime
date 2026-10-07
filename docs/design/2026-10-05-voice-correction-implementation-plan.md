@@ -17,6 +17,8 @@
 
 随后采用[ADR0149](../adr/0149-session-journal-diagnostic-pagination.md)补齐对话分页：Journal按原始Session及唯一对话scope回读，不依赖遥测第一页，memory索引与PG并发部分索引复用既有Seam；私有HTTP/统一GET/页面/Agent文件接通第三个独立游标，失败来源不阻塞成功来源推进。外部事务的查询超时恢复及无效并发索引拒绝均经隔离PG验证。尚未执行生产迁移或部署；完整输入证据/录音/实际播放映射、故障去重与冷暖建连指标和全部G0–G5继续开放。
 
+横向录音前置采用[ADR0150](../adr/0150-recording-artifact-retention-and-upload-ownership.md)：复用Artifact录音expiry intent/pin/delete与上传清理ledger，补实际SDK上传归属、未确认put持续清理、失败重试及删除终态CAS。新0036仅隔离测试库验证；当前未生产迁移/接通双路collector/Runtime维护调度，默认录音仍未启用。下一项是有界分段及输入/实际sent帧的采集契约，再接Session证据与播放位置，不能把该存储前置作为OBS03验收。全部G0–G5其他任务仍按原范围。
+
 ## 阶段0：先完成契约与实验基线
 
 - 冻结逻辑输入、ASR修订、分类批次、回复版本、播放epoch、句段、停播命令的身份链；既有Generation保持执行租约。

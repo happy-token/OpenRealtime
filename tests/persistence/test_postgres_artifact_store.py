@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 import pytest_asyncio
@@ -301,7 +302,7 @@ async def test_cleanup_fencing_prevents_binding_an_object_claimed_by_reconciler(
         await upload
 
     after_fence = await store.get_record(record.artifact_id)
-    assert reconciled["upload_attempts_cleaned"] == 1
+    assert reconciled["upload_attempts_cleaned"] == 0
     assert after_fence is not None
     assert after_fence.phase is ArtifactPhase.STAGING
     assert after_fence.receipt is None
@@ -396,3 +397,367 @@ async def test_reconciler_deletes_unbound_output_but_preserves_pinned_output(pos
     assert reconciled["artifacts_cleaned"] == 1
     assert (await store.get_record(abandoned.artifact_id)).phase is ArtifactPhase.DELETED
     assert (await store.get_record(retained.artifact_id)).phase is ArtifactPhase.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_recording_retention_intent_survives_restart_and_pin(postgres, monkeypatch) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = InMemoryS3ObjectClient()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    records = []
+    for key, kind in [
+        ("expires", "voice_session_recording"),
+        ("pinned", "voice_session_recording"),
+        ("other", "agent_task"),
+    ]:
+        record = await store.create_staging(
+            replace(
+                request_for(),
+                source_kind=kind,
+                idempotency_key=key,
+                retention_until=now + timedelta(days=7),
+            )
+        )
+        await store.upload(record.artifact_id, b"voice-data")
+        records.append(await store.finalize(record.artifact_id))
+    scope = ArtifactAccessScope("tenant-1", "user-1")
+    await store.pin_for(scope, records[1].artifact_id)
+    assert (await store.reconcile_cleanup_ledger())["artifacts_cleaned"] == 0
+    now += timedelta(days=7)
+    recovered = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    assert (await recovered.reconcile_cleanup_ledger(limit=1))["artifacts_cleaned"] == 1
+    assert (await recovered.get_record(records[0].artifact_id)).phase is ArtifactPhase.DELETED
+    for record in records[1:]:
+        assert await recovered.read(record.artifact_id) == b"voice-data"
+    assert (await recovered.reconcile_cleanup_ledger())["artifacts_cleaned"] == 0
+
+
+@pytest.mark.parametrize("limit", [True, 1001])
+@pytest.mark.asyncio
+async def test_cleanup_rejects_unbounded_or_boolean_limits(postgres, limit) -> None:
+    pool, schema = postgres
+    store = PostgresArtifactStore(pool, objects=InMemoryS3ObjectClient(), schema=schema)
+    with pytest.raises(ValueError):
+        await store.reconcile_cleanup_ledger(limit=limit)
+
+
+@pytest.mark.asyncio
+async def test_recording_failed_delete_retries_after_store_recreation(
+    postgres, monkeypatch
+) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    class FailOnce(InMemoryS3ObjectClient):
+        failed = False
+
+        async def delete(self, object_key: str) -> None:
+            if not self.failed:
+                self.failed = True
+                raise OSError("recording deletion offline")
+            await super().delete(object_key)
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = FailOnce()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    record = await store.create_staging(
+        replace(
+            request_for(),
+            source_kind="voice_session_recording",
+            retention_until=now + timedelta(days=7),
+        )
+    )
+    await store.upload(record.artifact_id, b"voice-data")
+    await store.finalize(record.artifact_id)
+    now += timedelta(days=7)
+    assert (await store.reconcile_cleanup_ledger())["artifacts_cleaned"] == 0
+    assert (await store.get_record(record.artifact_id)).phase is ArtifactPhase.DELETING
+    async with pool.acquire() as connection:
+        intent = await connection.fetchrow(
+            f'SELECT * FROM "{schema}".artifact_cleanup_intents WHERE artifact_id=$1',
+            record.artifact_id,
+        )
+    assert intent["phase"] == "pending"
+    assert intent["attempt_count"] == 1
+    assert intent["failure_reason"] == "recording deletion offline"
+    restarted = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    assert (await restarted.reconcile_cleanup_ledger())["artifacts_cleaned"] == 1
+    assert (await restarted.get_record(record.artifact_id)).phase is ArtifactPhase.DELETED
+
+
+@pytest.mark.asyncio
+async def test_pin_wins_between_retention_scan_and_delete_admission(postgres, monkeypatch) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = InMemoryS3ObjectClient()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    record = await store.create_staging(
+        replace(
+            request_for(),
+            source_kind="voice_session_recording",
+            retention_until=now + timedelta(days=7),
+        )
+    )
+    await store.upload(record.artifact_id, b"voice-data")
+    await store.finalize(record.artifact_id)
+    entered = asyncio.Event()
+    resume = asyncio.Event()
+    original_delete = store.delete
+
+    async def paused_delete(artifact_id):
+        entered.set()
+        await resume.wait()
+        return await original_delete(artifact_id)
+
+    monkeypatch.setattr(store, "delete", paused_delete)
+    now += timedelta(days=7)
+    cleanup = asyncio.create_task(store.reconcile_cleanup_ledger())
+    await asyncio.wait_for(entered.wait(), 1)
+    await store.pin_for(ArtifactAccessScope("tenant-1", "user-1"), record.artifact_id)
+    resume.set()
+    assert (await cleanup)["artifacts_cleaned"] == 0
+    assert await store.read(record.artifact_id) == b"voice-data"
+    assert (await store.get_record(record.artifact_id)).request.immutable
+    assert (await store.reconcile_cleanup_ledger())["artifacts_cleaned"] == 0
+
+
+@pytest.mark.asyncio
+async def test_recording_delete_claim_rejects_late_pin(postgres, monkeypatch) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    class PausedDelete(InMemoryS3ObjectClient):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.resume = asyncio.Event()
+
+        async def delete(self, object_key):
+            self.entered.set()
+            await self.resume.wait()
+            await super().delete(object_key)
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = PausedDelete()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    record = await store.create_staging(
+        replace(
+            request_for(),
+            source_kind="voice_session_recording",
+            retention_until=now + timedelta(days=7),
+        )
+    )
+    await store.upload(record.artifact_id, b"voice-data")
+    await store.finalize(record.artifact_id)
+    now += timedelta(days=7)
+    cleanup = asyncio.create_task(store.reconcile_cleanup_ledger())
+    try:
+        await asyncio.wait_for(objects.entered.wait(), 1)
+        with pytest.raises(ArtifactNotAvailable):
+            await store.pin_for(ArtifactAccessScope("tenant-1", "user-1"), record.artifact_id)
+        assert (await store.get_record(record.artifact_id)).phase is ArtifactPhase.DELETING
+    finally:
+        objects.resume.set()
+        result = await asyncio.wait_for(cleanup, 1)
+    assert result["artifacts_cleaned"] == 1
+    assert (await store.get_record(record.artifact_id)).phase is ArtifactPhase.DELETED
+
+
+@pytest.mark.asyncio
+async def test_recording_late_put_cleanup_is_retryable(postgres, monkeypatch) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    class LatePut(InMemoryS3ObjectClient):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.resume = asyncio.Event()
+            self.failed = False
+
+        async def put(self, object_key, data, *, media_type):
+            self.entered.set()
+            await self.resume.wait()
+            return await super().put(object_key, data, media_type=media_type)
+
+        async def delete(self, object_key):
+            if object_key in self._objects and not self.failed:
+                self.failed = True
+                raise OSError("late blob cleanup offline")
+            await super().delete(object_key)
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = LatePut()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema, cleanup_grace_seconds=0)
+    record = await store.create_staging(
+        replace(
+            request_for(),
+            source_kind="voice_session_recording",
+            retention_until=now + timedelta(days=7),
+        )
+    )
+    upload = asyncio.create_task(store.upload(record.artifact_id, b"voice-data"))
+    try:
+        await asyncio.wait_for(objects.entered.wait(), 1)
+        now += timedelta(days=7)
+        await store.reconcile_cleanup_ledger()
+    finally:
+        objects.resume.set()
+    with pytest.raises((ArtifactConflict, OSError)):
+        await upload
+    assert len(objects._objects) == 1
+    await store.reconcile_cleanup_ledger()
+    assert objects._objects == {}
+    assert (await store.get_record(record.artifact_id)).phase is ArtifactPhase.DELETED
+
+
+@pytest.mark.asyncio
+async def test_failed_oldest_recording_does_not_starve_another_expired_recording(
+    postgres, monkeypatch
+) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    class SelectiveFailure(InMemoryS3ObjectClient):
+        bad_key = None
+
+        async def delete(self, object_key):
+            if object_key == self.bad_key:
+                raise OSError("permanent deletion failure")
+            await super().delete(object_key)
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = SelectiveFailure()
+    store = PostgresArtifactStore(pool, objects=objects, schema=schema)
+    records = []
+    for key in ["bad", "good"]:
+        record = await store.create_staging(
+            replace(
+                request_for(),
+                source_kind="voice_session_recording",
+                idempotency_key=key,
+                retention_until=now + timedelta(days=7),
+            )
+        )
+        await store.upload(record.artifact_id, b"voice-data")
+        records.append(await store.finalize(record.artifact_id))
+        now += timedelta(seconds=1)
+    objects.bad_key = records[0].receipt.object_key
+    now += timedelta(days=7)
+    assert (await store.reconcile_cleanup_ledger(limit=1))["artifacts_cleaned"] == 0
+    assert (await store.reconcile_cleanup_ledger(limit=1))["artifacts_cleaned"] == 1
+    assert (await store.get_record(records[1].artifact_id)).phase is ArtifactPhase.DELETED
+    assert (await store.get_record(records[0].artifact_id)).phase is ArtifactPhase.DELETING
+
+
+@pytest.mark.asyncio
+async def test_late_put_crash_keeps_confirmed_orphan_cleanup_after_restart(
+    postgres, monkeypatch
+) -> None:
+    import server.persistence.postgres.artifact_store as module
+
+    class Crash(BaseException):
+        pass
+
+    class PausedPut(InMemoryS3ObjectClient):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.resume = asyncio.Event()
+
+        async def put(self, object_key, data, *, media_type):
+            self.entered.set()
+            await self.resume.wait()
+            return await super().put(object_key, data, media_type=media_type)
+
+    def crash(attempt_id):
+        raise Crash()
+
+    pool, schema = postgres
+    now = module.utc_now()
+    monkeypatch.setattr(module, "utc_now", lambda: now)
+    objects = PausedPut()
+    store = PostgresArtifactStore(
+        pool, objects=objects, schema=schema, cleanup_grace_seconds=0, after_object_put=crash
+    )
+    record = await store.create_staging(
+        replace(
+            request_for(),
+            source_kind="voice_session_recording",
+            retention_until=now + timedelta(days=7),
+        )
+    )
+    upload = asyncio.create_task(store.upload(record.artifact_id, b"voice-data"))
+    try:
+        await asyncio.wait_for(objects.entered.wait(), 1)
+        now += timedelta(days=7)
+        first = await store.reconcile_cleanup_ledger()
+        assert first["upload_attempts_cleaned"] == 0
+        async with pool.acquire() as connection:
+            attempt = await connection.fetchrow(
+                f'SELECT * FROM "{schema}".artifact_upload_attempts WHERE artifact_id=$1',
+                record.artifact_id,
+            )
+        assert not attempt["put_completed"]
+        assert attempt["phase"] == "cleanup_pending"
+    finally:
+        objects.resume.set()
+    with pytest.raises(Crash):
+        await upload
+    assert len(objects._objects) == 1
+    restarted = PostgresArtifactStore(pool, objects=objects, schema=schema, cleanup_grace_seconds=0)
+    assert (await restarted.reconcile_cleanup_ledger())["upload_attempts_cleaned"] == 1
+    assert objects._objects == {}
+
+
+@pytest.mark.asyncio
+async def test_stale_cleanup_token_does_not_report_success(postgres) -> None:
+    class Crash(BaseException):
+        pass
+
+    class PausedDelete(InMemoryS3ObjectClient):
+        def __init__(self):
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.resume = asyncio.Event()
+
+        async def delete(self, object_key):
+            self.entered.set()
+            await self.resume.wait()
+            await super().delete(object_key)
+
+    def crash(attempt_id):
+        raise Crash()
+
+    pool, schema = postgres
+    objects = PausedDelete()
+    store = PostgresArtifactStore(
+        pool, objects=objects, schema=schema, cleanup_grace_seconds=0, after_object_put=crash
+    )
+    record = await store.create_staging(request_for())
+    with pytest.raises(Crash):
+        await store.upload(record.artifact_id, b"voice-data")
+    async with pool.acquire() as connection:
+        attempt_id = await connection.fetchval(
+            f'SELECT attempt_id FROM "{schema}".artifact_upload_attempts WHERE artifact_id=$1',
+            record.artifact_id,
+        )
+    cleanup = asyncio.create_task(store._cleanup_upload_attempt(attempt_id))
+    try:
+        await asyncio.wait_for(objects.entered.wait(), 1)
+        await store._mark_upload_cleanup(attempt_id, "renewed cleanup ownership")
+    finally:
+        objects.resume.set()
+    assert await cleanup is False
+    assert (await store.reconcile_cleanup_ledger())["upload_attempts_cleaned"] == 1

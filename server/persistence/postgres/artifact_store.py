@@ -10,6 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 from server.agent_session.driver_protocol import utc_now
+from server.artifacts._upload_owner import ArtifactUploadOwner
 from server.artifacts.protocol import (
     ArtifactAccessScope,
     ArtifactConflict,
@@ -19,6 +20,7 @@ from server.artifacts.protocol import (
     ArtifactRecord,
     BlobReceipt,
     S3ObjectClient,
+    validate_cleanup_limit,
 )
 from server.persistence.postgres._connection import connection_scope
 from server.persistence.postgres.schema import validate_schema_name
@@ -37,6 +39,7 @@ class PostgresArtifactStore:
         after_object_put: Callable[[str], None] | None = None,
     ) -> None:
         self._executor = executor
+        self._upload_owner = ArtifactUploadOwner()
         self._objects = objects
         validated = validate_schema_name(schema)
         self._table = f'"{validated}".artifacts'
@@ -109,6 +112,7 @@ class PostgresArtifactStore:
             if request.source_kind in {
                 "motion_base_source_master",
                 "motion_base_rendition",
+                "voice_session_recording",
             }:
                 await connection.execute(
                     f"""
@@ -121,13 +125,20 @@ class PostgresArtifactStore:
                     row["artifact_id"],
                     row["tenant_id"],
                     row["owner_id"],
-                    "unbound avatar output",
-                    now + timedelta(seconds=self._cleanup_grace_seconds),
+                    "recording retention expired"
+                    if request.source_kind == "voice_session_recording"
+                    else "unbound avatar output",
+                    request.retention_until
+                    if request.source_kind == "voice_session_recording"
+                    else now + timedelta(seconds=self._cleanup_grace_seconds),
                     now,
                 )
             return self._record(row)
 
     async def upload(self, artifact_id: str, data: bytes) -> ArtifactRecord:
+        return await self._upload_owner.run(lambda: self._upload(artifact_id, data))
+
+    async def _upload(self, artifact_id: str, data: bytes) -> ArtifactRecord:
         record = await self._require(artifact_id)
         digest = hashlib.sha256(data).hexdigest()
         if record.phase is ArtifactPhase.AVAILABLE and record.receipt is not None:
@@ -179,6 +190,22 @@ class PostgresArtifactStore:
         except Exception as error:
             await self._mark_upload_cleanup(attempt_id, str(error) or type(error).__name__)
             raise
+        # Record completion before the crash hook or receipt CAS. An early
+        # cleanup revokes admission; a late writer cannot regain it.
+        async with connection_scope(self._executor) as connection:
+            await connection.execute(
+                f"""
+                UPDATE {self._upload_attempts}
+                SET put_completed = true,
+                    phase = CASE WHEN phase = 'pending' THEN 'pending' ELSE 'cleanup_pending' END,
+                    cleanup_token = NULL,
+                    cleanup_after = CASE WHEN phase = 'pending' THEN cleanup_after ELSE $2 END,
+                    updated_at = $2
+                WHERE attempt_id = $1 AND phase <> 'committed'
+                """,
+                attempt_id,
+                utc_now(),
+            )
         if self._after_object_put is not None:
             self._after_object_put(attempt_id)
         if (
@@ -370,8 +397,7 @@ class PostgresArtifactStore:
         return current
 
     async def reconcile_cleanup_ledger(self, *, limit: int = 100) -> dict[str, int]:
-        if limit <= 0:
-            raise ValueError("cleanup reconciliation limit must be positive")
+        validate_cleanup_limit(limit)
         now = utc_now()
         async with connection_scope(self._executor) as connection:
             attempt_rows = await connection.fetch(
@@ -396,7 +422,7 @@ class PostgresArtifactStore:
                 SELECT artifact_id, tenant_id, owner_id
                 FROM {self._cleanup_intents}
                 WHERE phase = 'pending' AND cleanup_after <= $1
-                ORDER BY cleanup_after, created_at
+                ORDER BY attempt_count, cleanup_after, created_at, artifact_id
                 LIMIT $2
                 """,
                 now,
@@ -441,9 +467,9 @@ class PostgresArtifactStore:
             await connection.execute(
                 f"""
                 UPDATE {self._upload_attempts}
-                SET phase = 'cleanup_pending', failure_reason = $2,
+                SET phase = 'cleanup_pending', cleanup_token = NULL, failure_reason = $2,
                     cleanup_after = $3, updated_at = $3
-                WHERE attempt_id = $1 AND phase = 'pending'
+                WHERE attempt_id = $1 AND phase IN ('pending', 'cleanup_pending', 'cleaning', 'cleaned')
                 """,
                 attempt_id,
                 reason,
@@ -491,8 +517,23 @@ class PostgresArtifactStore:
                     cleanup_token,
                 )
             return False
+        if not attempt["put_completed"]:
+            async with connection_scope(self._executor) as connection:
+                await connection.execute(
+                    f"""
+                    UPDATE {self._upload_attempts}
+                    SET phase = 'cleanup_pending', cleanup_token = NULL,
+                        failure_reason = 'put completion unknown', cleanup_after = $2, updated_at = $3
+                    WHERE attempt_id = $1 AND phase = 'cleaning' AND cleanup_token = $4
+                    """,
+                    attempt_id,
+                    utc_now() + timedelta(seconds=self._cleanup_lease_seconds),
+                    utc_now(),
+                    cleanup_token,
+                )
+            return False
         async with connection_scope(self._executor) as connection:
-            await connection.execute(
+            result = await connection.execute(
                 f"""
                 UPDATE {self._upload_attempts}
                 SET phase = 'cleaned', cleanup_token = NULL,
@@ -503,7 +544,7 @@ class PostgresArtifactStore:
                 utc_now(),
                 cleanup_token,
             )
-        return True
+        return result == "UPDATE 1"
 
     async def _finish_cleanup_intent(self, artifact_id: str, phase: str) -> None:
         async with connection_scope(self._executor) as connection:

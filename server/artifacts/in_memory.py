@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from server.agent_session.driver_protocol import utc_now
+from server.artifacts._upload_owner import ArtifactUploadOwner
 from server.artifacts.protocol import (
     ArtifactAccessScope,
     ArtifactConflict,
@@ -20,6 +21,7 @@ from server.artifacts.protocol import (
     ArtifactStore,
     BlobReceipt,
     S3ObjectClient,
+    validate_cleanup_limit,
 )
 
 
@@ -59,11 +61,15 @@ class InMemoryArtifactStore(ArtifactStore):
         objects: S3ObjectClient | None = None,
         artifact_id_factory: Callable[[], str] | None = None,
     ) -> None:
+        self._upload_owner = ArtifactUploadOwner()
         self._objects = objects or InMemoryS3ObjectClient()
         self._artifact_id_factory = artifact_id_factory or (lambda: str(uuid.uuid4()))
         self._records: dict[str, ArtifactRecord] = {}
         self._idempotency: dict[tuple[str, str], str] = {}
         self._request_digests: dict[str, str] = {}
+        self._active_uploads: dict[str, int] = {}
+        self._pending_upload_cleanup: dict[str, str] = {}
+        self._cleanup_attempts: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
     async def create_staging(self, request: ArtifactCreateRequest) -> ArtifactRecord:
@@ -95,6 +101,9 @@ class InMemoryArtifactStore(ArtifactStore):
             return record
 
     async def upload(self, artifact_id: str, data: bytes) -> ArtifactRecord:
+        return await self._upload_owner.run(lambda: self._upload(artifact_id, data))
+
+    async def _upload(self, artifact_id: str, data: bytes) -> ArtifactRecord:
         record = await self._require(artifact_id)
         digest = hashlib.sha256(data).hexdigest()
         if record.phase is ArtifactPhase.AVAILABLE and record.receipt is not None:
@@ -117,25 +126,63 @@ class InMemoryArtifactStore(ArtifactStore):
             if record.receipt.size != len(data) or record.receipt.sha256 != digest:
                 raise ArtifactConflict("artifact already has different uploaded content")
             return record
-        receipt = await self._objects.put(object_key, data, media_type=record.request.media_type)
-        if (
-            receipt.object_key != object_key
-            or receipt.size != len(data)
-            or receipt.sha256 != digest
-        ):
-            await self._objects.delete(object_key)
-            raise ArtifactConflict("object store returned an invalid upload receipt")
         async with self._lock:
             current = self._records[artifact_id]
             if current.revision != record.revision or current.phase is not ArtifactPhase.STAGING:
-                await self._objects.delete(receipt.object_key)
-                if current.receipt is not None and (
-                    current.receipt.size == receipt.size
-                    and current.receipt.sha256 == receipt.sha256
-                ):
-                    return current
-                raise ArtifactConflict("artifact changed during upload")
-            return self._replace(current, receipt=receipt, failure_reason=None)
+                raise ArtifactConflict("artifact changed before upload")
+            self._active_uploads[artifact_id] = self._active_uploads.get(artifact_id, 0) + 1
+        try:
+            try:
+                receipt = await self._objects.put(
+                    object_key, data, media_type=record.request.media_type
+                )
+            except BaseException:
+                async with self._lock:
+                    self._pending_upload_cleanup[object_key] = artifact_id
+                raise
+            if (
+                receipt.object_key != object_key
+                or receipt.size != len(data)
+                or receipt.sha256 != digest
+            ):
+                await self._cleanup_orphan(object_key, artifact_id)
+                raise ArtifactConflict("object store returned an invalid upload receipt")
+            async with self._lock:
+                current = self._records[artifact_id]
+                if current.revision == record.revision and current.phase is ArtifactPhase.STAGING:
+                    return self._replace(current, receipt=receipt, failure_reason=None)
+            await self._cleanup_orphan(object_key, artifact_id)
+            if (
+                current.phase in {ArtifactPhase.STAGING, ArtifactPhase.AVAILABLE}
+                and current.receipt is not None
+                and (current.receipt.size == receipt.size and current.receipt.sha256 == digest)
+            ):
+                return current
+            raise ArtifactConflict("artifact changed during upload")
+        finally:
+            async with self._lock:
+                remaining = self._active_uploads[artifact_id] - 1
+                if remaining:
+                    self._active_uploads[artifact_id] = remaining
+                else:
+                    del self._active_uploads[artifact_id]
+
+    async def _cleanup_orphan(self, object_key: str, artifact_id: str) -> bool:
+        async with self._lock:
+            self._pending_upload_cleanup[object_key] = artifact_id
+        try:
+            await self._objects.delete(object_key)
+        except Exception as error:  # noqa: BLE001 - orphan remains owned for retry
+            async with self._lock:
+                # Retry this orphan after the other pending keys.
+                self._pending_upload_cleanup.pop(object_key, None)
+                self._pending_upload_cleanup[object_key] = artifact_id
+                current = self._records[artifact_id]
+                self._replace(current, failure_reason=str(error) or type(error).__name__)
+            return False
+        async with self._lock:
+            self._pending_upload_cleanup.pop(object_key, None)
+        return True
 
     async def finalize(self, artifact_id: str) -> ArtifactRecord:
         record = await self._require(artifact_id)
@@ -151,6 +198,11 @@ class InMemoryArtifactStore(ArtifactStore):
         ):
             async with self._lock:
                 current = self._records[artifact_id]
+                if (
+                    current.revision != record.revision
+                    or current.phase is not ArtifactPhase.STAGING
+                ):
+                    raise ArtifactConflict("artifact changed during finalization")
                 return self._replace(
                     current,
                     phase=ArtifactPhase.FAILED,
@@ -232,6 +284,11 @@ class InMemoryArtifactStore(ArtifactStore):
             ):
                 raise ArtifactConflict("artifact retention policy prevents deletion")
             deleting = self._replace(current, phase=ArtifactPhase.DELETING)
+            if (
+                self._active_uploads.get(artifact_id)
+                or artifact_id in self._pending_upload_cleanup.values()
+            ):
+                raise ArtifactConflict("artifact upload cleanup is still pending")
         if deleting.receipt is not None:
             await self._objects.delete(deleting.receipt.object_key)
         async with self._lock:
@@ -240,7 +297,60 @@ class InMemoryArtifactStore(ArtifactStore):
                 return current
             if current.phase is not ArtifactPhase.DELETING:
                 raise ArtifactConflict("artifact changed while completing delete")
-            return self._replace(current, phase=ArtifactPhase.DELETED)
+            return self._replace(current, phase=ArtifactPhase.DELETED, failure_reason=None)
+
+    async def reconcile_cleanup_ledger(self, *, limit: int = 100) -> dict[str, int]:
+        validate_cleanup_limit(limit)
+        now = utc_now()
+        async with self._lock:
+            orphans = [
+                (key, artifact_id)
+                for key, artifact_id in self._pending_upload_cleanup.items()
+                if not self._active_uploads.get(artifact_id)
+            ][:limit]
+        uploads_cleaned = 0
+        for key, artifact_id in orphans:
+            if await self._cleanup_orphan(key, artifact_id):
+                uploads_cleaned += 1
+        async with self._lock:
+            candidates = sorted(
+                (
+                    record
+                    for record in self._records.values()
+                    if record.request.source_kind == "voice_session_recording"
+                    and not record.request.immutable
+                    and record.phase is not ArtifactPhase.DELETED
+                    and record.request.retention_until is not None
+                    and record.request.retention_until <= now
+                ),
+                key=lambda record: (
+                    self._cleanup_attempts.get(record.artifact_id, 0),
+                    record.request.retention_until,
+                    record.created_at,
+                    record.artifact_id,
+                ),
+            )[:limit]
+        cleaned = 0
+        for record in candidates:
+            async with self._lock:
+                self._cleanup_attempts[record.artifact_id] = (
+                    self._cleanup_attempts.get(record.artifact_id, 0) + 1
+                )
+            try:
+                await self.delete_for(
+                    ArtifactAccessScope(record.request.tenant_id, record.request.owner_id),
+                    record.artifact_id,
+                )
+            except Exception as error:  # noqa: BLE001 - retain failure for maintenance retry
+                async with self._lock:
+                    current = self._records[record.artifact_id]
+                    if current.phase is not ArtifactPhase.DELETED and not current.request.immutable:
+                        self._replace(current, failure_reason=str(error) or type(error).__name__)
+            else:
+                async with self._lock:
+                    self._cleanup_attempts.pop(record.artifact_id, None)
+                cleaned += 1
+        return {"upload_attempts_cleaned": uploads_cleaned, "artifacts_cleaned": cleaned}
 
     async def delete_for(
         self,

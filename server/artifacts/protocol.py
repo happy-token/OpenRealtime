@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class ArtifactPhase(StrEnum):
@@ -52,8 +52,10 @@ class ArtifactCreateRequest:
             or any(character not in "0123456789abcdef" for character in self.expected_sha256)
         ):
             raise ValueError("expected_sha256 must be a lowercase SHA-256 hex digest")
-        if self.retention_until is not None and self.retention_until.tzinfo is None:
+        if self.retention_until is not None and self.retention_until.utcoffset() is None:
             raise ValueError("retention_until must be timezone-aware")
+        if self.source_kind == "voice_session_recording" and self.retention_until is None:
+            raise ValueError("voice session recording requires a retention deadline")
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +129,18 @@ class ArtifactStore(Protocol):
         scope: ArtifactAccessScope,
         artifact_id: str,
     ) -> ArtifactRecord: ...
+
+
+@runtime_checkable
+class ArtifactCleanup(Protocol):
+    """Optional maintenance capability, independent of the media request path."""
+
+    async def reconcile_cleanup_ledger(self, *, limit: int = 100) -> dict[str, int]: ...
+
+
+def validate_cleanup_limit(limit: int) -> None:
+    if type(limit) is not int or not 1 <= limit <= 1000:
+        raise ValueError("cleanup reconciliation limit must be an integer from 1 to 1000")
 
 
 class S3ObjectClient(Protocol):
