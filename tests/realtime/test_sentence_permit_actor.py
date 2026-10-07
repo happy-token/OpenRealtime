@@ -21,8 +21,8 @@ from tests.realtime.test_cascaded_capabilities import context
 from tests.realtime.test_coordinated_turn_manager import opened, start, stop, take, text
 
 
-async def prepared():
-    session = await opened()
+async def prepared(**kwargs):
+    session = await opened(**kwargs)
     stream = session.events()
     first = context()
     second = replace(first, turn_id="supplement", generation=first.generation + 1)

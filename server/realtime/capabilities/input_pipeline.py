@@ -26,6 +26,7 @@ from server.realtime.capabilities.asr import (
 )
 from server.realtime.capabilities.assistant_echo import project_assistant_echo
 from server.realtime.capabilities.reply_revision_controller import ReplyRevision
+from server.realtime.capabilities.response_prefetch_controller import PrefetchCandidate
 from server.realtime.capabilities.turn_manager import (
     AsrCommitRequested,
     AsrDiscardRequested,
@@ -160,7 +161,7 @@ class CascadedInputPipeline:
             provider_timing=provider_timing,
         )
 
-    def set_prefetch_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
+    def set_prefetch_turn_builder(self, builder: Callable[[PrefetchCandidate], Awaitable[TurnContent]]) -> None:
         bind = getattr(self._turn_manager, "set_prefetch_turn_builder", None)
         if bind is not None:
             bind(builder)

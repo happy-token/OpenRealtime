@@ -37,8 +37,8 @@ async def opened(prefetch):
         eot_classifier=Endpoint(),
     ).open(context=context())
 
-    async def build(text, generation):
-        return TurnContent(text=text, generation=generation, conversation_context="前轮真实上下文")
+    async def build(candidate):
+        return TurnContent(text=candidate.text, generation=candidate.generation, conversation_context="前轮真实上下文")
 
     session.set_prefetch_turn_builder(build)
     return session

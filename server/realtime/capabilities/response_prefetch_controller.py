@@ -24,6 +24,18 @@ class PrefetchCandidate:
     interrupted: bool = False
     continuation: bool = False
     committed: bool = False
+    source_text: str | None = None
+    continuation_of_turn_id: str | None = None
+    sentence_permit_id: str | None = None
+
+    @property
+    def observed_text(self) -> str:
+        return self.text if self.source_text is None else self.source_text
+
+    @property
+    def sentence_handoff(self) -> bool:
+        return bool(self.interrupted and self.continuation and not self.speech_active
+            and self.sentence_permit_id and self.continuation_of_turn_id and self.source_text)
 
 
 class ResponsePrefetchController:
@@ -39,7 +51,7 @@ class ResponsePrefetchController:
         self._enabled = enabled
         self._is_current = is_current
         self._observer = observer
-        self._builder: Callable[[str, int], Awaitable[TurnContent]] | None = None
+        self._builder: Callable[[PrefetchCandidate], Awaitable[TurnContent]] | None = None
         self._lock = asyncio.Lock()
         self._candidate: PrefetchCandidate | None = None
         self._version = 0
@@ -49,7 +61,7 @@ class ResponsePrefetchController:
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
-    def set_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
+    def set_turn_builder(self, builder: Callable[[PrefetchCandidate], Awaitable[TurnContent]]) -> None:
         self._builder = builder
 
     def _notify(self, operation: str, generation: int, **attributes: Any) -> None:
@@ -72,8 +84,14 @@ class ResponsePrefetchController:
             self._prepare_task = None
 
     def observe_text(self, text: str) -> None:
-        if self._candidate is not None and not same_asr_utterance(self._candidate.text, text):
+        if self._candidate is not None and not same_asr_utterance(self._candidate.observed_text, text):
             self.invalidate("asr_revision")
+
+    def matches_continuation(self, text: str, generation: int, parent_turn_id: str | None) -> bool:
+        candidate = self._candidate
+        return bool(candidate is not None and candidate.sentence_handoff
+            and candidate.continuation_of_turn_id == parent_turn_id
+            and candidate.generation == generation and same_asr_utterance(candidate.text, text))
 
     def finalize(self, text: str, generation: int, *, accepted: bool = True) -> None:
         if not accepted:
@@ -109,8 +127,7 @@ class ResponsePrefetchController:
             self._closed
             or not self._enabled
             or self._provider is None
-            or candidate.interrupted
-            or candidate.continuation
+            or ((candidate.interrupted or candidate.continuation) and not candidate.sentence_handoff)
             or candidate.committed
         ):
             return
@@ -125,6 +142,8 @@ class ResponsePrefetchController:
             and current.identity == candidate.identity
             and current.generation == candidate.generation
             and same_asr_utterance(current.text, candidate.text)
+            and current.continuation_of_turn_id == candidate.continuation_of_turn_id
+            and current.sentence_permit_id == candidate.sentence_permit_id
         ):
             return
         self.cancel_pending()
@@ -135,7 +154,7 @@ class ResponsePrefetchController:
             try:
                 async with self._lock:
                     turn = (
-                        await self._builder(candidate.text, candidate.generation)
+                        await self._builder(candidate)
                         if self._builder
                         else TurnContent(text=candidate.text, generation=candidate.generation)
                     )

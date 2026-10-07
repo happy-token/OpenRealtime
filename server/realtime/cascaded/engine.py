@@ -65,6 +65,7 @@ from server.realtime.capabilities import (
 )
 from server.realtime.capabilities.asr import AsrCapabilityProvider
 from server.realtime.capabilities.brain import BrainEvent
+from server.realtime.capabilities.response_prefetch_controller import PrefetchCandidate
 from server.realtime.capabilities.tts import TtsCommand
 from server.realtime.capabilities.turn_manager import (
     ReplyRepairRequested,
@@ -350,7 +351,7 @@ class CascadedRealtimeConversation:
         self._commands_by_idempotency_key: dict[str, RealtimeCommand] = {}
         self._sequence = 0
         self._projected_items: dict[int, ConversationItem] = {}
-        self._input_pipeline.set_prefetch_turn_builder(self._turn_for_prefetch)
+        self._input_pipeline.set_prefetch_turn_builder(self._turn_for_prefetch_candidate)
         self._projected_sequence_by_item_id: dict[str, int] = {}
         self._last_projected_thread_sequence = 0
         self._response_sequence_by_id: dict[str, int] = {}
@@ -1184,11 +1185,13 @@ class CascadedRealtimeConversation:
         except asyncio.CancelledError:
             pass
 
-    def _prior_model_items(self, before_sequence: int) -> tuple[ConversationItem, ...]:
+    def _prior_model_items(self, before_sequence: int, *, continuation_of_turn_id: str | None = None) -> tuple[ConversationItem, ...]:
         superseded_turns = {
             item.provider_metadata.get("continuation_of_turn_id")
             for item in self._projected_items.values() if item.sequence <= before_sequence
         }
+        if continuation_of_turn_id is not None:
+            superseded_turns.add(continuation_of_turn_id)
         items = []
         for sequence in sorted(self._projected_items):
             if sequence >= before_sequence:
@@ -1248,9 +1251,15 @@ class CascadedRealtimeConversation:
                 return projected, digest_source_items(items), current
         raise ContextVisibilityError("model-visible playback context changed during projection; retry budget exhausted")
 
-    async def _turn_for_prefetch(self, text: str, generation: int) -> TurnContent:
+    async def _turn_for_prefetch_candidate(self, candidate: PrefetchCandidate) -> TurnContent:
+        return await self._turn_for_prefetch(candidate.text, candidate.generation,
+            continuation_of_turn_id=candidate.continuation_of_turn_id)
+
+    async def _turn_for_prefetch(self, text: str, generation: int, *,
+                                 continuation_of_turn_id: str | None = None) -> TurnContent:
         context, digest, _ = await self._project_stable_context(lambda: (
-            self._prior_model_items(max(self._projected_items, default=0) + 1), None))
+            self._prior_model_items(max(self._projected_items, default=0) + 1,
+                continuation_of_turn_id=continuation_of_turn_id), None))
         return TurnContent(text=text, generation=generation,
             conversation_context=context, context_projection_digest=digest)
 

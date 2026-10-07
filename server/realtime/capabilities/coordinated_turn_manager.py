@@ -173,6 +173,7 @@ class _Input:
     sentence_wait_playback: ReplyPlayback | None = None
     sentence_trigger_text: str = ""
     sentence_wait_initial_ns: int = 0
+    sentence_prefetch_started: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +240,7 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         interruption_chunk_chars: int = 5,
         chunk_stability_ms: float = 120,
         response_prefetch_enabled: bool = False,
+        sentence_handoff_prefetch_enabled: bool = False,
         interruption_rules: InterruptionRuleProvider | None = None,
         telemetry: SessionTelemetry | None = None,
         debug_log: SessionDebugLog | None = None,
@@ -275,6 +277,7 @@ class CoordinatedTurnManagerCapabilityAdapter(LegacyTurnManagerCapabilityAdapter
         SemanticChunkBuffer(character_limit=interruption_chunk_chars)
         self.interruption_rules = interruption_rules if interruption_rules is not None else ExactInterruptionRules()
         self.response_prefetch_enabled = response_prefetch_enabled
+        self.sentence_handoff_prefetch_enabled = sentence_handoff_prefetch_enabled
         SemanticChunkScheduler(character_limit=interruption_chunk_chars, max_concurrency=semantic_chunk_concurrency)
         self.semantic_chunk_concurrency = semantic_chunk_concurrency
         self.semantic_chunks_enabled = semantic_chunks_enabled
@@ -337,7 +340,7 @@ class CoordinatedTurnManagerSession:
             observer=lambda operation, generation, attributes: self._log_prefetch(operation, generation, **attributes))
         self._actor = asyncio.create_task(self._run(), name="turn-coordinator")
 
-    def set_prefetch_turn_builder(self, builder: Callable[[str, int], Awaitable[TurnContent]]) -> None:
+    def set_prefetch_turn_builder(self, builder: Callable[[PrefetchCandidate], Awaitable[TurnContent]]) -> None:
         self._prefetch.set_turn_builder(builder)
 
     def response_delivery_allowed(self, response_id: str) -> bool:
@@ -389,6 +392,7 @@ class CoordinatedTurnManagerSession:
             item = self._input
             if item is not None and item.sentence_wait == permit:
                 item.sentence_revoked = True
+                self._prefetch.invalidate(reason)
                 self._timer("sentence_stop_ack", self._provider.recovery_timeout_ms * 2 + 250, item)
             self._outbox.put_nowait(AssistantYieldRequested(
                 context=replace(item.context if item and item.target_response == response_id else permit.context, response_id=response_id),
@@ -469,8 +473,19 @@ class CoordinatedTurnManagerSession:
 
     def _prefetch_is_current(self, candidate: PrefetchCandidate) -> bool:
         item = self._input
-        return bool(item is not None and not item.blocked and item.identity == candidate.identity and not item.commit_pending
-                    and item.target_response is None and same_asr_utterance(item.text, candidate.text))
+        if (item is None or item.blocked or item.identity != candidate.identity or item.commit_pending
+            or item.context.generation != candidate.generation
+            or not same_asr_utterance(item.text, candidate.observed_text)):
+            return False
+        if candidate.sentence_handoff:
+            permit = item.sentence_wait
+            return bool(permit is not None and not item.sentence_revoked and item.yielded
+                and not item.speech_active and item.stop is not None
+                and permit.permit_id == candidate.sentence_permit_id
+                and self.sentence_playback_permit_current(permit)
+                and self._last_committed is not None
+                and self._last_committed[0] == candidate.continuation_of_turn_id)
+        return item.target_response is None
 
     def _log_prefetch(self, operation: str, generation: int, **attributes: Any) -> None:
         if self._provider._telemetry is not None:
@@ -481,6 +496,24 @@ class CoordinatedTurnManagerSession:
 
     def _maybe_prefetch(self, item: _Input) -> None:
         if item.blocked:
+            return
+        permit = item.sentence_wait
+        if permit is not None:
+            if (not self._provider.sentence_handoff_prefetch_enabled or item.sentence_prefetch_started
+                or item.sentence_revoked or not item.yielded or item.speech_active or item.stop is None
+                or not self.sentence_playback_permit_current(permit) or not self._is_ordinary_supplement(item)):
+                return
+            assert self._last_committed is not None
+            parent_id, parent_text = self._last_committed
+            cumulative = parent_text + "\n" + item.text
+            if self._provider.input_budget.violation(cumulative, revisions=item.observations,
+                    elapsed_ms=(time.monotonic_ns() - item.created_ns) / 1e6):
+                return  # Formal final input retains the existing explicit rejection path.
+            item.sentence_prefetch_started = True
+            self._prefetch.prepare(PrefetchCandidate(identity=item.identity, generation=item.context.generation,
+                text=cumulative, source_text=item.text, revision=item.revision, speech_active=False,
+                interrupted=True, continuation=True, committed=item.commit_pending,
+                continuation_of_turn_id=parent_id, sentence_permit_id=permit.permit_id))
             return
         self._prefetch.prepare(PrefetchCandidate(identity=item.identity, generation=item.context.generation,
             text=item.text, revision=item.revision, speech_active=item.speech_active,
@@ -1026,6 +1059,11 @@ class CoordinatedTurnManagerSession:
                 assert item is not None and permit is not None
                 item.sentence_wait_playback = replace(event.fact, output_epoch=permit.output_epoch)
                 if event.fact.terminal:
+                    if (event.fact.position_precision != "sample" or event.fact.played_position_samples is None
+                        or event.fact.sample_rate_hz is None):
+                        # Stop confirmation releases the input wait, but unknown
+                        # physical position cannot validate a sentence candidate.
+                        self._prefetch.invalidate("sentence_playback_evidence_changed")
                     item.sentence_wait = None
                     item.sentence_wait_playback = None
                     self._cancel("sentence_expiry", "sentence_stop_ack")
@@ -1181,7 +1219,10 @@ class CoordinatedTurnManagerSession:
                     committed_context = replace(
                         event.context, turn_id=str(uuid.uuid4()), generation=event.context.generation + 1,
                     )
-                if association.relation is not InputRelation.NEW_TOPIC:
+                if (association.relation is not InputRelation.NEW_TOPIC
+                    and not (association.relation is InputRelation.SUPPLEMENT
+                        and self._prefetch.matches_continuation(committed_text, committed_context.generation,
+                            association.related_turn_id))):
                     self._prefetch.invalidate("input_association_finalized")
                 self._prefetch.finalize(committed_text, committed_context.generation)
                 self._deferred_context_repair = None
@@ -1711,6 +1752,7 @@ class CoordinatedTurnManagerSession:
         permit = item.sentence_wait
         if permit is None or item.sentence_revoked:
             return
+        self._prefetch.invalidate(reason)
         self._revoke_response(permit.response_id, reason=reason)
         if not item.sentence_revoked:
             item.sentence_revoked = True
@@ -1733,6 +1775,7 @@ class CoordinatedTurnManagerSession:
                 trigger_input_id=item.identity, transcript_revision=item.revision, now_ns=time.monotonic_ns())
         if permit is not None:
             item.sentence_wait = permit
+            item.sentence_prefetch_started = False
             item.sentence_revoked = False
             item.sentence_trigger_text = item.text
             item.sentence_wait_playback = self._revisions.reply.playback if self._revisions.reply is not None else None
@@ -1753,7 +1796,10 @@ class CoordinatedTurnManagerSession:
         )
 
     async def _advance(self, item: _Input, *, force: bool = False, admission_reason: str | None = None) -> None:
-        if item.blocked or item.commit_pending or item.sentence_wait is not None or item.speech_active or item.stop is None or not item.text:
+        if item.blocked or item.commit_pending or item.speech_active or item.stop is None or not item.text:
+            return
+        if item.sentence_wait is not None:
+            self._maybe_prefetch(item)
             return
         if item.continuation_of_turn_id and item.target_response is None:
             return
