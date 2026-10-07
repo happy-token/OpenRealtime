@@ -32,7 +32,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from server.artifacts.protocol import validate_recording_preservation
 from server.avatar_assets.http_api import AvatarAssetHttpResponse
+from server.control_plane.recording_preservation_auth import verify_preservation_proof
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.recordings import MAX_AUDIO_BYTES, RecordingUnavailable
 from server.observability.telemetry import (
@@ -76,6 +78,7 @@ SessionConversationReader = Callable[[str], Awaitable[list[dict]]]
 SessionConversationPageReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionRecordingPageReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionRecordingAudioReader = Callable[[str, str], Coroutine[Any, Any, bytes]]
+SessionRecordingPreserver = Callable[[str, str], Coroutine[Any, Any, dict[str, Any]]]
 SessionInputEvidenceReader = Callable[[str, int, int], Coroutine[Any, Any, dict[str, Any]]]
 SessionHistoryDeleter = Callable[[list[str]], Awaitable[dict[str, int]]]
 AvatarAssetHandler = Callable[
@@ -223,6 +226,7 @@ def _build_handler(
     session_conversation_page_reader: SessionConversationPageReader | None = None,
     session_recording_page_reader: SessionRecordingPageReader | None = None,
     session_recording_audio_reader: SessionRecordingAudioReader | None = None,
+    session_recording_preserver: SessionRecordingPreserver | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     class ControlPlaneHandler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -361,7 +365,11 @@ def _build_handler(
                 ):
                     self._write_json(400, {"error": "unsupported dialect"})
                     return
-                if provider not in ("bailian", "doubao") or not voice or not -50 <= speech_rate <= 100:
+                if (
+                    provider not in ("bailian", "doubao")
+                    or not voice
+                    or not -50 <= speech_rate <= 100
+                ):
                     self._write_json(400, {"error": "invalid voice preview parameters"})
                     return
                 future = asyncio.run_coroutine_threadsafe(
@@ -435,7 +443,16 @@ def _build_handler(
                     self._write_json(400, {"error": str(error)})
                     return
                 future = asyncio.run_coroutine_threadsafe(
-                    debug_log_query.session_timeline(session_id, limit=limit, **({"after_event_id": parse_qs(parsed.query)["cursor"][0]} if parse_qs(parsed.query).get("cursor") else {})), loop
+                    debug_log_query.session_timeline(
+                        session_id,
+                        limit=limit,
+                        **(
+                            {"after_event_id": parse_qs(parsed.query)["cursor"][0]}
+                            if parse_qs(parsed.query).get("cursor")
+                            else {}
+                        ),
+                    ),
+                    loop,
                 )
                 entries = future.result(timeout=_RPC_TIMEOUT_S)
                 self._write_json(
@@ -454,7 +471,15 @@ def _build_handler(
                     return
                 session_id = unquote(match.group("session_id"))
                 future = asyncio.run_coroutine_threadsafe(
-                    diagnostics.session_detail(session_id, **({"after_event_id": parse_qs(parsed.query)["cursor"][0]} if parse_qs(parsed.query).get("cursor") else {})), loop
+                    diagnostics.session_detail(
+                        session_id,
+                        **(
+                            {"after_event_id": parse_qs(parsed.query)["cursor"][0]}
+                            if parse_qs(parsed.query).get("cursor")
+                            else {}
+                        ),
+                    ),
+                    loop,
                 )
                 detail = future.result(timeout=_RPC_TIMEOUT_S)
                 if detail is None:
@@ -489,10 +514,13 @@ def _build_handler(
                 r"/observability/sessions/([^/]+)/recordings(?:/([^/]+)/audio)?", parsed.path
             )
             if recording_match:
-                if (not _is_loopback_host(self.headers.get("Host", ""))
-                    or (self.headers.get("Origin") is not None
-                        and not _is_loopback_origin(self.headers["Origin"]))):
-                    self._write_json(403, {"error": "recording request is not from loopback"}, no_store=True)
+                if not _is_loopback_host(self.headers.get("Host", "")) or (
+                    self.headers.get("Origin") is not None
+                    and not _is_loopback_origin(self.headers["Origin"])
+                ):
+                    self._write_json(
+                        403, {"error": "recording request is not from loopback"}, no_store=True
+                    )
                     return
                 session_id = unquote(recording_match[1])
                 artifact_id = unquote(recording_match[2]) if recording_match[2] else None
@@ -578,16 +606,18 @@ def _build_handler(
         def do_POST(self) -> None:
             try:
                 self._do_post()
+            except RecordingUnavailable as error:
+                self._write_json(error.status, {"error": error.reason}, no_store=True)
             except FutureTimeoutError:
                 logger.warning("control-plane request timed out: path=%s", self.path)
-                self._write_json(504, {"error": "control-plane request timed out"})
+                self._write_json(504, {"error": "control-plane request timed out"}, no_store=True)
             except Exception as error:  # noqa: BLE001 - HTTP error boundary
                 logger.error(
                     "control-plane request failed: path=%s error_type=%s",
                     self.path,
                     type(error).__name__,
                 )
-                self._write_json(500, {"error": "control-plane request failed"})
+                self._write_json(500, {"error": "control-plane request failed"}, no_store=True)
 
         def do_DELETE(self) -> None:
             try:
@@ -606,6 +636,66 @@ def _build_handler(
                 self._write_json(500, {"error": "control-plane request failed"})
 
         def _do_post(self) -> None:
+            parsed = urlsplit(self.path)
+            preservation = re.fullmatch(
+                r"/observability/sessions/([^/]+)/recordings/preservation", parsed.path
+            )
+            if preservation:
+                if (
+                    self.headers.get("Authorization") is not None
+                    or not _is_loopback_host(self.headers.get("Host", ""))
+                    or (
+                        self.headers.get("Origin") is not None
+                        and not _is_loopback_origin(self.headers["Origin"])
+                    )
+                ):
+                    self._write_json(
+                        403, {"error": "recording write is not authorized"}, no_store=True
+                    )
+                    return
+                try:
+                    session_id = unquote(preservation[1])
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if (
+                        parsed.query
+                        or self.headers.get("Transfer-Encoding")
+                        or not 1 <= size <= 1024
+                    ):
+                        raise ValueError("invalid recording request")
+                    body = self.rfile.read(size)
+                    if not verify_preservation_proof(
+                        session_id,
+                        body,
+                        self.headers.get("X-Recording-Preservation-Timestamp", ""),
+                        self.headers.get("X-Recording-Preservation-Signature", ""),
+                    ):
+                        self._write_json(
+                            403, {"error": "recording write is not authorized"}, no_store=True
+                        )
+                        return
+                    payload = json.loads(body)
+                    if (
+                        not isinstance(payload, dict)
+                        or set(payload) != {"actor_id"}
+                        or payload["actor_id"] is None
+                    ):
+                        raise ValueError("invalid recording request")
+                    actor_id = payload["actor_id"]
+                    validate_recording_preservation(session_id, actor_id)
+                except (ValueError, UnicodeDecodeError):
+                    self._write_json(
+                        400, {"error": "invalid recording preservation request"}, no_store=True
+                    )
+                    return
+                if session_recording_preserver is None:
+                    raise RecordingUnavailable(503, "recording_preservation_not_configured")
+                preservation_future = asyncio.run_coroutine_threadsafe(
+                    session_recording_preserver(session_id, actor_id), loop
+                )
+                self._write_json(
+                    200, preservation_future.result(timeout=_RPC_TIMEOUT_S), no_store=True
+                )
+                return
             if urlsplit(self.path).path == "/provider-contract-test":
                 if not _is_loopback_host(self.headers.get("Host", "")):
                     self._write_json(403, {"error": "forbidden"})
@@ -623,9 +713,15 @@ def _build_handler(
                     key = base64.urlsafe_b64decode(encoded_key + "=" * (-len(encoded_key) % 4))
                     timestamp = self.headers.get("X-Provider-Probe-Timestamp", "")
                     signature = self.headers.get("X-Provider-Probe-Signature", "")
-                    if len(key) != 32 or len(timestamp) > 12 or abs(time.time() - int(timestamp)) > 60:
+                    if (
+                        len(key) != 32
+                        or len(timestamp) > 12
+                        or abs(time.time() - int(timestamp)) > 60
+                    ):
                         raise ValueError("invalid signature context")
-                    message = b"provider-contract-probe-v1\x00" + timestamp.encode() + b"\x00" + body
+                    message = (
+                        b"provider-contract-probe-v1\x00" + timestamp.encode() + b"\x00" + body
+                    )
                     expected = hmac.new(key, message, hashlib.sha256).hexdigest()
                     if not hmac.compare_digest(signature, expected):
                         raise ValueError("invalid signature")
@@ -700,7 +796,10 @@ def _build_handler(
             active = {session["session_id"] for session in registry.list_sessions()}
             selected_active = sorted(active.intersection(raw_session_ids))
             if selected_active:
-                self._write_json(409, {"error": "active sessions cannot be deleted", "session_ids": selected_active})
+                self._write_json(
+                    409,
+                    {"error": "active sessions cannot be deleted", "session_ids": selected_active},
+                )
                 return
             future = asyncio.run_coroutine_threadsafe(
                 session_history_deleter(raw_session_ids), loop
@@ -759,6 +858,7 @@ def start(
     session_recording_page_reader: SessionRecordingPageReader | None = None,
     session_recording_audio_reader: SessionRecordingAudioReader | None = None,
     host: str = "127.0.0.1",
+    session_recording_preserver: SessionRecordingPreserver | None = None,
     port: int = 8766,
 ) -> ControlPlaneServer:
     """Starts the control plane on a background daemon thread.
@@ -787,6 +887,7 @@ def start(
             session_conversation_page_reader,
             session_recording_page_reader,
             session_recording_audio_reader,
+            session_recording_preserver,
         ),
         avatar_requests=avatar_requests,
     )

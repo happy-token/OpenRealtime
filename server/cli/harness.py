@@ -32,6 +32,7 @@ from server.control_plane.http import (
     SessionInputEvidenceReader,
     SessionRecordingAudioReader,
     SessionRecordingPageReader,
+    SessionRecordingPreserver,
 )
 from server.endpoint_session.registry import EndpointSessionRegistry
 from server.observability.log_context import VoiceSessionLogFilter
@@ -141,6 +142,7 @@ async def _run(
     session_conversation_page_reader: SessionConversationPageReader | None = None,
     session_recording_page_reader: SessionRecordingPageReader | None = None,
     session_recording_audio_reader: SessionRecordingAudioReader | None = None,
+    session_recording_preserver: SessionRecordingPreserver | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
 ) -> None:
@@ -171,6 +173,7 @@ async def _run(
                 session_conversation_page_reader=session_conversation_page_reader,
                 session_recording_page_reader=session_recording_page_reader,
                 session_recording_audio_reader=session_recording_audio_reader,
+                session_recording_preserver=session_recording_preserver,
                 session_history_deleter=session_history_deleter,
                 avatar_asset_handler=avatar_asset_handler,
                 debug_log_query=debug_log_query,
@@ -239,6 +242,7 @@ def run_app(
     session_conversation_page_reader: SessionConversationPageReader | None = None,
     session_recording_page_reader: SessionRecordingPageReader | None = None,
     session_recording_audio_reader: SessionRecordingAudioReader | None = None,
+    session_recording_preserver: SessionRecordingPreserver | None = None,
     session_history_deleter: SessionHistoryDeleter | None = None,
     avatar_asset_handler: AvatarAssetHandler | None = None,
     log_format: str = _DEFAULT_LOG_FORMAT,
@@ -301,6 +305,7 @@ def run_app(
                 session_conversation_page_reader=session_conversation_page_reader,
                 session_recording_page_reader=session_recording_page_reader,
                 session_recording_audio_reader=session_recording_audio_reader,
+                session_recording_preserver=session_recording_preserver,
                 session_history_deleter=session_history_deleter,
                 avatar_asset_handler=avatar_asset_handler,
             )

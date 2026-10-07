@@ -34,3 +34,9 @@ HTTP 403 表示授权无效/过期/Session 不匹配；重新联系管理员授�
 - sent表示物理发送完成，`playback_confirmation=not-inferred`；不能以播放器能播放推断用户当时已听到。客户端确认映射仍待补齐。
 
 管理员详情页的“查看录音”独立加载，可分页、选择一个片段播放；普通Agent凭据无保留/删除能力。Memory存储不跨重启，PG缺对象配置时目录/播放明确不可用。新录音仅适用于更新装配后的新Session，旧Session不回填。部署者需受控执行0035–0037并发索引/保留迁移并同时更新后台与Next；自动启动不执行。真实S3、实际管理员/外部Agent和浏览器音频验收仍待部署验证。
+
+[ADR0156](../adr/0156-admin-session-recording-preservation.md)新增目录 `preservation` 状态与管理员“长期保留”按钮。GET仍使用同一只读凭据，状态不可用不表示未标记或没有录音；等待完成的数量不证明物理上传结束。只有现有录音目录核实为unmarked时按钮可用，确认标记后自动刷新；结果未确认时先刷新核查，不能当作操作失败或已保留。临时存储会明确提示重启后不保留。
+
+管理员同源可空体 `POST /api/observability/sessions/{sessionId}/recordings/preservation`，不接受客户端actor/source/query。Agent Authorization即使有效且同时有管理员Cookie也会403。Next完成管理员校验后向私有后台发送限定Session/原始body/60秒窗口的签名证明；部署须让两服务使用相同既有32字节 `VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY`，没有或不匹配则拒绝，不自动生成。受控部署需补0038，长期保留政策及历史删除保护在原来源上执行；已过期/删除的片段不恢复。新签名采用独立领域派生，不能用Agent只读密钥代替。私有接口仍须保持内部可达；本批未改变生产密钥或迁移。
+
+隔离管理员/无Cookie机器凭据/WAV浏览器链路已验收；真实S3、生产部署、录音完整性和原交互confirmed renderer映射仍待验收。浏览器回放完成不能证明原通话中已播放。

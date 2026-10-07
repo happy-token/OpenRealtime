@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import wave
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -15,6 +16,7 @@ from server.artifacts.protocol import (
     ArtifactPhase,
     ArtifactRecord,
     ArtifactStore,
+    RecordingPreservation,
 )
 from server.conversation_journal import (
     ArtifactReferenceContent,
@@ -31,6 +33,8 @@ from server.conversation_journal import (
 from server.conversation_journal.models import utc_now
 
 MAX_AUDIO_BYTES = 4 * 1024 * 1024 + 44
+PolicyOperation = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+OwnedPolicyQuery = Callable[[str, PolicyOperation], Awaitable[dict[str, Any] | None]]
 
 
 class RecordingUnavailable(ValueError):
@@ -186,9 +190,54 @@ def _evidence(item: ConversationItem, session_id: str) -> _Evidence:
 
 
 class SessionRecordingReader:
-    def __init__(self, journal: ConversationJournal, artifacts: ArtifactStore | None) -> None:
+    def __init__(
+        self,
+        journal: ConversationJournal,
+        artifacts: ArtifactStore | None,
+        *,
+        storage_durable: bool = False,
+        owned_policy_query: OwnedPolicyQuery | None = None,
+    ) -> None:
         self._journal = journal
         self._artifacts = artifacts
+        self._storage_durable = storage_durable
+        self._owned_policy_query = owned_policy_query
+
+    def _policy_view(self, status: str) -> dict[str, Any]:
+        return {
+            "status": status,
+            "marked_at": None,
+            "preserved_segments": None,
+            "pending_segments": None,
+            "unavailable_segments": None,
+            "storage_durable": self._storage_durable,
+        }
+
+    async def _preservation(self, session_id: str) -> dict[str, Any]:
+        view = self._policy_view("unsupported")
+        if not isinstance(self._artifacts, RecordingPreservation):
+            return view
+        # An optional policy failure must not erase otherwise usable recording references.
+        try:
+            scope = await self.source_scope(session_id)
+            if scope is None:
+                return view | {"status": "source-missing"}
+            state = await self._artifacts.get_session_preservation_for(
+                ArtifactAccessScope(scope.tenant_id, scope.user_id), session_id
+            )
+            if state is None:
+                return view | {"status": "unmarked"}
+            if state.voice_session_id != session_id or state.marked_at.utcoffset() is None:
+                raise ValueError("invalid preservation source")
+            return view | {
+                "status": "preserved",
+                "marked_at": state.marked_at.isoformat(),
+                "preserved_segments": _uint(state.preserved_segments),
+                "pending_segments": _uint(state.pending_segments),
+                "unavailable_segments": _uint(state.unavailable_segments),
+            }
+        except Exception:  # noqa: BLE001 - optional state remains explicitly unavailable
+            return view | {"status": "unavailable"}
 
     def _query(self) -> SessionRecordingQuery:
         if not isinstance(self._journal, SessionRecordingQuery):
@@ -275,11 +324,22 @@ class SessionRecordingReader:
         for result in results:
             if isinstance(result, BaseException):
                 raise result
+        policy = self._policy_view("unsupported")
+        if isinstance(self._artifacts, RecordingPreservation):
+            # Optional IO requires an owner: a caller timeout must not abandon resources.
+            policy = self._policy_view("unavailable")
+            if self._owned_policy_query is not None:
+                result = await self._owned_policy_query(
+                    session_id, lambda: self._preservation(session_id)
+                )
+                if result is not None:
+                    policy = result
         return {
             "voice_session_id": session_id,
             "items": rows,
             "next_cursor": str(page.next_sequence) if page.next_sequence is not None else None,
             "storage_status": "configured" if self._artifacts is not None else "not-configured",
+            "preservation": policy,
         }
 
     async def read_audio(self, session_id: str, artifact_id: str) -> bytes:

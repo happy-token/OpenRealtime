@@ -49,3 +49,15 @@ it("cancels an oversized metadata stream without consuming it", async () => {
   fetchMock.mockResolvedValue(new Response(new ReadableStream({ cancel() { cancelled = true; } }), { headers: { "Content-Length": "2000000" } }));
   expect((await run()).status).toBe(503); expect(cancelled).toBe(true);
 });
+it("projects Session preservation for readers without administrator or storage identity", async () => {
+  fetchMock.mockResolvedValue(Response.json({ ...page(), preservation: { status: "preserved", marked_at: "2026-10-07T00:00:00Z", preserved_segments: 1, pending_segments: 0, unavailable_segments: 2, storage_durable: true, actor_id: "private-admin", owner_id: "private-owner" } }));
+  const token = issueDiagnosticsAccess("session-1", "agent", secret).access_token;
+  const response = await run("", { authorization: `Bearer ${token}` }), projected = await response.json();
+  expect(response.status).toBe(200); expect(projected.preservation.status).toBe("preserved"); expect(JSON.stringify(projected)).not.toMatch(/private-/);
+});
+it("does not infer preserved status from an old or malformed policy response", async () => {
+  expect((await (await run()).json()).preservation).toBeUndefined();
+  for (const preservation of [null, { status: "preserved" }, { status: "unmarked", marked_at: null, preserved_segments: 0, pending_segments: null, unavailable_segments: null, storage_durable: true }]) {
+    fetchMock.mockResolvedValue(Response.json({ ...page(), preservation })); expect((await run()).status).toBe(503);
+  }
+});

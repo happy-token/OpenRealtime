@@ -1,5 +1,5 @@
 import { setImmediate } from "node:timers/promises";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { SessionRecordings } from "./session-recordings";
 
@@ -23,6 +23,7 @@ vi.mock("react", async importOriginal => ({
 }));
 const fetchMock = vi.fn();
 beforeEach(() => { driver.slots = []; driver.index = 0; driver.cleanup = undefined; vi.resetAllMocks(); vi.stubGlobal("fetch", fetchMock); });
+afterEach(() => { vi.useRealTimers(); driver.cleanup?.(); });
 function tree() { driver.index = 0; return SessionRecordings({ sessionId: "session-1" }); }
 function nodes(value: ReactNode): ReactElement<Record<string, unknown>>[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
@@ -47,6 +48,10 @@ function deferred() {
 }
 const row = (id: string) => ({ item_id: id, artifact_id: id, direction: "input", generation: 1, duration_ms: 10, sample_count: 160, sample_rate_hz: 16000, status: "available", pinned: false, storage_durable: false, discontinuity: false, audio_url: `/api/observability/sessions/session-1/recordings/${id}/audio` });
 const page = (id: string, next: string | null) => Response.json({ voice_session_id: "session-1", items: [row(id)], next_cursor: next, storage_status: "configured" });
+const unmarked = { status: "unmarked", marked_at: null, preserved_segments: null, pending_segments: null, unavailable_segments: null, storage_durable: false };
+const marked = { status: "preserved", marked_at: "2026-10-07T00:00:00Z", preserved_segments: 1, pending_segments: 2, unavailable_segments: 3, storage_durable: false };
+const policyPage = (preservation: unknown = unmarked, pinned = false) => Response.json({ voice_session_id: "session-1", items: [{ ...row("first"), pinned }], next_cursor: null, storage_status: "configured", preservation });
+const markResult = () => Response.json({ voice_session_id: "session-1", preserved: true, ...marked });
 
 it("guards duplicate clicks, retains failed continuation and retries its original cursor", async () => {
   const first = deferred(); fetchMock.mockReturnValueOnce(first.promise);
@@ -86,4 +91,58 @@ it("unmount aborts the request and ignores a noncooperative late response", asyn
   await pending.promise; await setImmediate();
   expect(driver.slots).toEqual(before);
   expect(nodes(tree()).some(node => node.type === "audio")).toBe(false);
+});
+it("preserves a Session once and refreshes rows before showing their pinned state", async () => {
+  fetchMock.mockResolvedValueOnce(policyPage()); click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放片段")); click("播放片段");
+  const mutation = deferred(), refresh = deferred();
+  fetchMock.mockReturnValueOnce(mutation.promise).mockReturnValueOnce(refresh.promise);
+  click("长期保留"); click("正在保留…"); expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[1][1].method).toBe("POST"); expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
+  mutation.resolve(markResult());
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(nodes(tree()).some(node => node.type === "audio")).toBe(false);
+  expect(text(tree())).toContain("已验证保留 1 段"); expect(text(tree())).toContain("等待完成 2 段");
+  expect(text(tree())).toContain("无法保留 3 段"); expect(text(tree())).toContain("重启后不保留");
+  expect(text(tree())).not.toContain(" · 已保留");
+  refresh.resolve(policyPage(marked, true));
+  await vi.waitFor(() => expect(text(tree())).toContain("已长期保留"));
+  expect(text(tree())).toContain(" · 已保留");
+  expect(nodes(tree()).find(node => node.type === "button" && text(node.props.children as ReactNode) === "已长期保留")!.props.disabled).toBe(true);
+});
+it("keeps an unknown mutation result separate from success until an explicit catalog refresh", async () => {
+  fetchMock.mockResolvedValueOnce(policyPage()); click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放片段"));
+  fetchMock.mockResolvedValueOnce(Response.json({}, { status: 503 })); click("长期保留");
+  await vi.waitFor(() => expect(text(tree())).toContain("保留结果尚未确认"));
+  expect(text(tree())).not.toContain("已长期保留"); click("长期保留"); expect(fetchMock).toHaveBeenCalledTimes(2);
+  fetchMock.mockResolvedValueOnce(policyPage(marked, true)); click("刷新录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("已长期保留"));
+});
+it("retains confirmed mark when its catalog refresh fails without pinning stale rows", async () => {
+  fetchMock.mockResolvedValueOnce(policyPage()); click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放片段"));
+  fetchMock.mockResolvedValueOnce(markResult()).mockResolvedValueOnce(Response.json({}, { status: 503 })); click("长期保留");
+  await vi.waitFor(() => expect(text(tree())).toContain("目录刷新未完成"));
+  expect(text(tree())).toContain("已长期保留"); expect(text(tree())).not.toContain(" · 已保留");
+});
+it("ignores a mark result after unmount and aborts its request", async () => {
+  fetchMock.mockResolvedValueOnce(policyPage()); click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放片段"));
+  const mutation = deferred(); fetchMock.mockReturnValueOnce(mutation.promise); click("长期保留");
+  const signal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+  driver.cleanup!(); expect(signal.aborted).toBe(true);
+  const before = [...driver.slots]; mutation.resolve(markResult());
+  await mutation.promise; await setImmediate(); expect(driver.slots).toEqual(before); expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+it("aborted late mark result is unconfirmed instead of silently enabling another mutation", async () => {
+  fetchMock.mockResolvedValueOnce(policyPage()); click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放片段"));
+  vi.useFakeTimers();
+  const mutation = deferred(); fetchMock.mockReturnValueOnce(mutation.promise); click("长期保留");
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect((fetchMock.mock.calls[1][1].signal as AbortSignal).aborted).toBe(true);
+  mutation.resolve(markResult()); await mutation.promise; await setImmediate();
+  expect(text(tree())).toContain("保留结果尚未确认"); expect(text(tree())).not.toContain("已长期保留");
+  click("长期保留"); expect(fetchMock).toHaveBeenCalledTimes(2);
 });

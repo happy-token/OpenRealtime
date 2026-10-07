@@ -135,6 +135,123 @@ async def test_failed_mark_is_not_misreported_as_successful_preservation(monkeyp
         await runtime.close()
 
 
+@pytest.mark.asyncio
+async def test_catalog_preservation_has_session_counts_without_operator_identity():
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    try:
+        await capture(runtime)
+        await runtime.preserve_session_recordings(
+            context().voice_session_id, actor_id="private-admin"
+        )
+        page = await runtime.recordings.read_page(context().voice_session_id)
+        assert page["preservation"]["status"] == "preserved"
+        assert page["preservation"]["preserved_segments"] == 1
+        assert page["items"][0]["pinned"]
+        assert "actor_id" not in page["preservation"] and "owner_id" not in page["preservation"]
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_optional_policy_failure_does_not_hide_valid_audio_and_missing_state_is_explicit(
+    monkeypatch,
+):
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    try:
+        assert (await runtime.recordings.read_page("missing"))["preservation"][
+            "status"
+        ] == "source-missing"
+        await capture(runtime)
+        sid = context().voice_session_id
+        assert (await runtime.recordings.read_page(sid))["preservation"]["status"] == "unmarked"
+
+        async def failure(*args):
+            raise RuntimeError("private-policy-error")
+
+        monkeypatch.setattr(runtime.recordings.artifacts, "get_session_preservation_for", failure)
+        page = await runtime.recordings.read_page(sid)
+        assert page["items"][0]["status"] == "available"
+        assert page["preservation"]["status"] == "unavailable"
+        assert "private-policy-error" not in str(page)
+        runtime.recordings.artifacts = None
+        assert (await runtime.recordings.read_page(sid))["preservation"]["status"] == "unsupported"
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("late_failure", [False, True])
+async def test_slow_optional_policy_preserves_catalog_and_actual_io_ownership(
+    monkeypatch, late_failure
+):
+    from server.application.recording import RecordingWritesPending
+
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked(*args):
+        entered.set()
+        await release.wait()
+        if late_failure:
+            raise RuntimeError("late optional policy failure")
+
+    try:
+        await capture(runtime)
+        monkeypatch.setattr(runtime.recordings.artifacts, "get_session_preservation_for", blocked)
+        runtime.recordings._query_timeout_s = 0.1
+        runtime.recordings._policy_timeout_s = 0.01
+        page = await runtime.recordings.read_page(context().voice_session_id)
+        assert entered.is_set() and page["items"][0]["status"] == "available"
+        assert page["preservation"]["status"] == "unavailable"
+        assert runtime.recordings._reads
+        with pytest.raises(SessionHistoryDeletionConflict):
+            await runtime.delete_session_history(
+                [context().voice_session_id], tenant_id="admin", user_id="admin"
+            )
+        with pytest.raises(RecordingWritesPending):
+            await runtime.recordings.close()
+    finally:
+        release.set()
+        async with asyncio.timeout(1):
+            while runtime.recordings._reads:
+                await asyncio.sleep(0)
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_optional_policy_does_not_bypass_actual_operation_capacity(monkeypatch):
+    runtime = await build_application_runtime(ApplicationRuntimeConfig())
+    release = asyncio.Event()
+    calls = 0
+
+    async def held():
+        await release.wait()
+
+    async def policy(*args):
+        nonlocal calls
+        calls += 1
+
+    tasks = []
+    try:
+        await capture(runtime)
+        monkeypatch.setattr(runtime.recordings.artifacts, "get_session_preservation_for", policy)
+        tasks = [
+            asyncio.create_task(runtime.recordings.run_owned_operation(f"other-{i}", held))
+            for i in range(7)
+        ]
+        async with asyncio.timeout(1):
+            while len(runtime.recordings._reads) != 7:
+                await asyncio.sleep(0)
+        page = await runtime.recordings.read_page(context().voice_session_id)
+        assert page["items"][0]["status"] == "available"
+        assert page["preservation"]["status"] == "unavailable"
+        assert calls == 0 and len(runtime.recordings._reads) == 7
+    finally:
+        release.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await runtime.close()
+
+
 def sharing_runtime(runtime):
     # Two actual runtimes coordinate through one volatile Artifact Store and Journal.
     return ApplicationRuntime(

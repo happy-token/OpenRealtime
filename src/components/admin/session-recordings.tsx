@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { SessionRecordingPage, SessionRecordingRow } from "@/lib/session-recordings";
+import { projectPreservationResult } from "@/lib/recording-preservation";
 import styles from "./diagnostics-workspace.module.css";
 
 const statusLabel = { available: "可读取", expired: "已过期", deleted: "已删除", unavailable: "暂不可用" };
@@ -12,22 +13,27 @@ export function SessionRecordings({ sessionId, preview = false }: { sessionId: s
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<SessionRecordingRow | null>(null);
   const [audioError, setAudioError] = useState("");
+  const [marking, setMarking] = useState(false);
+  const [preservationUnknown, setPreservationUnknown] = useState(false);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); active.current = null; }, [sessionId]);
+  const readCatalog = async (controller: AbortController, refresh: boolean) => {
+    if (refresh) { setSelected(null); setAudioError(""); }
+    const cursor = !refresh && page?.next_cursor ? `&after_sequence=${encodeURIComponent(page.next_cursor)}` : "";
+    const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings?limit=200${cursor}`, { cache: "no-store", signal: controller.signal });
+    const next: SessionRecordingPage = await response.json();
+    if (controller.signal.aborted || active.current !== controller) throw new Error("expired-recording-read");
+    if (!response.ok || next.voice_session_id !== sessionId || !Array.isArray(next.items)) throw new Error("录音目录读取失败，请重试。");
+    setPage(next); setPreservationUnknown(false);
+    setRows(previous => refresh ? next.items : [...new Map([...previous, ...next.items].map(row => [row.item_id, row])).values()]);
+  };
   const load = async (refresh = false) => {
     if (preview || active.current || (!refresh && rows.length >= 2000)) return;
     const controller = new AbortController(); active.current = controller;
     const timeout = setTimeout(() => controller.abort(), 15_000);
     setBusy(true); setError("");
-    if (refresh) { setSelected(null); setAudioError(""); }
-    const cursor = !refresh && page?.next_cursor ? `&after_sequence=${encodeURIComponent(page.next_cursor)}` : "";
     try {
-      const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings?limit=200${cursor}`, { cache: "no-store", signal: controller.signal });
-      const next: SessionRecordingPage = await response.json();
-      if (controller.signal.aborted || active.current !== controller) return;
-      if (!response.ok || next.voice_session_id !== sessionId || !Array.isArray(next.items)) throw new Error("录音目录读取失败，请重试。");
-      setPage(next);
-      setRows(previous => refresh ? next.items : [...new Map([...previous, ...next.items].map(row => [row.item_id, row])).values()]);
+      await readCatalog(controller, refresh);
     } catch (cause) {
       if (active.current === controller) setError(controller.signal.aborted ? "录音目录读取超时，请重试。" : cause instanceof Error ? cause.message : "录音目录暂不可用。");
     } finally {
@@ -35,9 +41,41 @@ export function SessionRecordings({ sessionId, preview = false }: { sessionId: s
       if (active.current === controller) { active.current = null; setBusy(false); }
     }
   };
+  const preserve = async () => {
+    if (preview || active.current || preservationUnknown || page?.preservation?.status !== "unmarked") return;
+    const controller = new AbortController(); active.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    setBusy(true); setMarking(true); setError("");
+    let confirmed = false;
+    try {
+      const response = await fetch(`/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings/preservation`, { method: "POST", cache: "no-store", signal: controller.signal });
+      const result = await response.json();
+      if (controller.signal.aborted || active.current !== controller) throw new Error("expired-preservation-result");
+      if (!response.ok) throw new Error("preservation-unconfirmed");
+      const view = projectPreservationResult(result, sessionId);
+      confirmed = true;
+      setPage(previous => previous ? { ...previous, preservation: view } : previous);
+      await readCatalog(controller, true);
+    } catch {
+      if (active.current === controller) {
+        setPreservationUnknown(!confirmed);
+        setError(confirmed ? "会话已标记保留，但目录刷新未完成，请刷新核查片段。" : "保留结果尚未确认，后台可能仍在处理。请刷新录音目录核查后重试。");
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (active.current === controller) { active.current = null; setBusy(false); setMarking(false); }
+    }
+  };
+  const preservation = page?.preservation;
   return <section className={styles.panel} aria-label="会话录音">
-    <div className={styles.panelhead}><h2>会话录音</h2><button disabled={preview || busy} onClick={() => void load(true)}>{busy ? "正在读取…" : page ? "刷新录音" : "查看录音"}</button></div>
-    <p className={styles.note}>输入与已发送音频分别保存。已发送不代表已播放；片段可能因采集或存储异常缺失。录音保留 7 天，已标记保留的片段除外。</p>
+    <div className={styles.panelhead}><h2>会话录音</h2><div className={styles.recordingActions}>
+      <button disabled={preview || busy} onClick={() => void load(true)}>{busy && !marking ? "正在读取…" : page ? "刷新录音" : "查看录音"}</button>
+      <button disabled={preview || busy || preservationUnknown || preservation?.status !== "unmarked"} onClick={() => void preserve()} title="保留该会话现有和后续录音，并保护对应排障记录。已过期或已删除的片段不会恢复。">{marking ? "正在保留…" : preservation?.status === "preserved" ? "已长期保留" : "长期保留"}</button>
+    </div></div>
+    <p className={styles.note}>输入与已发送音频分别保存。已发送不代表已播放；片段可能因采集或存储异常缺失。录音保留 7 天，已标记保留的片段除外。长期保留覆盖当前会话的现有和后续录音，已过期或已删除的片段不会恢复。</p>
+    {preservation?.status === "preserved" ? <p className={styles.note} role="status">会话已标记保留 · 已验证保留 {preservation.preserved_segments} 段 · 等待完成 {preservation.pending_segments} 段 · 无法保留 {preservation.unavailable_segments} 段{!preservation.storage_durable ? "。当前为临时存储，重启后不保留。" : "。"}</p> : null}
+    {page && (!preservation || preservation.status === "unavailable" || preservation.status === "unsupported") ? <p className={styles.note}>当前服务的保留状态暂不可用，可继续读取录音。</p> : null}
+    {preservation?.status === "source-missing" ? <p className={styles.note}>尚无已核实的会话来源，暂不能标记保留。</p> : null}
     {preview ? <p className={styles.note}>预览页面不读取真实录音。</p> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
     {page?.storage_status === "not-configured" ? <p className={styles.note}>此服务未配置录音存储。</p> : null}

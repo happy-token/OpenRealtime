@@ -1,4 +1,5 @@
 import { isDiagnosticSessionId } from "./diagnostics-access";
+import { projectRecordingPreservation, type RecordingPreservationView } from "./recording-preservation";
 
 export const MAX_RECORDING_AUDIO_BYTES = 4 * 1024 * 1024 + 44;
 export interface SessionRecordingRow {
@@ -14,6 +15,7 @@ export interface SessionRecordingRow {
 export interface SessionRecordingPage {
   voice_session_id: string; items: SessionRecordingRow[]; next_cursor: string | null;
   storage_status: "configured" | "not-configured";
+  preservation?: RecordingPreservationView;
 }
 export function recordingSequence(value: unknown): value is string {
   return typeof value === "string" && /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= BigInt("9223372036854775807");
@@ -48,5 +50,6 @@ export function projectRecordingPage(value: unknown, sessionId: string, after: s
     return { ...Object.fromEntries(keys.map(key => [key, r[key]])), audio_url: `/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings/${encodeURIComponent(r.artifact_id)}/audio` } as unknown as SessionRecordingRow;
   });
   if (value.next_cursor !== null && (!recordingSequence(value.next_cursor) || BigInt(value.next_cursor) <= BigInt(after) || BigInt(value.next_cursor) < previous)) throw new Error("invalid-cursor");
-  return { voice_session_id: sessionId, items, next_cursor: value.next_cursor as string | null, storage_status: value.storage_status as SessionRecordingPage["storage_status"] };
+  return { voice_session_id: sessionId, items, next_cursor: value.next_cursor as string | null, storage_status: value.storage_status as SessionRecordingPage["storage_status"],
+    ...(value.preservation === undefined ? {} : { preservation: projectRecordingPreservation(value.preservation) }) };
 }

@@ -178,3 +178,5 @@
 
 
 2026-10-07 [ADR0155](../adr/0155-session-preservation-source-and-history-protection.md)继续接内部 Runtime 标记、Journal 原来源与锁内重验、整批历史删除保护；PG 重启无 S3 仍保护，Memory 两 Runtime 共用协调锁。标记超时保持真实任务归属，操作失败不误报已保留。管理员 HTTP/UI、目录保留状态及所有真实回放/renderer/OBS02/03/G0–G5 验收继续开放，详见[实施记录](../reports/2026-10-07-session-recording-history-protection.md)。
+
+2026-10-07 [ADR0156](../adr/0156-admin-session-recording-preservation.md)接通管理员保留POST、Session/body/time签名私有证明、目录政策和同主题按钮。慢政策独立有界降级，真实late IO继续占预算/保护删除关闭。真实隔离Chrome管理员/无Cookie Agent读取、WAV媒体完成、保留刷新与手机布局通过，修复Next URL规范化导致误拒同源写入。仅Memory录音+PG身份，未生产部署/S3/真实provider，详见[实施记录](../reports/2026-10-07-admin-recording-preservation.md)。下一项继续confirmed renderer epoch/speech/sample关联及证据完整度，OBS02及全部原G0–G5维持开放。
