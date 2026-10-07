@@ -20,9 +20,11 @@ from server.artifacts.protocol import (
     ArtifactRecord,
     BlobReceipt,
     S3ObjectClient,
+    SessionRecordingPreservation,
     validate_cleanup_limit,
 )
 from server.persistence.postgres._connection import connection_scope
+from server.persistence.postgres.recording_preservation import PostgresRecordingPreservation
 from server.persistence.postgres.schema import validate_schema_name
 
 
@@ -42,9 +44,11 @@ class PostgresArtifactStore:
         self._upload_owner = ArtifactUploadOwner()
         self._objects = objects
         validated = validate_schema_name(schema)
+        self._preservation = PostgresRecordingPreservation(executor, schema=validated)
         self._table = f'"{validated}".artifacts'
         self._upload_attempts = f'"{validated}".artifact_upload_attempts'
         self._cleanup_intents = f'"{validated}".artifact_cleanup_intents'
+        self._preservation_policies = f'"{validated}".session_recording_preservation'
         self._artifact_id_factory = artifact_id_factory or (lambda: str(uuid.uuid4()))
         if cleanup_grace_seconds < 0:
             raise ValueError("cleanup_grace_seconds must be non-negative")
@@ -54,6 +58,16 @@ class PostgresArtifactStore:
         self._cleanup_lease_seconds = cleanup_lease_seconds
         self._after_object_put = after_object_put
 
+    async def preserve_session_for(
+        self, scope: ArtifactAccessScope, session_id: str, *, actor_id: str
+    ) -> SessionRecordingPreservation:
+        return await self._preservation.preserve_session_for(scope, session_id, actor_id=actor_id)
+
+    async def get_session_preservation_for(
+        self, scope: ArtifactAccessScope, session_id: str
+    ) -> SessionRecordingPreservation | None:
+        return await self._preservation.get_session_preservation_for(scope, session_id)
+
     async def create_staging(self, request: ArtifactCreateRequest) -> ArtifactRecord:
         artifact_id = self._artifact_id_factory()
         if not artifact_id:
@@ -61,6 +75,7 @@ class PostgresArtifactStore:
         digest = _request_digest(request)
         now = utc_now()
         async with connection_scope(self._executor) as connection, connection.transaction():
+            await self._preservation.lock_request(connection, request)
             row = await connection.fetchrow(
                 f"""
                     INSERT INTO {self._table} (
@@ -119,7 +134,7 @@ class PostgresArtifactStore:
                         INSERT INTO {self._cleanup_intents} (
                             artifact_id, tenant_id, owner_id, reason, phase,
                             cleanup_after, created_at, updated_at
-                        ) VALUES ($1, $2, $3, $4, 'pending', $5, $6, $6)
+                        ) VALUES ($1, $2, $3, $4, $7, $5, $6, $6)
                         ON CONFLICT (artifact_id) DO NOTHING
                         """,
                     row["artifact_id"],
@@ -132,6 +147,10 @@ class PostgresArtifactStore:
                     if request.source_kind == "voice_session_recording"
                     else now + timedelta(seconds=self._cleanup_grace_seconds),
                     now,
+                    "cancelled"
+                    if row["phase"] in {"staging", "available"}
+                    and await self._preservation.request_preserved(connection, request)
+                    else "pending",
                 )
             return self._record(row)
 
@@ -287,11 +306,14 @@ class PostgresArtifactStore:
         )
         target_phase = ArtifactPhase.AVAILABLE if verified else ArtifactPhase.FAILED
         failure_reason = None if verified else "object verification failed"
-        async with connection_scope(self._executor) as connection:
+        async with connection_scope(self._executor) as connection, connection.transaction():
+            await self._preservation.lock_request(connection, record.request)
+            preserved = await self._preservation.request_preserved(connection, record.request)
             row = await connection.fetchrow(
                 f"""
                 UPDATE {self._table}
                 SET phase = $3, failure_reason = $4,
+                    immutable = immutable OR ($6 AND $3 = 'available'),
                     revision = revision + 1, updated_at = $5
                 WHERE artifact_id = $1 AND revision = $2 AND phase = 'staging'
                 RETURNING *
@@ -301,8 +323,21 @@ class PostgresArtifactStore:
                 target_phase.value,
                 failure_reason,
                 utc_now(),
+                preserved,
             )
             if row is not None:
+                if row["phase"] == "available" and row["immutable"]:
+                    await connection.execute(
+                        f"UPDATE {self._cleanup_intents} SET phase='cancelled', updated_at=$2 WHERE artifact_id=$1 AND phase='pending'",
+                        artifact_id,
+                        utc_now(),
+                    )
+                if row["phase"] == "failed" and preserved:
+                    await connection.execute(
+                        f"UPDATE {self._cleanup_intents} SET phase='pending', updated_at=$2 WHERE artifact_id=$1 AND phase='cancelled'",
+                        artifact_id,
+                        utc_now(),
+                    )
                 return self._record(row)
         current = await self._require(artifact_id)
         if current.phase is target_phase:
@@ -402,10 +437,19 @@ class PostgresArtifactStore:
         async with connection_scope(self._executor) as connection:
             attempt_rows = await connection.fetch(
                 f"""
-                SELECT attempt_id FROM {self._upload_attempts}
-                WHERE phase IN ('pending', 'cleanup_pending', 'cleaning')
-                  AND cleanup_after <= $1
-                ORDER BY cleanup_after, created_at
+                SELECT u.attempt_id FROM {self._upload_attempts} u
+                WHERE u.phase IN ('pending', 'cleanup_pending', 'cleaning')
+                  AND u.cleanup_after <= $1
+                  AND NOT (u.phase = 'pending' AND EXISTS (
+                    SELECT 1 FROM {self._table} a
+                    JOIN {self._preservation_policies} p
+                      ON p.tenant_id=a.tenant_id AND p.owner_id=a.owner_id
+                     AND p.voice_session_id=a.source_id
+                    WHERE a.artifact_id=u.artifact_id AND a.phase='staging'
+                      AND a.source_kind='voice_session_recording'
+                      AND a.retention_until > p.marked_at
+                  ))
+                ORDER BY u.cleanup_after, u.created_at
                 LIMIT $2
                 """,
                 now,
@@ -479,6 +523,29 @@ class PostgresArtifactStore:
     async def _cleanup_upload_attempt(self, attempt_id: str) -> bool:
         cleanup_token = str(uuid.uuid4())
         async with connection_scope(self._executor) as connection, connection.transaction():
+            source = await connection.fetchrow(
+                f"SELECT a.* FROM {self._table} a JOIN {self._upload_attempts} u ON u.artifact_id=a.artifact_id WHERE u.attempt_id=$1",
+                attempt_id,
+            )
+            if source is not None:
+                source_record = self._record(source)
+                await self._preservation.lock_request(connection, source_record.request)
+                fresh = await connection.fetchrow(
+                    f"SELECT * FROM {self._table} WHERE artifact_id=$1", source_record.artifact_id
+                )
+                if fresh is not None:
+                    source_record = self._record(fresh)
+                if (
+                    source_record.phase is ArtifactPhase.STAGING
+                    and await self._preservation.request_preserved(
+                        connection, source_record.request
+                    )
+                    and await connection.fetchval(
+                        f"SELECT phase FROM {self._upload_attempts} WHERE attempt_id=$1", attempt_id
+                    )
+                    == "pending"
+                ):
+                    return False  # Preservation retains unknown actual put permission.
             attempt = await connection.fetchrow(
                 f"""
                 UPDATE {self._upload_attempts}
@@ -571,7 +638,13 @@ class PostgresArtifactStore:
         ):
             raise ArtifactConflict("artifact retention policy prevents deletion")
         if record.phase is not ArtifactPhase.DELETING:
-            async with connection_scope(self._executor) as connection:
+            async with connection_scope(self._executor) as connection, connection.transaction():
+                await self._preservation.lock_request(connection, record.request)
+                if record.phase in {
+                    ArtifactPhase.STAGING,
+                    ArtifactPhase.AVAILABLE,
+                } and await self._preservation.request_preserved(connection, record.request):
+                    raise ArtifactConflict("preserved recording cannot be deleted")
                 row = await connection.fetchrow(
                     f"""
                     UPDATE {self._table}

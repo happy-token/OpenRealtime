@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -129,6 +130,50 @@ class ArtifactStore(Protocol):
         scope: ArtifactAccessScope,
         artifact_id: str,
     ) -> ArtifactRecord: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SessionRecordingPreservation:
+    voice_session_id: str
+    marked_at: datetime
+    actor_id: str
+    preserved_segments: int
+    pending_segments: int
+    unavailable_segments: int
+
+
+@runtime_checkable
+class RecordingPreservation(Protocol):
+    """Optional Session policy; original tenant/owner is required, never admin ownership."""
+
+    async def preserve_session_for(
+        self, scope: ArtifactAccessScope, session_id: str, *, actor_id: str
+    ) -> SessionRecordingPreservation: ...
+
+    async def get_session_preservation_for(
+        self, scope: ArtifactAccessScope, session_id: str
+    ) -> SessionRecordingPreservation | None: ...
+
+
+def validate_recording_preservation(session_id: str, actor_id: str | None = None) -> None:
+    if (
+        not isinstance(session_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", session_id)
+        or session_id in {".", ".."}
+    ):
+        raise ValueError("invalid recording Session identity")
+    if actor_id is not None and (
+        not isinstance(actor_id, str) or not actor_id or len(actor_id.encode()) > 256
+    ):
+        raise ValueError("invalid recording preservation actor")
+
+
+def recording_preservation_applies(request: ArtifactCreateRequest, marked_at: datetime) -> bool:
+    return (
+        request.source_kind == "voice_session_recording"
+        and request.retention_until is not None
+        and marked_at < request.retention_until
+    )
 
 
 @runtime_checkable

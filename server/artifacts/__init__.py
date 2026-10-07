@@ -10,7 +10,9 @@ from server.artifacts.protocol import (
     ArtifactRecord,
     ArtifactStore,
     BlobReceipt,
+    RecordingPreservation,
     S3ObjectClient,
+    SessionRecordingPreservation,
 )
 from server.artifacts.s3_client import Boto3S3ObjectClient
 
@@ -25,6 +27,8 @@ __all__ = [
     "Boto3S3ObjectClient",
     "InMemoryArtifactStore",
     "InMemoryS3ObjectClient",
+    "RecordingPreservation",
     "S3ObjectClient",
+    "SessionRecordingPreservation",
     "build_s3_object_client_from_env",
 ]

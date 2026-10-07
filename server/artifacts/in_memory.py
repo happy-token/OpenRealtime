@@ -8,6 +8,8 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime
+from typing import TypedDict, Unpack
 
 from server.agent_session.driver_protocol import utc_now
 from server.artifacts._upload_owner import ArtifactUploadOwner
@@ -21,8 +23,18 @@ from server.artifacts.protocol import (
     ArtifactStore,
     BlobReceipt,
     S3ObjectClient,
+    SessionRecordingPreservation,
+    recording_preservation_applies,
     validate_cleanup_limit,
+    validate_recording_preservation,
 )
+
+
+class _RecordChanges(TypedDict, total=False):
+    request: ArtifactCreateRequest
+    phase: ArtifactPhase
+    receipt: BlobReceipt | None
+    failure_reason: str | None
 
 
 class InMemoryS3ObjectClient(S3ObjectClient):
@@ -70,7 +82,73 @@ class InMemoryArtifactStore(ArtifactStore):
         self._active_uploads: dict[str, int] = {}
         self._pending_upload_cleanup: dict[str, str] = {}
         self._cleanup_attempts: dict[str, int] = {}
+        self._preserved_sessions: dict[tuple[str, str, str], tuple[datetime, str]] = {}
         self._lock = asyncio.Lock()
+
+    def _session_preserved(self, record: ArtifactRecord) -> bool:
+        policy = self._preserved_sessions.get(
+            (record.request.tenant_id, record.request.owner_id, record.request.source_id)
+        )
+        return policy is not None and recording_preservation_applies(record.request, policy[0])
+
+    def _preservation_state(
+        self, scope: ArtifactAccessScope, session_id: str
+    ) -> SessionRecordingPreservation:
+        marked_at, actor_id = self._preserved_sessions[
+            (scope.tenant_id, scope.owner_id, session_id)
+        ]
+        records = [
+            record
+            for record in self._records.values()
+            if (
+                record.request.tenant_id,
+                record.request.owner_id,
+                record.request.source_id,
+                record.request.source_kind,
+            )
+            == (scope.tenant_id, scope.owner_id, session_id, "voice_session_recording")
+        ]
+        preserved = sum(
+            record.phase is ArtifactPhase.AVAILABLE and record.request.immutable
+            for record in records
+        )
+        pending = sum(
+            record.phase is ArtifactPhase.STAGING and self._session_preserved(record)
+            for record in records
+        )
+        return SessionRecordingPreservation(
+            session_id, marked_at, actor_id, preserved, pending, len(records) - preserved - pending
+        )
+
+    async def preserve_session_for(
+        self, scope: ArtifactAccessScope, session_id: str, *, actor_id: str
+    ) -> SessionRecordingPreservation:
+        if actor_id is None:
+            raise ValueError("invalid recording preservation actor")
+        validate_recording_preservation(session_id, actor_id)
+        async with self._lock:
+            self._preserved_sessions.setdefault(
+                (scope.tenant_id, scope.owner_id, session_id), (utc_now(), actor_id)
+            )
+            for record in tuple(self._records.values()):
+                if (
+                    (record.request.tenant_id, record.request.owner_id, record.request.source_id)
+                    == (scope.tenant_id, scope.owner_id, session_id)
+                    and record.phase is ArtifactPhase.AVAILABLE
+                    and not record.request.immutable
+                    and self._session_preserved(record)
+                ):
+                    self._replace(record, request=replace(record.request, immutable=True))
+            return self._preservation_state(scope, session_id)
+
+    async def get_session_preservation_for(
+        self, scope: ArtifactAccessScope, session_id: str
+    ) -> SessionRecordingPreservation | None:
+        validate_recording_preservation(session_id)
+        async with self._lock:
+            if (scope.tenant_id, scope.owner_id, session_id) not in self._preserved_sessions:
+                return None
+            return self._preservation_state(scope, session_id)
 
     async def create_staging(self, request: ArtifactCreateRequest) -> ArtifactRecord:
         key = (request.tenant_id, request.idempotency_key)
@@ -212,7 +290,13 @@ class InMemoryArtifactStore(ArtifactStore):
             current = self._records[artifact_id]
             if current.revision != record.revision:
                 raise ArtifactConflict("artifact changed during finalization")
-            return self._replace(current, phase=ArtifactPhase.AVAILABLE)
+            return self._replace(
+                current,
+                phase=ArtifactPhase.AVAILABLE,
+                request=replace(current.request, immutable=True)
+                if self._session_preserved(current)
+                else current.request,
+            )
 
     async def get_record(self, artifact_id: str) -> ArtifactRecord | None:
         async with self._lock:
@@ -276,7 +360,9 @@ class InMemoryArtifactStore(ArtifactStore):
                 raise KeyError(artifact_id)
             if current.phase is ArtifactPhase.DELETED:
                 return current
-            if current.request.immutable:
+            if current.request.immutable or (
+                current.phase is ArtifactPhase.STAGING and self._session_preserved(current)
+            ):
                 raise ArtifactConflict("immutable artifact cannot be deleted")
             if (
                 current.request.retention_until is not None
@@ -319,6 +405,9 @@ class InMemoryArtifactStore(ArtifactStore):
                     for record in self._records.values()
                     if record.request.source_kind == "voice_session_recording"
                     and not record.request.immutable
+                    and not (
+                        record.phase is ArtifactPhase.STAGING and self._session_preserved(record)
+                    )
                     and record.phase is not ArtifactPhase.DELETED
                     and record.request.retention_until is not None
                     and record.request.retention_until <= now
@@ -367,7 +456,7 @@ class InMemoryArtifactStore(ArtifactStore):
             raise KeyError(artifact_id)
         return record
 
-    def _replace(self, record: ArtifactRecord, **changes: object) -> ArtifactRecord:
+    def _replace(self, record: ArtifactRecord, **changes: Unpack[_RecordChanges]) -> ArtifactRecord:
         updated = replace(
             record,
             revision=record.revision + 1,

@@ -324,7 +324,8 @@ class SessionAudioRecorder:
         record = await self._artifacts.finalize(artifact_id)
         if (
             record.artifact_id != artifact_id
-            or record.request != request
+            or type(record.request.immutable) is not bool
+            or replace(record.request, immutable=False) != request
             or record.phase is not ArtifactPhase.AVAILABLE
             or record.receipt is None
             or record.receipt.size != len(payload)
