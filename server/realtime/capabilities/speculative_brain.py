@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from server.core.async_stream import OwnedStreamCleanupError, owned_async_iterator
-from server.core.turn_content import TurnContent, same_asr_utterance
+from server.core.turn_content import TurnContent, same_response_basis
 from server.realtime.capabilities.brain_streaming import StreamingTextBrain
 from server.realtime.capabilities.speculative_budget import (
     SpeculativeBudgetExceeded,
@@ -237,11 +237,14 @@ class SpeculativeStreamingBrain:
                     await state.condition.wait()
                 if state.invalidated:
                     return
+                # A failed private candidate must not publish its buffered prefix.
+                # In the speech pipeline that prefix could otherwise outlive the
+                # failed lease and start a fresh, unrelated TTS request.
+                if state.error is not None:
+                    raise state.error
                 if state.chunks:
                     chunk = state.chunks.pop()
                 else:
-                    if state.error is not None:
-                        raise state.error
                     return
             yield chunk
 
@@ -252,14 +255,4 @@ class SpeculativeStreamingBrain:
 
 
 def _same_turn(left: TurnContent, right: TurnContent) -> bool:
-    return (
-        left.generation == right.generation
-        and same_asr_utterance(left.text, right.text)
-        and left.conversation_context == right.conversation_context
-        and left.context_projection_digest == right.context_projection_digest
-        and left.input_relation_unresolved == right.input_relation_unresolved
-        and left.context_repair == right.context_repair
-        and left.vision_text == right.vision_text
-        and left.audio == right.audio
-        and left.voiceprint == right.voiceprint
-    )
+    return same_response_basis(left, right)

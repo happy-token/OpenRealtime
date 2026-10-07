@@ -501,6 +501,9 @@ def render_conversation_items(items: tuple[ConversationItem, ...]) -> str | None
 class FullConversationContextProjector:
     """Explicit no-truncation fallback for conformers without compression."""
 
+    async def project_hypothetical_text(self, items: tuple[ConversationItem, ...]) -> str | None:
+        return render_conversation_items(items)
+
     async def project_text(self, items: tuple[ConversationItem, ...]) -> str | None:
         return render_conversation_items(items)
 
@@ -527,6 +530,17 @@ class BudgetedConversationContextProjector:
         )
         self._compressor = compressor
         self._compression_task: asyncio.Task[SummaryCheckpoint] | None = None
+
+    async def project_hypothetical_text(self, items: tuple[ConversationItem, ...]) -> str | None:
+        """Read validated checkpoints without publishing any hypothetical source."""
+        checkpoint = self._checkpoint_store.latest_valid(self._policy.policy_version)
+        try:
+            projection = self._projector.project(items=items, checkpoint=checkpoint)
+        except SummarySourceChangedError:
+            projection = self._projector.project(items=items, checkpoint=None)
+        # If the whole basis does not fit, skip speculation rather than silently
+        # truncate or mutate the factual checkpoint/compression worker.
+        return self._render_projection(projection)
 
     async def project_text(self, items: tuple[ConversationItem, ...]) -> str | None:
         checkpoint = await self._consume_finished_compression()

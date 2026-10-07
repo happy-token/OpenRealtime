@@ -8,8 +8,10 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
+from server.core.playback import CurrentSentencePermit, SentenceSpan
 from server.core.turn_content import TurnContent, same_asr_utterance
 from server.realtime.capabilities.turn_manager import ResponsePrefetcher
+from server.realtime.protocol.playback import ReplyPlayback
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,12 @@ class PrefetchCandidate:
     committed: bool = False
     source_text: str | None = None
     continuation_of_turn_id: str | None = None
-    sentence_permit_id: str | None = None
+    sentence_permit: CurrentSentencePermit | None = None
+    permitted_sentence: SentenceSpan | None = None
+
+    @property
+    def sentence_permit_id(self) -> str | None:
+        return self.sentence_permit.permit_id if self.sentence_permit is not None else None
 
     @property
     def observed_text(self) -> str:
@@ -35,7 +42,9 @@ class PrefetchCandidate:
     @property
     def sentence_handoff(self) -> bool:
         return bool(self.interrupted and self.continuation and not self.speech_active
-            and self.sentence_permit_id and self.continuation_of_turn_id and self.source_text)
+            and self.sentence_permit is not None and self.permitted_sentence is not None
+            and self.sentence_permit.sentence_id == self.permitted_sentence.sentence_id
+            and self.continuation_of_turn_id and self.source_text)
 
 
 class ResponsePrefetchController:
@@ -92,6 +101,18 @@ class ResponsePrefetchController:
         return bool(candidate is not None and candidate.sentence_handoff
             and candidate.continuation_of_turn_id == parent_turn_id
             and candidate.generation == generation and same_asr_utterance(candidate.text, text))
+
+    def confirm_sentence_stop(self, permit: CurrentSentencePermit, fact: ReplyPlayback) -> None:
+        candidate = self._candidate
+        if candidate is None or candidate.sentence_permit != permit:
+            return
+        sentence = candidate.permitted_sentence
+        if (sentence is None or fact.position_precision != "sample" or not fact.terminal
+            or fact.output_epoch != permit.output_epoch or fact.speech_id != permit.speech_id
+            or fact.sample_rate_hz != permit.sample_rate_hz
+            or fact.played_position_samples != permit.audio_end_samples
+            or fact.confirmed_text_end != sentence.text_end):
+            self.invalidate("sentence_handoff_condition_not_met")
 
     def finalize(self, text: str, generation: int, *, accepted: bool = True) -> None:
         if not accepted:

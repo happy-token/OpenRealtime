@@ -13,7 +13,13 @@ from server.conversation_journal import (
     TextContent,
 )
 from server.conversation_journal.models import item_from_draft
-from server.realtime import AppendItem, ProjectCommittedItem, RequestResponse, ResponseCompleted
+from server.realtime import (
+    AppendItem,
+    ProjectCommittedItem,
+    RequestResponse,
+    ResponseCompleted,
+    SpeechTextAlignment,
+)
 from server.realtime.registry import ActiveRealtimeConversations
 from server.realtime.runtime import RealtimeRuntimeFactory
 from server.realtime.transport import RealtimeWebSocketFrameBridge
@@ -45,7 +51,7 @@ class Provider:
                 yield chunk
 
 
-async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False, tts=None, wrappers="none"):
+async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None, asr=None, turn_manager=None, managed=False, tts=None, wrappers="none", return_after_alignment=False):
     core = await open_core(
         brain=brain or Brain(),
         asr=asr, turn_manager=turn_manager,
@@ -94,7 +100,8 @@ async def playing_core(*, speech_deliveries=None, precise_stop=False, brain=None
     async with asyncio.timeout(1):
         async for event in conversation.events():
             await bridge.handle_event(event)
-            if isinstance(event, ResponseCompleted):
+            if (isinstance(event, ResponseCompleted) or return_after_alignment
+                and isinstance(event, SpeechTextAlignment) and event.sentence is not None):
                 break
     return core, bridge
 

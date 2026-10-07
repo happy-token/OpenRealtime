@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from datetime import UTC, datetime
 from typing import cast
@@ -26,7 +26,7 @@ from server.conversation_journal import (
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
 from server.core.reply_repair import ReplyRepairPermit
-from server.core.turn_content import TurnContent
+from server.core.turn_content import ConditionalSentenceHandoff, TurnContent
 from server.realtime.capabilities import (
     AppendTtsText,
     AsrTranscriptDelta,
@@ -1231,13 +1231,14 @@ class CascadedRealtimeConversation:
                 return self._prior_model_items(sequence), item
         raise ValueError("projected context has no model-visible text input")
 
-    async def _project_stable_context(self, snapshot: Callable[[], tuple[tuple[ConversationItem, ...], ConversationItem | None]]) -> tuple[str | None, str, ConversationItem | None]:
+    async def _project_stable_context(self, snapshot: Callable[[], tuple[tuple[ConversationItem, ...], ConversationItem | None]],
+                                      *, projector: Callable[[tuple[ConversationItem, ...]], Awaitable[str | None]] | None = None) -> tuple[str | None, str, ConversationItem | None]:
         for _ in range(3):
             items, current = snapshot()
             source = (*items, current) if current is not None else items
             source_digest = digest_source_items(source)
             try:
-                projected = await self._context_projector.project_text(items)
+                projected = await (projector or self._context_projector.project_text)(items)
             except SummarySourceChangedError:
                 latest, latest_current = snapshot()
                 if digest_source_items((*latest, latest_current) if latest_current is not None else latest) != source_digest:
@@ -1252,8 +1253,43 @@ class CascadedRealtimeConversation:
         raise ContextVisibilityError("model-visible playback context changed during projection; retry budget exhausted")
 
     async def _turn_for_prefetch_candidate(self, candidate: PrefetchCandidate) -> TurnContent:
-        return await self._turn_for_prefetch(candidate.text, candidate.generation,
+        confirmed = await self._turn_for_prefetch(candidate.text, candidate.generation,
             continuation_of_turn_id=candidate.continuation_of_turn_id)
+        permit, sentence = candidate.sentence_permit, candidate.permitted_sentence
+        if permit is None or sentence is None:
+            return confirmed
+        project = getattr(self._context_projector, "project_hypothetical_text", None)
+        if project is None:
+            raise ContextVisibilityError("context projector cannot privately prepare a sentence handoff")
+        delivery = await self._speech_deliveries.get(permit.speech_id)
+        if (delivery is None or delivery.source_item_id is None
+            or conversation_scope(delivery.context) != conversation_scope(permit.context)
+            or (delivery.context.turn_id, delivery.context.generation) != (permit.context.turn_id, permit.context.generation)
+            or delivery.context.response_id != permit.response_id
+            or delivery.context_policy is not SpeechContextPolicy.AUTO
+            or delivery.interrupted_context_policy is not InterruptedContextPolicy.DELIVERED_ONLY
+            or delivery.status not in {SpeechDeliveryStatus.ACTIVE, SpeechDeliveryStatus.INTERRUPTED}
+            or sentence.text_end > len(delivery.intended_spoken_content)
+            or delivery.intended_spoken_content[sentence.text_start:sentence.text_end] != sentence.text
+            or len(delivery.delivered_speech_transcript) > sentence.text_start):
+            raise ContextVisibilityError("sentence hypothesis does not match the original speech delivery")
+        expected_text = delivery.intended_spoken_content[:sentence.text_end]
+
+        def snapshot() -> tuple[tuple[ConversationItem, ...], ConversationItem | None]:
+            items = self._prior_model_items(max(self._projected_items, default=0) + 1,
+                continuation_of_turn_id=candidate.continuation_of_turn_id)
+            source = self._projected_items.get(self._projected_sequence_by_item_id.get(delivery.source_item_id or "", 0))
+            if (source is None or source.kind is not ConversationItemKind.ASSISTANT_OUTPUT
+                or source.context.response_id != permit.response_id
+                or ConversationVisibility.MODEL not in source.visibility):
+                raise ContextVisibilityError("sentence hypothesis requires its archived model-visible reply")
+            expected = tuple(replace(item, content=(TextContent(expected_text),), visibility=source.visibility)
+                if item.item_id == source.item_id else item for item in items)
+            return expected, None
+
+        expected_context, expected_digest, _ = await self._project_stable_context(snapshot, projector=project)
+        return replace(confirmed, conditional_handoff=ConditionalSentenceHandoff(permit=permit, sentence=sentence,
+            expected_context=expected_context, expected_projection_digest=expected_digest))
 
     async def _turn_for_prefetch(self, text: str, generation: int, *,
                                  continuation_of_turn_id: str | None = None) -> TurnContent:

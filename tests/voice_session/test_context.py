@@ -500,3 +500,56 @@ async def test_hidden_superseded_records_keep_compression_source_contiguous_with
     finally:
         if projector._compression_task is not None:
             await asyncio.gather(projector._compression_task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("checkpoint_scope", ["none", "prefix", "changed_target"])
+async def test_hypothetical_context_does_not_publish_or_consume_fact_compression(checkpoint_scope):
+    import asyncio
+    from dataclasses import replace
+
+    class NoHypotheticalCompression:
+        async def compress(self, items):
+            raise AssertionError("hypothetical source reached factual compressor")
+
+    originals = (make_item(1, "已确认历史"), make_item(2, "实际尚未听完"))
+    hypothetical = (originals[0], replace(originals[1], content=(TextContent("许可句预计播完"),)))
+    projector, store = heard_projector(trigger_ratio=.001, compressor=NoHypotheticalCompression())
+    checkpoint = None
+    if checkpoint_scope != "none":
+        source = originals[:1] if checkpoint_scope == "prefix" else originals
+        checkpoint = checkpoint_for(source)
+        store.publish(checkpoint, source_items=source)
+    release = asyncio.Event()
+    async def factual_work():
+        await release.wait()
+        return checkpoint_for(originals, "事实任务结果")
+    worker = asyncio.create_task(factual_work())
+    projector._compression_task = worker
+    try:
+        rendered = await projector.project_hypothetical_text(hypothetical)
+        assert "许可句预计播完" in rendered
+        assert ("旧的已听摘要" in rendered) is (checkpoint_scope == "prefix")
+        assert store.latest_valid("heard-v1") == checkpoint
+        assert projector._compression_task is worker
+        assert not worker.done()
+        assert originals[1].content == (TextContent("实际尚未听完"),)
+    finally:
+        release.set()
+        await worker
+
+
+async def test_hypothetical_context_over_budget_preserves_factual_checkpoint_and_no_worker():
+    from dataclasses import replace
+
+    class NoHypotheticalCompression:
+        async def compress(self, items):
+            raise AssertionError("over-budget hypothesis must skip instead of compression")
+
+    source = make_item(1, "原来的事实")
+    projector, store = heard_projector(history_budget=1, compressor=NoHypotheticalCompression())
+    checkpoint = checkpoint_for((source,))
+    store.publish(checkpoint, source_items=(source,))
+    with pytest.raises(ValueError, match="does not fit"):
+        await projector.project_hypothetical_text((replace(source, content=(TextContent("条件计划" * 40),)),))
+    assert store.latest_valid("heard-v1") == checkpoint
+    assert projector._compression_task is None

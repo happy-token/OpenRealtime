@@ -726,3 +726,59 @@ async def test_closing_wins_admission_wait_without_starting_a_new_supplier(kind,
     finally:
         release.set()
         await asyncio.gather(pending, *([shutdown] if shutdown else []), return_exceptions=True)
+
+
+async def test_known_candidate_error_cannot_promote_before_producer_exit():
+    release, cancelled = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    class Brain:
+        async def stream(self, turn):
+            calls.append(turn)
+            try:
+                yield "prefix"
+                await release.wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await release.wait()
+
+    class FailingTts:
+        async def synthesize_duplex(self, texts):
+            async for _ in texts:
+                raise RuntimeError("failed candidate")
+            if False:
+                yield
+
+    turn = TurnContent(text="完整输入", generation=1)
+    cache = SpeculativeSpeechPipeline(brain=Brain(), tts=FailingTts())
+    consumer = None
+    await cache.prepare(turn)
+    state = cache._state
+    try:
+        async with asyncio.timeout(.5):
+            while state.error is None:
+                await asyncio.sleep(0)
+        # The child has failed, but the parent has not joined the Brain yet.
+        assert not state.done and not state.cleanup_started and not state.retired.is_set()
+        async def consume():
+            with pytest.raises(RuntimeError, match="failed candidate"):
+                assert [part async for part in cache.stream(turn)] == []
+        consumer = asyncio.create_task(consume())
+        for _ in range(12):
+            await asyncio.sleep(0)
+        assert not state.claimed
+        assert not cancelled.is_set(), "failed private candidate was destructively promoted"
+        assert not state.done
+        await asyncio.wait_for(consumer, .5)
+        with pytest.raises(OwnedStreamCleanupError, match="pending"):
+            await cache.prepare(TurnContent(text="新的完整输入", generation=2))
+        assert calls == [turn]
+        assert not cancelled.is_set() and not state.done
+        release.set()
+        await asyncio.wait_for(state.task, .5)
+        assert state.done
+    finally:
+        release.set()
+        if consumer is not None:
+            await asyncio.gather(consumer, return_exceptions=True)
+        await cache.close()

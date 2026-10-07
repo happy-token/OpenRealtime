@@ -481,7 +481,9 @@ class CoordinatedTurnManagerSession:
             permit = item.sentence_wait
             return bool(permit is not None and not item.sentence_revoked and item.yielded
                 and not item.speech_active and item.stop is not None
-                and permit.permit_id == candidate.sentence_permit_id
+                and permit == candidate.sentence_permit
+                and item.sentence_wait_playback is not None
+                and item.sentence_wait_playback.current_sentence == candidate.permitted_sentence
                 and self.sentence_playback_permit_current(permit)
                 and self._last_committed is not None
                 and self._last_committed[0] == candidate.continuation_of_turn_id)
@@ -513,7 +515,8 @@ class CoordinatedTurnManagerSession:
             self._prefetch.prepare(PrefetchCandidate(identity=item.identity, generation=item.context.generation,
                 text=cumulative, source_text=item.text, revision=item.revision, speech_active=False,
                 interrupted=True, continuation=True, committed=item.commit_pending,
-                continuation_of_turn_id=parent_id, sentence_permit_id=permit.permit_id))
+                continuation_of_turn_id=parent_id, sentence_permit=permit,
+                permitted_sentence=item.sentence_wait_playback.current_sentence if item.sentence_wait_playback else None))
             return
         self._prefetch.prepare(PrefetchCandidate(identity=item.identity, generation=item.context.generation,
             text=item.text, revision=item.revision, speech_active=item.speech_active,
@@ -1059,6 +1062,7 @@ class CoordinatedTurnManagerSession:
                 assert item is not None and permit is not None
                 item.sentence_wait_playback = replace(event.fact, output_epoch=permit.output_epoch)
                 if event.fact.terminal:
+                    self._prefetch.confirm_sentence_stop(permit, event.fact)
                     if (event.fact.position_precision != "sample" or event.fact.played_position_samples is None
                         or event.fact.sample_rate_hz is None):
                         # Stop confirmation releases the input wait, but unknown

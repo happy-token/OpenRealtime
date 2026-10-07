@@ -62,6 +62,11 @@ class SpeculativeState:
             return False
         if self.retired.is_set() and not self.done:
             raise OwnedStreamCleanupError("retired speculative candidate cleanup remains pending")
+        if self.error is not None and not self.done:
+            # A child failure may be visible before the producer starts joining
+            # its siblings. Keep private ownership until actual exit; promotion
+            # here would make formal cleanup cancel that unfinished producer.
+            raise self.error
         self.claimed = True
         if self.expiry_handle is not None:
             self.expiry_handle.cancel()
