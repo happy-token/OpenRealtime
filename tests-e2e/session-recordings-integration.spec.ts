@@ -19,9 +19,12 @@ test("isolated administrator reads verified WAV and preserves the original Sessi
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "查看录音" }).click();
   await expect(panel).toContainText("用户输入");
+  await expect(panel).toContainText("助手已发送");
+  await expect(panel).toContainText("回执覆盖 0.050 / 0.100 秒");
+  await expect(panel.getByText("回执覆盖 0.050 / 0.100 秒")).toHaveAttribute("title", /800 \/ 1600 个采样点.*不证明扬声器实际播出或用户听到/);
   await expect(panel.getByRole("button", { name: "长期保留", exact: true })).toBeEnabled();
 
-  await panel.getByRole("button", { name: "播放片段" }).click();
+  await panel.getByRole("button", { name: "播放片段" }).nth(1).click();
   const audio = panel.locator("audio");
   await expect(audio).toHaveAttribute("preload", "none");
   const audioResponse = page.waitForResponse(response => response.url().includes(`${root}/`) && !response.url().endsWith("/preservation"));
@@ -38,7 +41,7 @@ test("isolated administrator reads verified WAV and preserves the original Sessi
   const marked = await markedResponse;
   expect(marked.status(), JSON.stringify(await marked.json())).toBe(200);
   await expect(panel.getByRole("button", { name: "已长期保留" })).toBeDisabled();
-  await expect(panel).toContainText("已验证保留 1 段");
+  await expect(panel).toContainText("已验证保留 2 段");
   await expect(panel).toContainText("临时存储，重启后不保留");
   await expect(panel).toContainText("可读取 · 已保留");
 
@@ -51,7 +54,12 @@ test("isolated administrator reads verified WAV and preserves the original Sessi
     const catalog = await agentPage.json();
     expect(catalog.preservation.status).toBe("preserved");
     expect(catalog.preservation).not.toHaveProperty("actor_id");
-    const row = catalog.items[0];
+    expect(catalog.playback_source.status).toBe("available");
+    expect(catalog.playback_source.truncated).toBe(false);
+    const row = catalog.items.find((item: { direction: string }) => item.direction === "sent");
+    expect(row.playback).toEqual({ status: "reported", reported_end_sample: 800, overlap_samples: 800, sample_rate_hz: 16000 });
+    expect(row.playback_confirmation).toBe("not-inferred");
+    expect(row.playback).not.toHaveProperty("tenant_id");
     const wav = await anonymous.get(row.audio_url, { headers: { Authorization: authorization } });
     expect(wav.status()).toBe(200);
     const bytes = await wav.body();

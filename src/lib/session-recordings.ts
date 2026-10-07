@@ -2,6 +2,14 @@ import { isDiagnosticSessionId } from "./diagnostics-access";
 import { projectRecordingPreservation, type RecordingPreservationView } from "./recording-preservation";
 
 export const MAX_RECORDING_AUDIO_BYTES = 4 * 1024 * 1024 + 44;
+export interface RecordingPlaybackView {
+  status: "reported" | "unknown" | "unavailable" | "not-applicable";
+  reported_end_sample: number | null; overlap_samples: number | null; sample_rate_hz: number | null;
+}
+export interface RecordingPlaybackSource {
+  status: "available" | "missing" | "unavailable" | "not-requested" | "not-configured";
+  truncated: boolean; collection_healthy: boolean | null;
+}
 export interface SessionRecordingRow {
   voice_session_id: string; artifact_id: string; item_id: string; journal_sequence: string;
   direction: "input" | "sent"; epoch: string; speech_id: string | null; stream_id: string;
@@ -11,11 +19,13 @@ export interface SessionRecordingRow {
   playback_confirmation: "not-inferred"; generation: number; turn_id: string; response_id: string | null;
   size_bytes: number; sha256: string; status: "available" | "expired" | "deleted" | "unavailable";
   pinned: boolean; audio_url: string;
+  playback?: RecordingPlaybackView;
 }
 export interface SessionRecordingPage {
   voice_session_id: string; items: SessionRecordingRow[]; next_cursor: string | null;
   storage_status: "configured" | "not-configured";
   preservation?: RecordingPreservationView;
+  playback_source?: RecordingPlaybackSource;
 }
 export function recordingSequence(value: unknown): value is string {
   return typeof value === "string" && /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= BigInt("9223372036854775807");
@@ -23,6 +33,23 @@ export function recordingSequence(value: unknown): value is string {
 const uint = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const text = (v: unknown): v is string => typeof v === "string" && v.length > 0 && Buffer.byteLength(v) <= 512;
 const object = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+function projectPlayback(value: unknown, row: Record<string, unknown>): RecordingPlaybackView {
+  if (!object(value) || typeof value.status !== "string" || !["reported", "unknown", "unavailable", "not-applicable"].includes(value.status)
+    || (row.direction === "input") !== (value.status === "not-applicable")) throw new Error("invalid-playback");
+  if (value.status === "reported") {
+    if (!uint(value.reported_end_sample) || !uint(value.overlap_samples) || value.sample_rate_hz !== row.sample_rate_hz
+      || row.stream_id !== row.speech_id || typeof row.start_sample !== "number" || typeof row.sample_count !== "number"
+      || value.overlap_samples !== Math.max(0, Math.min(value.reported_end_sample, row.start_sample + row.sample_count) - row.start_sample)) throw new Error("invalid-playback");
+  } else if (value.reported_end_sample !== null || value.overlap_samples !== null || value.sample_rate_hz !== null) throw new Error("invalid-playback");
+  return { status: value.status as RecordingPlaybackView["status"], reported_end_sample: value.reported_end_sample as number | null,
+    overlap_samples: value.overlap_samples as number | null, sample_rate_hz: value.sample_rate_hz as number | null };
+}
+function projectPlaybackSource(value: unknown): RecordingPlaybackSource {
+  if (!object(value) || typeof value.status !== "string" || !["available", "missing", "unavailable", "not-requested", "not-configured"].includes(value.status)
+    || typeof value.truncated !== "boolean" || !(value.collection_healthy === null || typeof value.collection_healthy === "boolean")
+    || value.status !== "available" && value.truncated) throw new Error("invalid-playback-source");
+  return { status: value.status as RecordingPlaybackSource["status"], truncated: value.truncated, collection_healthy: value.collection_healthy as boolean | null };
+}
 /** Server projection: never forward storage keys or provider URLs. */
 export function projectRecordingPage(value: unknown, sessionId: string, after: string, limit: number): SessionRecordingPage {
   if (!object(value) || value.voice_session_id !== sessionId || !Array.isArray(value.items) || value.items.length > limit
@@ -47,9 +74,14 @@ export function projectRecordingPage(value: unknown, sessionId: string, after: s
       || r.playback_confirmation !== "not-inferred" || typeof r.pinned !== "boolean" || typeof r.discontinuity !== "boolean" || typeof r.storage_durable !== "boolean"
       || typeof r.status !== "string" || !["available", "expired", "deleted", "unavailable"].includes(r.status)) throw new Error("invalid-row");
     previous = BigInt(r.journal_sequence);
-    return { ...Object.fromEntries(keys.map(key => [key, r[key]])), audio_url: `/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings/${encodeURIComponent(r.artifact_id)}/audio` } as unknown as SessionRecordingRow;
+    return { ...Object.fromEntries(keys.map(key => [key, r[key]])),
+      ...(r.playback === undefined ? {} : { playback: projectPlayback(r.playback, r) }),
+      audio_url: `/api/observability/sessions/${encodeURIComponent(sessionId)}/recordings/${encodeURIComponent(r.artifact_id)}/audio` } as unknown as SessionRecordingRow;
   });
   if (value.next_cursor !== null && (!recordingSequence(value.next_cursor) || BigInt(value.next_cursor) <= BigInt(after) || BigInt(value.next_cursor) < previous)) throw new Error("invalid-cursor");
+  const playback_source = value.playback_source === undefined ? undefined : projectPlaybackSource(value.playback_source);
+  if (items.some(row => row.playback?.status === "reported") && playback_source?.status !== "available") throw new Error("invalid-playback-source");
   return { voice_session_id: sessionId, items, next_cursor: value.next_cursor as string | null, storage_status: value.storage_status as SessionRecordingPage["storage_status"],
-    ...(value.preservation === undefined ? {} : { preservation: projectRecordingPreservation(value.preservation) }) };
+    ...(value.preservation === undefined ? {} : { preservation: projectRecordingPreservation(value.preservation) }),
+    ...(playback_source === undefined ? {} : { playback_source }) };
 }

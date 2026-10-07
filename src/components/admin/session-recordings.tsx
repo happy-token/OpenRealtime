@@ -79,6 +79,8 @@ export function SessionRecordings({ sessionId, preview = false }: { sessionId: s
     {preview ? <p className={styles.note}>预览页面不读取真实录音。</p> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
     {page?.storage_status === "not-configured" ? <p className={styles.note}>此服务未配置录音存储。</p> : null}
+    {page?.playback_source?.truncated || page?.playback_source?.collection_healthy === false ? <p className={styles.note}>播放回执证据尚不完整，当前数值仅覆盖已查到的回执；没有匹配回执不代表没有播放。</p> : null}
+    {page?.playback_source && ["unavailable", "not-configured"].includes(page.playback_source.status) ? <p className={styles.note}>播放回执暂不可用，可继续读取录音。</p> : null}
     {page && !rows.length ? <p className={styles.empty}>未找到已保存的录音片段；不能据此判断用户没有说话。</p> : null}
     {selected ? <div className={styles.recordingPlayer}>
       <span>{selected.direction === "input" ? "用户输入" : "助手已发送"} · 轮次 {selected.generation} · {selected.sample_count / selected.sample_rate_hz} 秒</span>
@@ -87,7 +89,9 @@ export function SessionRecordings({ sessionId, preview = false }: { sessionId: s
       {audioError ? <p role="alert">{audioError}</p> : null}
     </div> : null}
     {rows.length ? <div className={styles.recordingList}>{rows.map(row => <div key={row.item_id} className={styles.recordingRow}>
-      <div><strong>{row.direction === "input" ? "用户输入" : "助手已发送"}</strong><small>轮次 {row.generation} · {(row.duration_ms / 1000).toFixed(2)} 秒 · {statusLabel[row.status]}{row.pinned ? " · 已保留" : ""}{!row.storage_durable ? " · 临时存储" : ""}{row.discontinuity ? " · 不连续" : ""}</small></div>
+      <div><strong>{row.direction === "input" ? "用户输入" : "助手已发送"}</strong><small>轮次 {row.generation} · {(row.duration_ms / 1000).toFixed(2)} 秒 · {statusLabel[row.status]}{row.pinned ? " · 已保留" : ""}{!row.storage_durable ? " · 临时存储" : ""}{row.discontinuity ? " · 不连续" : ""}</small>
+        {row.direction === "sent" ? <small title={`按原会话、输出epoch、语音及采样率匹配客户端回执。${row.playback?.overlap_samples !== null && row.playback?.overlap_samples !== undefined ? `该片段交集为 ${row.playback.overlap_samples} / ${row.sample_count} 个采样点。` : ""}仅表示客户端报告，不证明扬声器实际播出或用户听到。缺失回执时位置未知，不能推断未播放。`}>{row.playback?.status === "reported" && row.playback.overlap_samples !== null ? `回执覆盖 ${(row.playback.overlap_samples / row.sample_rate_hz).toFixed(3)} / ${(row.duration_ms / 1000).toFixed(3)} 秒` : "播放位置未知"}</small> : null}
+      </div>
       <button disabled={row.status !== "available"} onClick={() => { setAudioError(""); setSelected(row); }}>播放片段</button>
     </div>)}</div> : null}
     {page?.next_cursor && rows.length < 2000 ? <div className={styles.note}><button disabled={busy} onClick={() => void load()}>{busy ? "正在读取…" : "加载更多录音"}</button><p>目录尚有下一页，当前片段列表不完整。</p></div> : null}

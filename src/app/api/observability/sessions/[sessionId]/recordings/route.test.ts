@@ -61,3 +61,33 @@ it("does not infer preserved status from an old or malformed policy response", a
     fetchMock.mockResolvedValue(Response.json({ ...page(), preservation })); expect((await run()).status).toBe(503);
   }
 });
+const sentRow = () => ({ ...row, direction: "sent", speech_id: "speech", stream_id: "speech", capture_boundary: "transport_send_completed",
+  playback: { status: "reported", reported_end_sample: 80, overlap_samples: 80, sample_rate_hz: 16000 } });
+const playbackSource = () => ({ status: "available", truncated: true, collection_healthy: false });
+it("whitelists exact reported sample overlap and source completeness for an Agent", async () => {
+  fetchMock.mockResolvedValue(Response.json({ ...page(), items: [{ ...sentRow(), playback: { ...sentRow().playback, tenant_id: "private-tenant", object_key: "private-object" } }], playback_source: { ...playbackSource(), owner_id: "private-owner" } }));
+  const token = issueDiagnosticsAccess("session-1", "agent", secret).access_token;
+  const response = await run("", { authorization: `Bearer ${token}` }), published = await response.json();
+  expect(response.status).toBe(200); expect(published.items[0].playback).toEqual(sentRow().playback);
+  expect(published.items[0].playback_confirmation).toBe("not-inferred"); expect(published.playback_source).toEqual(playbackSource());
+  expect(JSON.stringify(published)).not.toContain("private-"); expect(admin).not.toHaveBeenCalled();
+});
+it.each([{ overlap_samples: 81 }, { reported_end_sample: true }, { overlap_samples: -1 }, { sample_rate_hz: 8000 }, { status: ["reported"] }, { status: "unknown" }, { reported_end_sample: 0 }, { reported_end_sample: 2 ** 53 }])("rejects an inconsistent reported overlap %s", async patch => {
+  const sent = sentRow();
+  fetchMock.mockResolvedValue(Response.json({ ...page(), items: [{ ...sent, playback: { ...sent.playback, ...patch } }], playback_source: playbackSource() }));
+  expect((await run()).status).toBe(503);
+});
+it("requires an available source and speech-local stream for a reported overlap", async () => {
+  for (const body of [
+    { ...page(), items: [sentRow()] },
+    { ...page(), items: [sentRow()], playback_source: { ...playbackSource(), status: "unavailable", truncated: false } },
+    { ...page(), items: [{ ...sentRow(), stream_id: "foreign" }], playback_source: playbackSource() },
+    { ...page(), items: [{ ...row, playback: sentRow().playback }], playback_source: playbackSource() },
+  ]) { fetchMock.mockResolvedValue(Response.json(body)); expect((await run()).status).toBe(503); }
+});
+it("keeps unknown samples null and old backend fields absent", async () => {
+  const old = await (await run()).json(); expect(old.items[0].playback).toBeUndefined(); expect(old.playback_source).toBeUndefined();
+  const unknown = { status: "unknown", reported_end_sample: null, overlap_samples: null, sample_rate_hz: null };
+  fetchMock.mockResolvedValue(Response.json({ ...page(), items: [{ ...sentRow(), playback: unknown }], playback_source: { ...playbackSource(), truncated: false } }));
+  expect((await (await run()).json()).items[0].playback).toEqual(unknown);
+});

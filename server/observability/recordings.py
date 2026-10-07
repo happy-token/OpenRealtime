@@ -31,10 +31,12 @@ from server.conversation_journal import (
     StructuredContent,
 )
 from server.conversation_journal.models import utc_now
+from server.observability.recording_playback import project_playback, receipt_index
+from server.observability.telemetry import DiagnosticsQuery
 
 MAX_AUDIO_BYTES = 4 * 1024 * 1024 + 44
-PolicyOperation = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
-OwnedPolicyQuery = Callable[[str, PolicyOperation], Awaitable[dict[str, Any] | None]]
+RecordingOptionalOperation = Callable[[], Coroutine[Any, Any, dict[str, Any]]]
+OwnedOptionalQuery = Callable[[str, RecordingOptionalOperation], Awaitable[dict[str, Any] | None]]
 
 
 class RecordingUnavailable(ValueError):
@@ -196,12 +198,32 @@ class SessionRecordingReader:
         artifacts: ArtifactStore | None,
         *,
         storage_durable: bool = False,
-        owned_policy_query: OwnedPolicyQuery | None = None,
+        owned_optional_query: OwnedOptionalQuery | None = None,
+        playback_query: DiagnosticsQuery | None = None,
+        playback_health: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._journal = journal
         self._artifacts = artifacts
         self._storage_durable = storage_durable
-        self._owned_policy_query = owned_policy_query
+        self._owned_optional_query = owned_optional_query
+        self._playback_query = playback_query
+        self._playback_health = playback_health
+
+    async def _playback(self, session_id: str) -> dict[str, Any]:
+        source: dict[str, Any] = {"status": "unavailable", "truncated": False, "collection_healthy": None}
+        try:
+            if self._playback_query is None:
+                return {"source": source, "receipts": None}
+            detail = await self._playback_query.session_detail(session_id)
+            if detail is not None and (detail.summary.voice_session_id != session_id or len(detail.events) > 5000):
+                raise ValueError("invalid playback evidence page")
+            source.update(status="available" if detail is not None else "missing", truncated=detail.next_cursor is not None if detail else False)
+            if self._playback_health is not None:
+                health = self._playback_health()
+                source["collection_healthy"] = health.get("status") == "ok" and health.get("pending_events") == 0
+            return {"source": source, "receipts": receipt_index(detail.events if detail else ())}
+        except Exception:  # noqa: BLE001 - optional evidence does not hide verified audio
+            return {"source": {"status": "unavailable", "truncated": False, "collection_healthy": None}, "receipts": None}
 
     def _policy_view(self, status: str) -> dict[str, Any]:
         return {
@@ -328,18 +350,28 @@ class SessionRecordingReader:
         if isinstance(self._artifacts, RecordingPreservation):
             # Optional IO requires an owner: a caller timeout must not abandon resources.
             policy = self._policy_view("unavailable")
-            if self._owned_policy_query is not None:
-                result = await self._owned_policy_query(
+            if self._owned_optional_query is not None:
+                policy_result = await self._owned_optional_query(
                     session_id, lambda: self._preservation(session_id)
                 )
-                if result is not None:
-                    policy = result
+                if policy_result is not None:
+                    policy = policy_result
+        playback: dict[str, Any] = {"source": {"status": "not-requested", "truncated": False, "collection_healthy": None}, "receipts": None}
+        if any(e.manifest["direction"] == "sent" for e in evidence_items):
+            playback["source"]["status"] = "not-configured" if self._playback_query is None else "unavailable"
+            if self._playback_query is not None and self._owned_optional_query is not None:
+                playback_result = await self._owned_optional_query(session_id, lambda: self._playback(session_id))
+                if playback_result is not None:
+                    playback = playback_result
+        for row, evidence in zip(rows, evidence_items, strict=True):
+            row["playback"] = project_playback(evidence.item, evidence.manifest, playback["receipts"])
         return {
             "voice_session_id": session_id,
             "items": rows,
             "next_cursor": str(page.next_sequence) if page.next_sequence is not None else None,
             "storage_status": "configured" if self._artifacts is not None else "not-configured",
             "preservation": policy,
+            "playback_source": playback["source"],
         }
 
     async def read_audio(self, session_id: str, artifact_id: str) -> bytes:

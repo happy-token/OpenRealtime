@@ -52,6 +52,20 @@ const unmarked = { status: "unmarked", marked_at: null, preserved_segments: null
 const marked = { status: "preserved", marked_at: "2026-10-07T00:00:00Z", preserved_segments: 1, pending_segments: 2, unavailable_segments: 3, storage_durable: false };
 const policyPage = (preservation: unknown = unmarked, pinned = false) => Response.json({ voice_session_id: "session-1", items: [{ ...row("first"), pinned }], next_cursor: null, storage_status: "configured", preservation });
 const markResult = () => Response.json({ voice_session_id: "session-1", preserved: true, ...marked });
+it("shows numeric reported overlap with limits and leaves missing playback unknown", async () => {
+  const playback = { status: "reported", overlap_samples: 80, reported_end_sample: 80, sample_rate_hz: 16000 };
+  fetchMock.mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [{ ...row("sent"), direction: "sent", playback }], next_cursor: null, storage_status: "configured", playback_source: { status: "available", truncated: true, collection_healthy: false } }));
+  click("查看录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("回执覆盖 0.005 / 0.010 秒"));
+  expect(text(tree())).toContain("没有匹配回执不代表没有播放");
+  const description = nodes(tree()).find(node => typeof node.props.title === "string" && node.props.title.includes("采样点"));
+  expect(description?.props.title).toContain("80 / 160 个采样点");
+  expect(description?.props.title).toContain("不证明扬声器实际播出或用户听到");
+  fetchMock.mockResolvedValueOnce(Response.json({ voice_session_id: "session-1", items: [{ ...row("old"), direction: "sent" }], next_cursor: null, storage_status: "configured" }));
+  click("刷新录音");
+  await vi.waitFor(() => expect(text(tree())).toContain("播放位置未知"));
+  expect(text(tree())).not.toContain("回执覆盖");
+});
 
 it("guards duplicate clicks, retains failed continuation and retries its original cursor", async () => {
   const first = deferred(); fetchMock.mockReturnValueOnce(first.promise);

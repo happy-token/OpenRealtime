@@ -277,6 +277,9 @@ class RealtimeTelemetryObserver:
                 occurred_at=event.occurred_at,
                 attributes={
                     "speech_id": event.speech_id,
+                    "output_epoch": event.output_epoch,
+                    "played_position_samples": event.played_position_samples,
+                    "sample_rate_hz": event.sample_rate_hz,
                     "delivered_text_end": event.delivered_text_end,
                     "played_audio_end_us": event.played_audio_end_us,
                     "precision": event.precision.value,

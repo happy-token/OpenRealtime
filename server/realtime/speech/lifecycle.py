@@ -155,6 +155,9 @@ class SpeechLifecycle:
             completed=command.completed,
             started=command.started,
             stopped=command.stopped,
+            output_epoch=command.output_epoch,
+            played_position_samples=command.played_position_samples,
+            sample_rate_hz=command.sample_rate_hz,
         )
 
     async def cancel(

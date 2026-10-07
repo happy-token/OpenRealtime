@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from server.core.interaction_context import InteractionContext
-from server.core.playback import CurrentSentencePermit
+from server.core.playback import CurrentSentencePermit, sample_position_us, validate_sample_position
 from server.core.reply_repair import ReplyRecoveryPlan, ReplyRepairPermit
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.commands import (
@@ -340,8 +340,22 @@ class SpeechPlaybackProgress:
     started: bool = False
     stopped: bool = False
     schema_version: int = 1
+    output_epoch: str | None = None
+    played_position_samples: int | None = None
+    sample_rate_hz: int | None = None
 
     def __post_init__(self) -> None:
+        validate_sample_position(self.played_position_samples, self.sample_rate_hz)
+        if self.output_epoch is not None and (
+            not isinstance(self.output_epoch, str) or not self.output_epoch
+        ):
+            raise ValueError("playback epoch must be non-empty when provided")
+        if self.played_position_samples is not None and (
+            self.output_epoch is None or self.sample_rate_hz is None
+            or self.precision is not PlaybackPrecision.SEGMENT
+            or self.played_audio_end_us != sample_position_us(self.played_position_samples, self.sample_rate_hz)
+        ):
+            raise ValueError("sample clock requires matching precise playback attachment")
         if sum((self.started, self.stopped, self.completed)) > 1:
             raise ValueError("playback phase flags are mutually exclusive")
         if not self.event_id or not self.speech_id:

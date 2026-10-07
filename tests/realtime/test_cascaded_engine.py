@@ -769,11 +769,17 @@ async def test_turn_stays_speaking_until_the_client_finishes_playback() -> None:
             delivered_text_end=0,
             played_audio_end_us=0,
             completed=False,
+            output_epoch="output",
+            played_position_samples=0,
+            sample_rate_hz=16000,
+            observed_at_ns=1,
         )
     )
     playback_started = await asyncio.wait_for(anext(events), timeout=0.2)
     while not isinstance(playback_started, SpeechPlaybackProgress):
         playback_started = await asyncio.wait_for(anext(events), timeout=0.2)
+    assert playback_started.output_epoch == "output"
+    assert playback_started.played_position_samples == 0 and playback_started.sample_rate_hz == 16000
 
     spoken = "第一段第二段"
     await asyncio.sleep(0.02)

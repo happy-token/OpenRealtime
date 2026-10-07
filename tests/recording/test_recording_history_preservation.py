@@ -199,7 +199,7 @@ async def test_slow_optional_policy_preserves_catalog_and_actual_io_ownership(
         await capture(runtime)
         monkeypatch.setattr(runtime.recordings.artifacts, "get_session_preservation_for", blocked)
         runtime.recordings._query_timeout_s = 0.1
-        runtime.recordings._policy_timeout_s = 0.01
+        runtime.recordings._optional_timeout_s = 0.01
         page = await runtime.recordings.read_page(context().voice_session_id)
         assert entered.is_set() and page["items"][0]["status"] == "available"
         assert page["preservation"]["status"] == "unavailable"

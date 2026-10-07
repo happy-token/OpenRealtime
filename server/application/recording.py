@@ -18,7 +18,7 @@ from server.artifacts.protocol import (
 from server.conversation_journal import ConversationJournal
 from server.core.interaction_context import InteractionContext
 from server.observability.recordings import (
-    PolicyOperation,
+    RecordingOptionalOperation,
     RecordingUnavailable,
     SessionRecordingReader,
 )
@@ -59,7 +59,7 @@ class ApplicationRecordingOwner:
         self._cleanup_interval_s = 60.0
         self._reads: dict[asyncio.Task[Any], str] = {}
         self._query_timeout_s = 4.0
-        self._policy_timeout_s = 0.25
+        self._optional_timeout_s = 0.25
 
     @property
     def storage_status(self) -> str:
@@ -168,25 +168,31 @@ class ApplicationRecordingOwner:
     ) -> dict[str, Any]:
         deadline = asyncio.get_running_loop().time() + self._query_timeout_s
 
-        async def optional_policy(sid: str, operation: PolicyOperation) -> dict[str, Any] | None:
+        async def optional_metadata(sid: str, operation: RecordingOptionalOperation) -> dict[str, Any] | None:
             # Reserve settlement time inside the original catalog deadline, not after it.
             remaining = (
                 deadline - asyncio.get_running_loop().time() - min(0.01, self._query_timeout_s / 10)
             )
             if self._closing or len(self._reads) >= 8 or remaining <= 0:
                 return None
-            task = asyncio.create_task(operation(), name=f"recording-policy:{sid}")
+            task = asyncio.create_task(operation(), name=f"recording-metadata:{sid}")
             self._reads[task] = sid
             task.add_done_callback(self._query_done)
-            done, _ = await asyncio.wait((task,), timeout=min(self._policy_timeout_s, remaining))
+            done, _ = await asyncio.wait((task,), timeout=min(self._optional_timeout_s, remaining))
             # Late work retains its slot and protects close/purge until actual settlement.
-            return task.result() if done else None
+            return task.result() if done and not task.cancelled() else None
 
+        try:
+            playback_query = self._telemetry.diagnostics
+        except TypeError:
+            playback_query = None
         reader = SessionRecordingReader(
             self._journal,
             self.artifacts,
             storage_durable=self._durable,
-            owned_policy_query=optional_policy,
+            owned_optional_query=optional_metadata,
+            playback_query=playback_query,
+            playback_health=self._telemetry.collection_health,
         )
         return await self.run_owned_operation(
             session_id, lambda: reader.read_page(session_id, after_sequence, limit)

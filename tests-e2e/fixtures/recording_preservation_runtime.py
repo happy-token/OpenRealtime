@@ -9,6 +9,8 @@ import os
 import re
 import signal
 import sys
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -20,11 +22,127 @@ from server.application.runtime import (
 from server.control_plane.http import start
 from server.core.interaction_context import InteractionContext
 from server.endpoint_session.registry import EndpointSessionRegistry
+from server.observability.telemetry import TelemetryIdentity
 from server.persistence.postgres import apply_migrations
+from server.realtime import (
+    AppendSpeechText,
+    CommitSpeech,
+    InMemoryRealtimeConversation,
+    StartSpeech,
+)
+from server.realtime.observability import RealtimeTelemetryObserver
 from server.realtime.protocol import AudioEncoding, AudioFrame
+from server.realtime.protocol.events import SpeechAudioDelta
+from server.realtime.transport import RealtimeWebSocketFrameBridge
+from server.transport.frames import InboundFrame, OutboundFrame
+from server.voice_session.protocol import PlaybackProgressV2
 
 COOKIE = "recording-test-only-cookie-token-0000000000000"
 SESSION = "recording-browser-session"
+
+
+class FixtureTransport:
+    """Controlled wire sink; no claim of physical device or browser renderer playback."""
+
+    def __init__(self) -> None:
+        self.frames: list[OutboundFrame] = []
+
+    async def receive(self) -> AsyncIterator[InboundFrame]:
+        if False:
+            yield  # type: ignore[misc]
+
+    async def send(self, frame: OutboundFrame) -> None:
+        self.frames.append(frame)
+
+    async def close(self) -> None:
+        pass
+
+
+async def seed_sent_receipt(runtime, ctx: InteractionContext) -> None:
+    """Exercise real Bridge admission/normalization and canonical receipt/observer path."""
+    recorder = runtime.open_recording(ctx)
+    if recorder is None:
+        raise RuntimeError("fixture recorder unavailable")
+    conversation = InMemoryRealtimeConversation(context=ctx)
+    events = conversation.events()
+    transport = FixtureTransport()
+    observer = RealtimeTelemetryObserver(
+        runtime.telemetry.bind(
+            TelemetryIdentity(
+                tenant_id=ctx.tenant_id,
+                user_id=ctx.user_id,
+                device_id=ctx.device_id,
+                voice_session_id=ctx.voice_session_id,
+                thread_id=ctx.thread_id,
+            )
+        )
+    )
+    bridge = RealtimeWebSocketFrameBridge(
+        context=ctx,
+        conversation=conversation,
+        transport=transport,
+        recording=recorder,
+        output_epoch="fixture-output",
+    )
+    try:
+        for command in (
+            StartSpeech(
+                command_id="start", idempotency_key="start", context=ctx, speech_id="fixture-speech"
+            ),
+            AppendSpeechText(
+                command_id="text",
+                idempotency_key="text",
+                context=ctx,
+                speech_id="fixture-speech",
+                text_sequence=1,
+                delta="测试录音",
+            ),
+            CommitSpeech(
+                command_id="commit",
+                idempotency_key="commit",
+                context=ctx,
+                speech_id="fixture-speech",
+            ),
+        ):
+            await conversation.send(command)
+            event = await anext(events)
+            observer.observe_event(event)
+            await bridge.handle_event(event)
+        await bridge.handle_event(
+            SpeechAudioDelta(
+                event_id="fixture-audio",
+                context=ctx,
+                conversation_sequence=4,
+                occurred_at=datetime.now(UTC),
+                speech_id="fixture-speech",
+                segment_index=0,
+                frame=AudioFrame(
+                    "provider-stream",
+                    0,
+                    0,
+                    100_000,
+                    AudioEncoding.PCM_S16LE,
+                    16000,
+                    1,
+                    b"\x01\x00" * 1600,
+                ),
+            )
+        )
+        await bridge.handle_inbound(
+            PlaybackProgressV2(
+                output_epoch=bridge.output_epoch,
+                speech_id="fixture-speech",
+                generation=ctx.generation,
+                phase="playing",
+                played_position_samples=800,
+            )
+        )
+        observer.observe_event(await anext(events))
+    finally:
+        await bridge.close()
+        await conversation.close()
+    if not recorder.settled or len(transport.frames) < 1:
+        raise RuntimeError("fixture sent recording did not settle")
 
 
 async def main() -> None:
@@ -91,6 +209,7 @@ async def main() -> None:
         )
         if not await recorder.close():
             raise RuntimeError("fixture recording did not settle")
+        await seed_sent_receipt(runtime, ctx)
         await runtime.telemetry.flush()
 
         async def preserve(sid: str, actor: str) -> dict:

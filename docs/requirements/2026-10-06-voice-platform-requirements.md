@@ -105,3 +105,6 @@ Turn actor 是唯一业务事件裁决入口。计划新增的 ReplyRevisionCont
 2026-10-07 [ADR0155](../adr/0155-session-preservation-source-and-history-protection.md)继续接内部 Runtime 标记、Journal 原来源与锁内重验、整批历史删除保护；PG 重启无 S3 仍保护，Memory 两 Runtime 共用协调锁。标记超时保持真实任务归属，操作失败不误报已保留。管理员 HTTP/UI、目录保留状态及所有真实回放/renderer/OBS02/03/G0–G5 验收继续开放，详见[实施记录](../reports/2026-10-07-session-recording-history-protection.md)。
 
 2026-10-07 [ADR0156](../adr/0156-admin-session-recording-preservation.md)补管理员专用HTTP保留、签名证明、目录状态和同主题按钮；政策慢/失败不隐藏有效录音，超时未确认不伪造成功。隔离真实管理员与无Cookie只读Agent、WAV回放和刷新已验证。真实S3/部署/录音完整性/confirmed renderer映射与OBS02/03、所有原G0–G5仍未完整验收。[本批报告](../reports/2026-10-07-admin-recording-preservation.md)。
+
+
+2026-10-07 [ADR0157](../adr/0157-recording-playback-receipt-correlation.md)保留规范事件/Observer的精确epoch/speech/sample锚点，将原owner保存音频区间与客户端报告前缀按完整身份求交集；同主题页面显示数字与悬停说明，缺失/旧格式始终未知。实际任务归属内的可选查询慢/失败/自身取消仅降级，不隐藏有效录音。真实PG重启回读、实际Bridge受控sink及隔离Chrome/API/无CookieAgent通过，详见[实施记录](../reports/2026-10-07-recording-playback-receipts.md)。一个最多5000返回事件的诊断页不等于长会话完整检索，也不限制Memory底层全量扫描；真实renderer/device、录音完整度、S3/部署、OBS02及全部原G0–G5仍待验收。

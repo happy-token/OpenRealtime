@@ -895,7 +895,8 @@ async def test_native_tool_result_waits_for_provider_turn_done_before_continuing
     await conversation.close()
 
 
-async def test_native_barge_in_preserves_delivered_prefix_and_truncates_provider() -> None:
+@pytest.mark.parametrize("phase", ["started", "progress", "stopped"])
+async def test_native_barge_in_preserves_delivered_prefix_and_truncates_provider(phase) -> None:
     provider = RecordingProvider()
     deliveries = InMemorySpeechDeliveryStore()
     conversation = await NativeRealtimeEngine(
@@ -952,11 +953,20 @@ async def test_native_barge_in_preserves_delivered_prefix_and_truncates_provider
             speech_id="response:response-1",
             delivered_text_end=len("你好"),
             played_audio_end_us=10_000,
+            output_epoch="output",
+            played_position_samples=240,
+            sample_rate_hz=24000,
+            observed_at_ns=1,
+            started=phase == "started",
+            stopped=phase == "stopped",
         )
     )
     progress = await asyncio.wait_for(anext(events), timeout=0.2)
     assert isinstance(progress, SpeechPlaybackProgress)
     assert progress.delivered_speech_transcript == "你好"
+    assert progress.output_epoch == "output" and progress.played_position_samples == 240
+    assert progress.sample_rate_hz == 24000
+    assert progress.started == (phase == "started") and progress.stopped == (phase == "stopped")
     await conversation.send(
         CancelResponse(
             command_id="cancel-1",
