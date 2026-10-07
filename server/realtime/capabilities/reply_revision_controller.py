@@ -18,6 +18,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit, sample_position_us
+from server.core.reply_repair import MAX_CONTEXT_REPAIRS, ReplyRepairPermit
 from server.realtime.protocol.playback import ReplyPlayback, sentence_identity
 from server.realtime.scope import conversation_scope
 
@@ -50,6 +51,9 @@ class ReplyRevision:
     invalidation_reason: str | None = None
     playback: ReplyPlayback | None = None
     sentence_permit: CurrentSentencePermit | None = None
+    context_repair_attempt: int = 0
+    context_repair_deadline_ns: int | None = None
+    context_repair_permit: ReplyRepairPermit | None = None
 
 
 class ReplyRevisionController:
@@ -184,13 +188,19 @@ class ReplyRevisionController:
             self.revoke(self.reply.response_id, reason="input_replaced")
         return self.input
 
-    def bind_response(self, response_id: str, context: InteractionContext) -> ReplyRevision:
+    def bind_response(self, response_id: str, context: InteractionContext, *,
+                      repair: ReplyRepairPermit | None = None, now_ns: int | None = None) -> ReplyRevision:
         if self._closed:
             raise RuntimeError("reply revision controller is closed")
         if not response_id:
             raise ValueError("response identity must be non-empty")
         self._live_started = True
         previous = self.reply
+        if repair is not None and (now_ns is None or not self.context_repair_permit_current(repair, now_ns=now_ns)
+            or (context.turn_id, context.generation) != (repair.context.turn_id, repair.context.generation)
+            or conversation_scope(context) != conversation_scope(repair.context)
+            or response_id != repair.response_id):
+            raise ValueError("reply repair permission is no longer current")
         if previous is not None and previous.response_id == response_id:
             if (previous.turn_id, previous.generation) != (context.turn_id, context.generation):
                 raise ValueError("response identity was reused for another input")
@@ -210,8 +220,40 @@ class ReplyRevisionController:
             input_version=current.input_version if current is not None else None,
             reply_version=ancestor.reply_version + 1 if ancestor is not None else 1,
             supersedes_response_id=ancestor.response_id if ancestor is not None else None,
+            context_repair_attempt=repair.attempt if repair is not None else 0,
+            context_repair_deadline_ns=repair.deadline_ns if repair is not None else None,
         )
         return self.reply
+
+    def offer_context_repair(self, response_id: str, context: InteractionContext, *,
+                             minimum_thread_sequence: int, deadline_ns: int, now_ns: int) -> ReplyRepairPermit | None:
+        reply, current, owner = self.reply, self.input, self._reply_context
+        if (self._closed or reply is None or current is None or owner is None
+            or reply.response_id != response_id or reply.delivery_permitted
+            or reply.invalidation_reason != "response_invalidated" or reply.context_repair_permit is not None
+            or (reply.input_id, reply.input_version) != (current.input_id, current.input_version)
+            or (context.turn_id, context.generation) != (current.turn_id, current.generation)
+            or conversation_scope(context) != conversation_scope(owner)
+            or reply.context_repair_attempt >= MAX_CONTEXT_REPAIRS):
+            return None
+        deadline = reply.context_repair_deadline_ns or deadline_ns
+        if now_ns >= deadline:
+            return None
+        permit = ReplyRepairPermit(permit_id=str(uuid.uuid4()), context=owner,
+            predecessor_response_id=response_id, response_id=str(uuid.uuid4()),
+            input_id=current.input_id, input_version=current.input_version,
+            predecessor_reply_version=reply.reply_version, minimum_thread_sequence=minimum_thread_sequence,
+            attempt=reply.context_repair_attempt + 1, deadline_ns=deadline)
+        self.reply = replace(reply, context_repair_permit=permit)
+        return permit
+
+    def context_repair_permit_current(self, permit: ReplyRepairPermit, *, now_ns: int) -> bool:
+        reply, current = self.reply, self.input
+        return bool(not self._closed and reply is not None and current is not None
+            and reply.context_repair_permit == permit and now_ns < permit.deadline_ns
+            and reply.invalidation_reason == "response_invalidated" and not reply.delivery_permitted
+            and (current.input_id, current.input_version, current.turn_id, current.generation) ==
+                (permit.input_id, permit.input_version, permit.context.turn_id, permit.context.generation))
 
     def delivery_allowed(self, response_id: str) -> bool:
         return bool(not self._closed and self.reply is not None
@@ -222,9 +264,14 @@ class ReplyRevisionController:
             raise ValueError("reply invalidation reason must be non-empty")
         if self.reply is None or self.reply.response_id != response_id:
             return None
+        if self.reply.invalidation_reason == "semantic_stop" and reason in {"response_invalidated", "barge_in_floor_claim"}:
+            return self.reply  # Late Core invalidation cannot undo explicit user STOP.
         retained = self.reply.sentence_permit if reason == "barge_in_floor_claim" else None
-        if self.reply.delivery_permitted or self.reply.sentence_permit != retained:
-            self.reply = replace(self.reply, delivery_permitted=False, invalidation_reason=reason, sentence_permit=retained)
+        repair = self.reply.context_repair_permit if reason == "response_invalidated" else None
+        if (self.reply.delivery_permitted or self.reply.sentence_permit != retained
+            or self.reply.context_repair_permit != repair or self.reply.invalidation_reason != reason):
+            self.reply = replace(self.reply, delivery_permitted=False, invalidation_reason=reason,
+                sentence_permit=retained, context_repair_permit=repair)
         return self.reply
 
     def grant_current_sentence(self, response_id: str, *, trigger_input_id: str,

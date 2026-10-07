@@ -13,6 +13,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
+from server.core.reply_repair import ReplyRepairPermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AppendAsrAudio,
@@ -33,6 +34,7 @@ from server.realtime.capabilities.turn_manager import (
     ObserveAssistantSpokenText,
     ObserveAssistantYielded,
     ObserveConversationItem,
+    ObserveResponseRepairReady,
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
@@ -180,6 +182,11 @@ class CascadedInputPipeline:
         if invalidate is not None:
             await invalidate(response_id, context=context, reason=reason)
 
+    async def offer_context_repair(self, response_id: str, *, context: InteractionContext,
+                                  minimum_thread_sequence: int, deadline_ns: int) -> None:
+        await self._turn_manager.send(ObserveResponseRepairReady(context=context, response_id=response_id,
+            minimum_thread_sequence=minimum_thread_sequence, deadline_ns=deadline_ns))
+
     async def append_audio(
         self,
         frame: AudioFrame,
@@ -210,12 +217,13 @@ class CascadedInputPipeline:
         *,
         context: InteractionContext | None = None,
         preparing: bool = False,
+        repair: ReplyRepairPermit | None = None,
     ) -> None:
         if self._closed:
             raise RuntimeError("cascaded input pipeline is closed")
         self._latest_assistant_text = ""
         await self._turn_manager.send(
-            ObserveSystemResponseStarted(response_id=response_id, context=context, preparing=preparing)
+            ObserveSystemResponseStarted(response_id=response_id, context=context, preparing=preparing, repair=repair)
         )
         self._response_active = True
 

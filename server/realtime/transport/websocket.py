@@ -52,6 +52,7 @@ from server.realtime.protocol.engine import (
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
+    observe_output_admitted,
 )
 from server.realtime.protocol.events import (
     RealtimeCapabilityFailed,
@@ -664,6 +665,7 @@ class RealtimeWebSocketFrameBridge:
         def admitted() -> None:
             # Publish the wire-admitted clock before send can yield to an
             # immediate playback receipt; rejected packets consume no samples.
+            observe_output_admitted(self._conversation, source)
             playback.audio_end_us += frame.duration_us
             playback.audio_samples += len(frame.data) // (2 * frame.channels)
             playback.sample_rate_hz = frame.sample_rate_hz

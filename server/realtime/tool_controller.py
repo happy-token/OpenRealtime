@@ -40,7 +40,9 @@ from server.realtime.protocol.engine import (
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
+    observe_output_admitted,
 )
+from server.realtime.protocol.events import AudioDelta, SpeechAudioDelta
 from server.realtime.scope import conversation_scope
 from server.tools.control import (
     CommittedToolItemsProvider,
@@ -246,6 +248,9 @@ class RealtimeToolController:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return not self._closed and is_sentence_permit_current(self._conversation, permit)
+
+    def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
+        observe_output_admitted(self._conversation, event)
 
     def output_context_current(self, event: RealtimeEvent) -> bool:
         return not self._closed and is_output_context_current(self._conversation, event)

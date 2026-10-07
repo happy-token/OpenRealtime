@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
+from server.core.reply_repair import ReplyRepairPermit
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.commands import (
     DeliveryMode,
@@ -869,6 +870,22 @@ class ConfirmationRequested:
             raise ValueError("confirmation expiry must be timezone-aware")
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ResponseRepairRequested:
+    event_id: str
+    context: InteractionContext
+    conversation_sequence: int
+    occurred_at: datetime
+    permit: ReplyRepairPermit
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.event_id or min(self.conversation_sequence, self.schema_version) < 1:
+            raise ValueError("reply repair event requires identity and positive sequence")
+        if self.context != self.permit.context or self.occurred_at.tzinfo is None:
+            raise ValueError("reply repair event must retain its authorized context and timestamp")
+
+
 RealtimeEvent = (
     AudioPluginDiagnostic
     | RealtimeCapabilityFailed
@@ -892,6 +909,7 @@ RealtimeEvent = (
     | ItemDeliveryCancelled
     | ItemDisplayPresented
     | ResponseRequested
+    | ResponseRepairRequested
     | ResponseStarted
     | DisplayContentDelta
     | SpokenContentDelta

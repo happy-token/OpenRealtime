@@ -58,6 +58,17 @@ def is_output_context_current(conversation: RealtimeConversation, event: Realtim
     return bool(gate(event)) if gate is not None else True
 
 
+def observe_output_admitted(conversation: RealtimeConversation, event: AudioDelta | SpeechAudioDelta) -> None:
+    """Record final wire admission synchronously before transport send yields.
+
+    This is a delivery fact, never a playback/physical-speaker confirmation.
+    Engines without automatic context repair need not consume this optional fact.
+    """
+    observer = getattr(conversation, "observe_output_admitted", None)
+    if observer is not None:
+        observer(event)
+
+
 class RealtimeConversation(Protocol):
     async def send(self, command: RealtimeCommand) -> None: ...
 

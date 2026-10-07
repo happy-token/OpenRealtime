@@ -287,4 +287,5 @@ def _same_turn(left: TurnContent, right: TurnContent) -> bool:
         and left.conversation_context == right.conversation_context
         and left.context_projection_digest == right.context_projection_digest
         and left.input_relation_unresolved == right.input_relation_unresolved
+        and left.context_repair == right.context_repair
     )

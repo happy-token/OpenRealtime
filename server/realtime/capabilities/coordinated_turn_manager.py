@@ -66,9 +66,11 @@ from server.realtime.capabilities.turn_manager import (
     ObserveAssistantYielded,
     ObserveConversationItem,
     ObserveResponseInvalidated,
+    ObserveResponseRepairReady,
     ObserveSystemResponseCompleted,
     ObserveSystemResponseStarted,
     ObserveVadEvent,
+    ReplyRepairRequested,
     SemanticInputRejected,
     TurnManagerCommand,
     TurnManagerEvent,
@@ -307,6 +309,7 @@ class CoordinatedTurnManagerSession:
         self._last_committed: tuple[str, str] | None = None
         self._awaiting_response = False
         self._revisions = ReplyRevisionController()
+        self._deferred_context_repair: ObserveResponseRepairReady | None = None
         self._response_playback_started = False
         self._assistant_text = ""
         self._history: dict[str, tuple[int, EotHistoryMessage]] = {}
@@ -672,9 +675,34 @@ class CoordinatedTurnManagerSession:
             )
             self._state = state
 
+    async def _resume_context_repair(self) -> None:
+        ready = self._deferred_context_repair
+        if ready is None:
+            return
+        if (self._closed or self._awaiting_response or self._revision_evidence_failure is not None
+            or self._evidence is not None and self._evidence.failure):
+            self._deferred_context_repair = None
+            return
+        if self._input is not None:
+            return  # One bounded hint; no generation while input is unresolved.
+        self._deferred_context_repair = None
+        now_ns = time.monotonic_ns()
+        reply = self._revisions.reply
+        existing = reply.context_repair_permit if reply is not None and reply.response_id == ready.response_id else None
+        if existing is not None:
+            if self._revisions.context_repair_permit_current(existing, now_ns=now_ns):
+                await self._outbox.put(ReplyRepairRequested(context=ready.context, permit=existing))
+            return
+        permit = self._revisions.offer_context_repair(ready.response_id, ready.context,
+            minimum_thread_sequence=ready.minimum_thread_sequence, deadline_ns=ready.deadline_ns, now_ns=now_ns)
+        if permit is not None:
+            self._record_revision("context_repair_offered", ready.context, asdict(permit))
+            await self._outbox.put(ReplyRepairRequested(context=ready.context, permit=permit))
+
     async def _handle(self, event: Any) -> None:
         if self._evidence is not None and (self._evidence.failure or self._revision_evidence_failure) and not self._evidence_fault_reported:
             self._evidence_fault_reported = True
+            self._deferred_context_repair = None
             if self._input is not None:
                 self._begin_input_rejection(self._input, "input_evidence_unavailable", self._input.text)
             else:
@@ -834,6 +862,7 @@ class CoordinatedTurnManagerSession:
                     if not item.text:
                         self._input = None
                         await self._project(item.context)
+                        await self._resume_context_repair()
                         return
                     item.stop = item.stop or VadSpeechStopped(
                         context=item.context,
@@ -875,7 +904,20 @@ class CoordinatedTurnManagerSession:
         if isinstance(event, ObserveResponseInvalidated):
             self._revoke_response(event.response_id, reason=event.reason)
             return
+        if isinstance(event, ObserveResponseRepairReady):
+            self._deferred_context_repair = event
+            await self._resume_context_repair()
+            return
         if isinstance(event, ObserveSystemResponseStarted):
+            preparing_ns = time.monotonic_ns()
+            if event.repair is not None and (self._input is not None or self._awaiting_response
+                or self._revision_evidence_failure is not None
+                or not self._revisions.context_repair_permit_current(event.repair, now_ns=preparing_ns)):
+                if (self._input is not None and self._revisions.context_repair_permit_current(event.repair, now_ns=preparing_ns)):
+                    self._deferred_context_repair = ObserveResponseRepairReady(context=event.repair.context,
+                        response_id=event.repair.predecessor_response_id,
+                        minimum_thread_sequence=event.repair.minimum_thread_sequence, deadline_ns=event.repair.deadline_ns)
+                return  # A stale repair is an expected race, not an actor failure.
             if (
                 event.context
                 and self._response_context
@@ -889,9 +931,11 @@ class CoordinatedTurnManagerSession:
             prior_reply = self._revisions.reply
             if self._input is not None and self._input.sentence_wait is not None:
                 await self._withdraw_sentence_wait(self._input, "response_replaced")
-            bound = self._revisions.bind_response(event.response_id, event.context or self._context)
+            bound = self._revisions.bind_response(event.response_id, event.context or self._context,
+                repair=event.repair, now_ns=preparing_ns)
             if prior_reply is None or prior_reply.response_id != event.response_id:
                 self._record_revision("reply_bound", event.context or self._context, asdict(bound))
+            self._deferred_context_repair = None
             self._response_id = event.response_id
             self._response_context = event.context
             self._assistant_text = ""
@@ -1139,6 +1183,7 @@ class CoordinatedTurnManagerSession:
                 if association.relation is not InputRelation.NEW_TOPIC:
                     self._prefetch.invalidate("input_association_finalized")
                 self._prefetch.finalize(committed_text, committed_context.generation)
+                self._deferred_context_repair = None
                 version = self._revisions.commit_input(
                     input_id=item.identity, context=committed_context, text=committed_text,
                     transcript_revision=event.revision,
@@ -1720,6 +1765,7 @@ class CoordinatedTurnManagerSession:
                 if self._provider.semantic_chunks_enabled and not item.speech_active and semantic_text(item.verdict.candidate.text) == semantic_text(item.text):
                     item.verdict = replace(item.verdict, candidate=replace(item.verdict.candidate, boundary=InterruptionBoundary.SENTENCE_END))
                 action = self._policy.interruption(item.verdict)
+                explicit_stop = item.verdict.label is InterruptionLabel.STOP
                 if (item.floor_claim_confirmed and item.yielded
                         and semantic_text(item.verdict.candidate.text) != semantic_text(item.text)):
                     # New text after a locked STOP is input admission, not a new
@@ -1727,6 +1773,7 @@ class CoordinatedTurnManagerSession:
                     # controls/feedback still finish without creating a reply.
                     sealed_rule = self._interruption_decider.match_rule(
                         self._rule_context(item, InterruptionBoundary.SENTENCE_END))
+                    explicit_stop = sealed_rule is not None and sealed_rule.label is InterruptionLabel.STOP
                     action = InterruptionDisposition(False, sealed_rule is None or sealed_rule.label
                         not in {InterruptionLabel.STOP, InterruptionLabel.BACKCHANNEL, InterruptionLabel.IGNORE})
                 if (action.admit_input and not action.stop_response
@@ -1738,6 +1785,11 @@ class CoordinatedTurnManagerSession:
                     mark in item.assistant_text_at_onset for mark in ("?", "？")
                 )
                 if not action.admit_input and not question_answer:
+                    if explicit_stop:
+                        self._deferred_context_repair = None
+                        reply = self._revisions.reply
+                        if reply is not None:
+                            self._revoke_response(reply.response_id, reason="semantic_stop")
                     if action.stop_response and not item.yielded:
                         await self._yield(item)
                         return
@@ -1749,6 +1801,7 @@ class CoordinatedTurnManagerSession:
                     self._input = None
                     self._tasks.clear()
                     await self._project(item.context)
+                    await self._resume_context_repair()
                     return
             if not item.yielded:
                 await self._yield(item)
@@ -1787,6 +1840,7 @@ class CoordinatedTurnManagerSession:
         if self._closed:
             return
         self._closed = True
+        self._deferred_context_repair = None
         self._revisions.close()
         tasks = [self._actor, *self._all_jobs]
         for task in tasks:

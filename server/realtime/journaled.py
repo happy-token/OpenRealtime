@@ -18,8 +18,9 @@ from server.realtime.protocol.engine import (
     is_output_context_current,
     is_output_deliverable,
     is_sentence_permit_current,
+    observe_output_admitted,
 )
-from server.realtime.protocol.events import RealtimeEvent
+from server.realtime.protocol.events import AudioDelta, RealtimeEvent, SpeechAudioDelta
 from server.realtime.scope import conversation_scope
 
 
@@ -147,6 +148,9 @@ class JournaledRealtimeConversation:
 
     def sentence_playback_permit_current(self, permit: CurrentSentencePermit) -> bool:
         return is_sentence_permit_current(self._engine_conversation, permit)
+
+    def observe_output_admitted(self, event: AudioDelta | SpeechAudioDelta) -> None:
+        observe_output_admitted(self._engine_conversation, event)
 
     def output_context_current(self, event: RealtimeEvent) -> bool:
         return is_output_context_current(self._engine_conversation, event)

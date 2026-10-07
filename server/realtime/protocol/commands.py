@@ -10,6 +10,7 @@ from typing import Literal
 from server.conversation_journal import ConversationItem, ConversationItemDraft, JournalScope
 from server.core.interaction_context import InteractionContext
 from server.core.playback import sample_position_us, validate_sample_position
+from server.core.reply_repair import ReplyRepairPermit
 from server.realtime.protocol.audio import AudioFrame
 from server.realtime.protocol.playback import SentenceSpan
 from server.realtime.scope import conversation_scope
@@ -322,6 +323,7 @@ class RequestResponse:
     response_id: str
     minimum_thread_sequence: int
     output_item_id: str | None = None
+    repair: ReplyRepairPermit | None = None
 
     def __post_init__(self) -> None:
         if not self.command_id or not self.idempotency_key or not self.response_id:
@@ -332,6 +334,13 @@ class RequestResponse:
             raise ValueError("response request does not match context response identity")
         if self.output_item_id == "":
             raise ValueError("response output item identity must be non-empty when provided")
+        if self.repair is not None and (
+            conversation_scope(self.context) != conversation_scope(self.repair.context)
+            or (self.context.turn_id, self.context.generation) != (self.repair.context.turn_id, self.repair.context.generation)
+            or self.response_id != self.repair.response_id
+            or self.minimum_thread_sequence != self.repair.minimum_thread_sequence
+        ):
+            raise ValueError("response repair must retain its input lease and use a new reply identity")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

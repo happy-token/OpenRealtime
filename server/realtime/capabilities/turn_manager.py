@@ -17,6 +17,7 @@ from server.conversation_journal import (
 )
 from server.core.interaction_context import InteractionContext
 from server.core.playback import CurrentSentencePermit
+from server.core.reply_repair import ReplyRepairPermit
 from server.core.turn_content import TurnContent
 from server.realtime.capabilities.asr import (
     AsrCommitRejected,
@@ -90,6 +91,7 @@ class ObserveSystemResponseStarted:
     response_id: str
     context: InteractionContext | None = None
     preparing: bool = False
+    repair: ReplyRepairPermit | None = None
 
     def __post_init__(self) -> None:
         if not self.response_id:
@@ -101,6 +103,20 @@ class ObserveResponseInvalidated:
     context: InteractionContext
     response_id: str
     reason: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ObserveResponseRepairReady:
+    context: InteractionContext
+    response_id: str
+    minimum_thread_sequence: int
+    deadline_ns: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReplyRepairRequested:
+    context: InteractionContext
+    permit: ReplyRepairPermit
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -211,6 +227,7 @@ TurnManagerCommand = (
     | ObserveAssistantPlayback
     | ObserveConversationItem
     | ObserveResponseInvalidated
+    | ObserveResponseRepairReady
 )
 TurnManagerEvent = (
     DialogueStateChanged
@@ -219,6 +236,7 @@ TurnManagerEvent = (
     | UserTurnCommitted
     | AssistantYieldRequested
     | SemanticInputRejected
+    | ReplyRepairRequested
 )
 
 
