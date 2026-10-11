@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -11,7 +13,8 @@ import Folder from "@/components/ui/folder";
 import styles from "@/components/call/preview-workspace-lab.module.css";
 
 export function shouldLoadAvatarPreviewDirectly(previewUrl: string) {
-  return /^\/api\/avatars\/[^/]+\/image(?:\?|$)/.test(previewUrl);
+  return /^\/api\/avatars\/[^/]+\/image(?:\?|$)/.test(previewUrl)
+    || /^https:\/\/lab\.anam\.ai\/api\/avatars\//.test(previewUrl);
 }
 
 export function PreviewVideo({ src, poster, label, active = true }: { src: string; poster?: string; label: string; active?: boolean }) {
@@ -52,24 +55,25 @@ export function WorkbenchMediaOption({
     className={styles.edgeMediaOption}
     data-selected={selected}
     data-axis={axis}
-    aria-label={t("选择") + (name) + ""}
+    aria-label={t("选择{name}", { name: t(name) })}
     aria-pressed={selected}
     onClick={onSelect}
   >
     <span className={styles.edgeMediaVisual} data-placeholder={!video && !image}>
-      {video ? <PreviewVideo src={video} poster={image ?? undefined} label={"" + (name) + t(" 动作预览")} /> : image ? (
+      {video ? <PreviewVideo src={video} poster={image ?? undefined} label={"" + (t(name)) + t(" 动作预览")} /> : image ? (
         <Image src={image} alt="" fill sizes={axis === "vertical" ? "180px" : "150px"} unoptimized={shouldLoadAvatarPreviewDirectly(image)} />
       ) : icon ?? <UserRound aria-hidden="true" />}
     </span>
-    <small>{eyebrow}</small>
-    <strong>{name}</strong>
+    <small>{<LocalizedText text={eyebrow} />}</small>
+    <strong>{t(name)}</strong>
   </button>;
 }
 
 export function WorkbenchConversationOption({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
+  const { t } = useLanguage();
   return <WorkbenchMediaOption
-    name="对话"
-    eyebrow="语音模式"
+    name={t("对话")}
+    eyebrow={t("语音模式")}
     selected={selected}
     axis="horizontal"
     icon={<MessageCircle aria-hidden="true" />}
@@ -78,9 +82,10 @@ export function WorkbenchConversationOption({ selected, onSelect }: { selected: 
 }
 
 export function WorkbenchRealtimeOption({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
+  const { t } = useLanguage();
   return <WorkbenchMediaOption
-    name="实时数字人"
-    eyebrow="实时模式"
+    name={t("实时数字人")}
+    eyebrow={t("实时模式")}
     selected={selected}
     axis="horizontal"
     icon={<Sparkles aria-hidden="true" />}
@@ -103,7 +108,7 @@ export function WorkbenchCreateCard({
 }) {
   const icon = kind === "avatar" ? <ImagePlus aria-hidden="true" /> : kind === "talking" ? <AudioLines aria-hidden="true" /> : <Sparkles aria-hidden="true" />;
   return <button type="button" className={styles.libraryCreateCard} data-axis={axis} aria-label={title} onClick={onCreate}>
-    <span>{icon}</span><small>{note}</small><strong>{title}</strong>
+    <span>{icon}</span><small>{<LocalizedText text={note} />}</small><strong>{<LocalizedText text={title} />}</strong>
   </button>;
 }
 
@@ -165,7 +170,7 @@ export function WorkbenchActionFolder({
   return <Folder
     className={styles.actionMaterialFolder}
     frontClassName={styles.edgeMediaOption}
-    ariaLabel={"" + (open ? "收起" : "展开") + "" + (action.displayName) + t("的") + (talkingLabel) + t("，共 ") + (variants.length) + t(" 个")}
+    ariaLabel={t("{state}{name}的{type}，共 {count} 个", { state: t(open ? "收起" : "展开"), name: t(action.displayName), type: t(talkingLabel), count: String(variants.length) })}
     frontSelected={selected}
     open={open}
     onOpenChange={onOpenChange}
@@ -175,7 +180,7 @@ export function WorkbenchActionFolder({
     onFrontPointerUp={onActionPointerUp}
     onFrontPointerCancel={onActionPointerCancel}
     selectedItemIndex={runtimeSelected && onSelectRuntime ? 0 : selectedVariantId && variants.some((variant) => variant.id === selectedVariantId) ? variants.findIndex((variant) => variant.id === selectedVariantId) + (onSelectRuntime ? 1 : 0) : -1}
-    itemAriaLabels={[...(onSelectRuntime ? ["选择实时口型：使用此底片"] : []), ...variants.map((variant) => `选择${onSelectRuntime ? "预制口型" : talkingLabel}：${variant.display_name}`), ...(onCreateTalking ? [createLabel] : [])]}
+    itemAriaLabels={[...(onSelectRuntime ? ["选择实时口型：使用此底片"] : []), ...variants.map((variant) => t("选择{p0}：{p1}", { p0: String(t(String(onSelectRuntime ? "预制口型" : talkingLabel))), p1: String(t(String(variant.display_name))) })), ...(onCreateTalking ? [createLabel] : [])]}
     onItemSelect={(itemIndex) => {
       if (onSelectRuntime && itemIndex === 0) { onSelectRuntime(); return; }
       const variantIndex = itemIndex - (onSelectRuntime ? 1 : 0);
@@ -195,7 +200,7 @@ export function WorkbenchActionFolder({
           <Image src={image} alt="" fill sizes="150px" unoptimized={shouldLoadAvatarPreviewDirectly(image)} />
         ) : <UserRound aria-hidden="true" />}
       </span>
-      <small>{`${actionLabel} ${index + 1}`}</small><strong>{action.displayName}</strong>
+      <small>{`${actionLabel} ${index + 1}`}</small><strong>{<LocalizedText text={action.displayName} />}</strong>
       <span className={styles.actionFolderCount} aria-label={"" + (variants.length) + t(" 个") + (talkingLabel) + ""}>{variants.length}</span>
     </>}
   />;

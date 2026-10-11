@@ -1,4 +1,5 @@
 "use client";
+import { LocalizedText, useLanguage } from "@/components/language/language-provider";
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -68,6 +69,7 @@ export default function LineSidebar({
   className = "",
   ariaLabel = "选项",
 }: LineSidebarProps) {
+  const { t } = useLanguage();
   const listRef = useRef<HTMLUListElement>(null);
   const itemRefs = useRef<Array<HTMLLIElement | null>>([]);
   const targetsRef = useRef<number[]>([]);
@@ -158,7 +160,7 @@ export default function LineSidebar({
         const content = <>
           {item.icon ? <span className={styles.icon} aria-hidden="true">{item.icon}</span> : null}
           {showIndex ? <span className={styles.index}>{String(index + 1).padStart(2, "0")}</span> : null}
-          <span className={styles.text}>{item.label}</span>
+          <span className={styles.text}>{<LocalizedText text={item.label} />}</span>
         </>;
         return <li
           key={item.id}
@@ -166,13 +168,13 @@ export default function LineSidebar({
           className={`${styles.item} ${item.tone === "danger" ? styles.danger : ""}`}
         >
           {showMarker ? <span className={styles.marker} aria-hidden="true" /> : null}
-          {item.href ? <Link className={styles.label} href={item.href} aria-label={item.ariaLabel} title={item.label}>{content}</Link>
+          {item.href ? <Link className={styles.label} href={item.href} aria-label={item.ariaLabel ? t(item.ariaLabel) : undefined} title={t(item.label)}>{content}</Link>
             : <button
               className={styles.label}
               type="button"
-              aria-label={item.ariaLabel}
+              aria-label={item.ariaLabel ? t(item.ariaLabel) : undefined}
               aria-pressed={onItemClick ? selectedIndex === index : undefined}
-              title={item.label}
+              title={t(item.label)}
               disabled={item.disabled}
               onClick={() => {
                 if (onItemClick) {

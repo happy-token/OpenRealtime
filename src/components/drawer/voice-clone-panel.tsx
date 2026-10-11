@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -422,10 +424,10 @@ export function VoiceClonePanel({
             return <div className="provider-voice-row cloned-voice-row" data-selected={selected} key={voice.id}>
               {managementOnly ? <div className="provider-voice-select">
                 <span className="provider-voice-avatar"><UserRound /></span>
-                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")}</small></span>
+                <span><strong title={voice.displayName}>{<LocalizedText text={voice.displayName} />}</strong><small>{voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")}</small></span>
               </div> : <button type="button" className="provider-voice-select" aria-pressed={selected} disabled={voice.status === "UNDEPLOYED"} onClick={() => onSelect(voice.id, voice.displayName)}>
                 <span className="provider-voice-avatar">{selected ? <Check /> : <UserRound />}</span>
-                <span><strong title={voice.displayName}>{voice.displayName}</strong><small>{voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : selected ? t("已选中 · ") + (voice.createdAt ? `创建于 ${voice.createdAt}` : "当前运行环境") + "" : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")}</small></span>
+                <span><strong title={voice.displayName}>{<LocalizedText text={voice.displayName} />}</strong><small>{<LocalizedText text={voice.status === "UNDEPLOYED" ? t("部署中 · 暂不可用") : selected ? t("已选中 · ") + (voice.createdAt ? t("创建于 {p0}", { p0: String(voice.createdAt) }) : "当前运行环境") + "" : voice.createdAt ? t("创建于 ") + (voice.createdAt) + "" : t("当前运行环境")} />}</small></span>
               </button>}
               <div className="voice-clone-row-actions">
                 {!managementOnly ? <button type="button" className="provider-voice-preview" aria-label={"" + (isPlaying ? "停止试听" : "试听") + " " + (voice.displayName) + ""} disabled={voice.status === "UNDEPLOYED" || (previewState === "loading" && !previewing)} onClick={() => onPreview(voice.id, voice.displayName)}>
@@ -501,7 +503,7 @@ export function VoiceClonePanel({
         <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="voice-clone-delete-title" aria-describedby="voice-clone-delete-description">
           <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
           <div><h3 id="voice-clone-delete-title">{t("确认删除这个克隆音色？")}</h3></div>
-          <p id="voice-clone-delete-description"><strong>{pendingDeleteVoice.displayName}</strong>{t("删除后会同步从阿里云百炼音色目录移除，且无法恢复。")}{pendingDeleteVoice.id === activeVoiceId ? t("该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。") : t("当前配置中的引用将失效。")}</p>
+          <p id="voice-clone-delete-description"><strong>{<LocalizedText text={pendingDeleteVoice.displayName} />}</strong>{t("删除后会同步从阿里云百炼音色目录移除，且无法恢复。")}{pendingDeleteVoice.id === activeVoiceId ? t("该音色当前由运行环境指向，本页会切换到官方音色；服务端环境变量也需要同步更新。") : t("当前配置中的引用将失效。")}</p>
           <div className="avatar-asset-delete-dialog-actions">
             <button type="button" autoFocus disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => setPendingDeleteVoiceId(null)}>{t("取消")}</button>
             <button type="button" data-danger="true" disabled={managingVoiceId === pendingDeleteVoice.id} onClick={() => void deleteVoice(pendingDeleteVoice)}><Trash2 />{managingVoiceId === pendingDeleteVoice.id ? t("正在删除…") : t("确认删除")}</button>

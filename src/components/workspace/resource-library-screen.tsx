@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -76,12 +78,12 @@ export function ResourceLibraryScreen({
           const cards = group.avatars.length ? <div className={styles.officialRealtimeGrid}>{group.avatars.map((avatar) => <Link key={avatar.id} className={styles.officialRealtimeCard}
             href={`/resources/realtime/${encodeURIComponent(avatar.id)}`}>
             <span className={styles.officialRealtimeImage}>{avatar.imageUrl ? <Image src={avatar.imageUrl} alt="" fill sizes="(max-width: 760px) 45vw, 210px" unoptimized /> : null}</span>
-            <strong>{avatar.displayName}</strong><small>{t("配置声音、人设和工具")}</small>
+            <strong>{<LocalizedText text={avatar.displayName} />}</strong><small>{t("配置声音、人设和工具")}</small>
           </Link>)}</div> : <p>{t("暂无可用形象。")}</p>;
           return group.collapsible ? <details key={group.title} className={styles.realtimeSection} aria-label={group.title}>
-            <summary>{group.title}<small>{group.avatars.length}{t(" 个形象")}</small></summary>{cards}
+            <summary>{<LocalizedText text={group.title} />}<small>{group.avatars.length}{t(" 个形象")}</small></summary>{cards}
           </details> : <section key={group.title} className={styles.realtimeSection} aria-label={group.title}>
-            <div className={styles.realtimeHeading}><h2>{group.title}</h2>{personalAvatars.length === 0 ? <Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link> : null}</div>{cards}
+            <div className={styles.realtimeHeading}><h2>{<LocalizedText text={group.title} />}</h2>{personalAvatars.length === 0 ? <Link href="/resources?tab=official-realtime&task=realtime" className={styles.realtimeCreate}><Plus aria-hidden="true" />{t("创建数字人")}</Link> : null}</div>{cards}
           </section>;
         })}
       </> : realtimeError ? null : <p>{t("配置 Anam 后，才可使用实时数字人。")}</p> : null}

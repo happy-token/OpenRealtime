@@ -1,3 +1,5 @@
+"use client";
+import { useLanguage } from "@/components/language/language-provider";
 import { Mic } from "lucide-react";
 import MagicRings from "./magic-rings";
 
@@ -13,6 +15,7 @@ interface VoiceStartButtonProps {
 }
 
 export function VoiceStartButton({ connected, disabled = false, onPress, label, hint, ariaLabel, effect = "halo", connectionStatusPlacement = "inline" }: VoiceStartButtonProps) {
+  const { t } = useLanguage();
   const showInlineConnectionStatus = !connected && connectionStatusPlacement === "inline";
   const resolvedLabel = showInlineConnectionStatus ? "正在连接" : label ?? "开始语音对话";
   const resolvedHint = showInlineConnectionStatus ? "语音服务准备中…" : hint ?? (connected ? "轻触麦克风开始" : "");
@@ -22,7 +25,7 @@ export function VoiceStartButton({ connected, disabled = false, onPress, label, 
       <button
         type="button"
         className={`voice-start-halo${effect === "magic-rings" ? " voice-start-halo--magic-rings" : ""}`}
-        aria-label={ariaLabel ?? (connected ? "开始语音对话" : "正在连接语音服务")}
+        aria-label={t(ariaLabel ?? (connected ? "开始语音对话" : "正在连接语音服务"))}
         disabled={!connected || disabled}
         onClick={onPress}
       >
@@ -36,8 +39,8 @@ export function VoiceStartButton({ connected, disabled = false, onPress, label, 
         </span>
       </button>
       <span className="voice-start-halo-copy" aria-live="polite">
-        <strong>{resolvedLabel}</strong>
-        {resolvedHint ? <small>{resolvedHint}</small> : null}
+        <strong>{t(resolvedLabel)}</strong>
+        {resolvedHint ? <small>{t(resolvedHint)}</small> : null}
       </span>
     </div>
   );

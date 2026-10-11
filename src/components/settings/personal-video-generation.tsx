@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 import { SelectMenu } from "@/components/ui/select-menu";
@@ -231,7 +233,7 @@ export function PersonalVideoGeneration({
   if (!available) return embedded ? <section className={styles.work} data-embedded-action="true"><p className={styles.empty}>{t("正在准备个人动作工作台…")}</p></section> : null;
   const selectedAvatar = personalAvatars.find((avatar) => avatar.avatar_id === selectedAvatarId);
   return <section className={styles.work} data-embedded-action={embedded || undefined} aria-label={t("个人 MiniMax 视频生成")}>
-    <div className={styles.sectionHeading}><h2>{embedded ? t("为 ") + (selectedAvatar?.display_name ?? "当前形象") + t(" 创建动作") : t("使用个人 Key 生成视频")}</h2><p>{embedded ? t("当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。") : t("上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。")}</p></div>
+    <div className={styles.sectionHeading}><h2>{<LocalizedText text={embedded ? t("为 ") + (selectedAvatar?.display_name ?? "当前形象") + t(" 创建动作") : t("使用个人 Key 生成视频")} />}</h2><p>{embedded ? t("当前形象已经锁定。生成并确认后，动作会自动回填到角色创建任务。") : t("上传你有使用权的图片，生成 4–15 秒动作视频。生成会消耗你自己的 MiniMax API 额度；完成后可下载。")}</p></div>
     {!configured ? <p className={styles.empty}>{t("尚未保存个人 MiniMax Key。")}<Link href="/settings/providers">{t("前往供应商设置")}</Link></p>
       : !ready ? <p className={styles.empty}>{t("付费视频生成尚未在当前环境启用。")}</p>
         : <div className={styles.personalForm}>

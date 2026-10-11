@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -95,7 +97,7 @@ import {
   personaSelectOptions,
 } from "@/lib/avatar-persona";
 import { usePersonaLink } from "@/hooks/use-persona-link";
-import { loadCurrentAvatarCatalog, loadInternalPresetAvatars } from "@/lib/avatar-library-catalog-client";
+import { loadCurrentAvatarCatalog } from "@/lib/avatar-library-catalog-client";
 import {
   DEFAULT_WORKBENCH_VISUAL_PREFERENCES,
   readWorkbenchVisualPreferences,
@@ -274,7 +276,7 @@ export function ConfigDrawer({
         : null
   ));
   const [motionBaseCatalog, setAvatarActionCatalog] = useState<AvatarActionAsset[]>([]);
-  const [segmentedAvatarCatalog, setSegmentedAvatarCatalog] = useState<AvatarAsset[]>(loadInternalPresetAvatars);
+  const [segmentedAvatarCatalog, setSegmentedAvatarCatalog] = useState<AvatarAsset[]>([]);
   const [motionBaseCatalogState, setAvatarActionCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [motionBaseCatalogNotice, setAvatarActionCatalogNotice] = useState("");
   const [assetLibraryPreferences, setAssetLibraryPreferences] = useState(EMPTY_AVATAR_ASSET_LIBRARY_PREFERENCES);
@@ -700,7 +702,13 @@ export function ConfigDrawer({
     : avatarDisplayConfig.segmentedAvatarActionId;
   const selectedProjectBuiltinAction = getBuiltinAvatarAction(avatarDisplayConfig.segmentedAvatarActionId);
   const selectedMotionBase = motionBaseCatalog.find((motionBase) => motionBase.avatar_action_id === selectedMotionBaseId);
-  const selectedMotionName = selectedProjectBuiltinAction
+  const managedAvatarSelected = avatarDisplayConfig.segmentedAvatarId.startsWith("avatar-");
+  const currentCatalogAction = segmentedAvatarCatalog
+    .find((avatar) => avatar.avatarId === avatarDisplayConfig.segmentedAvatarId && !avatar.deletedAt)
+    ?.actions.find((action) => action.avatarActionId === avatarDisplayConfig.segmentedAvatarActionId);
+  const selectedMotionName = managedAvatarSelected
+    ? currentCatalogAction?.displayName ?? "正在加载动作"
+    : selectedProjectBuiltinAction
     ? selectedProjectBuiltinAction.name
     : selectedOpenTalkingMotion
     ? `${selectedOpenTalkingMotion.name} · 配套动作`
@@ -710,7 +718,9 @@ export function ConfigDrawer({
   const selectedSavedMotionPlayback = selectedMotionBase
     ? selectAvatarActionRendition(selectedMotionBase, avatarDisplayConfig.ratio)
     : null;
-  const selectedMotionPreviewUrl = selectedProjectBuiltinAction?.videoUrl
+  const selectedMotionPreviewUrl = managedAvatarSelected
+    ? currentCatalogAction?.videoUrl ?? ""
+    : selectedProjectBuiltinAction?.videoUrl
     ?? selectedOpenTalkingMotion?.motionVideoUrl
     ?? getBuiltinMotionPreviewUrl(selectedBuiltinVideoId)
     ?? (selectedSavedMotionPlayback?.rendition.artifact_id
@@ -877,7 +887,7 @@ export function ConfigDrawer({
                           {AVATAR_RENDER_PATH_OPTIONS.map((path) => (
                             <button type="button" key={path.value} data-selected={avatarDisplayConfig.renderPath === path.value} aria-pressed={avatarDisplayConfig.renderPath === path.value} disabled={avatarConfigLocked} onClick={() => onAvatarDisplayConfigChange({ ...avatarDisplayConfig, renderPath: path.value })}>
                               <span className="avatar-render-mode-index">{path.value === "hosted" ? <UserRound /> : <Film />}</span>
-                              <span><strong>{path.label}</strong><small>{path.description}</small></span>
+                              <span><strong>{<LocalizedText text={path.label} />}</strong><small>{<LocalizedText text={path.description} />}</small></span>
                               <i>{avatarDisplayConfig.renderPath === path.value ? <Check /> : null}</i>
                             </button>
                           ))}
@@ -946,7 +956,7 @@ export function ConfigDrawer({
                           <span className="app-theme-swatches" aria-hidden="true">
                             {theme.colors.map((color) => <i key={color} style={{ background: color }} />)}
                           </span>
-                          <span><strong>{theme.label}</strong><small>{theme.description}</small></span>
+                          <span><strong>{<LocalizedText text={theme.label} />}</strong><small>{<LocalizedText text={theme.description} />}</small></span>
                           <i className="app-theme-check">{appTheme === theme.value ? <Check /> : null}</i>
                         </button>
                       ))}
@@ -982,7 +992,7 @@ export function ConfigDrawer({
                     <details className="config-card config-card-disclosure">
                       <summary className="config-card-heading">
                         <span className="config-step"><Settings2 /></span>
-                        <div><h4>{t("模型与接口定义")}</h4><p>{modelId || t("未选择模型")} · {MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label}</p></div>
+                        <div><h4>{t("模型与接口定义")}</h4><p>{modelId || t("未选择模型")} · {<LocalizedText text={MODEL_PROTOCOL_OPTIONS.find((option) => option.value === modelProtocol)?.label} />}</p></div>
                         <ChevronDown className="config-disclosure-chevron" />
                       </summary>
                       <div className="config-disclosure-body">
@@ -1074,7 +1084,7 @@ export function ConfigDrawer({
                   <section className="config-card">
                     <div className="config-card-heading">
                       <span className="config-step"><AudioLines /></span>
-                      <div><h4>{t("语音供应商")}</h4><p>{t("当前选择：")}{TTS_PROVIDER_OPTIONS.find((provider) => provider.value === ttsProvider)?.label}</p></div>
+                      <div><h4>{t("语音供应商")}</h4><p>{t("当前选择：")}{<LocalizedText text={TTS_PROVIDER_OPTIONS.find((provider) => provider.value === ttsProvider)?.label} />}</p></div>
                       <InfoHint text={t("支持阿里云百炼与火山引擎；切换后会显示对应音色目录。")} />
                     </div>
                     <div className="voice-provider-select-row">
@@ -1103,7 +1113,7 @@ export function ConfigDrawer({
                           return <div className="provider-voice-row" data-selected={selected} key={voice.value}>
                             <button type="button" className="provider-voice-select" aria-pressed={selected} onClick={() => ttsProvider === "bailian" ? selectBailianVoice(voice.value, voice.label) : onTtsVoiceChange(voice.value)}>
                               <span className="provider-voice-avatar">{selected ? <Check /> : voice.label.slice(0, 1)}</span>
-                              <span><strong>{voice.label}</strong><small>{selected ? t("已选中 · ") + (voice.description) + "" : voice.description}</small></span>
+                              <span><strong>{<LocalizedText text={voice.label} />}</strong><small>{selected ? t("已选中 · ") + (voice.description) + "" : voice.description}</small></span>
                             </button>
                             <button type="button" className="provider-voice-preview" aria-label={"" + (isPlaying ? "停止试听" : "试听") + " " + (voice.label) + ""} disabled={publicVoiceEnabled || (previewState === "loading" && !previewing)} onClick={() => toggleVoicePreview(ttsProvider, voice.value, voice.label)}>
                               {isLoading ? <span className="preview-spinner" /> : isPlaying ? <Square /> : <Play />}
@@ -1157,7 +1167,7 @@ export function ConfigDrawer({
                         <label><span>Endpoint</span><input value={toolEndpoint} placeholder="https://api.example.com/tools/query" onChange={(event) => setToolEndpoint(event.target.value)} /></label>
                         <button type="button" disabled={!toolName.trim() || !toolEndpoint.trim()} onClick={() => { setCustomTools((tools) => [...tools, { id: crypto.randomUUID(), name: toolName.trim(), endpoint: toolEndpoint.trim() }]); setToolName(""); setToolEndpoint(""); }}><Plus />{t("添加工具")}</button>
                       </div>
-                      {customTools.length ? <div className="custom-tool-list">{customTools.map((tool) => <div key={tool.id}><span><Wrench /><span><strong>{tool.name}</strong><small>{tool.endpoint}</small></span></span><button type="button" aria-label={t("移除工具 ") + (tool.name) + ""} onClick={() => setCustomTools((tools) => tools.filter((item) => item.id !== tool.id))}><Trash2 /></button></div>)}</div> : <p className="config-note">{t("尚未添加自定义工具。发布前需要 Schema 校验、鉴权和权限确认。")}</p>}
+                      {customTools.length ? <div className="custom-tool-list">{customTools.map((tool) => <div key={tool.id}><span><Wrench /><span><strong>{<LocalizedText text={tool.name} />}</strong><small>{tool.endpoint}</small></span></span><button type="button" aria-label={t("移除工具 ") + (tool.name) + ""} onClick={() => setCustomTools((tools) => tools.filter((item) => item.id !== tool.id))}><Trash2 /></button></div>)}</div> : <p className="config-note">{t("尚未添加自定义工具。发布前需要 Schema 校验、鉴权和权限确认。")}</p>}
                     </div>
                   </details>
                 </div>
@@ -1310,7 +1320,7 @@ export function AvatarAssetDeleteDialog({ asset, onCancel, onConfirm }: {
       <section className="avatar-asset-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="avatar-asset-delete-title" aria-describedby="avatar-asset-delete-description">
         <span className="avatar-asset-delete-dialog-icon"><CircleAlert /></span>
         <div><h3 id="avatar-asset-delete-title">{t("删除")}{t(kindLabel)}？</h3></div>
-        <p id="avatar-asset-delete-description"><strong>{asset.label}</strong>{t("只会从这台设备的资产库移除，项目源文件和服务端记录不会被销毁。")}</p>
+        <p id="avatar-asset-delete-description"><strong>{<LocalizedText text={asset.label} />}</strong>{t("只会从这台设备的资产库移除，项目源文件和服务端记录不会被销毁。")}</p>
         <div className="avatar-asset-delete-dialog-actions">
           <button type="button" autoFocus onClick={onCancel}>{t("取消")}</button>
           <button type="button" data-danger="true" onClick={onConfirm}><Trash2 />{t("确认删除")}</button>

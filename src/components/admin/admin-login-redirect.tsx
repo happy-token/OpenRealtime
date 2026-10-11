@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 
 import { useEffect, useRef } from "react";
 
@@ -13,7 +15,7 @@ export function AdminLoginRedirect() {
     window.location.replace(LOGIN_URL);
   }, []);
 
-  return <main><p role="status">登录状态已失效，正在前往账号登录…</p>
-    <a href={LOGIN_URL}>继续登录并返回会话诊断</a>
+  return <main><p role="status">{<LocalizedText text="登录状态已失效，正在前往账号登录…" />}</p>
+    <a href={LOGIN_URL}>{<LocalizedText text="继续登录并返回会话诊断" />}</a>
   </main>;
 }

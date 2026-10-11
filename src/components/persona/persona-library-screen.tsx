@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -281,9 +283,9 @@ export function PersonaLibraryScreen({
                   onClick={() => toggleExpand(persona.personaId)}
                 >
                   <span className={styles.cardTitle}>
-                    <strong>{persona.personaName}</strong>
-                    <span className={styles.cardIntro}>{persona.intro || t("为这个人设添加一段简介")}</span>
-                    <small>{t("关联 ")}{persona.linkedAvatarIds.length}{t(" 个数字人")}</small>
+                    <strong>{<LocalizedText text={persona.personaName} />}</strong>
+                    <span className={styles.cardIntro}>{t(persona.intro || "为这个人设添加一段简介")}</span>
+                    <small>{t("关联 {count} 个数字人", { count: String(persona.linkedAvatarIds.length) })}</small>
                   </span>
                   <ChevronDown className={styles.cardChevron} />
                 </button>
@@ -293,7 +295,7 @@ export function PersonaLibraryScreen({
                   <button type="button" className={styles.deleteAction} disabled={isBuiltinPersonaId(persona.personaId) || persona.linkedAvatarIds.length > 0} title={isBuiltinPersonaId(persona.personaId) ? t("内置人设不可删除") : persona.linkedAvatarIds.length ? t("请先解除数字人关联") : t("删除人设")} onClick={() => { if (hasUnsavedDraft(persona.personaId)) { setActionNotice((current) => ({ ...current, [persona.personaId]: "请先保存当前编辑内容，再删除。" })); return; } setDeletingId(persona.personaId); setDeleteState("idle"); }}><Trash2 />{t("删除")}</button>
                 </div>
 
-                {deletingId === persona.personaId ? <div className={styles.inlineAction} role="group" aria-label={t("确认删除") + (persona.personaName) + ""}><p>{t("确定删除“")}{persona.personaName}{t("”？删除后将移入可恢复的归档目录。")}</p><div><button type="button" className={styles.deleteAction} disabled={deleteState === "busy"} onClick={() => void submitDelete(persona.personaId)}>{deleteState === "busy" ? t("删除中…") : t("确认删除")}</button><button type="button" onClick={() => setDeletingId(null)}>{t("取消")}</button></div></div> : null}
+                {deletingId === persona.personaId ? <div className={styles.inlineAction} role="group" aria-label={t("确认删除") + (persona.personaName) + ""}><p>{t("确定删除“")}{<LocalizedText text={persona.personaName} />}{t("”？删除后将移入可恢复的归档目录。")}</p><div><button type="button" className={styles.deleteAction} disabled={deleteState === "busy"} onClick={() => void submitDelete(persona.personaId)}>{deleteState === "busy" ? t("删除中…") : t("确认删除")}</button><button type="button" onClick={() => setDeletingId(null)}>{t("取消")}</button></div></div> : null}
                 {actionNotice[persona.personaId] ? <p className={styles.actionNotice} role="status">{actionNotice[persona.personaId]}</p> : null}
 
                 {linkingAvatarId ? (

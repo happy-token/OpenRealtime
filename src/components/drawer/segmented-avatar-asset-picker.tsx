@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -275,7 +277,7 @@ function SegmentedAvatarCard({
           {selected && selectedPreviewControls ? selectedPreviewControls : null}
           {avatarSelected && !selectedPreviewControls ? <span className="segmented-avatar-card-selected"><Check />{t("当前 Avatar")}</span> : null}
           <button style={selected && selectedPreviewControls ? { top: 48 } : undefined} className="segmented-avatar-card-action-count" type="button" aria-label={t("浏览 ") + (avatar.displayName) + t(" 的形象与动作")} onClick={onFocus}>
-            {avatar.actions.length ? "" + (avatar.actions.length) + t(" 个") + (actionsOnly ? "口型对齐" : "动作") + "" : t("未创建动作")}
+            {<LocalizedText text={avatar.actions.length ? "" + (avatar.actions.length) + t(" 个") + (actionsOnly ? "口型对齐" : "动作") + "" : t("未创建动作")} />}
           </button>
         </div>
       )}
@@ -291,10 +293,10 @@ function SegmentedAvatarCard({
         <div className="segmented-avatar-card-body">
           <div className="segmented-avatar-card-title">
             <span>
-              <strong>{avatar.displayName}</strong>
-              <em>{action
+              <strong>{<LocalizedText text={avatar.displayName} />}</strong>
+              <em>{<LocalizedText text={action
                 ? "" + (actionsOnly ? "口型对齐" : action.state === "available" && !action.pendingModelCount ? "动作" : "待适配动作") + " · " + (action.displayName) + ""
-                : t("形象预览")}</em>
+                : t("形象预览")} />}</em>
             </span>
             <button className="segmented-avatar-card-more" type="button" aria-label={t("更多操作：") + (avatar.displayName) + ""} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
               <MoreHorizontal />

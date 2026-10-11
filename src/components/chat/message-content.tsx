@@ -1,3 +1,5 @@
+"use client";
+import { useLanguage } from "@/components/language/language-provider";
 
 import { LocalizedText } from "@/components/language/language-provider";
 import type { ComponentProps } from "react";
@@ -50,9 +52,10 @@ function MessageImage({ node, alt, src, ...props }: ComponentProps<"img"> & { no
 }
 
 function MessageTable({ node, ...props }: ComponentProps<"table"> & { node?: unknown }) {
+  const { t } = useLanguage();
   void node;
   return (
-    <div className="message-table-scroll" role="region" aria-label="表格内容" tabIndex={0}>
+    <div className="message-table-scroll" role="region" aria-label={t("表格内容")} tabIndex={0}>
       <table {...props} />
     </div>
   );

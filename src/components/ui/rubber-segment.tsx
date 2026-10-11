@@ -1,4 +1,5 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
 
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
@@ -384,9 +385,9 @@ export default function RubberSegment({
         item.onClick?.();
         handleClick(event, itemIndex);
       }}
-    >{item.icon}{item.label}</button>)}
+    >{item.icon}{<LocalizedText text={item.label} />}</button>)}
     <motion.div className={styles.thumb} aria-hidden="true" style={{ clipPath }}>
-      {list.map(item => <span key={item.value} className={`${styles.item} ${styles.copy}`}>{item.icon}{item.label}</span>)}
+      {list.map(item => <span key={item.value} className={`${styles.item} ${styles.copy}`}>{item.icon}{<LocalizedText text={item.label} />}</span>)}
     </motion.div>
   </div>;
 }

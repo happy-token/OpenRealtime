@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -120,7 +122,7 @@ export function RoleActionComposer({
                 <Image className={styles.stageImage} src={avatar.source_image_url} alt={"" + (avatar.display_name) + t("形象预览")} fill sizes="70vw" unoptimized priority />
               </>}
               <div className={styles.stageShade} />
-              <div className={styles.stageCaption}><h1>{avatar.display_name}</h1><p>{previewUrl ? t("预览生成结果，确认后保存并返回角色任务。") : t("当前形象已经锁定，动作会保存到这个形象下面。")}</p></div>
+              <div className={styles.stageCaption}><h1>{<LocalizedText text={avatar.display_name} />}</h1><p>{previewUrl ? t("预览生成结果，确认后保存并返回角色任务。") : t("当前形象已经锁定，动作会保存到这个形象下面。")}</p></div>
             </section>
             <aside className={styles.personalConfig} aria-label={t("个人动作生成配置")}>
               <PersonalVideoGeneration initialAvatarId={avatarId} embedded onPreviewChange={setPreviewUrl} onActionSaved={finish} />
@@ -131,7 +133,7 @@ export function RoleActionComposer({
               embedded
               freshCreation
               previewImageUrl={avatar.source_image_url}
-              configHeader={<div className={styles.contextCard}><span>{t("当前形象")}</span><strong>{avatar.display_name}</strong><small>{t("动作保存后会自动回填")}{ returnTo ? t("角色设置") : t("角色创建任务") }。</small></div>}
+              configHeader={<div className={styles.contextCard}><span>{t("当前形象")}</span><strong>{<LocalizedText text={avatar.display_name} />}</strong><small>{t("动作保存后会自动回填")}{returnTo ? t("角色设置") : t("角色创建任务")}。</small></div>}
               onSaved={finish}
             />
           </div>}

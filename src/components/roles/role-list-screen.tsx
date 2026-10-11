@@ -1,4 +1,5 @@
 "use client";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -137,9 +138,10 @@ export function RoleListScreen() {
     const availableRoles = roles.filter((role) => role.role_id !== "default-assistant");
     return needle ? availableRoles.filter((role) => (
       role.display_name.toLocaleLowerCase().includes(needle)
+      || t(role.display_name).toLocaleLowerCase().includes(needle)
       || role.persona_name?.toLocaleLowerCase().includes(needle)
     )) : availableRoles;
-  }, [query, roles]);
+  }, [query, roles, t]);
 
   return <div className={styles.page}>
     <header className={styles.header}>
@@ -177,7 +179,7 @@ export function RoleListScreen() {
     {pendingDeleteRole ? <div className={styles.deleteBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingRoleId) setPendingDeleteRole(null); }}>
       <section className={styles.deleteDialog} role="alertdialog" aria-modal="true" aria-labelledby="delete-role-title" aria-describedby="delete-role-description">
         <header><span><Trash2 /></span><div><h2 id="delete-role-title">{t("删除这个角色？")}</h2></div><button type="button" aria-label={t("关闭删除角色确认")} disabled={Boolean(deletingRoleId)} onClick={() => setPendingDeleteRole(null)}><X /></button></header>
-        <p id="delete-role-description"><strong>{pendingDeleteRole.display_name}</strong>{t("将从角色列表移除。数字人形象、人设和声音资源不会被删除。")}</p>
+        <p id="delete-role-description"><strong>{t(pendingDeleteRole.display_name)}</strong>{t("将从角色列表移除。数字人形象、人设和声音资源不会被删除。")}</p>
         <footer><button type="button" disabled={Boolean(deletingRoleId)} onClick={() => setPendingDeleteRole(null)}>{t("取消")}</button><button type="button" data-danger="true" disabled={Boolean(deletingRoleId)} onClick={() => void confirmDelete()}><Trash2 />{deletingRoleId ? t("正在删除…") : t("确认删除")}</button></footer>
       </section>
     </div> : null}
@@ -203,21 +205,21 @@ function RoleCard({ role, isDefault, isSelected, savingDefault, onSelect, onSetD
     <button
       className={styles.selectSurface}
       type="button"
-      aria-label={t("选择") + (role.display_name) + ""}
+      aria-label={t("选择{name}", { name: t(role.display_name) })}
       aria-pressed={isSelected}
       onClick={() => onSelect(role.role_id)}
     />
     <div className={styles.roleCopy}>
-      <strong>{role.display_name}</strong>
-      <small>{role.persona_name ?? t("通用助手")}</small>
+      <strong>{t(role.display_name)}</strong>
+      <small>{t(role.persona_name ?? "通用助手")}</small>
     </div>
     {isDefault ? <span className={styles.defaultBadge}><Star fill="currentColor" />{t("默认角色")}</span>
-      : <button className={styles.defaultButton} type="button" disabled={savingDefault} onClick={() => onSetDefault(role.role_id)} aria-label={t("将") + (role.display_name) + t("设为默认角色")}><Star />{t("设为默认")}</button>}
+      : <button className={styles.defaultButton} type="button" disabled={savingDefault} onClick={() => onSetDefault(role.role_id)} aria-label={t("将 {name} 设为默认角色", { name: t(role.display_name) })}><Star />{t("设为默认")}</button>}
     {isSelected ? <span className={styles.selectedBadge}><Check /><span>{t("已选中")}</span></span> : null}
     <div className={styles.cardActions}>
-      <Link className={`${styles.startButton} liquid-glass-button`} data-variant="primary" href={conversationHref(role, role.default_mode)} aria-label={t("使用") + (role.display_name) + t("开始对话")} title={t("使用默认方式：") + (ROLE_MODE_LABELS[role.default_mode]) + ""}><MessageCircle />{t("对话")}</Link>
-      <Link className={styles.detailButton} href={`/roles/${encodeURIComponent(role.role_id)}`} aria-label={t("查看") + (role.display_name) + t("详情")}><Settings2 />{t("详情")}</Link>
-      {canDelete ? <button className={styles.deleteButton} type="button" aria-label={t("删除角色") + (role.display_name) + ""} title={t("删除角色")} onClick={() => onRequestDelete(role)}><Trash2 /></button> : null}
+      <Link className={`${styles.startButton} liquid-glass-button`} data-variant="primary" href={conversationHref(role, role.default_mode)} aria-label={t("与 {name} 对话", { name: t(role.display_name) })} title={t("使用默认方式：") + (t(ROLE_MODE_LABELS[role.default_mode])) + ""}><MessageCircle />{t("对话")}</Link>
+      <Link className={styles.detailButton} href={`/roles/${encodeURIComponent(role.role_id)}`} aria-label={t("查看 {name} 详情", { name: t(role.display_name) })}><Settings2 />{t("详情")}</Link>
+      {canDelete ? <button className={styles.deleteButton} type="button" aria-label={t("删除角色") + (t(role.display_name)) + ""} title={t("删除角色")} onClick={() => onRequestDelete(role)}><Trash2 /></button> : null}
     </div>
   </article>;
 }

@@ -1,0 +1,145 @@
+[
+  {
+    "role_id": "default-assistant",
+    "display_name": "默认助手",
+    "avatar_id": null,
+    "persona_id": null,
+    "voice_provider": "bailian",
+    "voice_id": "__active_bailian_clone__",
+    "enabled_modes": [
+      "conversation"
+    ],
+    "default_mode": "conversation",
+    "memory_enabled": true,
+    "tool_ids": [
+      "tool-current-time",
+      "tool-web-search"
+    ],
+    "created_at": "1970-01-01T00:00:00.000Z",
+    "updated_at": "2026-09-23T03:21:40.558Z",
+    "deleted_at": null,
+    "avatar_image_url": null,
+    "persona_name": null,
+    "default_selections": {},
+    "voice_dialect": "",
+    "asr_provider": null,
+    "llm_provider": null
+  },
+  {
+    "role_id": "role-8d9cc2be-f56d-45a8-8ef8-0482f84b4df4",
+    "display_name": "萨曼莎",
+    "avatar_id": "avatar-2843741c-815f-4117-b710-941802b0e2ab",
+    "persona_id": "soft-luminous",
+    "voice_provider": "bailian",
+    "voice_id": "__active_bailian_clone__",
+    "voice_dialect": "",
+    "asr_provider": null,
+    "llm_provider": null,
+    "enabled_modes": [
+      "conversation",
+      "offline"
+    ],
+    "default_mode": "offline",
+    "default_selections": {
+      "motion": {
+        "action_id": "b68b9014-fa55-4dae-bf16-0fb177b3a572"
+      },
+      "lip-sync": {
+        "action_id": "b68b9014-fa55-4dae-bf16-0fb177b3a572"
+      },
+      "offline": {
+        "action_id": "b68b9014-fa55-4dae-bf16-0fb177b3a572",
+        "talking_variant_id": "lipforcing-1a4c4d35-a16e-475b-910a-3eb99b4564ca"
+      }
+    },
+    "memory_enabled": true,
+    "model_id": null,
+    "tool_ids": [
+      "tool-current-time",
+      "tool-web-search"
+    ],
+    "created_at": "2026-09-28T11:21:58.013Z",
+    "updated_at": "2026-10-03T02:42:31.701Z",
+    "deleted_at": null,
+    "avatar_image_url": "/digital-human/builtin-avatars/avatar-2843741c-815f-4117-b710-941802b0e2ab-cc65720d-6ae6-401e-aa63-1e40520c275e.webp",
+    "persona_name": "日常陪伴 · 温柔安心"
+  },
+  {
+    "role_id": "role-avatar-8657be31-306e-428d-a013-7521e710ab6a",
+    "display_name": "星澜",
+    "avatar_id": "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+    "persona_id": "fresh-pastoral",
+    "voice_provider": "bailian",
+    "voice_id": "longyingmu_v3",
+    "enabled_modes": [
+      "conversation",
+      "offline",
+      "lip-sync",
+      "realtime"
+    ],
+    "default_mode": "offline",
+    "default_selections": {
+      "offline": {
+        "action_id": "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
+        "talking_variant_id": "lipforcing-continuous-20260914-338a867c-0661-4565-af6e-f0f2e0e9b3c7"
+      },
+      "realtime": {
+        "avatar_id": "d23e23f9-213a-4857-b0bf-26e006e449b3"
+      }
+    },
+    "memory_enabled": true,
+    "model_id": null,
+    "tool_ids": [
+      "tool-current-time",
+      "tool-web-search"
+    ],
+    "created_at": "2026-08-31T12:36:12.323Z",
+    "updated_at": "2026-10-01T12:28:32.654Z",
+    "deleted_at": null,
+    "voice_dialect": "",
+    "asr_provider": null,
+    "llm_provider": null,
+    "avatar_image_url": "/digital-human/builtin-avatars/avatar-8657be31-306e-428d-a013-7521e710ab6a-c80ae71d-626c-4210-b23f-5c84d7ae8efd.webp",
+    "persona_name": "自然向导 · 清新平和"
+  },
+  {
+    "role_id": "role-avatar-qingzhao",
+    "display_name": "清照",
+    "avatar_id": "avatar-qingzhao",
+    "persona_id": "melancholic-mist",
+    "voice_provider": "bailian",
+    "voice_id": "__active_bailian_clone__",
+    "voice_dialect": "",
+    "enabled_modes": [
+      "conversation",
+      "offline",
+      "lip-sync"
+    ],
+    "default_mode": "offline",
+    "default_selections": {
+      "motion": {
+        "action_id": "4656d68b-c229-4366-bf9b-4c8c1c059201"
+      },
+      "lip-sync": {
+        "action_id": "4656d68b-c229-4366-bf9b-4c8c1c059201"
+      },
+      "offline": {
+        "action_id": "4656d68b-c229-4366-bf9b-4c8c1c059201",
+        "talking_variant_id": "lipforcing-a555a07e-d15d-451f-8c4e-48dca5fcfe37"
+      }
+    },
+    "memory_enabled": true,
+    "model_id": null,
+    "tool_ids": [
+      "tool-current-time",
+      "tool-web-search"
+    ],
+    "created_at": "2026-09-02T06:50:49.519Z",
+    "updated_at": "2026-09-28T08:40:33.996Z",
+    "deleted_at": null,
+    "asr_provider": null,
+    "llm_provider": null,
+    "avatar_image_url": "/digital-human/builtin-avatars/avatar-qingzhao-b18bcbbb-6b9c-4802-9f17-f475d3d7bb5e.webp",
+    "persona_name": "文字倾听 · 安静共情"
+  }
+]

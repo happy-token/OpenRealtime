@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -915,7 +917,7 @@ export function AvatarDetailScreen({ avatarId, backHref = "/avatars", initialAct
                 /> : avatar ? <Image src={avatarImageUrl} alt="" fill sizes="100px" unoptimized /> : <Film />}
               </span>
               <small>{t("动作 ")}{index + 1}</small>
-              <strong>{action.display_name}</strong>
+              <strong>{<LocalizedText text={action.display_name} />}</strong>
             </button>
           ))}
           {avatar?.canCreateActions !== false ? (

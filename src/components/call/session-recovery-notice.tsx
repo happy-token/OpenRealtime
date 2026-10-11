@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -42,7 +44,7 @@ export function SessionRecoveryNotice(props: SessionRecoveryNoticeProps) {
   const retry = issue.retry === "connection" ? props.onRetryConnection : issue.retry === "microphone" ? props.onRetryMicrophone : null;
   return <section className="session-recovery-notice" data-kind={issue.kind} role="alert" aria-live="polite">
     <AlertTriangle aria-hidden="true" />
-    <div className="session-recovery-copy"><strong>{issue.title}</strong><span>{issue.message}</span></div>
+    <div className="session-recovery-copy"><strong>{<LocalizedText text={issue.title} />}</strong><span>{issue.message}</span></div>
     <div className="session-recovery-actions">
       {retry && <button type="button" onClick={retry}><RefreshCw aria-hidden="true" />{issue.retryLabel}</button>}
       {!props.voiceOnly && <button type="button" onClick={props.onUseText}><Keyboard aria-hidden="true" />{t("改用文字")}</button>}

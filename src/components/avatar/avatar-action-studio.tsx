@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 
 import { SelectMenu } from "@/components/ui/select-menu";
 import { useLanguage } from "@/components/language/language-provider";
@@ -1227,7 +1229,7 @@ export function AvatarActionStudio({
                       onPointerEnter={() => setFocusedActionId(action.id)}
                       onClick={() => selectTemplateAction(action.id)}
                     >
-                      <span className={styles.actionOptionCopy}><strong>{action.name}</strong><small>{unavailable ? t("当前素材不可用") : action.description}</small></span>
+                      <span className={styles.actionOptionCopy}><strong>{<LocalizedText text={action.name} />}</strong><small>{unavailable ? t("当前素材不可用") : action.description}</small></span>
                       <span className={styles.actionOptionMeta}>{action.duration}</span>
                       <Check aria-hidden="true" />
                     </button>
@@ -1305,7 +1307,7 @@ export function AvatarActionStudio({
                       onPointerEnter={() => setFocusedVideoVendor(item.id)}
                       onClick={() => selectVideoVendor(item.id)}
                     >
-                      <span className={styles.actionOptionCopy}><strong>{item.name}</strong><small>{item.detail}</small></span>
+                      <span className={styles.actionOptionCopy}><strong>{<LocalizedText text={item.name} />}</strong><small>{<LocalizedText text={item.detail} />}</small></span>
                       <Check aria-hidden="true" />
                     </button>)}
                   </div>

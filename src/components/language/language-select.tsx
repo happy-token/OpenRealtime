@@ -16,7 +16,7 @@ export function LanguageSelect({ compact = false }: { compact?: boolean }) {
       triggerRole="combobox"
       fullWidth
       triggerContent={compact ? <Languages size={19} aria-hidden="true" /> : undefined}
-      options={[{ value: "system", label: t("跟随系统") }, { value: "zh-CN", label: "简体中文" }, { value: "en", label: "English" }]}
+      options={[{ value: "system", label: t("跟随系统") }, { value: "zh-CN", label: t("简体中文") }, { value: "en", label: "English" }]}
       onChange={setPreference}
     />
   </div>;

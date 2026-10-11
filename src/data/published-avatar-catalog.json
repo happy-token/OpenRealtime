@@ -1,0 +1,373 @@
+[
+  {
+    "avatar_id": "avatar-2843741c-815f-4117-b710-941802b0e2ab",
+    "display_name": "萨曼莎",
+    "source_image_media_type": "image/webp",
+    "source_image_version": "cc65720d-6ae6-401e-aa63-1e40520c275e",
+    "created_at": "2026-09-28T12:43:04.964Z",
+    "updated_at": "2026-10-01T12:29:15.117Z",
+    "deleted_at": null,
+    "realtime_binding": null,
+    "actions": [
+      {
+        "avatar_action_id": "b3a35a5b-67aa-4f83-9d68-338a8bb2c581",
+        "display_name": "甜美元气",
+        "video_url": "/digital-human/published-actions/c4017965-045c-49bf-9a8a-41a13d4fdbce.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-28T12:56:03.903Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-3e576bdd-d30c-4961-9693-457306225407",
+            "display_name": "甜美元气 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/published-actions/c4017965-045c-49bf-9a8a-41a13d4fdbce.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-3e576bdd-d30c-4961-9693-457306225407.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "b68b9014-fa55-4dae-bf16-0fb177b3a572",
+        "display_name": "冷艳夜色",
+        "video_url": "/digital-human/published-actions/c0794c56-7384-4a3d-ab84-393986d8eb56.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-28T13:05:30.190Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-1a4c4d35-a16e-475b-910a-3eb99b4564ca",
+            "display_name": "冷艳夜色 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/published-actions/c0794c56-7384-4a3d-ab84-393986d8eb56.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-1a4c4d35-a16e-475b-910a-3eb99b4564ca.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "c1ed4d25-b833-4778-9cfc-a9e7ec9e5bf4",
+        "display_name": "温柔陪伴",
+        "video_url": "/digital-human/published-actions/26aa2398-acdd-4c62-a4e6-d07851a384c6.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-29T07:16:02.897Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-df136935-cdea-4207-9dab-0beb095a9051",
+            "display_name": "温柔陪伴 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/published-actions/26aa2398-acdd-4c62-a4e6-d07851a384c6.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-df136935-cdea-4207-9dab-0beb095a9051.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      }
+    ],
+    "source_image_url": "/digital-human/builtin-avatars/avatar-2843741c-815f-4117-b710-941802b0e2ab-cc65720d-6ae6-401e-aa63-1e40520c275e.webp"
+  },
+  {
+    "avatar_id": "avatar-8657be31-306e-428d-a013-7521e710ab6a",
+    "display_name": "星澜",
+    "source_image_media_type": "image/webp",
+    "source_image_version": "c80ae71d-626c-4210-b23f-5c84d7ae8efd",
+    "created_at": "2026-08-31T12:36:12.323Z",
+    "updated_at": "2026-10-01T12:29:31.787Z",
+    "deleted_at": null,
+    "realtime_binding": null,
+    "actions": [
+      {
+        "avatar_action_id": "338a867c-0661-4565-af6e-f0f2e0e9b3c7",
+        "display_name": "侧头微笑",
+        "video_url": "/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-08-31T13:08:33.249Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-338a867c-0661-4565-af6e-f0f2e0e9b3c7",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-338a867c-0661-4565-af6e-f0f2e0e9b3c7.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "14ab95d8-69f9-429c-af5b-f25f2a46f5af",
+        "display_name": "柔和回应",
+        "video_url": "/digital-human/motion-bases/14ab95d8-69f9-429c-af5b-f25f2a46f5af.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-01T12:33:57.861Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "soft-response-minimax-original-v3",
+            "display_name": "MiniMax",
+            "method": "minimax",
+            "source_video_url": "/digital-human/motion-bases/14ab95d8-69f9-429c-af5b-f25f2a46f5af.mp4",
+            "video_url": "/digital-human/talking-variants/soft-response-minimax-original-v3.mp4",
+            "processing": "original",
+            "validation": "pending"
+          },
+          {
+            "id": "lipforcing-continuous-20260914-14ab95d8-69f9-429c-af5b-f25f2a46f5af",
+            "display_name": "柔和回应 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/14ab95d8-69f9-429c-af5b-f25f2a46f5af.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-14ab95d8-69f9-429c-af5b-f25f2a46f5af.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "ee402235-bd10-483c-a730-91af81fa05eb",
+        "display_name": "自然",
+        "video_url": "/digital-human/motion-bases/ee402235-bd10-483c-a730-91af81fa05eb.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-02T04:37:31.459Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-ee402235-bd10-483c-a730-91af81fa05eb",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/ee402235-bd10-483c-a730-91af81fa05eb.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-ee402235-bd10-483c-a730-91af81fa05eb.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "b7ce3f16-2137-4589-ab2a-5ea5511d0cf8",
+        "display_name": "亲和",
+        "video_url": "/digital-human/motion-bases/b7ce3f16-2137-4589-ab2a-5ea5511d0cf8.mp4",
+        "pending_model_count": 1,
+        "created_at": "2026-09-02T05:28:21.883Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-b7ce3f16-2137-4589-ab2a-5ea5511d0cf8",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/b7ce3f16-2137-4589-ab2a-5ea5511d0cf8.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-b7ce3f16-2137-4589-ab2a-5ea5511d0cf8.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "d9cc612f-2970-441b-804e-ea3677126ffa",
+        "display_name": "点头",
+        "video_url": "/digital-human/motion-bases/d9cc612f-2970-441b-804e-ea3677126ffa.mp4",
+        "pending_model_count": 1,
+        "created_at": "2026-09-02T05:28:21.907Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-d9cc612f-2970-441b-804e-ea3677126ffa",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/d9cc612f-2970-441b-804e-ea3677126ffa.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-d9cc612f-2970-441b-804e-ea3677126ffa.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "b8d26f98-d52b-4f76-a480-14f4731d8ccd",
+        "display_name": "甜美元气",
+        "video_url": "/digital-human/motion-bases/b8d26f98-d52b-4f76-a480-14f4731d8ccd.mp4",
+        "pending_model_count": 1,
+        "created_at": "2026-09-02T06:19:57.652Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-b8d26f98-d52b-4f76-a480-14f4731d8ccd",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/b8d26f98-d52b-4f76-a480-14f4731d8ccd.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-b8d26f98-d52b-4f76-a480-14f4731d8ccd.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "7a41eb03-2e0d-4cc0-9fbe-c027d0f818cc",
+        "display_name": "清新",
+        "video_url": "/digital-human/motion-bases/7a41eb03-2e0d-4cc0-9fbe-c027d0f818cc.mp4",
+        "pending_model_count": 1,
+        "created_at": "2026-09-02T06:19:57.675Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-7a41eb03-2e0d-4cc0-9fbe-c027d0f818cc",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/7a41eb03-2e0d-4cc0-9fbe-c027d0f818cc.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-7a41eb03-2e0d-4cc0-9fbe-c027d0f818cc.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "27583b47-3ac3-4e10-9df3-8192770c08bd",
+        "display_name": "浪漫微笑",
+        "video_url": "/digital-human/motion-bases/27583b47-3ac3-4e10-9df3-8192770c08bd.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-02T06:19:57.696Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-27583b47-3ac3-4e10-9df3-8192770c08bd",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/27583b47-3ac3-4e10-9df3-8192770c08bd.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-27583b47-3ac3-4e10-9df3-8192770c08bd.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "9352b224-4cdf-4ef1-8131-61dcfbd5e63e",
+        "display_name": "纯欲柔光",
+        "video_url": "/digital-human/motion-bases/9352b224-4cdf-4ef1-8131-61dcfbd5e63e.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-02T06:19:57.720Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-9352b224-4cdf-4ef1-8131-61dcfbd5e63e",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/9352b224-4cdf-4ef1-8131-61dcfbd5e63e.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-9352b224-4cdf-4ef1-8131-61dcfbd5e63e.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "58dd995d-7525-46af-9a16-3cbf3b01709c",
+        "display_name": "冷艳夜色",
+        "video_url": "/digital-human/motion-bases/58dd995d-7525-46af-9a16-3cbf3b01709c.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-02T06:19:57.741Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-58dd995d-7525-46af-9a16-3cbf3b01709c",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/58dd995d-7525-46af-9a16-3cbf3b01709c.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-58dd995d-7525-46af-9a16-3cbf3b01709c.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "1af74865-0115-4e16-868d-9650128c559d",
+        "display_name": "知性温柔",
+        "video_url": "/digital-human/motion-bases/1af74865-0115-4e16-868d-9650128c559d.mp4",
+        "pending_model_count": 1,
+        "created_at": "2026-09-02T06:19:57.762Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-1af74865-0115-4e16-868d-9650128c559d",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/1af74865-0115-4e16-868d-9650128c559d.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-1af74865-0115-4e16-868d-9650128c559d.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "2f16b7ce-1f38-4477-bc7d-11420e8eedac",
+        "display_name": "忧郁共鸣",
+        "video_url": "/digital-human/motion-bases/2f16b7ce-1f38-4477-bc7d-11420e8eedac.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-02T08:55:08.431Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-continuous-20260914-2f16b7ce-1f38-4477-bc7d-11420e8eedac",
+            "display_name": "Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/2f16b7ce-1f38-4477-bc7d-11420e8eedac.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-continuous-20260914-2f16b7ce-1f38-4477-bc7d-11420e8eedac.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      }
+    ],
+    "source_image_url": "/digital-human/builtin-avatars/avatar-8657be31-306e-428d-a013-7521e710ab6a-c80ae71d-626c-4210-b23f-5c84d7ae8efd.webp"
+  },
+  {
+    "avatar_id": "avatar-qingzhao",
+    "display_name": "清照",
+    "source_image_media_type": "image/webp",
+    "source_image_version": "b18bcbbb-6b9c-4802-9f17-f475d3d7bb5e",
+    "created_at": "2026-09-02T06:50:49.519Z",
+    "updated_at": "2026-09-28T09:09:24.800Z",
+    "deleted_at": null,
+    "realtime_binding": null,
+    "actions": [
+      {
+        "avatar_action_id": "a30afa92-5213-428c-889b-0b0a4df05082",
+        "display_name": "冷艳夜色",
+        "video_url": "/digital-human/motion-bases/a30afa92-5213-428c-889b-0b0a4df05082-recovered.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-05T01:38:33.967Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-d3105d4e-6a69-4982-a1fd-fcb2b52b8ca0",
+            "display_name": "冷艳夜色 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/motion-bases/a30afa92-5213-428c-889b-0b0a4df05082-recovered.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-d3105d4e-6a69-4982-a1fd-fcb2b52b8ca0.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      },
+      {
+        "avatar_action_id": "4656d68b-c229-4366-bf9b-4c8c1c059201",
+        "display_name": "忧郁共鸣",
+        "video_url": "/digital-human/published-actions/06409d91-45da-46cb-ad88-511a994cc35f.mp4",
+        "pending_model_count": 0,
+        "created_at": "2026-09-25T02:18:30.522Z",
+        "deleted_at": null,
+        "talking_variants": [
+          {
+            "id": "lipforcing-a555a07e-d15d-451f-8c4e-48dca5fcfe37",
+            "display_name": "忧郁共鸣 · Lip Forcing",
+            "method": "lipforcing",
+            "source_video_url": "/digital-human/published-actions/06409d91-45da-46cb-ad88-511a994cc35f.mp4",
+            "video_url": "/digital-human/talking-variants/lipforcing-a555a07e-d15d-451f-8c4e-48dca5fcfe37.mp4",
+            "processing": "original",
+            "validation": "pending"
+          }
+        ]
+      }
+    ],
+    "source_image_url": "/digital-human/builtin-avatars/avatar-qingzhao-b18bcbbb-6b9c-4802-9f17-f475d3d7bb5e.webp"
+  }
+]

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -131,7 +133,7 @@ export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "ot
       <summary className={styles.cardTop}>
         <div className={styles.providerIdentity}>
           <span className={styles.providerMark}>{item.name.slice(0, 1)}</span>
-          <div><h3>{item.name}</h3><p>{item.detail}</p></div>
+          <div><h3>{<LocalizedText text={item.name} />}</h3><p>{<LocalizedText text={item.detail} />}</p></div>
         </div>
         <span className={styles.state} data-configured={Boolean(status?.configured)}>{t(state)}</span>
         <ChevronDown className={styles.disclosureIcon} aria-hidden="true" />
@@ -140,7 +142,7 @@ export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "ot
       {!signedOut && !loading && !loadFailed && <>
         <div className={styles.credentialLine}>{status?.configured ? t("个人 Key ····") + (status.suffix ?? "") + "" : status?.platformConfigured ? t("当前使用平台提供的 Key") : t("尚未添加个人 Key")}</div>
         {isEditing ? <form className={styles.form} onSubmit={(event) => void save(event, item)}>
-          <label htmlFor={`provider-key-${item.id}-${item.name}`}>{item.name} API Key</label>
+          <label htmlFor={`provider-key-${item.id}-${item.name}`}>{<LocalizedText text={item.name} />} API Key</label>
           <input id={`provider-key-${item.id}-${item.name}`} type="password" autoComplete="off" value={draft}
             onChange={(event) => setDraft(event.target.value)} placeholder={t("粘贴 API Key")} />
           <div className={styles.actions}>
@@ -171,7 +173,7 @@ export function ProviderCredentialManager({ mode = "all" }: { mode?: "all" | "ot
     }}>{t("重试")}</button>}</div>}
     {mode === "other" ? <div className={styles.cards} aria-label={t("高级服务")}>{GROUPS[3].items.map(card)}</div>
       : GROUPS.map((group) => <section className={styles.group} aria-label={group.title} key={group.title}>
-      <div className={styles.groupHeading}><h2>{group.title}</h2><p>{group.description}</p></div>
+      <div className={styles.groupHeading}><h2>{<LocalizedText text={group.title} />}</h2><p>{<LocalizedText text={group.description} />}</p></div>
       <div className={styles.cards}>{group.items.map(card)}</div>
     </section>)}
     <p className={styles.footnote}>{mode === "other" ? t("服务凭证在服务端加密保存，仅用于各自的数字人或视频生成能力。")

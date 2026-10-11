@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -118,7 +120,7 @@ function HostedAvatarGroup({ title, description, avatars, selectedAvatarId, disa
   const { t } = useLanguage();
   return (
     <section className="hosted-avatar-group">
-      <header><div><strong>{title}</strong><small>{description}</small></div><em>{avatars.length + (prefix ? 1 : 0)}{t(" 个")}</em></header>
+      <header><div><strong>{<LocalizedText text={title} />}</strong><small>{<LocalizedText text={description} />}</small></div><em>{avatars.length + (prefix ? 1 : 0)}{t(" 个")}</em></header>
       <div className="avatar-library-grid">
         {prefix}
         {avatars.map((avatar) => <HostedAvatarCard key={avatar.id} avatar={avatar} selected={selectedAvatarId === avatar.id} disabled={disabled} onSelect={() => onSelect(avatar)} />)}
@@ -137,8 +139,8 @@ function HostedAvatarCard({ avatar, selected, disabled, onSelect }: {
   const { t } = useLanguage();
   return (
     <button type="button" data-selected={selected} aria-pressed={selected} disabled={disabled} onClick={onSelect}>
-      <span className="avatar-library-visual hosted-avatar-preview" style={avatar.imageUrl ? { backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` } : undefined}><span className="sr-only">{avatar.displayName}{t(" 预览")}</span></span>
-      <span><strong>{avatar.displayName}</strong><small>{avatar.id === "default-anam" ? t("当前使用") : t("实时托管")}</small></span>
+      <span className="avatar-library-visual hosted-avatar-preview" style={avatar.imageUrl ? { backgroundImage: `url("${avatar.imageUrl.replaceAll('"', "%22")}")` } : undefined}><span className="sr-only">{<LocalizedText text={avatar.displayName} />}{t(" 预览")}</span></span>
+      <span><strong>{<LocalizedText text={avatar.displayName} />}</strong><small>{avatar.id === "default-anam" ? t("当前使用") : t("实时托管")}</small></span>
       <i>{selected ? <Check /> : null}</i>
     </button>
   );

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 
 import { useEffect, useRef, useState } from "react";
 
@@ -38,8 +40,8 @@ export function DiagnosticAgentAccess({ sessionId, preview = false }: { sessionI
     }
   };
   return <>
-    <button disabled={preview || busy} onClick={download}>{busy ? "正在生成…" : "生成 Agent 只读凭据"}</button>
+    <button disabled={preview || busy} onClick={download}>{<LocalizedText text={busy ? "正在生成…" : "生成 Agent 只读凭据"} />}</button>
     {message ? <p role="status">{message}</p> : null}
-    <p>凭据仅可读取当前会话，15 分钟后失效。{preview ? "预览页面不签发凭据。" : "由当前管理员授权。"}</p>
+    <p>{<LocalizedText text="凭据仅可读取当前会话，15 分钟后失效。" />}{<LocalizedText text={preview ? "预览页面不签发凭据。" : "由当前管理员授权。"} />}</p>
   </>;
 }

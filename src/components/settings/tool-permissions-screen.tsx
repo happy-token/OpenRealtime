@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useLanguage } from "@/components/language/language-provider";

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -100,7 +102,7 @@ export function ModelServicesSettings({ scope = "platform" }: { scope?: "persona
       const status = platformStatuses[kind];
       return <section className={styles.card} key={kind} aria-label={"" + (name) + t(" 平台服务状态")}>
         <div className={styles.heading}><h3>{name}</h3><span className={status?.ready ? styles.configured : styles.unconfigured}>{status ? status.ready ? t("已配置 · 已就绪") : status.configured ? t("连接异常") : t("未配置") : platformStatusLoading ? t("检测中") : t("状态暂不可用")}</span></div>
-        <p role="status" className={styles.note}>{status?.message ?? (platformStatusLoading ? "正在检查平台服务连接" : "状态检查失败，请稍后重试")}</p>
+        <p role="status" className={styles.note}>{<LocalizedText text={status?.message ?? (platformStatusLoading ? "正在检查平台服务连接" : "状态检查失败，请稍后重试")} />}</p>
       </section>;
     })}</div>
     <div className={styles.notice}><CircleHelp />{t("登录后可配置个人模型服务。")}<Link href="/api/user/login?next=/settings/services">{t("登录")}</Link></div>
@@ -116,7 +118,7 @@ export function ModelServicesSettings({ scope = "platform" }: { scope?: "persona
       const draft = drafts[kind];
       const platform = platformStatuses[kind];
       return <section className={styles.card} key={kind} aria-label={"" + (name) + t(" 服务配置")}>
-        <div className={styles.heading}><div><small>{purpose}</small><h3>{name}</h3><p>{hint}</p></div><span className={draft.url ? styles.configured : styles.unconfigured}>{scope === "personal" ? t("个人") : ""}{draft.url ? t("已配置") : t("未配置")}</span></div>
+        <div className={styles.heading}><div><small>{purpose}</small><h3>{name}</h3><p>{<LocalizedText text={hint} />}</p></div><span className={draft.url ? styles.configured : styles.unconfigured}>{scope === "personal" ? t("个人") : ""}{draft.url ? t("已配置") : t("未配置")}</span></div>
         <p role="status" className={platform?.ready ? styles.result : styles.note}>{t("平台服务：")}{platform ? platform.ready ? t("已配置 · 连接正常，模型已就绪") : platform.configured ? t("已配置 · ") + (platform.message) + "" : t("未配置") : t("状态暂不可用")}</p>
         {scope === "personal" && <p className={styles.note}>{t("以下为个人配置；平台连接状态不代表已配置个人服务。")}</p>}
         <label className={styles.field}><span>{t("服务 URL")}</span><input type="url" inputMode="url" autoComplete="url" placeholder={scope === "personal" ? "https://models.example.com" : `http://127.0.0.1:${kind === "lipforcing" ? "8190" : kind === "musetalk" ? "18191" : kind === "wav2lip" ? "18192" : "18193"}`} value={draft.url} onChange={(event) => update(kind, { url: event.target.value, result: "", ready: null })} /></label>

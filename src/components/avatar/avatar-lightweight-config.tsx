@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -390,7 +392,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
   const configuration = <aside className={`${styles.taskSidebar} ${floating ? styles.floatingChoreography : ""}`}>
         {header}
         <section className={`${styles.capabilityModule} ${styles.lightweightModule}`}>
-          <div className={styles.lightweightIdentity}><Image src={avatar.source_image_url} alt="" width={40} height={40} unoptimized /><div><strong>{avatar.display_name}</strong><small>{floating ? idle ? t("已选动作 · ") + (idle.display_name) + "" : t("所选动作不可用") : t("当前数字人 · 动作配对")}</small></div></div>
+          <div className={styles.lightweightIdentity}><Image src={avatar.source_image_url} alt="" width={40} height={40} unoptimized /><div><strong>{<LocalizedText text={avatar.display_name} />}</strong><small>{floating ? idle ? t("已选动作 · ") + (idle.display_name) + "" : t("所选动作不可用") : t("当前数字人 · 动作配对")}</small></div></div>
           {!floating ? <section className={styles.lightweightGroup} aria-label={t("动作编排")}>
           <div className={styles.lightweightGroupHeading}><h3>{t("动作编排 · 待机底片")}</h3>{onCreateAction ? <button type="button" disabled={busy} onClick={onCreateAction}>{t("＋ 新建动作")}</button> : null}</div>
           <div className={styles.lightweightField}>
@@ -424,7 +426,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
           {floating && draft.method === "wav2lip" ? <label className={styles.floatingRights}><input type="checkbox" checked={wav2lipRights} disabled={busy} onChange={event => setWav2lipRights(event.target.checked)} />{t("确认素材使用权，仅用于非商业内部评估")}</label> : null}
           {floating ? <button type="button" className={`${styles.lightweightButton} ${styles.floatingGenerateButton}`} disabled={!idle || busy || (draft.method === "wav2lip" && !wav2lipRights)} onClick={() => void generateTalking()}>{busy ? t("正在生成…") : variant ? t("重新生成口型动作") : t("生成口型动作")}</button> : <details className={styles.lightweightGeneration} open={!variant} key={`${draft.method}-${Boolean(variant)}`}><summary>{draft.method === "lipforcing" ? t("Lip Forcing 口型对齐") : variant ? draft.method === "musetalk" ? t("MuseTalk 口型对齐") : t("重新生成讲话版") : t("生成讲话版")}</summary>
           {draft.method === "lipforcing" ? <><p>{t("使用当前角色声音自动生成参考讲话音频，完成后先预览再保存。也可以上传自己的参考音频。")}</p><label className={styles.lightweightField}>{t("替换参考音频（可选，≤ 20MB）")}<input type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/mpeg,audio/mp4" disabled={busy} onChange={event => setLipForcingAudio(event.target.files?.[0] || null)} /></label></> : draft.method === "musetalk" ? <p>{t("用当前动作生成配对口型对齐，完成后")}{previewBeforeSave ? t("先预览再导入") : t("自动保存")}{t("。会话中循环播放讲话动作，不逐字对齐新回复。")}</p> : draft.method === "minimax" ? <>
-            <div className={styles.lightweightField}><span>{t("生成时长（与底片一致）")}</span><SelectMenu value={String(duration)} ariaLabel={t("生成时长")} compact disabled={busy} options={Array.from({ length: 12 }, (_, index) => ({ value: String(index + 4), label: `${index + 4} 秒` }))} onChange={value => setDuration(Number(value))} /></div>
+            <div className={styles.lightweightField}><span>{t("生成时长（与底片一致）")}</span><SelectMenu value={String(duration)} ariaLabel={t("生成时长")} compact disabled={busy} options={Array.from({ length: 12 }, (_, index) => ({ value: String(index + 4), label: t("{p0} 秒", { p0: String(index + 4) }) }))} onChange={value => setDuration(Number(value))} /></div>
             <details><summary>{t("查看 MiniMax 讲话提示词")}</summary><p>{MINIMAX_TALKING_PROMPT}</p><p>{t("提示词只约束生成；局部嘴部合成是独立后处理，当前生成按钮不会自动执行。")}</p></details>
             <p>{t("使用 MiniMax H3 / 768P。点击生成会上传当前底片并消耗 API 额度；请确认拥有素材使用权。")}</p>
           </> : <><p className={styles.lightweightNotice}>{t("用当前底片和参考讲话音频离线生成口型素材。标准 Wav2Lip 仅限个人、研究或内部评估等非商业用途。")}</p><label className={styles.lightweightField}>{t("参考讲话音频（WAV、MP3、M4A，≤ 20MB）")}<input type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/mpeg,audio/mp4" disabled={busy} onChange={event => setWav2lipAudio(event.target.files?.[0] || null)} /></label><label className={styles.lightweightField}><input type="checkbox" checked={wav2lipRights} disabled={busy} onChange={event => setWav2lipRights(event.target.checked)} />{t("我确认拥有人物、底片和音频的使用权，并仅用于非商业内部评估")}</label></>}
@@ -448,7 +450,7 @@ export function AvatarLightweightConfig({ avatar, header, active, open, onOpenCh
       </header>
       {!variant ? <div id="talking-preview-unavailable" className={styles.talkingUnavailable}>
         <p>{idle ? "“" + (idle.display_name) + t("”尚无") + (draft.method === "lipforcing" ? " Lip Forcing" : draft.method === "musetalk" ? " MuseTalk" : draft.method === "minimax" ? " MiniMax" : " Wav2Lip") + t("讲话版。请生成该底片的讲话版，或选择已有配对的动作。") : t("请先选择待机动作，才能预览它的讲话版。")}</p>
-        {pairedActions.map(action => <button type="button" key={action.avatar_action_id} disabled={busy} onClick={() => choosePairedAction(action)}>{t("查看")}{action.display_name}{t("的讲话版")}</button>)}
+        {pairedActions.map(action => <button type="button" key={action.avatar_action_id} disabled={busy} onClick={() => choosePairedAction(action)}>{t("查看")}{<LocalizedText text={action.display_name} />}{t("的讲话版")}</button>)}
       </div> : null}
       <div className={styles.visualStageBody}>
         {active && previewUrl ? <video ref={video} key={previewUrl} className={styles.stageVideo} src={previewUrl} poster={avatar.source_image_url} autoPlay controls muted loop playsInline preload="metadata" />

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
@@ -80,16 +82,16 @@ export function SessionDiagnostics({ sessionId, preview }: { sessionId: string; 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <WorkspaceShell><div className={styles.page}>
-    {preview ? <p className={styles.muted}>主题预览 · 示例数据 · 复用真实后台组件</p> : null}
+    {preview ? <p className={styles.muted}>{<LocalizedText text="主题预览 · 示例数据 · 复用真实后台组件" />}</p> : null}
     <Link className={styles.button} href={preview ? "/demos/diagnostics" : "/settings/session-diagnostics"}>← {t("返回运行总览")}</Link>
     <header className={styles.heading} style={{ marginTop: 20 }}><div><h1>{t("会话详情")}</h1><span className={styles.muted}>{sessionId}</span></div><div className={styles.toolbar} style={{ margin: 0 }}><button onClick={() => setRevision(value => value + 1)} disabled={loading || Boolean(preview)}>{t("刷新")}</button><button onClick={exportReport} disabled={!report}>{t("导出诊断 JSON")}</button></div></header>
     {loading ? <p className={styles.busy}>{t("正在读取会话数据…")}</p> : null}
     {error ? <p role="alert" className={styles.error}>{t(error)}</p> : null}
     {report ? <>
       <div className={styles.metadata}><span>{turns.length} {t("轮对话")}</span><span>{t("开始时间")} {formatClock(report.telemetry?.summary.first_event_at ?? "")}</span><span>{t("事件")} {report.telemetry?.events.length ?? "—"}</span><span>{t("决策日志")} {report.debug_log?.entries.length ?? "—"}</span></div>
-      {!preview && report.collection_health?.status !== "ok" ? <div className={styles.error} role="status">{report.collection_health ? "日志采集存在丢弃或写入异常，当前会话记录可能不完整。" : "采集健康状态不可用，无法确认日志完整性。"}</div> : null}
+      {!preview && report.collection_health?.status !== "ok" ? <div className={styles.error} role="status">{<LocalizedText text={report.collection_health ? "日志采集存在丢弃或写入异常，当前会话记录可能不完整。" : "采集健康状态不可用，无法确认日志完整性。"} />}</div> : null}
       {Object.entries(report.sources).filter(([, source]) => source && (source.status !== "available" || source.truncated)).map(([name, source]) => <div className={styles.error} role="status" key={name}>{name === "input_evidence" ? t("输入证据") : name}: {source!.status !== "available" ? t("没有记录或数据源不可用") : t("已达到查询上限，当前内容可能不完整")}</div>)}
-      {!preview && (report.telemetry?.next_cursor || report.debug_log?.next_cursor || report.conversation_next_cursor || report.input_evidence?.next_cursor) ? <button className={styles.button} disabled={paging} onClick={loadMore}>{paging ? "正在加载…" : "加载更多日志"}</button> : null}
+      {!preview && (report.telemetry?.next_cursor || report.debug_log?.next_cursor || report.conversation_next_cursor || report.input_evidence?.next_cursor) ? <button className={styles.button} disabled={paging} onClick={loadMore}>{<LocalizedText text={paging ? "正在加载…" : "加载更多日志"} />}</button> : null}
       <div className={styles.detailgrid}><section className={styles.panel}><div className={styles.panelhead}><h2>{t("对话与音频")}</h2><span className={styles.muted}>{turns.length} turns</span></div><div className={styles.audio}>{t(recordingCollectionNotice(report.telemetry?.events ?? []))}<br />{t("输入与已发送音频分别记录；已发送不代表已播放，播放范围以客户端回执为准。")}</div><div className={styles.turnlist}>{turns.map(turn => <button className={styles.turn} key={turn.generation} aria-pressed={selected?.generation === turn.generation} onClick={() => { setGeneration(turn.generation); setSelectedEvent(null); }}><small>{t("轮次")} {turn.generation} · {turn.events.length} {t("事件")}</small>{turn.messages.map(message => <p key={message.item_id}><small>{message.role === "user" ? t("用户") : t("助手")}</small><br />{message.text}</p>)}{!turn.messages.length ? <p>{t("该轮没有已提交的对话文本。")}</p> : null}</button>)}{!turns.length ? <p className={styles.empty}>{t("没有可关联的轮次。")}</p> : null}</div></section>
         <div><section className={styles.panel}><div className={styles.panelhead}><h2>{selected ? `${t("轮次")} ${selected.generation} · ${t("诊断详情")}` : t("会话事件")}</h2><span className={styles.muted}>{selected?.events.length ?? 0} {t("事件")}</span></div><div className={styles.tabs} role="tablist" aria-label={t("诊断视图")}>{[["chain", "模块链路"], ["stop", "打断过程"], ["input", "输入证据"], ["logs", "原始日志"]].map(([id, label]) => <button key={id} id={`tab-${id}`} role="tab" aria-selected={tab === id} aria-controls={`panel-${id}`} onClick={() => setTab(id)}>{t(label)}</button>)}</div>
           <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>

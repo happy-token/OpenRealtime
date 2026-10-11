@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -108,8 +110,9 @@ export function AvatarAssetLibrary({
     const needle = query.trim().toLocaleLowerCase();
     return !needle
       || avatar.displayName.toLocaleLowerCase().includes(needle)
+      || t(avatar.displayName).toLocaleLowerCase().includes(needle)
       || avatar.avatarId.toLocaleLowerCase().includes(needle);
-  }), [internalPresetIdSet, libraryAvatars, query, realtimeScope, scope]);
+  }), [internalPresetIdSet, libraryAvatars, query, realtimeScope, scope, t]);
 
   useEffect(() => {
     const activeAvatar = visibleAvatars.find((avatar) => avatar.avatarId === activeActionAvatarId);
@@ -409,7 +412,7 @@ function AvatarCard({
                   <video key={selectedTalkingVariant.id} src={selectedTalkingVariant.video_url} aria-label={"" + (avatar.displayName) + " · " + (selectedTalkingVariant.display_name) + t(" 口型对齐")} autoPlay muted loop playsInline controls preload="auto" />
                 </div> : <AvatarMediaCoverflow
                   avatarId={avatar.avatarId}
-                  avatarName={avatar.displayName}
+                  avatarName={t(avatar.displayName)}
                   imageUrl={avatar.source.imageUrl}
                   actions={playableActions}
                   activeIndex={activeMediaIndex}
@@ -464,7 +467,7 @@ function AvatarCard({
                   <Image
                     className={styles.portraitImage}
                     src={avatar.source.imageUrl}
-                    alt={"" + (avatar.displayName) + t(" 形象")}
+                    alt={"" + (t(avatar.displayName)) + t(" 形象")}
                     fill
                     sizes="(max-width: 760px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     unoptimized
@@ -476,7 +479,7 @@ function AvatarCard({
           {segmentedAsset && playableActions.length ? <button
             className={styles.materialTrigger}
             type="button"
-            aria-label={t("选择 ") + (avatar.displayName) + t(" 的口型对齐")}
+            aria-label={t("选择 ") + (t(avatar.displayName)) + t(" 的口型对齐")}
             aria-expanded={expanded && materialMenuOpen}
             onClick={() => {
               if (!expanded) {
@@ -509,7 +512,7 @@ function AvatarCard({
           /> : null}
           <div className={styles.mediaMeta}>
             {segmentedAsset && playableActions.length ? (
-              <button type="button" aria-label={t("管理 ") + (avatar.displayName) + t(" 的动作")} onClick={() => {
+              <button type="button" aria-label={t("管理 ") + (t(avatar.displayName)) + t(" 的动作")} onClick={() => {
                 setActiveMediaIndex(1);
                 setSelectedTalkingVariantId(null);
                 onExpandedChange(true);
@@ -533,17 +536,17 @@ function AvatarCard({
                     ref={detailLinkRef}
                     className={styles.titleLink}
                     href={detailHref}
-                    aria-label={t("查看 ") + (avatar.displayName) + t(" 详情")}
+                    aria-label={t("查看 ") + (t(avatar.displayName)) + t(" 详情")}
                   >
-                    {avatar.displayName}
+                    {t(avatar.displayName)}
                   </Link>
                 </h2>
                 {!expanded && segmentedAsset && activeAction ? <small>{t("动作 · ") + (activeAction.displayName) + ""}</small> : null}
               </div>
               {expanded ? <div className={styles.actions}>
-                <Link className={styles.primaryAction} href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
-                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (avatar.displayName) + t(" 创建动作")} title={t("创建动作")}><Plus aria-hidden="true" /></Link>
-                <Link className={styles.detailLink} href={detailHref} aria-label={t("打开 ") + (avatar.displayName) + t(" 详情")} title={t("查看详情")}><ArrowUpRight aria-hidden="true" /></Link>
+                <Link className={styles.primaryAction} href={startHref} aria-label={t("与 {name} 对话", { name: t(avatar.displayName) })}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
+                <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (t(avatar.displayName)) + t(" 创建动作")} title={t("创建动作")}><Plus aria-hidden="true" /></Link>
+                <Link className={styles.detailLink} href={detailHref} aria-label={t("打开 ") + (t(avatar.displayName)) + t(" 详情")} title={t("查看详情")}><ArrowUpRight aria-hidden="true" /></Link>
                 {segmentedAsset && expanded && activeAction ? (
                   <>
                     <Link className={`${styles.secondaryAction} ${styles.iconAction}`} href={talkingCreationHref(avatar, activeAction, returnTo)} aria-label={t("为 ") + (activeAction.displayName) + t(" 制作口型对齐")} title={t("制作口型对齐")}><AudioLines aria-hidden="true" /></Link>
@@ -561,19 +564,19 @@ function AvatarCard({
                     </button> : null}
                   </>
                 ) : internalPreset ? (
-                  <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={t("删除形象：") + (avatar.displayName) + ""} title={t("删除形象")} onClick={onDeleteAvatar}>
+                  <button className={`${styles.deleteAvatarButton} ${styles.iconAction}`} type="button" aria-label={t("删除形象：") + (t(avatar.displayName)) + ""} title={t("删除形象")} onClick={onDeleteAvatar}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 ) : null}
                 {segmentedAsset && expanded ? (
-                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={t("收起 ") + (avatar.displayName) + t(" 的形象和动作")} title={t("收起预览")} onClick={() => { setSelectedTalkingVariantId(null); setMaterialMenuOpen(false); onExpandedChange(false); }}>
+                  <button className={`${styles.secondaryAction} ${styles.iconAction}`} type="button" aria-label={t("收起 ") + (t(avatar.displayName)) + t(" 的形象和动作")} title={t("收起预览")} onClick={() => { setSelectedTalkingVariantId(null); setMaterialMenuOpen(false); onExpandedChange(false); }}>
                     <Minimize2 aria-hidden="true" />
                   </button>
                 ) : null}
               </div> : (
                 <div className={styles.collapsedActions}>
-                  <Link className={`${styles.quickStart} liquid-glass-button`} data-variant="primary" href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
-                  <button className={styles.moreButton} type="button" aria-label={t("更多操作：") + (avatar.displayName) + ""} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+                  <Link className={`${styles.quickStart} liquid-glass-button`} data-variant="primary" href={startHref} aria-label={t("与 {name} 对话", { name: t(avatar.displayName) })}><MessageCircle aria-hidden="true" />{t("对话")}</Link>
+                  <button className={styles.moreButton} type="button" aria-label={t("更多操作：") + (t(avatar.displayName)) + ""} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
                     <MoreHorizontal aria-hidden="true" />
                   </button>
                 </div>
@@ -581,11 +584,11 @@ function AvatarCard({
             </div>
           </div>
           {!expanded ? (
-            <div className={styles.actionMenu} aria-label={"" + (avatar.displayName) + t(" 操作菜单")} hidden={!menuOpen}>
-              <Link href={startHref} aria-label={t("与 ") + (avatar.displayName) + t(" 对话")}>{t("开始对话")}</Link>
-              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (avatar.displayName) + t(" 创建动作")}>{t("创建动作")}</Link> : null}
-              <Link href={detailHref} aria-label={t("打开 ") + (avatar.displayName) + t(" 详情")}>{t("查看详情")}</Link>
-              {internalPreset ? <button type="button" aria-label={t("删除形象：") + (avatar.displayName) + ""} onClick={onDeleteAvatar}>{t("删除 Avatar")}</button> : null}
+            <div className={styles.actionMenu} aria-label={"" + (t(avatar.displayName)) + t(" 操作菜单")} hidden={!menuOpen}>
+              <Link href={startHref} aria-label={t("与 {name} 对话", { name: t(avatar.displayName) })}>{t("开始对话")}</Link>
+              {internalPreset || (avatar.visibility === "private" && avatar.canCreateActions) ? <Link href={avatar.avatarId.startsWith("avatar-personal-") ? appendReturnTo(`/services/motion?avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo) : appendReturnTo(`/avatars/create?task=action&avatar_id=${encodeURIComponent(avatar.avatarId)}`, returnTo)} aria-label={t("为 ") + (t(avatar.displayName)) + t(" 创建动作")}>{t("创建动作")}</Link> : null}
+              <Link href={detailHref} aria-label={t("打开 ") + (t(avatar.displayName)) + t(" 详情")}>{t("查看详情")}</Link>
+              {internalPreset ? <button type="button" aria-label={t("删除形象：") + (t(avatar.displayName)) + ""} onClick={onDeleteAvatar}>{t("删除 Avatar")}</button> : null}
             </div>
           ) : null}
         </div>
@@ -610,8 +613,8 @@ function AvatarCard({
               <div className={styles.actionModalTitle}>
                 <span><Film aria-hidden="true" /></span>
                 <div>
-                  <p>{avatar.displayName}{t(" · 动作预览")}</p>
-                  <h2>{previewAction.displayName}</h2>
+                  <p>{t(avatar.displayName)}{t(" · 动作预览")}</p>
+                  <h2>{<LocalizedText text={previewAction.displayName} />}</h2>
                 </div>
               </div>
               <button type="button" aria-label={t("关闭动作预览")} onClick={() => setPreviewAction(null)}>

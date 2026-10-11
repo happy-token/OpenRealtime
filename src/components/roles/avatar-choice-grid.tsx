@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -27,7 +29,7 @@ export function AvatarChoiceGrid({
       const actionCount = avatar.actions.filter((asset) => !asset.deleted_at && asset.video_url).length;
       const card = <button className={styles.avatarCard} key={avatar.avatar_id} type="button" aria-pressed={value === avatar.avatar_id} data-selected={value === avatar.avatar_id} onClick={() => onChange(avatar.avatar_id)}>
         <span className={styles.avatarMedia}><Image src={avatar.source_image_url} alt="" fill sizes="(max-width: 560px) 50vw, 160px" unoptimized /></span>
-        <span className={styles.avatarCopy}><strong>{avatar.display_name}</strong><small>{actionCount}{t(" 个动作")}</small></span>
+        <span className={styles.avatarCopy}><strong>{<LocalizedText text={avatar.display_name} />}</strong><small>{actionCount}{t(" 个动作")}</small></span>
         {value === avatar.avatar_id ? <Check className={styles.check} aria-hidden="true" /> : null}
       </button>;
       return onManage ? <AssetCard key={avatar.avatar_id} target={{ avatar }} onManage={onManage} busy={busy}>{card}</AssetCard> : card;

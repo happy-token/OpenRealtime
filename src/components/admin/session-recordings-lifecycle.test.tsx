@@ -1,7 +1,13 @@
+import { LocalizedText } from "@/components/language/language-provider";
 import { setImmediate } from "node:timers/promises";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement, ReactNode } from "react";
 import { SessionRecordings } from "./session-recordings";
+
+vi.mock("@/components/language/language-provider", () => ({
+  useLanguage: () => ({ t: (text: string, params?: Record<string, string | number>) => text.replace(/\{([^}]+)\}/g, (match, key: string) => params?.[key] === undefined ? match : String(params[key])) }),
+  LocalizedText: ({ text }: { text: ReactNode }) => text,
+}));
 
 // Controlled hook driver tests real handlers/state; not a DOM/audio renderer.
 const driver = vi.hoisted(() => ({ slots: [] as unknown[], index: 0, cleanup: undefined as (() => void) | undefined }));
@@ -34,7 +40,10 @@ function nodes(value: ReactNode): ReactElement<Record<string, unknown>>[] {
 function text(value: ReactNode): string {
   if (Array.isArray(value)) return value.map(text).join("");
   if (typeof value === "string" || typeof value === "number") return String(value);
-  if (value && typeof value === "object" && "props" in value) return text((value as ReactElement<{ children: ReactNode }>).props.children);
+  if (value && typeof value === "object" && "props" in value) {
+    const element = value as ReactElement<{ children: ReactNode; text?: ReactNode }>;
+    return text(element.type === LocalizedText ? element.props.text : element.props.children);
+  }
   return "";
 }
 function click(label: string) {

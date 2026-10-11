@@ -59,7 +59,7 @@ export function SelectMenu<T extends string>({
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleOptions = normalizedQuery
     ? options.filter((option) => (
-      `${option.label} ${option.description ?? ""}`.toLocaleLowerCase().includes(normalizedQuery)
+      `${option.label} ${option.description ?? ""} ${localizeLabels ? t(option.label) + " " + t(option.description ?? "") : ""}`.toLocaleLowerCase().includes(normalizedQuery)
     ))
     : options;
 
@@ -128,7 +128,7 @@ export function SelectMenu<T extends string>({
       style={fullWidth ? { position: "fixed", zIndex: 10000, left: popoverPosition.left, top: popoverPosition.top, right: "auto", bottom: "auto", width: popoverPosition.width, maxHeight: popoverPosition.maxHeight } : undefined}
       role="listbox"
       id={listboxId}
-      aria-label={ariaLabel}
+      aria-label={t(ariaLabel)}
     >
       {searchable && (
         <div className="select-menu-search-wrap">
@@ -223,7 +223,7 @@ export function SelectMenu<T extends string>({
         className="select-menu-trigger"
         role={triggerRole}
         data-value={value}
-        aria-label={ariaLabel}
+        aria-label={t(ariaLabel)}
         aria-haspopup="listbox"
         aria-controls={listboxId}
         aria-expanded={open}

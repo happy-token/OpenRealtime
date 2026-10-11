@@ -75,7 +75,7 @@ describe("role detail configuration workspace", () => {
   });
 
   it("keeps the panel title read-only and edits the name only in foundation settings", () => {
-    expect(component).toContain('<strong>{role.display_name}</strong>');
+    expect(component).toContain('<strong>{t(role.display_name)}</strong>');
     expect(component).not.toContain("styles.roleNameInput");
     expect(component).not.toContain("编辑角色名称");
     expect(component).toContain("className={styles.roleNameRow}");

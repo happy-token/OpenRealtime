@@ -1,3 +1,5 @@
+"use client";
+import { useLanguage } from "@/components/language/language-provider";
 
 import { LocalizedText } from "@/components/language/language-provider";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +14,7 @@ interface TranscriptProps {
 }
 
 export function Transcript({ entries, active = true }: TranscriptProps) {
+  const { t } = useLanguage();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -84,7 +87,7 @@ export function Transcript({ entries, active = true }: TranscriptProps) {
       </div>
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {latestCompletedAssistant
-          ? `助手：${markdownToSpeechText(latestCompletedAssistant.text)}`
+          ? t("助手：{p0}", { p0: String(markdownToSpeechText(latestCompletedAssistant.text)) })
           : ""}
       </p>
       {showLatestButton && (
@@ -92,7 +95,7 @@ export function Transcript({ entries, active = true }: TranscriptProps) {
           type="button"
           className="transcript-latest-button"
           onClick={() => scrollToLatest()}
-          aria-label="回到最新消息"
+          aria-label={t("回到最新消息")}
         >
           <ArrowDown aria-hidden="true" />
           {<LocalizedText text={"最新消息"} />}</button>

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -64,7 +66,7 @@ export function AvatarPageShell({
       <header className={styles.topbar}>
         <div className={styles.identity}>
           <Link className={styles.back} href={back.href} aria-label={back.label}><ArrowLeft aria-hidden="true" /></Link>
-          {pageTitle ? <h1 className={styles.pageTitle}>{pageTitle}</h1> : null}
+          {pageTitle ? <h1 className={styles.pageTitle}>{<LocalizedText text={pageTitle} />}</h1> : null}
         </div>
         {!hideNavigation ? <nav className={styles.nav} aria-label={t("Avatar 页面")}>
           <span className={styles.navTrack} data-active={active} aria-hidden="true" />

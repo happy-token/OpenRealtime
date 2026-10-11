@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -8,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Film, RefreshCw, Sparkles } from "lucide-react";
 import type { AvatarAsset } from "@/lib/avatar-catalog";
-import { isSegmentedAvatarAsset, loadCurrentAvatarCatalog, loadInternalPresetAvatars } from "@/lib/avatar-library-catalog-client";
+import { isSegmentedAvatarAsset, loadCurrentAvatarCatalog } from "@/lib/avatar-library-catalog-client";
 import styles from "./production-service-screen.module.css";
 import { PersonalVideoGeneration } from "./personal-video-generation";
 import { AvatarActionStudio } from "@/components/avatar/avatar-action-studio";
@@ -92,7 +94,7 @@ export function ProductionServiceScreen({
       setOwnedAvatars(accessible.avatars);
       setAssetAccess(accessible.accessible);
       setAvatars(items);
-    }).catch(() => { if (!controller.signal.aborted) { setAssetAccess(false); setAvatars(loadInternalPresetAvatars()); } });
+    }).catch(() => { if (!controller.signal.aborted) { setAssetAccess(false); setAvatars([]); } });
     const endpoint = kind === "motion" ? "/api/liveportrait" : "/api/services/talking/status";
     void fetch(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
@@ -144,7 +146,7 @@ export function ProductionServiceScreen({
     <BackLink className={styles.back} href={returnHref} label={returnLabel} />
     <header className={styles.header}>
       <span className={styles.icon}><Icon /></span>
-      <div><h1>{view.title}</h1><p>{kind === "motion" && assetAccess === false ? t("上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。") : view.description}</p></div>
+      <div><h1>{<LocalizedText text={view.title} />}</h1><p>{kind === "motion" && assetAccess === false ? t("上传参考图片，使用个人 MiniMax Key 生成可下载的动作视频。") : view.description}</p></div>
     </header>
     <div className={styles.switch} aria-label={t("制作服务")}>
       <Link href={serviceHref("/services/motion")} aria-current={kind === "motion" ? "page" : undefined}>{t("动作生成")}</Link>
@@ -164,7 +166,7 @@ export function ProductionServiceScreen({
             data-selected={selected?.avatarId === avatar.avatarId}
             aria-pressed={selected?.avatarId === avatar.avatarId}
             onClick={() => { setSelectedAvatarId(avatar.avatarId); setWorkspaceOpen(false); setOwnedAvatar(null); }}>
-            <strong>{avatar.displayName}</strong><small>{ownedAvatars.find((item) => item.avatar_id === avatar.avatarId)?.actions.filter((action) => !action.deleted_at && action.video_url).length ?? 0}{t(" 个动作底片")}</small>
+            <strong>{<LocalizedText text={avatar.displayName} />}</strong><small>{ownedAvatars.find((item) => item.avatar_id === avatar.avatarId)?.actions.filter((action) => !action.deleted_at && action.video_url).length ?? 0}{t(" 个动作底片")}</small>
           </button>)}
         </div>}
     </section> : null}
@@ -174,7 +176,7 @@ export function ProductionServiceScreen({
       {kind === "motion" ? <button className={styles.primary} type="button" onClick={() => setWorkspaceOpen(true)}>{t("打开动作工作台 ")}<ArrowRight /></button>
         : actions.length ? <div className={styles.actionList}>{actions.map((action) => <button type="button" key={action.avatar_action_id}
           onClick={() => { setSelectedActionId(action.avatar_action_id); setWorkspaceOpen(true); }}>
-          <Film /><span><strong>{action.display_name}</strong><small>{t("使用此底片生成讲话版")}</small></span><ArrowRight />
+          <Film /><span><strong>{<LocalizedText text={action.display_name} />}</strong><small>{t("使用此底片生成讲话版")}</small></span><ArrowRight />
         </button>)}</div>
           : <div className={styles.empty}>{t("此形象还没有可用的动作底片。")}<Link href={serviceHref("/services/motion")}>{t("先创建动作 ")}<ArrowRight /></Link></div>}
     </section> : null}

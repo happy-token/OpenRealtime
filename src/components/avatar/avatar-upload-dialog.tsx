@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -213,7 +215,7 @@ export function AvatarUploadDialog({
           <div className={styles.intro}><ImagePlus aria-hidden="true" /><div><strong>{sourceAvatar ? t("使用当前角色形象") : t("上传一张清晰的人像图片")}</strong><span>{sourceAvatar ? t("使用当前角色的形象图片生成实时数字人，确认效果后加入此角色。") : mode === "realtime" ? t("上传后生成实时驱动效果，确认预览后才会启用。") : t("建议正面、无遮挡、光线均匀；创建后会自动成为当前形象。")}</span></div></div>
           {candidate ? <div className={styles.candidatePreview}>
             {candidate.videoUrl ? <video src={candidate.videoUrl} controls autoPlay muted loop playsInline aria-label={t("实时数字人效果预览")} /> : <p>{t("实时效果正在处理。请确认后启用，稍后可在形象目录查看预览。")}</p>}
-            <strong>{candidate.displayName}</strong>
+            <strong>{<LocalizedText text={candidate.displayName} />}</strong>
           </div> : null}
           {!candidate ? <>
           <label

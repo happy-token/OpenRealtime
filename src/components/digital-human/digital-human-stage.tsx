@@ -1,4 +1,5 @@
 "use client";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -477,7 +478,7 @@ function RenderedDigitalHumanStage({
       {fallbackImage ? <Image
         className="digital-human-call-image"
         src={fallbackImage}
-        alt={"" + (displayConfig.renderPath === "segmented" ? `${segmentedAvatarName} 数字人测试形象` : `${hostedAvatarName} 数字人形象`) + ""}
+        alt={"" + (displayConfig.renderPath === "segmented" ? t("{p0} 数字人测试形象", { p0: String(t(String(segmentedAvatarName))) }) : t("{p0} 数字人形象", { p0: String(t(String(hostedAvatarName))) })) + ""}
         fill
         priority
         unoptimized={fallbackImage.startsWith("https://") || fallbackImage.startsWith("/api/user/")}

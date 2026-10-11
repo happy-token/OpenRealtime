@@ -710,7 +710,7 @@ export function OpenRealtimeApp({
       data-entry-stage={sessionStarted ? "session" : "home"}
       data-session-phase={sessionReview ? "ended" : "active"}
     >
-      {historySaveError ? <div role="alert">{historySaveError}<button onClick={() => saveHistory(freezeSessionTranscript(sessionReview?.entries ?? engine.transcript), Boolean(sessionReview))}>重试保存</button></div> : null}
+      {historySaveError ? <div role="alert">{historySaveError}<button onClick={() => saveHistory(freezeSessionTranscript(sessionReview?.entries ?? engine.transcript), Boolean(sessionReview))}>{t("重试保存")}</button></div> : null}
       <div className="ambient ambient-one" aria-hidden="true" />
       <div className="ambient ambient-two" aria-hidden="true" />
       <header className="topbar">

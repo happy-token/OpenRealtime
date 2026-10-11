@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 import { SelectMenu } from "@/components/ui/select-menu";
@@ -104,7 +106,7 @@ export function AdvancedServiceManager() {
       const platform = providers.filter((entry) => statuses.find((status) => status.provider === entry.id && status.platformConfigured));
       const canCreate = providers.some((entry) => !statuses.find((status) => status.provider === entry.id && status.configured));
       return <section className={styles.group} aria-label={capability.title} key={capability.id}>
-        <div className={styles.instanceHeading}><div><h2>{capability.title}</h2><p>{capability.description}</p></div>
+        <div className={styles.instanceHeading}><div><h2>{<LocalizedText text={capability.title} />}</h2><p>{<LocalizedText text={capability.description} />}</p></div>
           <button className={styles.addProviderButton} type="button" disabled={loading || signedOut || busy || !canCreate}
             onClick={() => startCreate(capability.id)}><Plus aria-hidden="true" />{t("新建供应商")}</button></div>
         <div className={styles.scopeGroups}>{PROVIDER_SCOPE_DISPLAY_ORDER.map((scope) => {
@@ -118,7 +120,7 @@ export function AdvancedServiceManager() {
                 const active = scope === "personal";
                 return <article className={styles.instanceCard} data-selected={active} key={`${scope}:${entry.id}`}>
                   <div className={styles.instanceMeta}><div className={styles.instanceIdentity}>
-                    <h4>{entry.name}</h4><span>{entry.description}</span>
+                    <h4>{<LocalizedText text={entry.name} />}</h4><span>{<LocalizedText text={entry.description} />}</span>
                     <span>Key ····{scope === "personal" ? status.suffix : status.platformSuffix}</span>
                   </div><div className={styles.instanceBadges}>
                     {active && <span className={styles.state} data-configured="true">{t("个人优先")}</span>}
@@ -145,7 +147,7 @@ export function AdvancedServiceManager() {
               || !statuses.find((status) => status.provider === entry.id && status.configured)))
               .map((entry) => ({ value: String(entry.id), label: String(entry.name) })))]} onChange={value => setDraft({ ...draft,
             provider: value as ServiceProvider, key: "" })} disabled={busy} /></label>
-          <p className={styles.providerIntro}>{selectedEntry.description}{t("。服务接口由系统内置。")}<a href={selectedEntry.keyUrl}
+          <p className={styles.providerIntro}>{<LocalizedText text={selectedEntry.description} />}{t("。服务接口由系统内置。")}<a href={selectedEntry.keyUrl}
             target="_blank" rel="noopener noreferrer">{t("前往官网申请 API Key ↗")}</a></p>
           <label>API Key<input type="password" autoComplete="off" value={draft.key} minLength={8} maxLength={512} required
             placeholder={t("填写供应商 API Key")} onChange={(event) => setDraft({ ...draft, key: event.target.value })} /></label>

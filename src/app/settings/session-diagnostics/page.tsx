@@ -1,3 +1,5 @@
+
+import { LocalizedText } from "@/components/language/language-provider";
 import { headers } from "next/headers";
 import { AdminLoginRedirect } from "@/components/admin/admin-login-redirect";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
@@ -12,7 +14,7 @@ export default async function AdminPage() {
   const user = await userFromRequest(request);
   if (!user) return <AdminLoginRedirect />;
   if (!await isAppAdmin(user)) {
-    return <WorkspaceShell><h1>会话诊断</h1><p role="alert">当前账号没有管理员权限，请联系管理员授权。</p></WorkspaceShell>;
+    return <WorkspaceShell><h1>{<LocalizedText text="会话诊断" />}</h1><p role="alert">{<LocalizedText text="当前账号没有管理员权限，请联系管理员授权。" />}</p></WorkspaceShell>;
   }
   return <AdminDashboard username={user.subject} />;
 }

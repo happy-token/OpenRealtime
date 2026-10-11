@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -35,14 +37,14 @@ export function AvatarTrashScreen({ returnHref = "/resources?tab=avatars" }: { r
           {deletedAvatars.length ? <section><h2>{t("数字人")}</h2><div className={styles.grid}>{deletedAvatars.map((avatar) => (
             <article key={avatar.avatar_id}>
               <div className={styles.image}><Image src={avatar.source_image_url} alt="" fill sizes="180px" unoptimized /></div>
-              <div><strong>{avatar.display_name}</strong><span>{remainingDays(avatar.deleted_at)}{t(" 天后清理")}</span></div>
+              <div><strong>{<LocalizedText text={avatar.display_name} />}</strong><span>{remainingDays(avatar.deleted_at)}{t(" 天后清理")}</span></div>
               <button type="button" onClick={() => void setOwnedAvatarDeletion(avatar.avatar_id, false).then(refresh)}><RotateCcw />{t("恢复")}</button>
             </article>
           ))}</div></section> : null}
           {deletedActions.length ? <section><h2>{t("动作")}</h2><div className={styles.grid}>{deletedActions.map(({ avatar, action }) => (
             <article key={action.avatar_action_id}>
               <div className={styles.actionIcon}><Film /></div>
-              <div><strong>{action.display_name}</strong><small>{avatar.display_name}</small><span>{remainingDays(action.deleted_at)}{t(" 天后清理")}</span></div>
+              <div><strong>{<LocalizedText text={action.display_name} />}</strong><small>{<LocalizedText text={avatar.display_name} />}</small><span>{remainingDays(action.deleted_at)}{t(" 天后清理")}</span></div>
               <button type="button" onClick={() => void updateOwnedAvatarAction(avatar.avatar_id, action.avatar_action_id, { operation: "restore" }).then(refresh)}><RotateCcw />{t("恢复")}</button>
             </article>
           ))}</div></section> : null}

@@ -6,7 +6,7 @@ const css = readFileSync(new URL("./role-list-screen.module.css", import.meta.ur
 
 describe("role list cards", () => {
   it("keeps card actions compact without a mode-label row", () => {
-    expect(component).toContain("aria-label={t(\"删除角色\") + (role.display_name) + \"\"}");
+    expect(component).toContain("aria-label={t(\"删除角色\") + (t(role.display_name)) + \"\"}");
     expect(component).toContain('<Trash2 />');
     expect(component).toContain('!isProtectedBuiltinRole(role.role_id) && !isDefault');
     expect(component).not.toContain('className={styles.capabilities}');

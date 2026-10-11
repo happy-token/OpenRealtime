@@ -4,10 +4,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { APP_LANGUAGE_STORAGE_KEY, isLanguagePreference, resolveAppLanguage, type AppLanguage, type LanguagePreference } from "@/lib/app-language";
 import messages from "@/lib/i18n/en.json";
 
-export function translate(text: string, language: AppLanguage): string {
-  return language === "en" ? (messages as Record<string, string>)[text] ?? text : text;
+export function translate(text: string, language: AppLanguage, params?: Record<string, string>): string {
+  const dictionary = messages as Record<string, string>;
+  const lookup = (value: string) => Object.hasOwn(dictionary, value) ? dictionary[value] : value;
+  let template = language === "en" ? lookup(text) : text;
+  if (language === "en" && template === text && text.includes(" · ")) {
+    const parts = text.split(" · ");
+    if (parts.every(part => Object.hasOwn(dictionary, part) || !/[\u3400-\u9fff]/.test(part))) {
+      template = parts.map(lookup).join(" · ");
+    }
+  }
+  return template.replace(/\{(\w+)\}/g, (placeholder, key: string) => params?.[key] ?? placeholder);
 }
-const fallback = { language: "zh-CN" as AppLanguage, preference: "system" as LanguagePreference, setPreference: (value: LanguagePreference) => { void value; }, t: (text: string) => text };
+const fallback = { language: "zh-CN" as AppLanguage, preference: "system" as LanguagePreference, setPreference: (value: LanguagePreference) => { void value; }, t: (text: string, params?: Record<string, string>) => translate(text, "zh-CN", params) };
 const LanguageContext = createContext(fallback);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
@@ -33,9 +42,28 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener("languagechange", syncSystem); window.removeEventListener("storage", syncStorage); };
   }, []);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
-  const value = useMemo(() => ({ language, preference, setPreference, t: (text: string) => translate(text, language) }), [language, preference, setPreference]);
+  useEffect(() => {
+    let sourceTitle = document.title;
+    let appliedTitle = sourceTitle;
+    const localizeTitle = () => {
+      if (document.title !== appliedTitle) sourceTitle = document.title;
+      appliedTitle = translate(sourceTitle, language);
+      if (document.title !== appliedTitle) document.title = appliedTitle;
+    };
+    localizeTitle();
+    const observer = new MutationObserver(localizeTitle);
+    observer.observe(document.querySelector("title") ?? document.head, { childList: true, characterData: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (document.title === appliedTitle) document.title = sourceTitle;
+    };
+  }, [language]);
+  const value = useMemo(() => ({ language, preference, setPreference, t: (text: string, params?: Record<string, string>) => translate(text, language, params) }), [language, preference, setPreference]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
 export function useLanguage() { return useContext(LanguageContext); }
-export function LocalizedText({ text }: { text: string }) { return useLanguage().t(text); }
+export function LocalizedText({ text }: { text: ReactNode }) {
+  const { t } = useLanguage();
+  return typeof text === "string" ? t(text) : text;
+}

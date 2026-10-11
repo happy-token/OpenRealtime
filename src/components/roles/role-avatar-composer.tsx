@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -196,7 +198,7 @@ export function RoleAvatarComposer({ presentation }: { presentation: "window" | 
         <section className={styles.module} data-ready={Boolean(file)}>
           <div className={styles.moduleHeading}><span>02</span><div><strong>{t("名称与质量检查")}</strong><small>{file ? `${dimensions.width} × ${dimensions.height}` : t("添加图片后自动检查")}</small></div>{file ? <Check /> : null}</div>
           <label className={styles.nameField}><span>{t("形象名称")}</span><input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} placeholder={t("例如：产品顾问形象")} /></label>
-          {file ? <div className={styles.qualityList}>{qualitySignals.map((signal) => <div key={signal.label} data-tone={signal.tone}><i>{signal.tone === "good" ? <Check /> : "!"}</i><span><strong>{signal.label}</strong><small>{signal.detail}</small></span></div>)}</div> : null}
+          {file ? <div className={styles.qualityList}>{qualitySignals.map((signal) => <div key={signal.label} data-tone={signal.tone}><i>{signal.tone === "good" ? <Check /> : "!"}</i><span><strong>{<LocalizedText text={signal.label} />}</strong><small>{<LocalizedText text={signal.detail} />}</small></span></div>)}</div> : null}
         </section>
 
         <section className={styles.module} data-ready={Boolean(file && name.trim())}>

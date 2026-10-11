@@ -1,4 +1,5 @@
 "use client";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -20,12 +21,12 @@ import {
 } from "react";
 import { AvatarCapabilityNotice } from "@/components/avatar/avatar-capability-notice";
 import { useProviderKeyGate } from "@/components/provider-key/provider-key-gate";
-import { WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchCreateCard, WorkbenchMediaOption } from "@/components/workspace/workbench-resource-rails";
+import { shouldLoadAvatarPreviewDirectly, WorkbenchActionFolder, WorkbenchConversationOption, WorkbenchCreateCard, WorkbenchMediaOption } from "@/components/workspace/workbench-resource-rails";
 import { ConversationStartAction } from "./conversation-start-action";
 import type { AnamHostedAvatar } from "@/lib/anam-avatars";
 import type { AvatarAction, AvatarAsset } from "@/lib/avatar-catalog";
 import { fetchOwnedAvatars, fetchPersonalAvatars } from "@/lib/avatar-catalog-client";
-import { loadCurrentAvatarCatalog, loadInternalPresetAvatars } from "@/lib/avatar-library-catalog-client";
+import { loadCurrentAvatarCatalog } from "@/lib/avatar-library-catalog-client";
 import type { AvatarTalkingVariant, OwnedAvatarActionRecord, OwnedAvatarRecord } from "@/lib/avatar-records";
 import { avatarPersonaSelectionId } from "@/lib/avatar-persona";
 import type { DigitalHumanAssetCatalog } from "@/lib/digital-human-asset-catalog";
@@ -42,6 +43,7 @@ import {
   type AvatarDisplayConfig,
   type ExperienceMode,
 } from "@/components/digital-human/types";
+import { isInternalAvatarPresetId } from "@/lib/internal-avatar-ids";
 import { useAvatarCapabilities } from "@/hooks/use-avatar-capabilities";
 import { useAvatarActionOrder } from "@/hooks/use-avatar-action-order";
 import { HomeRoleModeControls } from "./home-role-mode-controls";
@@ -196,9 +198,7 @@ export async function readAvatarMutationPayload(response: Response): Promise<{
   return payload as { avatar?: AnamHostedAvatar; error?: string };
 }
 
-export function shouldLoadAvatarPreviewDirectly(previewUrl: string) {
-  return /^\/api\/avatars\/[^/]+\/image(?:\?|$)/.test(previewUrl);
-}
+export { shouldLoadAvatarPreviewDirectly } from "@/components/workspace/workbench-resource-rails";
 
 export function resolveMainAvatarMotionFit(videoWidth: number, videoHeight: number): "cover" | "contain" {
   if (videoWidth <= 0 || videoHeight <= 0) return "contain";
@@ -365,11 +365,12 @@ export function ActionMaterialFolder({
   onActionPointerUp?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onActionPointerCancel?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
+  const { t } = useLanguage();
   return <WorkbenchActionFolder action={action} index={index} image={image} variants={variants}
     selected={selected} selectedVariantId={selectedVariantId} open={open} previewActive={previewActive} {...pointerHandlers}
     onOpenChange={onOpenChange} onSelectAction={onSelectAction} onSelectRuntime={onSelectRuntime} runtimeSelected={runtimeSelected}
     onSelectVariant={onSelectVariant} onCreateTalking={onCreateTalking}
-    talkingLabel="口型素材" createLabel="新建口型动作" createNote="新增口型对齐" actionLabel="底片" />;
+    talkingLabel={t("口型素材")} createLabel={t("新建口型动作")} createNote={t("新增口型对齐")} actionLabel="底片" />;
 }
 
 function MainAvatarMotionPreview({ choice }: { choice: HomeAvatarChoice }) {
@@ -396,7 +397,7 @@ function MainAvatarMotionPreview({ choice }: { choice: HomeAvatarChoice }) {
       window.removeEventListener("focus", ensurePlayback);
     };
   }, [ensurePlayback, motion]);
-  return <video key={motion} ref={foregroundRef} className={styles.avatarPreviewForeground} data-fit={fit} src={motion} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={"" + (choice.avatarName ?? choice.name) + t(" 动作预览")} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensurePlayback} />;
+  return <video key={motion} ref={foregroundRef} className={styles.avatarPreviewForeground} data-fit={fit} src={motion} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={"" + (t(choice.avatarName ?? choice.name)) + t(" 动作预览")} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensurePlayback} />;
 }
 
 export function resolveAvatarStagePreviewSource({
@@ -432,6 +433,7 @@ function OfflineMotionPreview({
   libraryMode: boolean;
   avatarMode: AvatarMode;
 }) {
+  const { t } = useLanguage();
   const activeRef = useRef<HTMLVideoElement>(null);
   const [motionFailed, setMotionFailed] = useState(false);
   const [fit, setFit] = useState<"cover" | "contain">("cover");
@@ -462,7 +464,7 @@ function OfflineMotionPreview({
       window.removeEventListener("focus", ensureActivePlayback);
     };
   }, [activeUrl, ensureActivePlayback]);
-  return <video key={activeUrl} ref={activeRef} className={styles.avatarPreviewForeground} data-fit={fit} src={activeUrl} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={"" + (choice.avatarName ?? choice.name) + " " + (playingTalking ? "口型对齐预览" : "当前动作") + ""} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensureActivePlayback} onError={() => setMotionFailed(true)} />;
+  return <video key={activeUrl} ref={activeRef} className={styles.avatarPreviewForeground} data-fit={fit} src={activeUrl} poster={choice.preview} autoPlay loop muted playsInline preload="auto" aria-label={t(choice.avatarName ?? choice.name) + " " + t(playingTalking ? "口型对齐预览" : "当前动作")} onLoadedMetadata={(event) => setFit(resolveMainAvatarMotionFit(event.currentTarget.videoWidth, event.currentTarget.videoHeight))} onCanPlay={ensureActivePlayback} onError={() => setMotionFailed(true)} />;
 }
 
 export function HomePreviewWorkspace({
@@ -504,8 +506,10 @@ export function HomePreviewWorkspace({
   const [hostedDefaultAvatarId, setHostedDefaultAvatarId] = useState("");
   const [hostedCatalogNeedsKey, setHostedCatalogNeedsKey] = useState(false);
   const [hostedCatalogError, setHostedCatalogError] = useState("");
-  const [avatarCatalog, setAvatarCatalog] = useState<AvatarAsset[]>(() => loadInternalPresetAvatars({ includeLocal: false }));
+  const [avatarCatalog, setAvatarCatalog] = useState<AvatarAsset[]>([]);
+  const [localCatalogError, setLocalCatalogError] = useState("");
   const [ownedAvatars, setOwnedAvatars] = useState<OwnedAvatarRecord[]>([]);
+  const localCatalogRequestId = useRef(0);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -586,6 +590,7 @@ export function HomePreviewWorkspace({
   }, []);
 
   const loadLocalAvatars = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++localCatalogRequestId.current;
     try {
       const ownedRequest = fetchOwnedAvatars(signal);
       const personalRequest = fetchPersonalAvatars(signal);
@@ -595,18 +600,24 @@ export function HomePreviewWorkspace({
           includeOwnedBuiltinActions: true,
           ownedAvatars: ownedRequest,
           personalAvatars: personalRequest,
-        }).catch(() => null),
+        }).catch((cause: unknown) => {
+          if (!signal?.aborted && requestId === localCatalogRequestId.current) setLocalCatalogError(cause instanceof Error ? cause.message : "形象目录加载失败");
+          return null;
+        }),
         ownedRequest.catch(() => null),
         personalRequest.catch(() => null),
       ]);
-      if (signal?.aborted) return;
-      if (catalog) setAvatarCatalog(catalog);
+      if (signal?.aborted || requestId !== localCatalogRequestId.current) return;
+      if (catalog) {
+        setAvatarCatalog(catalog);
+        setLocalCatalogError("");
+      }
       if (owned || personal) setOwnedAvatars((current) => [
         ...(personal ?? current.filter((item) => item.avatar_id.startsWith("avatar-personal-"))),
         ...(owned ?? current.filter((item) => !item.avatar_id.startsWith("avatar-personal-"))),
       ]);
     } catch {
-      // Keep built-ins and the last successful catalog during a transient service failure.
+      if (!signal?.aborted && requestId === localCatalogRequestId.current) setLocalCatalogError("形象目录加载失败");
     }
   }, []);
 
@@ -690,14 +701,16 @@ export function HomePreviewWorkspace({
     config: avatarDisplayConfig,
   };
   const selectedAvatarName = selectedAvatarChoice.avatarName || selectedAvatarChoice.name;
-  const cachedAvatarMatchesRole = Boolean(role?.avatar_id
-    && role.avatar_id === (avatarDisplayConfig.renderPath === "hosted"
-      ? avatarDisplayConfig.avatarProfileId
-      : avatarDisplayConfig.segmentedAvatarId));
-  const showAvatarPreview = configReady || (!libraryMode && cachedAvatarMatchesRole);
+  const roleAvatarMatches = !role?.avatar_id || role.avatar_id === (avatarMode === "realtime"
+    ? avatarDisplayConfig.avatarProfileId : avatarDisplayConfig.segmentedAvatarId);
+  const currentAvatarLoaded = avatarMode === "realtime" || Boolean(selectedCatalogAvatar && !selectedCatalogAvatar.deletedAt);
+  const showAvatarPreview = configReady && roleAvatarMatches && currentAvatarLoaded && (avatarMode === "realtime" || !localCatalogError);
   const selectedOrb = ORB_OPTIONS.find((option) => option.id === visualTheme) ?? ORB_OPTIONS[0];
   useEffect(() => {
-    if (!showAvatarPreview && experienceMode === "avatar") return;
+    if (!showAvatarPreview && experienceMode === "avatar") {
+      publishHomeBackdropScene({ mode: experienceMode, image: undefined, theme: visualTheme });
+      return;
+    }
     publishHomeBackdropScene({
       mode: experienceMode,
       image: selectedAvatarChoice.preview,
@@ -711,13 +724,18 @@ export function HomePreviewWorkspace({
     : selectableActions(selectedCatalogAvatar);
   const actionSort = useAvatarActionOrder(avatarDisplayConfig.segmentedAvatarId ?? "", currentActions, (action) => action.avatarActionId);
 
-  const selectedCapability = avatarMode === "realtime" ? capabilities?.anam : avatarMode === "lip-sync" ? capabilities?.localRenderer : capabilities?.assets;
+  const publicBuiltinPlayback = avatarMode === "offline"
+    && Boolean(selectedOwnedAvatar && isInternalAvatarPresetId(selectedOwnedAvatar.avatar_id)
+      && selectedOwnedAvatar.source_image_url.startsWith("/digital-human/builtin-avatars/"));
+  const selectedCapability = publicBuiltinPlayback
+    ? { state: "available" as const, message: "内置形象预览已就绪。" }
+    : avatarMode === "realtime" ? capabilities?.anam : avatarMode === "lip-sync" ? capabilities?.localRenderer : capabilities?.assets;
   const capabilityBlocked = experienceMode === "avatar" && selectedCapability?.state !== "available";
-  const selectedRuntimeReady = avatarMode === "offline"
+  const selectedRuntimeReady = (avatarMode === "realtime" || !localCatalogError) && roleAvatarMatches && currentAvatarLoaded && (avatarMode === "offline"
     ? Boolean(selectedAction?.videoUrl && selectedVariant?.video_url)
     : avatarMode === "lip-sync"
       ? Boolean(getSegmentedAvatarRuntime(avatarDisplayConfig))
-      : Boolean(currentHostedChoice.preview || currentHostedChoice.config.avatarProfileId);
+      : Boolean(currentHostedChoice.preview || currentHostedChoice.config.avatarProfileId));
 
   const applyAvatarConfig = useCallback((config: AvatarDisplayConfig) => {
     writeAvatarMemory(config);
@@ -826,6 +844,7 @@ export function HomePreviewWorkspace({
   return (
     <div className={styles.workspace} aria-label={libraryMode ? t("数字人资产主页") : undefined} data-purpose={purpose} data-resource-rails-collapsed={collapseResourceRails} data-session-active={sessionActive} data-mode={experienceMode === "voice" ? "orb" : "avatar"} data-orb-theme={visualTheme} data-reduced-motion={reducedMotion} style={panelStyle} onPointerDown={closePanelsFromBlankPreview}>
       <div className={styles.preview} aria-live="polite">
+        {localCatalogError && avatarMode !== "realtime" && <p role="alert">{t("形象目录加载失败，请刷新重试")}</p>}
         <div className={styles.atmosphere} aria-hidden="true"><i /><i /><i /></div>
         <div className={styles.orbPreview} data-visible={experienceMode === "voice"}>
           <div className={styles.orbHalo} aria-hidden="true" />
@@ -840,13 +859,13 @@ export function HomePreviewWorkspace({
             <MainAvatarMotionPreview key={selectedAvatarChoice.id} choice={selectedAvatarChoice} />
           ) : selectedAvatarChoice.preview ? <>
             <Image className={styles.avatarPreviewMotionBackdrop} src={selectedAvatarChoice.preview} alt="" aria-hidden="true" fill sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
-            <Image className={styles.avatarPreviewForeground} src={selectedAvatarChoice.preview} alt={"" + (selectedAvatarName) + t(" 数字人预览")} fill priority sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
+            <Image className={styles.avatarPreviewForeground} src={selectedAvatarChoice.preview} alt={t("{name} 数字人预览", { name: t(selectedAvatarName) })} fill priority sizes="100vw" unoptimized={shouldLoadAvatarPreviewDirectly(selectedAvatarChoice.preview)} />
           </> : <div className={styles.avatarPreviewPlaceholder}><UserRound aria-hidden="true" /></div>}
           <div className={styles.avatarWash} aria-hidden="true" />
         </div>}
         <div className={styles.previewCopy}>
           <span data-connection={connected || libraryMode ? "ready" : "connecting"} role="status" aria-live="polite"><i />{libraryMode ? t("资产预览") : connected ? t("预览已就绪") : t("语音连接中")}</span>
-          <h1>{stagePreview?.name ?? role?.display_name ?? (experienceMode === "voice" ? selectedOrb.name : showAvatarPreview ? selectedAvatarName : t("正在加载形象…"))}</h1>
+          <h1>{t(stagePreview?.name ?? role?.display_name ?? (experienceMode === "voice" ? selectedOrb.name : showAvatarPreview ? selectedAvatarName : "正在加载形象…"))}</h1>
         </div>
       </div>
 
@@ -862,7 +881,7 @@ export function HomePreviewWorkspace({
       </div> : null}
 
       {!libraryMode ? <>
-        <ConversationStartAction connected={connected} disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel={t("主页开始对话")} label={experienceMode === "voice" ? t("开始语音对话") : t("与 ") + (role?.display_name ?? selectedAvatarName) + t(" 对话")} hint={configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : ""} onPress={() => onStartSession(experienceMode)}>
+        <ConversationStartAction connected={connected} disabled={configLoading || !configReady || capabilityBlocked || (experienceMode === "avatar" && !selectedRuntimeReady)} ariaLabel={t("主页开始对话")} label={experienceMode === "voice" ? t("开始语音对话") : t("与 {name} 对话", { name: t(role?.display_name ?? selectedAvatarName) })} hint={t(configLoading ? "正在加载角色" : !configReady ? "角色素材加载失败" : experienceMode === "avatar" && !selectedRuntimeReady ? "当前组合尚不可用" : "")} onPress={() => onStartSession(experienceMode)}>
           {experienceMode === "avatar" ? <AvatarCapabilityNotice capability={selectedCapability} error={capabilityError} onRetry={retryCapabilities} variant="stage" /> : null}
         </ConversationStartAction>
       </> : null}
@@ -888,10 +907,10 @@ export function HomePreviewWorkspace({
           <header><div><small>{experienceMode === "voice" ? "VISUAL" : "AVATAR"}</small><strong>{experienceMode === "voice" ? t("视觉主题") : t("形象")}</strong></div>{experienceMode === "avatar" && !libraryMode ? <Link href="/resources?tab=avatars"><FolderOpen aria-hidden="true" /><span>{t("管理")}</span></Link> : null}</header>
           <div className={styles.visualEdgeList}>
             {experienceMode === "voice" ? ORB_OPTIONS.map((option) => <button className={styles.themeEdgeOption} key={option.id} type="button" data-selected={visualTheme === option.id} aria-pressed={visualTheme === option.id} onClick={() => onVisualThemeChange(option.id)}><VisualThemePreview theme={option.id} colors={option.colors} /><span><strong>{t(option.name)}</strong><small>{t(option.note)}</small></span>{visualTheme === option.id ? <Check aria-hidden="true" /> : null}</button>) : libraryMode ? <>
-              <LibraryCreateCard kind="avatar" title={t("创建形象")} note="上传图片" axis="vertical" onCreate={() => onOpenProduction?.({ task: "avatar" })} />
+              <LibraryCreateCard kind="avatar" title={t("创建形象")} note={t("上传图片")} axis="vertical" onCreate={() => onOpenProduction?.({ task: "avatar" })} />
               {libraryAvatars.map((avatar) => <MediaOption key={avatar.avatarId} name={avatar.displayName} eyebrow={avatar.source.kind === "owned" ? "我的形象" : "内置形象"} image={avatar.source.imageUrl} selected={avatarMode !== "realtime" && avatarDisplayConfig.segmentedAvatarId === avatar.avatarId} axis="vertical" onSelect={() => selectLibraryAvatar(avatar)} />)}
-              <LibraryCreateCard kind="avatar" title={t("创建角色")} note="配置角色" axis="vertical" onCreate={() => window.location.assign("/roles/new")} />
-            </> : avatarMode === "realtime" ? (visualAvatars as HomeAvatarChoice[]).map((choice) => <MediaOption key={choice.id} name={choice.name} eyebrow="形象" image={choice.preview} selected={avatarDisplayConfig.avatarProfileId === choice.config.avatarProfileId} axis="vertical" onSelect={() => applyAvatarConfig(choice.config)} />) : (visualAvatars as AvatarAsset[]).map((avatar) => <MediaOption key={avatar.avatarId} name={avatar.displayName} eyebrow="形象" image={avatar.source.imageUrl} selected={avatarDisplayConfig.segmentedAvatarId === avatar.avatarId} axis="vertical" onSelect={() => selectLocalAvatar(avatar)} />)}
+              <LibraryCreateCard kind="avatar" title={t("创建角色")} note={t("配置角色")} axis="vertical" onCreate={() => window.location.assign("/roles/new")} />
+            </> : avatarMode === "realtime" ? (visualAvatars as HomeAvatarChoice[]).map((choice) => <MediaOption key={choice.id} name={choice.name} eyebrow={t("形象")} image={choice.preview} selected={avatarDisplayConfig.avatarProfileId === choice.config.avatarProfileId} axis="vertical" onSelect={() => applyAvatarConfig(choice.config)} />) : (visualAvatars as AvatarAsset[]).map((avatar) => <MediaOption key={avatar.avatarId} name={avatar.displayName} eyebrow={t("形象")} image={avatar.source.imageUrl} selected={avatarDisplayConfig.segmentedAvatarId === avatar.avatarId} axis="vertical" onSelect={() => selectLocalAvatar(avatar)} />)}
             {experienceMode === "avatar" && (libraryMode ? libraryAvatars.length === 0 : visualAvatars.length === 0) ? <div className={styles.edgeEmpty}><UserRound aria-hidden="true" /><strong>{t("暂无可运行形象")}</strong>{libraryMode ? <button type="button" onClick={() => onOpenProduction?.({ task: "avatar" })}>{t("创建第一个形象")}</button> : <Link href="/resources?tab=avatars">{t("前往资产管理")}</Link>}</div> : null}
           </div>
         </aside>
@@ -922,7 +941,7 @@ export function HomePreviewWorkspace({
                 onCreateTalking={() => libraryMode ? onOpenProduction?.({ task: "talking", avatarId: avatarDisplayConfig.segmentedAvatarId, actionId: action.avatarActionId }) : window.location.assign(`/resources?tab=avatars&task=talking&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}&action_id=${encodeURIComponent(action.avatarActionId)}`)}
               /></div>;
             })}
-            {avatarDisplayConfig.segmentedAvatarId ? <LibraryCreateCard kind="motion" title={t("创建动作")} note="生成动作" axis="horizontal" onCreate={() => libraryMode ? onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId }) : window.location.assign(`/resources?tab=avatars&task=motion&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}`)} /> : null}
+            {avatarDisplayConfig.segmentedAvatarId ? <LibraryCreateCard kind="motion" title={t("创建动作")} note={t("生成动作")} axis="horizontal" onCreate={() => libraryMode ? onOpenProduction?.({ task: "motion", avatarId: avatarDisplayConfig.segmentedAvatarId }) : window.location.assign(`/resources?tab=avatars&task=motion&avatar_id=${encodeURIComponent(avatarDisplayConfig.segmentedAvatarId)}`)} /> : null}
           </div>
         </aside>
 

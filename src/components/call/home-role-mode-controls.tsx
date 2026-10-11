@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -204,24 +206,24 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
 
   return <div className={styles.controls} data-open={panel ?? "none"}>
     {showRoleSelector ? <button className={styles.rightHandle} type="button" aria-label={t("打开角色列表")} aria-expanded={panel === "roles"} onPointerEnter={() => openPanel("roles", true)} onPointerLeave={schedulePanelClose} onFocus={() => openPanel("roles")} onClick={() => togglePanel("roles")}><span /></button> : null}
-    {showRoleSelector ? <button className={styles.mobileRoleButton} type="button" aria-label={t("选择角色，当前") + (currentRole.display_name) + ""} aria-expanded={panel === "roles"} onClick={() => setPanel(panel === "roles" ? null : "roles")}>
-      <RolePortrait role={currentRole} /><strong>{currentRole.display_name}</strong><ChevronDown />
+    {showRoleSelector ? <button className={styles.mobileRoleButton} type="button" aria-label={t("选择角色，当前") + (t(currentRole.display_name)) + ""} aria-expanded={panel === "roles"} onClick={() => setPanel(panel === "roles" ? null : "roles")}>
+      <RolePortrait role={currentRole} /><strong>{t(currentRole.display_name)}</strong><ChevronDown />
     </button> : null}
-    <button className={styles.bottomHandle} type="button" aria-label={t("选择呈现方式，当前") + (ROLE_MODE_LABELS[mode]) + "，" + (selectionLabel) + ""} aria-expanded={panel === "modes"} onPointerEnter={() => openPanel("modes", true)} onPointerLeave={schedulePanelClose} onFocus={() => openPanel("modes")} onClick={() => togglePanel("modes")}>
-      <span className={styles.handleLine} /><span className={styles.handleSummary}>{ROLE_MODE_LABELS[mode]} · {t(selectionLabel)}</span><ChevronUp />
+    <button className={styles.bottomHandle} type="button" aria-label={t("选择呈现方式：{mode} · {selection}", { mode: t(ROLE_MODE_LABELS[mode]), selection: t(selectionLabel) })} aria-expanded={panel === "modes"} onPointerEnter={() => openPanel("modes", true)} onPointerLeave={schedulePanelClose} onFocus={() => openPanel("modes")} onClick={() => togglePanel("modes")}>
+      <span className={styles.handleLine} /><span className={styles.handleSummary}>{<LocalizedText text={ROLE_MODE_LABELS[mode]} />} · {t(selectionLabel)}</span><ChevronUp />
     </button>
     {panel ? <button className={styles.backdrop} type="button" aria-label={t("关闭选择面板")} onPointerEnter={schedulePanelClose} onClick={closePanel} /> : null}
 
     {showRoleSelector ? <aside className={styles.rolePanel} data-open={panel === "roles"} aria-label={t("角色列表")} aria-hidden={panel !== "roles"} inert={panel !== "roles"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
       <div className={styles.roleList}>
         {roles.filter((item) => item.role_id !== "default-assistant").map((item) => <div key={item.role_id} className={styles.roleCard} data-selected={item.role_id === currentRole.role_id} data-default={item.role_id === currentRole.role_id && isCurrentSelectionDefault}>
-          <button className={styles.roleSelectButton} type="button" aria-label={t("选择角色：") + (item.display_name) + t("，默认") + (ROLE_MODE_LABELS[item.default_mode]) + ""} onClick={() => { if (item.role_id !== currentRole.role_id) { setCurrentRole(item); setPanel(null); onRoleSelect?.(item); } else setPanel(null); }}>
+          <button className={styles.roleSelectButton} type="button" aria-label={t("选择角色：") + (t(item.display_name)) + t("，默认") + (t(ROLE_MODE_LABELS[item.default_mode])) + ""} onClick={() => { if (item.role_id !== currentRole.role_id) { setCurrentRole(item); setPanel(null); onRoleSelect?.(item); } else setPanel(null); }}>
             <span className={styles.roleArtwork}>{item.avatar_image_url ? <Image src={item.avatar_image_url} alt="" fill sizes="(max-width: 760px) 160px, 130px" unoptimized /> : <UserRound />}</span>
-            <span className={styles.roleCardCopy}><strong>{item.display_name}</strong><small>{item.persona_name ? `${item.persona_name} · ` : ""}{t("默认：")}{ROLE_MODE_LABELS[item.default_mode]}{item.role_id === currentRole.role_id && item.default_mode === mode && assetModes ? ` · ${selectionLabel}` : ""}</small></span>
+            <span className={styles.roleCardCopy}><strong>{t(item.display_name)}</strong><small>{item.persona_name ? `${t(item.persona_name)} · ` : ""}{t("默认：")}{<LocalizedText text={ROLE_MODE_LABELS[item.default_mode]} />}{item.role_id === currentRole.role_id && item.default_mode === mode && assetModes ? ` · ${t(selectionLabel)}` : ""}</small></span>
             {item.role_id === currentRole.role_id && isCurrentSelectionDefault ? <span className={styles.roleDefaultBadge}><Star fill="currentColor" />{t("默认")}</span> : null}
             {item.role_id === currentRole.role_id ? <Check className={styles.roleSelectedCheck} /> : null}
           </button>
-          <button className={`${styles.roleStartButton} liquid-glass-button`} data-variant="primary" type="button" disabled={item.role_id === currentRole.role_id && !canStart} aria-label={t("与") + (item.display_name) + t("开始对话")} onClick={() => {
+          <button className={`${styles.roleStartButton} liquid-glass-button`} data-variant="primary" type="button" disabled={item.role_id === currentRole.role_id && !canStart} aria-label={t("与 {name} 对话", { name: t(item.display_name) })} onClick={() => {
             if (item.role_id === currentRole.role_id) {
               onStart(mode === "conversation" ? "voice" : "avatar");
               return;
@@ -236,11 +238,11 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
     </aside> : null}
 
     <aside className={styles.modePanel} data-open={panel === "modes"} aria-label={t("模式与素材")} aria-hidden={panel !== "modes"} inert={panel !== "modes"} onPointerEnter={cancelPanelTimers} onPointerLeave={schedulePanelClose}>
-      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><strong>{currentRole.display_name} · {ROLE_MODE_LABELS[mode]}</strong></div><button type="button" aria-label={t("关闭模式选择")} onClick={closePanel}><X /></button></header>
+      <header onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div><strong>{t(currentRole.display_name)} · {<LocalizedText text={ROLE_MODE_LABELS[mode]} />}</strong></div><button type="button" aria-label={t("关闭模式选择")} onClick={closePanel}><X /></button></header>
       <div className={styles.materialList} data-kind="action">
         {currentRole.enabled_modes.includes("conversation") ? <WorkbenchConversationOption selected={mode === "conversation"} onSelect={() => void selectMode("conversation")} /> : null}
-        {showRealtimeOption && realtimeConfigured && selectedRealtimeAvatar ? <WorkbenchMediaOption name={selectedRealtimeAvatar.displayName} eyebrow="实时数字人 · 点击开始" image={selectedRealtimeAvatar.imageUrl} selected={mode === "realtime" && config.avatarProfileId === selectedRealtimeAvatar.id} axis="horizontal" onSelect={() => window.location.assign(`/conversation?realtime_avatar_id=${encodeURIComponent(selectedRealtimeAvatar.id)}&start=1`)} /> : null}
-        {lipSyncAvailable ? <WorkbenchMediaOption name="离线加口型" eyebrow="实时口型驱动 · 点击开始" image={avatar?.source_image_url} selected={mode === "lip-sync"} axis="horizontal" onSelect={() => { const actionId = selectedActionId ?? actions[0]?.avatar_action_id; if (!actionId) return; saveRoleStartIntent(currentRole.role_id); window.location.assign(conversationHref(currentRole, "lip-sync", actionId)); }} /> : null}
+        {showRealtimeOption && realtimeConfigured && selectedRealtimeAvatar ? <WorkbenchMediaOption name={selectedRealtimeAvatar.displayName} eyebrow={t("实时数字人 · 点击开始")} image={selectedRealtimeAvatar.imageUrl} selected={mode === "realtime" && config.avatarProfileId === selectedRealtimeAvatar.id} axis="horizontal" onSelect={() => window.location.assign(`/conversation?realtime_avatar_id=${encodeURIComponent(selectedRealtimeAvatar.id)}&start=1`)} /> : null}
+        {lipSyncAvailable ? <WorkbenchMediaOption name={t("离线加口型")} eyebrow={t("实时口型驱动 · 点击开始")} image={avatar?.source_image_url} selected={mode === "lip-sync"} axis="horizontal" onSelect={() => { const actionId = selectedActionId ?? actions[0]?.avatar_action_id; if (!actionId) return; saveRoleStartIntent(currentRole.role_id); window.location.assign(conversationHref(currentRole, "lip-sync", actionId)); }} /> : null}
         {orderedActions.map((action, index) => {
           const variants = currentRole.enabled_modes.includes("offline") ? (action.talking_variants ?? []).filter((variant) => variant.method === "lipforcing" && !variant.deleted_at && variant.video_url && variant.source_video_url === action.video_url) : [];
           return <div className={styles.sortableAction} key={action.avatar_action_id} data-action-sort-id={action.avatar_action_id} data-open={expandedActionId === action.avatar_action_id} data-selected={selectedActionId === action.avatar_action_id} data-dragging={draggingActionId === action.avatar_action_id} data-drop-target={dropActionId === action.avatar_action_id && dropActionId !== draggingActionId}>
@@ -274,11 +276,11 @@ export function HomeRoleModeControls({ role, mode, avatar, config, canStart, vis
           />
           </div>;
         })}
-        {mode === "conversation" ? themes.map((theme) => <button className={styles.themeCard} type="button" key={theme.id} data-selected={visualTheme === theme.id} aria-pressed={visualTheme === theme.id} onClick={() => onVisualThemeChange(theme.id)}><span style={{ background: `linear-gradient(135deg, ${theme.colors.join(",")})` }} /><strong>{theme.name}</strong></button>) : null}
-        {avatar ? <WorkbenchCreateCard kind="motion" title={t("创建动作")} note="生成动作" axis="horizontal" onCreate={() => window.location.assign(avatarResourceHref({ task: "motion", avatarId: avatar.avatar_id, returnTo: currentRole.role_id }))} /> : null}
+        {mode === "conversation" ? themes.map((theme) => <button className={styles.themeCard} type="button" key={theme.id} data-selected={visualTheme === theme.id} aria-pressed={visualTheme === theme.id} onClick={() => onVisualThemeChange(theme.id)}><span style={{ background: `linear-gradient(135deg, ${theme.colors.join(",")})` }} /><strong>{<LocalizedText text={theme.name} />}</strong></button>) : null}
+        {avatar ? <WorkbenchCreateCard kind="motion" title={t("创建动作")} note={t("生成动作")} axis="horizontal" onCreate={() => window.location.assign(avatarResourceHref({ task: "motion", avatarId: avatar.avatar_id, returnTo: currentRole.role_id }))} /> : null}
         {actions.length === 0 ? <p className={styles.empty}>{t("当前角色还没有可用动作")}</p> : null}
       </div>
-      <footer><span>{ROLE_MODE_LABELS[mode]} · {t(selectionLabel)}</span><button type="button" disabled={!canStart || pending || (mode === "lip-sync" && !personalLipsyncReady)} onClick={() => onStart(mode === "conversation" ? "voice" : "avatar")}>{t("开始对话")}</button></footer>
+      <footer><span>{<LocalizedText text={ROLE_MODE_LABELS[mode]} />} · {t(selectionLabel)}</span><button type="button" disabled={!canStart || pending || (mode === "lip-sync" && !personalLipsyncReady)} onClick={() => onStart(mode === "conversation" ? "voice" : "avatar")}>{t("开始对话")}</button></footer>
     </aside>
     {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
   </div>;

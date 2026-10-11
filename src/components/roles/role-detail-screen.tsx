@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -633,23 +635,23 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
       <div className={homePreviewStyles.avatarPreview} data-visible="true">
         {previewVideoUrl && displayMode !== "conversation" ? <>
           <video className={homePreviewStyles.avatarPreviewMotionBackdrop} key={`backdrop:${displayMode}:${activeActionId}`} src={previewVideoUrl} autoPlay muted loop playsInline aria-hidden="true" />
-          <video className={homePreviewStyles.avatarPreviewForeground} data-fit="contain" key={`${displayMode}:${activeActionId}`} src={previewVideoUrl} autoPlay muted loop playsInline aria-label={"" + (role.display_name) + t(" 动作预览")} />
+          <video className={homePreviewStyles.avatarPreviewForeground} data-fit="contain" key={`${displayMode}:${activeActionId}`} src={previewVideoUrl} autoPlay muted loop playsInline aria-label={"" + (t(role.display_name)) + t(" 动作预览")} />
         </> : previewImageUrl ? <>
           <Image className={homePreviewStyles.avatarPreviewMotionBackdrop} src={previewImageUrl} alt="" aria-hidden="true" fill priority sizes="100vw" unoptimized />
-          <Image className={homePreviewStyles.avatarPreviewForeground} src={previewImageUrl} alt={"" + (role.display_name) + t(" 数字人预览")} fill priority sizes="100vw" unoptimized />
+          <Image className={homePreviewStyles.avatarPreviewForeground} src={previewImageUrl} alt={"" + (t(role.display_name)) + t(" 数字人预览")} fill priority sizes="100vw" unoptimized />
         </> : <div className={homePreviewStyles.avatarPreviewPlaceholder}><UserRound aria-hidden="true" /></div>}
         <div className={homePreviewStyles.avatarWash} aria-hidden="true" />
       </div>
       <div className={homePreviewStyles.previewCopy}>
-        <span><i />{ROLE_MODE_LABELS[displayMode]}</span>
-        <h1>{role.display_name}</h1>
+        <span><i />{<LocalizedText text={ROLE_MODE_LABELS[displayMode]} />}</span>
+        <h1>{t(role.display_name)}</h1>
         <p className={styles.personaName}>{role.persona_name ?? t("通用助手")}</p>
       </div>
     </div>
 
     <header className={styles.topbar}>
       <Link href="/roles" aria-label={t("返回角色列表")}><ArrowLeft /></Link>
-      <div className={styles.topbarTitle}><strong>{role.display_name}</strong></div>
+      <div className={styles.topbarTitle}><strong>{t(role.display_name)}</strong></div>
       <div className={styles.topbarActions}>
         <button className={styles.defaultAction} type="button" disabled={settingDefault || defaultRoleId === role.role_id} onClick={() => void setAsDefault()}><Star fill={defaultRoleId === role.role_id ? "currentColor" : "none"} />{defaultRoleId === role.role_id ? t("默认角色") : t("设为默认")}</button>
         <button className={styles.settingsAction} type="button" aria-label={t("打开角色配置")} aria-expanded={openPanel === "config"} onClick={() => setOpenPanel(openPanel === "config" ? null : "config")}><Settings2 />{t("角色设置")}</button>
@@ -673,7 +675,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
           <GripHorizontal className={styles.dragHandle} aria-hidden="true" />
           <div className={styles.configTitle}>
             <small>{t("角色设置")}</small>
-            <strong>{role.display_name}</strong>
+            <strong>{t(role.display_name)}</strong>
           </div>
           <div className={styles.configHeaderActions}>
             <button type="button" aria-label={t("关闭角色配置")} onPointerDown={(event) => event.stopPropagation()} onClick={() => setOpenPanel(null)}><X /></button>
@@ -681,11 +683,11 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
         </header>
         <div className={styles.configBody}>
           <div className={styles.configView}>
-            <ConfigTaskModule id="foundation" icon={<Sparkles />} title={t("角色基础")} detail={role.display_name} status="已配置" done openSection={openSection} onOpen={toggleConfigSection}>
+            <ConfigTaskModule id="foundation" icon={<Sparkles />} title={t("角色基础")} detail={t(role.display_name)} status={t("已配置")} done openSection={openSection} onOpen={toggleConfigSection}>
               <div className={styles.foundationGrid}>
                 <label className={styles.field}><span>{t("角色名称")}</span><div className={styles.roleNameRow}><input value={role.display_name} readOnly={!editingRoleName} maxLength={80} onChange={(event) => setRole({ ...role, display_name: event.target.value })} /><button type="button" onClick={() => setEditingRoleName((editing) => !editing)}>{editingRoleName ? <Check /> : <Pencil />}{editingRoleName ? t("完成") : t("编辑")}</button></div></label>
             <section className={styles.settingModule} data-open={openModule === "voice"}>
-              <button className={styles.settingSummary} type="button" aria-label={t("声音设置")} aria-expanded={openModule === "voice"} onClick={() => toggleConfigModule("voice")}><Volume2 /><span><small>{t("声音")}</small><strong>{selectedVoiceName}</strong><em>{TTS_PROVIDER_OPTIONS.find((item) => item.value === role.voice_provider)?.label}</em></span><ChevronDown /></button>
+              <button className={styles.settingSummary} type="button" aria-label={t("声音设置")} aria-expanded={openModule === "voice"} onClick={() => toggleConfigModule("voice")}><Volume2 /><span><small>{t("声音")}</small><strong>{selectedVoiceName}</strong><em>{<LocalizedText text={TTS_PROVIDER_OPTIONS.find((item) => item.value === role.voice_provider)?.label} />}</em></span><ChevronDown /></button>
               {openModule === "voice" ? <div className={styles.settingDetails}>
                 <VoiceSelector showCurrent={false} roleId={role.role_id} value={{ provider: role.voice_provider, voice: role.voice_id, dialect: role.voice_dialect ?? "" }} onChange={(voice) => setRole({ ...role, voice_provider: voice.provider, voice_id: voice.voice, voice_dialect: voice.dialect })} onSelectionCommit={() => setOpenModule(null)} allowClone allowManagement={false} />
               </div> : null}
@@ -706,7 +708,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
                 <div className={styles.capabilityList} aria-label={t("角色工具")}>{tools.map((tool) => {
                 const disabled = !tool.enabled || (!tool.builtin && !tool.endpoint && !tool.public_enabled);
                 const scope = tool.builtin ? "内置" : tool.public_enabled ? "共享" : "个人";
-                return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={role.tool_ids.includes(tool.tool_id)} onChange={(event) => setRole({ ...role, tool_ids: event.target.checked ? [...role.tool_ids, tool.tool_id] : role.tool_ids.filter((item) => item !== tool.tool_id) })} /><span><strong>{tool.display_name}</strong><small>{disabled ? t("需要补充服务地址后才能执行") : tool.description}</small></span><em data-scope={scope}>{tool.builtin ? t("内置") : tool.public_enabled ? t("共享") : t("个人")}</em></label>;
+                return <label key={tool.tool_id} data-disabled={disabled}><input type="checkbox" disabled={disabled} checked={role.tool_ids.includes(tool.tool_id)} onChange={(event) => setRole({ ...role, tool_ids: event.target.checked ? [...role.tool_ids, tool.tool_id] : role.tool_ids.filter((item) => item !== tool.tool_id) })} /><span><strong>{<LocalizedText text={tool.display_name} />}</strong><small>{disabled ? t("需要补充服务地址后才能执行") : tool.description}</small></span><em data-scope={scope}>{tool.builtin ? t("内置") : tool.public_enabled ? t("共享") : t("个人")}</em></label>;
                 })}</div>
               </div> : null}
             </section>
@@ -715,7 +717,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
               <button className={styles.settingSummary} type="button" aria-label={t("知识库设置")} aria-expanded={openModule === "knowledge"} onClick={() => toggleConfigModule("knowledge")}><BookOpen /><span><small>{t("知识库")}</small><strong>{knowledgeIds.length ? t("已选择 ") + (knowledgeIds.length) + t(" 份") : t("暂未选择")}</strong><em>{t("关联资源库中的资料")}</em></span><ChevronDown /></button>
               {openModule === "knowledge" ? <div className={styles.settingDetails}>
                 <div className={styles.moduleToolbar}><span>{t("选择对话时可检索的资料，可与其他角色共用")}</span><Link href={`/resources?tab=knowledge&return_to=${encodeURIComponent(role.role_id)}`} onClick={rememberResourceIds}><Plus />{t("新建")}</Link></div>
-                <div className={styles.capabilityList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((doc) => <label key={doc.document_id}><input type="checkbox" checked={knowledgeIds.includes(doc.document_id)} onChange={(event) => setKnowledgeIds((old) => event.target.checked ? [...old, doc.document_id] : old.filter((id) => id !== doc.document_id))} /><span><strong>{doc.title}</strong><small>{doc.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{doc.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>
+                <div className={styles.capabilityList} aria-label={t("角色知识库资料")}>{knowledgeDocuments.map((doc) => <label key={doc.document_id}><input type="checkbox" checked={knowledgeIds.includes(doc.document_id)} onChange={(event) => setKnowledgeIds((old) => event.target.checked ? [...old, doc.document_id] : old.filter((id) => id !== doc.document_id))} /><span><strong>{<LocalizedText text={doc.title} />}</strong><small>{doc.source_url ? t("包含外部来源") : t("本地资料")}</small></span><em>{doc.owner_id === null ? t("共享") : t("个人")}</em></label>)}</div>
               </div> : null}
             </section>
 
@@ -729,12 +731,12 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
               </div>
             </ConfigTaskModule>
 
-            <ConfigTaskModule id="presentation" icon={<MessageCircle />} title={t("呈现模式")} detail={configuredPresentationModes.map((mode) => ROLE_MODE_LABELS[mode]).join("、")} status={`当前可用 ${configuredPresentationModes.length} 项`} done={configuredPresentationModes.length > 0} openSection={openSection} onOpen={toggleConfigSection}>
+            <ConfigTaskModule id="presentation" icon={<MessageCircle />} title={t("呈现模式")} detail={configuredPresentationModes.map((mode) => ROLE_MODE_LABELS[mode]).join("、")} status={t("当前可用 {p0} 项", { p0: String(configuredPresentationModes.length) })} done={configuredPresentationModes.length > 0} openSection={openSection} onOpen={toggleConfigSection}>
               <div className={styles.taskInner}>
                 <div className={styles.modeOptions} aria-label={t("选择可用呈现方式")}>{ROLE_PRESENTATION_MODES.filter((mode) => mode !== "motion" && (mode !== "realtime" || realtimeConfigured) && (mode !== "lip-sync" || (personalLipsyncReady && capabilities?.localRenderer.state === "available"))).map((mode) => {
                   const available = presentationModeAvailable(mode);
                   const checked = role.enabled_modes.includes(mode);
-                  return <button key={mode} type="button" disabled={checked && role.enabled_modes.length === 1} aria-pressed={checked} data-selected={checked} data-ready={available} onClick={() => togglePresentationMode(mode)}><span className={styles.modeState}>{checked ? <Check /> : null}</span><span><strong>{ROLE_MODE_LABELS[mode]}</strong><small>{mode === "conversation" ? t("文字与语音对话") : available ? t("当前形象素材可用") : t("选择后继续完成所需配置")}</small></span></button>;
+                  return <button key={mode} type="button" disabled={checked && role.enabled_modes.length === 1} aria-pressed={checked} data-selected={checked} data-ready={available} onClick={() => togglePresentationMode(mode)}><span className={styles.modeState}>{checked ? <Check /> : null}</span><span><strong>{<LocalizedText text={ROLE_MODE_LABELS[mode]} />}</strong><small>{mode === "conversation" ? t("文字与语音对话") : available ? t("当前形象素材可用") : t("选择后继续完成所需配置")}</small></span></button>;
                 })}</div>
                 <label className={styles.field}><span>{t("默认呈现方式")}</span><SelectMenu fullWidth value={String(defaultPresentationMode)} ariaLabel={t("默认呈现方式")} options={[...(selectablePresentationModes.map((mode) => ({ value: String(mode), label: t(String(ROLE_MODE_LABELS[mode])) })))]} onChange={value => setRole({ ...role, default_mode: value as RolePresentationMode })} /></label>
               </div>
@@ -761,14 +763,14 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
               {avatar ? <><div className={styles.actionCardGrid}>{actions.map((action) => {
                 const selected = activeActionId === action.avatar_action_id;
                 const talkingCount = action.talking_variants?.filter((item) => !item.deleted_at && item.video_url).length ?? 0;
-                return <AssetCard key={action.avatar_action_id} target={{ avatar, action }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={t("选择动作 ") + (action.display_name) + ""} aria-pressed={selected} data-selected={selected} onClick={() => { const variants = action.talking_variants?.filter((item) => item.method === "lipforcing" && !item.deleted_at && item.video_url && item.source_video_url === action.video_url) ?? []; const rememberedId = readRoleActionPreferences(role.role_id, avatar.avatar_id).variants[action.avatar_action_id]; const variantId = variants.find((item) => item.id === rememberedId)?.id ?? variants[0]?.id; setActiveActionId(action.avatar_action_id); if (variants.length === 1 && role.enabled_modes.includes("offline")) setActiveMode("offline"); setPreviewKind("motion"); setActiveTalkingVariantId(variantId ?? null); rememberRoleActionSelection(role.role_id, avatar.avatar_id, action.avatar_action_id, variantId); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, motion: { action_id: action.avatar_action_id }, "lip-sync": { action_id: action.avatar_action_id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={action.video_url ?? ""} poster={avatar.source_image_url} label={"" + (action.display_name) + t(" 动作预览")} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{action.display_name}</strong><small>{talkingCount ? "" + (talkingCount) + t(" 个口型对齐") : t("动作底片")}</small></span></button></AssetCard>;
+                return <AssetCard key={action.avatar_action_id} target={{ avatar, action }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={t("选择动作 ") + (action.display_name) + ""} aria-pressed={selected} data-selected={selected} onClick={() => { const variants = action.talking_variants?.filter((item) => item.method === "lipforcing" && !item.deleted_at && item.video_url && item.source_video_url === action.video_url) ?? []; const rememberedId = readRoleActionPreferences(role.role_id, avatar.avatar_id).variants[action.avatar_action_id]; const variantId = variants.find((item) => item.id === rememberedId)?.id ?? variants[0]?.id; setActiveActionId(action.avatar_action_id); if (variants.length === 1 && role.enabled_modes.includes("offline")) setActiveMode("offline"); setPreviewKind("motion"); setActiveTalkingVariantId(variantId ?? null); rememberRoleActionSelection(role.role_id, avatar.avatar_id, action.avatar_action_id, variantId); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, motion: { action_id: action.avatar_action_id }, "lip-sync": { action_id: action.avatar_action_id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={action.video_url ?? ""} poster={avatar.source_image_url} label={"" + (action.display_name) + t(" 动作预览")} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{<LocalizedText text={action.display_name} />}</strong><small>{talkingCount ? "" + (talkingCount) + t(" 个口型对齐") : t("动作底片")}</small></span></button></AssetCard>;
               })}<button className={styles.newActionCard} type="button" aria-label={t("新建动作")} onClick={() => openProductionTask("motion")}><span><Plus /></span><strong>{t("新建动作")}</strong><small>{t("上传或生成新的动作底片")}</small></button></div>{actions.length ? null : <p className={styles.actionEmptyHint}>{t("当前形象还没有动作底片，从这里创建第一个动作。")}</p>}<DeletedAssets actionAvatar={avatar} onManage={assetManagement.manage} busy={assetManagement.busy} /></> : <p className={styles.emptyHint}>{t("请先选择数字人形象。")}</p>}
             </ConfigTaskModule> : null}
 
             {needsTalking ? <ConfigTaskModule id="talking" icon={<Volume2 />} title={t("口型对齐")} detail={selectedTalkingVariant?.display_name ?? "离线模式需要与动作配对"} status={selectedTalkingVariant ? "已选择" : "待配置"} done={Boolean(selectedTalkingVariant)} openSection={openSection} onOpen={toggleConfigSection}>
               {avatar && activeAction ? <><div className={styles.actionCardGrid}>{activeTalkingVariants.map((variant) => {
                 const selected = selectedTalkingVariant?.id === variant.id;
-                return <AssetCard key={variant.id} target={{ avatar, action: activeAction, variant }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={t("选择口型对齐 ") + (variant.display_name) + ""} aria-pressed={selected} data-selected={selected} onClick={() => { setActiveTalkingVariantId(variant.id); setPreviewKind("talking"); rememberRoleActionSelection(role.role_id, avatar.avatar_id, activeAction.avatar_action_id, variant.id); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, offline: { action_id: activeAction.avatar_action_id, talking_variant_id: variant.id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={variant.video_url} poster={avatar.source_image_url} label={"" + (variant.display_name) + t(" 口型预览")} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{variant.display_name}</strong><small>{t("配对动作 · ")}{activeAction.display_name}</small></span></button></AssetCard>;
+                return <AssetCard key={variant.id} target={{ avatar, action: activeAction, variant }} onManage={assetManagement.manage} busy={assetManagement.busy}><button className={styles.actionCard} type="button" aria-label={t("选择口型对齐 ") + (variant.display_name) + ""} aria-pressed={selected} data-selected={selected} onClick={() => { setActiveTalkingVariantId(variant.id); setPreviewKind("talking"); rememberRoleActionSelection(role.role_id, avatar.avatar_id, activeAction.avatar_action_id, variant.id); setRole((current) => current ? { ...current, default_selections: { ...current.default_selections, offline: { action_id: activeAction.avatar_action_id, talking_variant_id: variant.id } } } : current); }}><span className={styles.actionCardMedia}><PreviewVideo src={variant.video_url} poster={avatar.source_image_url} label={"" + (variant.display_name) + t(" 口型预览")} />{selected ? <i><Check /></i> : null}</span><span className={styles.actionCardCopy}><strong>{<LocalizedText text={variant.display_name} />}</strong><small>{t("配对动作 · ")}{<LocalizedText text={activeAction.display_name} />}</small></span></button></AssetCard>;
               })}<button className={styles.newActionCard} type="button" aria-label={t("新建口型对齐")} onClick={() => openProductionTask("talking")}><span><Plus /></span><strong>{t("新建口型对齐")}</strong><small>{t("为当前动作生成配对讲话视频")}</small></button></div>{activeTalkingVariants.length ? null : <p className={styles.actionEmptyHint}>{t("当前动作还没有口型对齐，从这里创建第一个素材。")}</p>}<DeletedAssets talkingAction={{ avatar, action: activeAction }} onManage={assetManagement.manage} busy={assetManagement.busy} /></> : <p className={styles.emptyHint}>{t("请先选择动作底片。")}</p>}
             </ConfigTaskModule> : null}
             {defaultError ? <p className={styles.error} role="alert">{defaultError}</p> : null}
@@ -779,7 +781,7 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
     </aside>
 
     <div className={`${homePreviewStyles.homeStartAction} ${styles.startAction}`}>
-      <VoiceStartButton effect="magic-rings" connected disabled={saving || !configurationReady} ariaLabel={t("开始角色对话")} label={t("与 ") + (role.display_name) + t(" 对话")} hint={`${ROLE_MODE_LABELS[displayMode]} · ${displayMode === "conversation" ? "语音对话" : activeAction?.display_name ?? "角色形象"}`} onPress={() => void startConversation()} />
+      <VoiceStartButton effect="magic-rings" connected disabled={saving || !configurationReady} ariaLabel={t("开始角色对话")} label={t("与 {name} 对话", { name: t(role.display_name) })} hint={`${t(ROLE_MODE_LABELS[displayMode])} · ${t(displayMode === "conversation" ? "语音对话" : activeAction?.display_name ?? "角色形象")}`} onPress={() => void startConversation()} />
     </div>
 
     <HomeRoleModeControls
@@ -832,5 +834,5 @@ export function RoleDetailScreen({ roleId, initialSettingsOpen = false }: { role
 
 function ConfigTaskModule({ id, icon, title, detail, status, done, openSection, onOpen, children }: { id: Exclude<ConfigSection, null>; icon: ReactNode; title: string; detail: string; status: string; done: boolean; openSection: ConfigSection; onOpen: (id: Exclude<ConfigSection, null>) => void; children: ReactNode }) {
   const open = openSection === id;
-  return <section className={styles.configTaskModule} data-open={open} data-done={done}><button className={styles.configTaskSummary} type="button" aria-expanded={open} onClick={() => onOpen(id)}><span className={styles.configTaskIcon}>{done ? <Check /> : icon}</span><span><strong>{title}</strong><small>{detail}</small></span><em>{status}</em><ChevronDown /></button>{open ? <div className={styles.configTaskContent}>{children}</div> : null}</section>;
+  return <section className={styles.configTaskModule} data-open={open} data-done={done}><button className={styles.configTaskSummary} type="button" aria-expanded={open} onClick={() => onOpen(id)}><span className={styles.configTaskIcon}>{done ? <Check /> : icon}</span><span><strong>{<LocalizedText text={title} />}</strong><small>{<LocalizedText text={detail} />}</small></span><em>{<LocalizedText text={status} />}</em><ChevronDown /></button>{open ? <div className={styles.configTaskContent}>{children}</div> : null}</section>;
 }

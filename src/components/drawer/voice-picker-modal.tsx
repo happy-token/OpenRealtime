@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -150,7 +152,7 @@ export function VoicePickerModal({
         >
           <span className="voice-picker-avatar" aria-hidden="true">{voice.label.slice(0, 1)}</span>
           <span className="voice-picker-card-copy">
-            <strong>{voice.label}</strong>
+            <strong>{<LocalizedText text={voice.label} />}</strong>
             <small>{voice.description ?? voice.value}</small>
           </span>
           <span className="voice-picker-check" aria-hidden="true">{selected ? "✓" : ""}</span>

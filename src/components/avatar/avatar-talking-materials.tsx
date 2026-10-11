@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -68,7 +70,7 @@ export function AvatarTalkingMaterials({ avatarId, action, canManage, onActionUp
       <div className={styles.thumb}><Film aria-hidden="true" /></div>
       <div className={styles.copy}>
         <span>{METHOD_NAMES[variant.method]}<i aria-hidden="true" />{matchesSource ? t("已配对") : t("底片已变更")}</span>
-        <strong>{variant.display_name}</strong>
+        <strong>{<LocalizedText text={variant.display_name} />}</strong>
       </div>
       <div className={styles.commands}>
         <button type="button" onClick={() => setPreview(variant)} aria-label={t("预览口型对齐：") + (variant.display_name) + ""}><Play aria-hidden="true" />{t("预览")}</button>
@@ -82,7 +84,7 @@ export function AvatarTalkingMaterials({ avatarId, action, canManage, onActionUp
 
   return <section id={id} className={styles.section} aria-label={"" + (action.display_name) + t("的口型对齐")}>
     <header className={styles.header}>
-      <div><span>{t("当前动作 · ")}{action.display_name}</span><h2>{t("口型对齐 ")}<em>{active.length}</em></h2></div>
+      <div><span>{t("当前动作 · ")}{<LocalizedText text={action.display_name} />}</span><h2>{t("口型对齐 ")}<em>{active.length}</em></h2></div>
       {canManage ? <Link href={`/avatars/create?task=lightweight&avatar_id=${encodeURIComponent(avatarId)}&avatar_action_id=${encodeURIComponent(action.avatar_action_id)}`}><Film aria-hidden="true" />{t("生成口型对齐")}</Link> : null}
     </header>
     {active.length ? <div className={styles.list}>{active.map(item => materialRow(item, false))}</div>
@@ -96,7 +98,7 @@ export function AvatarTalkingMaterials({ avatarId, action, canManage, onActionUp
 
     {preview ? createPortal(<div className={styles.backdrop} role="presentation" onMouseDown={event => event.target === event.currentTarget && setPreview(null)}>
       <section className={styles.previewDialog} role="dialog" aria-modal="true" aria-label={"" + (preview.display_name) + t(" 口型对齐预览")}>
-        <header><div><span>{METHOD_NAMES[preview.method]}{t(" · 口型对齐")}</span><h3>{preview.display_name}</h3></div><button type="button" aria-label={t("关闭口型对齐预览")} onClick={() => setPreview(null)}><X /></button></header>
+        <header><div><span>{METHOD_NAMES[preview.method]}{t(" · 口型对齐")}</span><h3>{<LocalizedText text={preview.display_name} />}</h3></div><button type="button" aria-label={t("关闭口型对齐预览")} onClick={() => setPreview(null)}><X /></button></header>
         <video key={preview.id} src={preview.video_url} controls autoPlay muted loop playsInline preload="auto" />
       </section>
     </div>, document.body) : null}
@@ -104,8 +106,8 @@ export function AvatarTalkingMaterials({ avatarId, action, canManage, onActionUp
     {pendingDelete ? createPortal(<div className={styles.backdrop} role="presentation" onMouseDown={event => event.target === event.currentTarget && !busyId && setPendingDelete(null)}>
       <section className={styles.confirmDialog} role="dialog" aria-modal="true" aria-label={t("删除口型对齐")}>
         <span className={styles.confirmIcon}><Trash2 aria-hidden="true" /></span>
-        <h3>{t("删除“")}{pendingDelete.display_name}”？</h3>
-        <p>{t("它将从新会话的口型对齐选择中移除。“")}{action.display_name}{t("”底片和其他讲话版仍可使用。30 天内可在此恢复。")}</p>
+        <h3>{t("删除“")}{<LocalizedText text={pendingDelete.display_name} />}”？</h3>
+        <p>{t("它将从新会话的口型对齐选择中移除。“")}{<LocalizedText text={action.display_name} />}{t("”底片和其他讲话版仍可使用。30 天内可在此恢复。")}</p>
         {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
         <footer><button type="button" disabled={Boolean(busyId)} onClick={() => setPendingDelete(null)}>{t("取消")}</button><button type="button" disabled={Boolean(busyId)} onClick={() => void updateVariant(pendingDelete, true)} data-danger>{busyId ? <LoaderCircle className={styles.spin} /> : <Trash2 />}{t("移入已删除口型对齐")}</button></footer>
       </section>

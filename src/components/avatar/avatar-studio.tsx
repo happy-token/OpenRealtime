@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -23,7 +25,6 @@ import {
 import {
   isSegmentedAvatarAsset,
   loadCurrentAvatarCatalog,
-  loadInternalPresetAvatars,
 } from "@/lib/avatar-library-catalog-client";
 import { normalizeAvatarSourceImage } from "@/lib/avatar-image-normalization";
 import type { OwnedAvatarRecord } from "@/lib/avatar-records";
@@ -99,12 +100,6 @@ export function AvatarStudio({
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const internalAvatars = loadInternalPresetAvatars();
-    setLibraryChoices(internalAvatars.map((avatar) => ({
-      id: avatar.avatarId,
-      name: avatar.displayName,
-      imageUrl: avatar.source.imageUrl,
-    })));
     const controller = new AbortController();
     void loadCurrentAvatarCatalog(controller.signal)
       .then((avatars) => {
@@ -119,6 +114,7 @@ export function AvatarStudio({
       })
       .catch((loadError) => {
         if (loadError instanceof Error && loadError.name === "AbortError") return;
+        setError("形象目录加载失败，请刷新重试");
       });
     return () => controller.abort();
   }, []);
@@ -520,7 +516,7 @@ export function AvatarStudio({
               <AvatarDriveTabs value={task} onChange={changeTask} disabled={Boolean(busy)} tasks={singleTask ? ["realtime"] : undefined} />
               <section className={styles.selectedAvatar} aria-label={t("当前共享 Avatar")}>
                 <button className={styles.selectedAvatarImage} type="button" aria-label={t("预览 ") + (createdAvatar.display_name) + ""} onClick={() => setPreviewOpen(true)}><Image src={selectedAvatarImageUrl} alt="" fill sizes="56px" unoptimized /></button>
-                <div><strong>{createdAvatar.display_name}</strong></div>
+                <div><strong>{<LocalizedText text={createdAvatar.display_name} />}</strong></div>
                 <button type="button" aria-label={t("上一步：返回选择 Avatar 形象")} onClick={changeAvatar}><ArrowLeft aria-hidden="true" />{t("上一步")}</button>
               </section>
               <section className={styles.capabilityModule} aria-labelledby="realtime-creation-title" data-transition="in-page">
@@ -571,7 +567,7 @@ export function AvatarStudio({
               <div className={styles.visualStageBody}>
                 {realtimePreviewVideoUrl && task === "realtime"
                   ? <video className={styles.stageVideo} src={realtimePreviewVideoUrl} controls autoPlay muted loop playsInline />
-                  : <button className={styles.stageImage} type="button" aria-label={t("预览 ") + (createdAvatar.display_name) + ""} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{createdAvatar.display_name}</strong><em>{t("创建后将在这里播放实时驱动效果")}</em></span><Maximize2 aria-hidden="true" /></button>}
+                  : <button className={styles.stageImage} type="button" aria-label={t("预览 ") + (createdAvatar.display_name) + ""} onClick={() => setPreviewOpen(true)}><Image className={styles.stageBackdropImage} src={selectedAvatarImageUrl} alt="" aria-hidden="true" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized /><Image className={styles.stagePortraitImage} data-fit={stagePreviewFit} src={selectedAvatarImageUrl} alt="" fill sizes="(max-width: 900px) 100vw, 70vw" unoptimized onLoad={handleStagePortraitLoad} /><span><strong>{<LocalizedText text={createdAvatar.display_name} />}</strong><em>{t("创建后将在这里播放实时驱动效果")}</em></span><Maximize2 aria-hidden="true" /></button>}
               </div>
               <footer><span>{createdAvatar.realtime_binding ? t("已确认并启用") : anamCandidate ? t("等待效果确认，确认后启用") : t("尚未创建实时驱动效果")}</span></footer>
             </section>

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -24,7 +26,7 @@ export function PersonaChoiceGrid({
       {!value ? <Check className={styles.check} aria-hidden="true" /> : null}
     </button>
     {personas.map((persona) => <button className={`${styles.personaCard} liquid-glass-surface`} key={persona.personaId} type="button" data-selected={value === persona.personaId} aria-pressed={value === persona.personaId} disabled={disabled} onClick={() => onChange(persona.personaId)}>
-      <strong>{persona.personaName}</strong><span>{persona.intro || t("尚未填写简介")}</span>
+      <strong>{<LocalizedText text={persona.personaName} />}</strong><span>{persona.intro || t("尚未填写简介")}</span>
       {value === persona.personaId ? <Check className={styles.check} aria-hidden="true" /> : null}
     </button>)}
   </div>;

@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedText } from "@/components/language/language-provider";
+
 import { useLanguage } from "@/components/language/language-provider";
 
 
@@ -131,7 +133,7 @@ export function AvatarTalkingMaterialRail({ avatarId, action, canManage, canDele
 
   return <aside id={placement === "detail" ? "talking-materials" : undefined} className={styles.rail} data-placement={placement} aria-label={"" + (action.display_name) + t("素材切换")}>
     <div className={styles.heading}>
-      <div><span>{t("当前动作")}</span><strong title={action.display_name}>{action.display_name}</strong></div>
+      <div><span>{t("当前动作")}</span><strong title={action.display_name}>{<LocalizedText text={action.display_name} />}</strong></div>
     </div>
     {detailWheel ? <div className={styles.listRegion} role="region" aria-label={t("口型对齐列表")}>
       <div className={styles.wheelRegion} role="group" aria-label={"" + (action.display_name) + t("口型对齐选择")} onKeyDownCapture={event => {
@@ -151,7 +153,7 @@ export function AvatarTalkingMaterialRail({ avatarId, action, canManage, canDele
       <span className={styles.srOnly} role="status">{t("当前预览：")}{selectedVariant?.display_name ?? "" + (action.display_name) + t("动作底片")}</span>
     </div> : <div className={styles.scrollArea} role="region" aria-label={t("口型对齐列表")} tabIndex={0}>
       <button className={styles.base} type="button" aria-label={t("预览动作底片：") + (action.display_name) + ""} aria-pressed={selectedVariantId === null} onClick={() => onSelect(null)}>
-        <Video aria-hidden="true" /><span><strong title={action.display_name}>{action.display_name}</strong><small>{t("动作底片")}</small></span>
+        <Video aria-hidden="true" /><span><strong title={action.display_name}>{<LocalizedText text={action.display_name} />}</strong><small>{t("动作底片")}</small></span>
       </button>
       <span className={styles.groupLabel}>{t("口型对齐 ")}<em>{active.length}</em></span>
       {active.length ? active.map(variant => <div className={styles.materialRow} key={variant.id} data-selected={selectedVariantId === variant.id}>
@@ -190,7 +192,7 @@ export function AvatarTalkingMaterialRail({ avatarId, action, canManage, canDele
     {pendingDelete ? createPortal(<div className={styles.backdrop} role="presentation" onMouseDown={event => event.target === event.currentTarget && !busyId && setPendingDelete(null)}>
       <section className={styles.confirmDialog} role="dialog" aria-modal="true" aria-label={t("删除口型对齐")}>
         <span className={styles.confirmIcon}><Trash2 aria-hidden="true" /></span>
-        <h3>{t("删除“")}{pendingDelete.display_name}”？</h3>
+        <h3>{t("删除“")}{<LocalizedText text={pendingDelete.display_name} />}”？</h3>
         <p>{t("它会从口型对齐选择中移除；动作底片和其他讲话版仍可使用。30 天内可在左侧列表恢复。")}</p>
         {error ? <p className={styles.error} role="alert">{t(error)}</p> : null}
         <footer><button type="button" disabled={Boolean(busyId)} onClick={() => setPendingDelete(null)}>{t("取消")}</button><button type="button" disabled={Boolean(busyId)} onClick={() => void updateVariant(pendingDelete, true)} data-danger>{busyId ? <LoaderCircle className={styles.spin} /> : <Trash2 />}{t("移入已删除口型对齐")}</button></footer>
