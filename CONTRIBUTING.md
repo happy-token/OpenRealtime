@@ -1,13 +1,14 @@
 # Contributing to OpenRealtime
 
-Thanks for considering a contribution. OpenRealtime is a framework, not an application: most
-changes should add or improve a Protocol conformer rather than special-case the core Seams.
+Thanks for considering a contribution. OpenRealtime includes a composable runtime and a Next.js reference application. Runtime
+integrations should improve the relevant contracts/adapters; application contributions can
+improve role configuration, resources, conversations and deployment.
 
 ## Development setup
 
 The public trial and self-hosted deployment have different credential boundaries; see [the deployment guide](docs/deployment/public-trial.md). Never include a real `.env`, provider token, private portrait, or licensed media in a pull request.
 
-Follow [README.md](README.md)'s Requirements/Setup/Run sections to get the backend (`uv sync`)
+Follow [the local development guide](docs/getting-started/LOCAL-DEVELOPMENT.md) to get the backend (`uv sync`)
 and the web demo (`pnpm install && pnpm dev`) running locally. No provider credentials are
 required for the deterministic default stack.
 
@@ -20,7 +21,7 @@ required for the deterministic default stack.
 - **Run the full local check set:**
   ```bash
   uv run pytest
-  uv run mypy server   # non-blocking in CI today; please still check your own diff
+  uv run python scripts/check_mypy.py  # blocks errors beyond the recorded baseline
   pnpm lint
   pnpm exec tsc --noEmit
   pnpm test
@@ -31,6 +32,11 @@ required for the deterministic default stack.
 - **Known gaps.** Check [docs/ISSUES.md](docs/ISSUES.md) and [ROADMAP.md](ROADMAP.md) first —
   your change may already be scoped, deferred for a stated reason, or an intentional divergence
   rather than an oversight.
+
+CI uses the recorded mypy baseline to block new errors. Browser checks and builds also
+run in CI; install Chromium before local browser checks. Live-provider and optional media
+tests have extra service/asset requirements and are separate from deterministic tests.
+See [the documentation index](docs/README.md) for usage and architecture paths.
 
 ## Commit and PR style
 

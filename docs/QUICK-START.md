@@ -1,13 +1,13 @@
 # 首页使用指南
 
-OpenRealtime 支持语音对话和数字人会话。首次使用时，先在首页完成模式与声音配置，再开始对话。
+OpenRealtime 支持语音对话和数字人会话。首次使用时先选择可用角色和呈现模式，再开始对话。开发者安装请阅读[本地启动指南](getting-started/LOCAL-DEVELOPMENT.md)，完整阅读路径见[文档导航](README.md)。
 
 公开体验位于 [realtime.happy-token.cn](https://realtime.happy-token.cn)。普通访客可使用受限语音体验；个人口型对齐服务需登录，并在「设置 → 模型服务」中配置和测试。自行部署请先阅读[部署指南](deployment/public-trial.md)。
 
 ## 开始语音对话
 
 1. 在首页选择语音模式。
-2. 打开「会话配置工作台」，选择声音及对话参数。
+2. 从「角色」进入详情和「角色设置」，选择声音与人设；供应商和模型服务在设置入口配置。具体入口随呈现模式不同，参见[角色配置指南](guides/ROLE-CONFIGURATION.md)。
 3. 点击开始按钮，并允许浏览器使用麦克风。
 4. 连接成功后直接说话，等待助手回复。
 
@@ -20,7 +20,7 @@ OpenRealtime 支持语音对话和数字人会话。首次使用时，先在首�
 - 实时驱动：需要对应数字人服务正常运行。
 - 动作编排：需要准备同一动作的待机与讲话配对视频。
 
-详细配置请阅读[数字人驱动方案](/docs/digital-human)和[动作编排使用指南](/docs/motion-orchestration)。
+详细配置请阅读[数字人驱动方案](https://realtime.happy-token.cn/docs/digital-human)和[动作编排使用指南](https://realtime.happy-token.cn/docs/motion-orchestration)。
 
 ## 查看对话文字
 
@@ -28,7 +28,7 @@ OpenRealtime 支持语音对话和数字人会话。首次使用时，先在首�
 
 ## 阅读文档
 
-需要让助手回答产品说明、业务规则或个人笔记中的问题时，先按[知识库使用指南](/docs/knowledge-base)导入资料、测试检索，再绑定到角色。外部笔记同步与语义检索升级可参考[知识库选型与接入方案](/docs/knowledge-integration)。
+需要让助手回答产品说明、业务规则或个人笔记中的问题时，先按[知识库使用指南](https://realtime.happy-token.cn/docs/knowledge-base)导入资料、测试检索，再绑定到角色。外部笔记同步与语义检索升级可参考[知识库选型与接入方案](https://realtime.happy-token.cn/docs/knowledge-integration)。
 
 点击侧边栏的「文档」进入文档列表，也可以在文章右上角打开「文档目录」切换文章。文章支持上下滚动；手机上可左右滑动宽表格查看剩余列。
 

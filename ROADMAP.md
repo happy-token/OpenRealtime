@@ -5,7 +5,19 @@
 For "is X done" cross-referenced against the original requirements, see
 [docs/COMPLETION_STATUS.md](docs/COMPLETION_STATUS.md). For the itemized
 gap list this roadmap draws on, see [docs/ISSUES.md](docs/ISSUES.md). This
-file is forward-looking only.
+file includes historical planning entries. The current priorities below take precedence
+over older status assertions; numbered links are retained for traceability.
+
+## Current documentation and adoption priorities (2026-10-11)
+
+- English-first README with a Chinese counterpart and clear documentation navigation.
+- Reproducible cloud-service configurations and English voice acceptance.
+- Unified external Agent onboarding and voice task collaboration (**TODO**), while
+  documenting existing backend adapters separately.
+- Reconcile older requirement/gap entries with current implementations and versioned evidence.
+
+WebSocket v2, session recovery and CI checks exist today. Their presence does not
+establish production readiness for every network/device or integration.
 
 ## Phase 1 Voice Runtime (M0–M6)
 
@@ -170,7 +182,7 @@ prerequisite in [docs/ISSUES.md](docs/ISSUES.md), not scheduled:
   ([ISSUE-0003](docs/ISSUES.md#issue-0003-no-real-driver-for-a-named-external-agent-backend)).
 - **Live GitHub issue tracker**
   ([ISSUE-0007](docs/ISSUES.md#issue-0007-no-live-github-issue-tracker-yet))
-  — completed: the private remote is hosted at `happy-token/OpenRealtime`.
+  — completed: the open-source repository is hosted at `happy-token/OpenRealtime`.
 - **Multi-Agent backend breadth after canonical delegation is live.** Keep one
   `AgentDriver` contract and add verified configurations/adapters for Claude,
   Codex, and Hermes according to each backend's real protocol. Agent selection
@@ -190,9 +202,9 @@ prerequisite in [docs/ISSUES.md](docs/ISSUES.md), not scheduled:
   future plan-mode cycle. Not yet scoped into its own plan.
 - **Transport hardening**
   ([ISSUE-0019](docs/ISSUES.md#issue-0019-transport-is-not-deployable-over-a-real-network))
-  — distinct from ISSUE-0001's "which protocols exist". Audio is base64 PCM
-  inside JSON with no codec, no sequence numbers, no jitter buffer, no
-  heartbeat, and no protocol version field. Not deployable over cellular.
+  — distinct from ISSUE-0001's "which protocols exist". The older description of absent sequence numbers and protocol versions is
+  superseded by WebSocket v2. Codec/binary framing, network-specific quality
+  and device/transport hardening still require route-specific validation.
 - **Authenticated identity derivation and distributed session mapping**
   ([ISSUE-0016](docs/ISSUES.md#issue-0016-no-identity-or-tenancy-model-across-the-three-session-abstractions))
   — canonical `InteractionContext` and persistence tenant keys now exist, but
@@ -200,6 +212,9 @@ prerequisite in [docs/ISSUES.md](docs/ISSUES.md), not scheduled:
   defaults rather than an authenticated connection. Prerequisite for data-plane auth
   ([ISSUE-0020](docs/ISSUES.md#issue-0020-the-data-plane-has-no-authentication))
   and for everything in the data/operations tier.
+  Historical scope: the current demo has explicit development identity and
+  authenticated/public-ticket deployment modes; distributed identity/routing
+  still needs deployment-specific validation.
 - **A real `AddresseeClassifier` conformer**
   ([ISSUE-0023](docs/ISSUES.md#issue-0023-no-addresseeclassifier-conformer-ships-so-third-party-filtering-is-unreachable))
   — the seam is elegant, and the only shipped conformer returns `True` always,
@@ -224,10 +239,11 @@ prerequisite in [docs/ISSUES.md](docs/ISSUES.md), not scheduled:
   Authoritative semantic/work state now has PostgreSQL conformers, but active
   media/dialogue sessions remain process-local; multi-replica routing,
   recording policy, dashboards, and operational reconciliation remain open.
-- **CI, plus a type checker to back `py.typed`**
+- **CI and type-checking follow-up (historical gap now partly superseded)**
   ([ISSUE-0024](docs/ISSUES.md#issue-0024-no-ci-and-pytyped-promises-what-nothing-verifies)),
-  plus a latency benchmark with enforced SLOs so the barge-in bound and the
-  latency work above cannot silently regress.
+  Current CI runs Python tests, a mypy baseline gate and Web checks.
+  Future work is to maintain coverage and versioned latency/SLO gates, rather
+  than establish CI from scratch.
 
 ## Explicitly not on this roadmap
 

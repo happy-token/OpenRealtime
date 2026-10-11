@@ -1,3 +1,5 @@
+> Documentation review (2026-10-11): this file contains historical requirement/gap assessments. Check [the current roadmap](../ROADMAP.md), [documentation index](README.md), implementation and versioned evidence before interpreting an old entry as current capability status. This note does not close unverified issues.
+
 # Known issues
 
 Local, GitHub-Issues-shaped tracker. `origin` is hosted at
@@ -66,7 +68,7 @@ qwen-audio-agent, and GPT-live each delegate (MCP / tool-use /
 function-calling / skills). `DelegationPolicy`/Router (the mechanism itself)
 shipped via [ADR-0001](adr/0001-two-layer-external-agent-integration.md);
 the comparative vendor survey is now written up in
-[docs/references/vendor-delegation-survey.md](references/vendor-delegation-survey.md).
+docs/references/vendor-delegation-survey.md (local research material; not published in this repository).
 
 ---
 
@@ -160,7 +162,7 @@ this session per the standing "commit only when explicitly asked" rule.
 The PRD asks for pipecat specifically to be studied ("分析为什么这么多人用" —
 analyze why it's so widely used) as an input to the framework's own design.
 Written up in
-[docs/references/pipecat-analysis.md](references/pipecat-analysis.md),
+docs/references/pipecat-analysis.md (local research material; not published in this repository),
 covering its Frame/FrameProcessor/Pipeline core, turn-taking/EOT precedent,
 tool-calling schema, adoption drivers, and where OpenRealtime's Seam model
 deliberately differs.
@@ -175,7 +177,7 @@ deliberately differs.
 The PRD calls out `voiceloop-modular-runtime` (the user's own unfinished
 second attempt) as something to review for signal on what the finished
 product should look like ("看看我想要的产品是什么样的"). Written up in
-[docs/references/voiceloop-modular-runtime-review.md](references/voiceloop-modular-runtime-review.md),
+docs/references/voiceloop-modular-runtime-review.md (local research material; not published in this repository),
 covering its product surface, how far the rearchitecture got before
 stalling, and concrete implications for OpenRealtime's roadmap.
 
