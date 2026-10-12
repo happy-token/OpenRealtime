@@ -1,13 +1,18 @@
 # 产品定位与竞品研究
 
-更新日期：2026-10-09。这组文档用于开源选型、README 和宣传内容，也作为后续产品决策的依据。它不替代架构设计、功能验收或性能报告。
+最近补充：2026-10-12（用户对象研究）；定位与竞品核查日期见各文档。这组文档用于开源选型、README 和宣传内容，也作为后续产品决策的依据。它不替代架构设计、功能验收或性能报告。
+
+**当前产品介绍：**可自定义、可打断的实时语音交互 Agent，突出服务组合的成本与灵活性、丰富的助手功能、现有 Chat Agent 接入，以及可选数字人。产品资料问答是第一个上手示例。首次使用请先读[产品概览](../getting-started/OVERVIEW.md)与[完整配置流程](../getting-started/PRODUCT-ASSISTANT.md)，以下文档用于理解研究与决策依据。
 
 | 文档 | 解决的问题 |
 | --- | --- |
+| [成本与灵活性](COST-AND-FLEXIBILITY.md) | 低成本服务组合、官方价格来源与总费用比较口径 |
+| [Chat Agent 接入](../guides/CHAT-AGENT-INTEGRATION.md) | 复用已有文字对话服务，了解兼容 API、自定义适配和任务后台的边界 |
 | [定位与差异化](POSITIONING.md) | 做给谁、解决什么问题、为什么选择我们、哪些方向暂不押注 |
+| [用户对象研究（2026-10-12）](AUDIENCE-RESEARCH.md) | 结合公开需求与本地交付，区分体验者、构建者和扩展者，提出待验证的受众与文档路径建议 |
 | [竞品与替代路线分析](COMPETITIVE-ANALYSIS.md) | 框架、Agent 交互、数字人、硬件、原生语音及托管 API 的竞争关系 |
 | [亮点与证据矩阵](CLAIMS-AND-EVIDENCE.md) | 每条宣传主张的实现依据、验证范围、缺口和可用措辞 |
-| [README 亮点草案](README-HIGHLIGHTS-DRAFT.md) | 将定位转成可阅读的首屏文案，保留待验证边界 |
+| [历史 README 亮点草案](README-HIGHLIGHTS-DRAFT.md) | 保留之前的品牌与文案分析，现行入口以根 README 为准 |
 | [2026-09-03 历史研究快照](history/2026-09-03-openrealtime-improvement-todo.md) | 保留原先 Pipecat / Qwen Audio Agent / OpenRealtime 调研及战略建议 |
 
 建议先读定位，再看竞品分析的历史复核，最后依据证据矩阵制作 README 和视频。全球开源受众与不限定中文应用已明确；具体传播措辞和差异化优势仍需 Demo、英文 API 路线与比较实验支撑。

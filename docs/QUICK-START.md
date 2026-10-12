@@ -1,24 +1,44 @@
 # 首页使用指南
 
-OpenRealtime 支持语音对话和数字人会话。首次使用时先选择可用角色和呈现模式，再开始对话。开发者安装请阅读[本地启动指南](getting-started/LOCAL-DEVELOPMENT.md)，完整阅读路径见[文档导航](README.md)。
+OpenRealtime 是一个可自定义、可打断的实时语音交互 Agent。接入你的 Agent，用语音聊天和工作。首次体验可以直接使用已有角色，详细操作见下文。[认识产品](getting-started/OVERVIEW.md) · [定制语音 Agent](guides/ROLE-CONFIGURATION.md) · [接入你的 Agent](guides/CHAT-AGENT-INTEGRATION.md)
+
+开发者安装请阅读[本地启动指南](getting-started/LOCAL-DEVELOPMENT.md)，完整阅读路径见[文档导航](README.md)。
 
 公开体验位于 [realtime.happy-token.cn](https://realtime.happy-token.cn)。普通访客可使用受限语音体验；个人口型对齐服务需登录，并在「设置 → 模型服务」中配置和测试。自行部署请先阅读[部署指南](deployment/public-trial.md)。
 
 ## 开始语音对话
 
-1. 在首页选择语音模式。
-2. 从「角色」进入详情和「角色设置」，选择声音与人设；供应商和模型服务在设置入口配置。具体入口随呈现模式不同，参见[角色配置指南](guides/ROLE-CONFIGURATION.md)。
-3. 点击开始按钮，并允许浏览器使用麦克风。
-4. 连接成功后直接说话，等待助手回复。
+1. [进入对话](https://realtime.happy-token.cn/conversation?role_mode=conversation&experience=voice)，使用已有角色或从右侧角色列表选择可用角色。
+2. 选择语音对话方式，点击开始按钮，并允许浏览器使用麦克风。
+3. 连接成功后直接说话，等待助手回复。
 
 如果浏览器拒绝了麦克风权限，请在地址栏的网站权限中重新允许访问，再重试。麦克风通常需要通过 HTTPS 或本机 localhost 页面使用。
 
-## 使用数字人
+## 追问、停顿和打断
+
+先问一个简单问题，再继续追问。说话时停下来思考，观察助手是否在合适的时机接话；回答过程中可以说“停一下”，再补充要求、纠正问题或换个话题。
+
+简单附和与明确打断具有不同意图。实际效果取决于语言、识别与决策服务、麦克风和环境；自行配置服务后，用常见问法验证停顿、附和、叫停和纠正。
+
+## 定制声音、人设与服务
+
+从「角色」进入详情和「角色设置」，选择声音与人设，配置资料、工具和记忆。供应商与模型服务在设置入口配置。[角色配置指南](guides/ROLE-CONFIGURATION.md) · [语音与模型服务配置](getting-started/CLOUD-SERVICES.md)
+
+已有 Chat Agent 可通过兼容 API 或适配器提供回答；接入后核对流式输出与取消行为。[接入指南](guides/CHAT-AGENT-INTEGRATION.md)
+
+## 用自己的产品资料回答问题
+
+进入「资源库 → 知识库」，导入产品说明与 FAQ，先测试检索；再在角色设置中选中资料，配置依据原文回答的人设要求。保存成功后使用该角色提问，并核对答案与条件是否符合资料。完整步骤和可复制示例见[产品资料问答助手指南](getting-started/PRODUCT-ASSISTANT.md)。
+
+测试检索返回资料片段，不等于模型最终答案正确。真实问答需要兼容的模型、检索工具与语音服务，未配置凭据的演示链路不能代替验证。
+
+## 可选：使用数字人
 
 在首页切换到数字人模式，选择人物与驱动方式。不同方式对素材和服务的要求不同：
 
-- 实时驱动：需要对应数字人服务正常运行。
-- 动作编排：需要准备同一动作的待机与讲话配对视频。
+- 实时数字人：需要已接入的服务、凭据与相应权限。
+- 本地口型：需要可用的口型服务与当前模式支持的素材。
+- 已有动作与口型素材：选择当前角色可用的动作底片和讲话素材，确认该模式已就绪。
 
 详细配置请阅读[数字人驱动方案](https://realtime.happy-token.cn/docs/digital-human)和[动作编排使用指南](https://realtime.happy-token.cn/docs/motion-orchestration)。
 

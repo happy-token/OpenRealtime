@@ -1,4 +1,4 @@
-> 2026-10-11：四个亮点与 TODO 状态已合入[英文 README](../../README.md)及[中文 README](../../README.zh-CN.md)。下文保留为文案设计记录；当前对外入口以根 README 为准。
+> 2026-10-12：现行中英文 README 恢复可自定义、可打断的语音 Agent 产品亮点，加入成本与 Chat Agent 接入；产品资料问答作为上手示例，数字人可选。下文保留历史文案，当前入口见[英文 README](../../README.md)与[中文 README](../../README.zh-CN.md)。
 
 # README 英文定位与亮点草案
 

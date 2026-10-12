@@ -10,8 +10,10 @@ export default async function DocumentPage({ params }: { params: Promise<{ slug:
   const doc = PUBLIC_DOCUMENTS.find(item => item.slug === slug);
   if (!doc) notFound();
   const markdown = await readFile(path.join(process.cwd(), "docs", doc.file), "utf8");
+  const englishMarkdown = doc.englishFile ? await readFile(path.join(process.cwd(), "docs", doc.englishFile), "utf8") : undefined;
   const heading = markdown.match(/^#\s+([^\r\n]+)\r?\n/);
   const title = heading?.[1] ?? doc.title;
   const content = heading ? markdown.slice(heading[0].length).trimStart() : markdown;
-  return <WorkspaceShell><DocumentReader slug={slug} title={title} content={content} /></WorkspaceShell>;
+  const englishContent = englishMarkdown?.replace(/^#\s+[^\r\n]+\r?\n/, "").trimStart();
+  return <WorkspaceShell><DocumentReader slug={slug} title={title} content={content} englishContent={englishContent} /></WorkspaceShell>;
 }

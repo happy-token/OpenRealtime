@@ -2,6 +2,12 @@
 
 研究更新：2026-10-09。面向全球开源开发者，不以中文应用限定产品范围。以下传播表达为建议；当前能力依据见[证据矩阵](CLAIMS-AND-EVIDENCE.md)，选型依据见[竞品分析](COMPETITIVE-ANALYSIS.md)。
 
+**2026-10-12 最新产品表达：**OpenRealtime 是可自定义、可打断的实时语音交互 Agent。首屏突出自然交流、自由定制、更低成本的服务组合、知识／工具／记忆等丰富功能、现有 Chat Agent 接入，以及可选数字人。产品资料讲解与问答保留为第一个上手示例。[产品概览](../getting-started/OVERVIEW.md) · [配置示例](../getting-started/PRODUCT-ASSISTANT.md)
+
+对外首屏主张：**A real-time voice AI agent you can customize and interrupt. / 一个可自定义、可打断的实时语音交互 Agent。** 面向希望构建自己的助手、扩展已有 Chat Agent 或创建互动角色的使用者。技术栈和会话实现放到开发与部署路径。
+
+成本主张按[成本与灵活性](COST-AND-FLEXIBILITY.md)说明，现有文本 Chat Agent 接入与编码／办事后台的统一任务体验分别见[接入指南](../guides/CHAT-AGENT-INTEGRATION.md)。下文保留历史品牌与技术分析，当前首屏采用本节表达。
+
 ## 1. 主张：让自己的 Agent 开口交流，拥有可见的形象
 
 **Bring your AI agents to life with real-time voice and avatars.**
@@ -21,7 +27,7 @@
 | **Choose each layer.** 独立选择每一层 | 分别调整决策模型、回答模型、声音和形象，方便按体验与预算组合 | 当前适配与接口支撑分层选型；更换仍需满足协议及供应商配置 | 保持业务任务不变，更换已支持的回答模型或声音 |
 | **Start simply. Build your way.** 轻松启动，按需组合 | 通过云 API 开始构建，省去自建模型 GPU 推理的部署工作；按需要选择已支持的服务组合 | 云 ASR/LLM/TTS/数字人路线无需自建 GPU 推理；仍需服务凭据、后端与 API 费用 | 从示例配置到一次真实对话的可复现 quickstart |
 
-数字人是第一眼的吸引点，纠正与插话是体验记忆点，独立选型和 API 起步是开发者采用理由。首屏先讲这些收益，组件和内部架构放到下一层。
+当前首屏先介绍可自定义、可打断的语音 Agent，再展示灵活组合、成本、丰富功能与 Chat Agent 接入。产品资料问答用于上手示例，数字人保留为可选亮点。组件和内部架构放到开发者路径。
 
 ### 扩展亮点（TODO）：连接已有 Agent，用对话驱动任务
 

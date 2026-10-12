@@ -16,7 +16,9 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`. `pnpm dev` starts the Web frontend, Python WebSocket service (8765), control plane (8766), and the optional avatar-service launcher. Local neural avatar rendering is disabled by default; it does not require a GPU to open the application. The Python launcher requests optional dependency extras through uv, so its first run can install more packages than `uv sync` alone.
+Open `http://localhost:3010` (the default in `scripts/dev_web.sh`; an exported `OPENREALTIME_WEB_PORT` can override it). `pnpm dev` starts the Web frontend, Python WebSocket service (8765), control plane (8766), and the optional avatar-service launcher. Local neural avatar rendering is disabled by default; it does not require a GPU to open the application. The Python launcher requests optional dependency extras through uv, so its first run can install more packages than `uv sync` alone.
+
+Start with voice and a short product document. After checking the application path, follow the [product assistant walkthrough](PRODUCT-ASSISTANT.en.md) for retrieval testing, role binding and answer checks. Avatars are an optional next step.
 
 Without configured provider credentials the server uses deterministic model/speech adapters. Test the page and typed-chat path first. If available, browser speech is an explicit fallback, with browser/platform limitations. Neither fallback nor a synthetic reply proves that cloud ASR/LLM/TTS is connected.
 
