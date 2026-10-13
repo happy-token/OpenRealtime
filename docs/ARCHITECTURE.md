@@ -5,6 +5,22 @@ see [CONTEXT.md](../CONTEXT.md); for why a given design was chosen see the
 individual [ADRs](adr/); for the dialogue-state model itself see
 [full-duplex-survey.md](full-duplex-survey.md).
 
+## Frontend and backend services
+
+OpenRealtime has a frontend and a backend. **The session management service and
+voice interaction service are both backend services.** They can share a host;
+moving them to separate hosts requires resolving their storage and internal
+control dependencies.
+
+| Layer | Component | Responsibilities |
+| --- | --- | --- |
+| Frontend | Web UI | Pages, documentation, interaction, browser audio capture and playback |
+| Backend | Session management service (`apps/backend`) | Login, permissions, assistant configuration, knowledge, memory and history; `/api/*` |
+| Backend | Voice interaction service (`server` and the Python launcher) | Streaming ASR, turn detection, interruptions, Agent / LLM calls and TTS; `/voice/*` |
+
+See the [independent deployment guide](deployment/frontend-backend.md). The
+runtime diagrams below describe the internals of the voice interaction service.
+
 > This document describes the currently assembled production runtime. The
 > accepted target that will progressively replace the turn-scoped Conversation
 > Engine with a stateful Native/Cascaded Realtime Engine is documented in

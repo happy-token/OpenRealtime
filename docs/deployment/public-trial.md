@@ -1,15 +1,22 @@
 # 公开体验与自行部署
 
-`realtime.happy-token.cn` 使用 Cloudflare 作为 DNS、TLS 和站点入口。Next.js Web 服务、Python WebSocket 语音服务和 PostgreSQL 运行在常规服务器；口型生成服务为用户自行提供的可选能力。此仓库不包含可直接发布的生产域名、账号或密钥。
+> 当前生产采用独立前后端部署，见[前后端分离部署指南](frontend-backend.md)。下方保留单机自托管配置示例。
+
+`realtime.happy-token.cn` 的前端页面运行在 Cloudflare；会话管理服务、语音交互服务（均属于后端）以及 PostgreSQL 运行在应用服务器。自托管时也可以在自己的服务器运行前端。口型生成服务为可选能力，生产账号和密钥需自行配置。
 
 ```mermaid
 flowchart LR
   Browser[浏览器] --> CF[Cloudflare]
-  CF --> Web[Next.js Web 与 API]
-  CF -->|WSS /voice| Voice[Python 语音服务]
-  Web --> DB[(PostgreSQL)]
+  CF --> UI[前端页面]
+  CF -->|/api| API
+  CF -->|WSS /voice| Voice
+  subgraph Backend[后端]
+    API[会话管理服务]
+    Voice[语音交互服务]
+  end
+  API --> DB[(PostgreSQL)]
   Voice --> DB
-  Web -->|受限 HTTPS| Lip[用户口型服务]
+  API -->|受限 HTTPS| Lip[用户口型服务]
 ```
 
 ## 环境配置
@@ -20,14 +27,14 @@ flowchart LR
 | --- | --- | --- |
 | 根目录 `.env.example` | 可提交的变量清单、示例值和说明 | `VOICEAGENT_PUBLIC_ORIGIN`、`VOICEAGENT_POSTGRES_DSN`、`VOICEAGENT_PLATFORM_VOICE_SESSION_SECONDS`、供应商 Key 的空占位 |
 | 根目录 `.env` / `.env.local` | 本地开发的实际服务参数与密钥 | 数据库 DSN、`DEEPSEEK_API_KEY`、`VOICEAGENT_USER_SESSION_SECRET` |
-| 生产部署环境 / Secret 管理器 | 生产参数与密钥，按 Web、语音服务分别授权 | 同名数据库 DSN、供应商 Key、`VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY` |
+| 生产部署环境 / Secret 管理器 | 生产参数与密钥，按会话管理服务、语音交互服务分别授权 | 同名数据库 DSN、供应商 Key、`VOICEAGENT_CREDENTIAL_ENCRYPTION_KEY` |
 | `deploy/inference_services/compose.yaml` 与同目录 `.env.example` | 可选推理容器的端口、模型目录和服务令牌 | `LIPFORCING_PORT`、`LIPFORCING_RUNTIME_ROOT`、`LIPFORCING_SERVICE_TOKEN` |
 | PostgreSQL | 登录用户自己的可修改设置 | 个人供应商凭据、口型服务地址及加密令牌 |
 | 浏览器本地存储 | 只影响当前浏览器的外观偏好 | 玻璃透明度、模糊度 |
 
 ### Docker Compose 如何传递变量
 
-根目录 `compose.yaml` 部署 Web、Python WebSocket 和 PostgreSQL。先将 `deploy/compose/` 中三个 `.env.example` 文件分别复制为 `.env`、`web.env`、`voice.env`，填入实际值。`deploy/compose/.env` 只供 Compose 替换 `${变量}`；`web.env`、`voice.env` 经 `env_file:` 分别传入对应容器。共享的数据库密码、加密密钥和站点地址通过 Compose 的 `environment:` 显式传给需要它们的服务。不要把全部供应商密钥传给每个容器。三个实际配置文件均被 Git 忽略。
+根目录 `compose.yaml` 部署前端 Web、会话管理服务、语音交互服务和 PostgreSQL。先将 `deploy/compose/` 中三个 `.env.example` 文件分别复制为 `.env`、`web.env`、`voice.env`，填入实际值。`deploy/compose/.env` 只供 Compose 替换 `${变量}`；`web.env`、`voice.env` 经 `env_file:` 分别传入会话管理服务与语音交互服务；前端 Web 只接收所需的非敏感连接配置。共享的数据库密码、加密密钥和站点地址通过 Compose 的 `environment:` 显式传给需要它们的服务。不要把全部供应商密钥传给每个容器。三个实际配置文件均被 Git 忽略。
 
 ```bash
 cp deploy/compose/.env.example deploy/compose/.env

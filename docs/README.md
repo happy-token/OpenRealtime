@@ -62,6 +62,10 @@ OpenRealtime 是一个开源、可自定义、可打断的语音交互 Agent 产
 
 ## 6. 部署与维护
 
+前端负责页面与浏览器交互。后端由两项服务组成：会话管理服务负责用户、配置和数据；语音交互服务负责实时识别、判停、打断、Agent 调用与语音合成。
+
+- [前后端分离部署](deployment/frontend-backend.md)：三部分的职责、本地启动、独立构建与部署边界。
+
 - [本地启动](getting-started/LOCAL-DEVELOPMENT.md)（English）、[自行部署](deployment/public-trial.md)：运行应用，配置认证、存储、服务与额度。
 - [服务配置参考](reference/WEB-DEMO-CONFIGURATION.md)（English）、[环境变量示例](../.env.example)。
 - [可靠性与运维](RELIABILITY-OPERATIONS.md)（English）、[会话诊断](guides/agent-session-diagnostics.md)。

@@ -114,6 +114,10 @@ Configure each layer independently to retain business logic, change voices and m
 
 Availability depends on configured services, permissions, assets and runtime environment. [Environment example](.env.example) · [Support and scope](docs/reference/SUPPORT-AND-SCOPE.md)
 
+### Deployment and extension
+
+The backend comprises the session management service (users, configuration and data) and the voice interaction service (real-time voice processing). [Deployment guide, Chinese](docs/deployment/frontend-backend.md)
+
 ## Documentation and examples
 
 | Your goal | Start here |

@@ -34,6 +34,7 @@ export const PUBLIC_DOCUMENTS: readonly PublicDocument[] = [
   { slug: "local-development", title: "本地启动与排错", category: "部署与维护", description: "安装开发环境、运行应用，区分演示模式与真实服务。", file: "getting-started/LOCAL-DEVELOPMENT.md", language: "en" },
   { slug: "cloud-services", title: "连接真实语音与模型服务", category: "定制语音 Agent", description: "选择兼容服务、配置凭据，验证识别、回答与语音输出。", file: "getting-started/CLOUD-SERVICES.md", language: "en" },
   { slug: "deployment", title: "自行部署指南", category: "部署与维护", description: "配置认证、存储、服务与额度，了解公开体验的部署示例。", file: "deployment/public-trial.md" },
+  { slug: "frontend-backend-deployment", title: "前后端分离部署", category: "部署与维护", description: "了解前端与后端的分工：后端包含会话管理服务和语音交互服务，支持独立部署。", file: "deployment/frontend-backend.md" },
   { slug: "reliability-operations", title: "可靠性与运维", category: "部署与维护", description: "检查服务能力，管理持久化、恢复与运行故障。", file: "RELIABILITY-OPERATIONS.md", language: "en" },
   { slug: "turn-coordination", title: "模块化话轮协调器", category: "开发与扩展", description: "替换对话协调策略、判停与打断模型，了解等待期限、连续插话和故障恢复。", file: "TURN-COORDINATION.md" },
   { slug: "semantic-decision-plugins", title: "判停与打断插件合约", category: "开发与扩展", description: "规范历史、当前文本、识别状态与语义输出，兼容纯文本和上下文模型。", file: "SEMANTIC-DECISION-PLUGINS.md" },

@@ -4295,5 +4295,7 @@
   "知识、工具与记忆": "Knowledge, tools and memory",
   "配置业务资料和工具，管理长期记忆与历史；资料问答作为上手示例。": "Configure documents and tools, manage memory and history, and try document Q&A as a walkthrough.",
   "在语音交互基础上，按需求选择人物、素材与驱动方式。": "Add a character, assets and a rendering route to your voice experience when useful.",
-  "实时语音交互、接入你的 Agent，用语音聊天和工作；了解定制、判停与打断。": "Real-time voice, your Agent, and spoken conversations and work. Explore customization, turn detection and interruptions."
+  "实时语音交互、接入你的 Agent，用语音聊天和工作；了解定制、判停与打断。": "Real-time voice, your Agent, and spoken conversations and work. Explore customization, turn detection and interruptions.",
+  "前后端分离部署": "Separate frontend and backend deployment",
+  "了解前端与后端的分工：后端包含会话管理服务和语音交互服务，支持独立部署。": "Understand the frontend and backend: the backend consists of the session management service and voice interaction service, with independent deployment support."
 }

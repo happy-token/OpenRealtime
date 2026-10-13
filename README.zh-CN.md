@@ -114,6 +114,10 @@ OPENREALTIME_AVATAR_RENDERER_MODE=disabled
 
 具体可用性取决于已配置的服务、权限、素材和运行环境。[环境变量示例](.env.example) · [支持与范围](docs/reference/SUPPORT-AND-SCOPE.md)
 
+### 部署与开发扩展
+
+后端由会话管理服务和语音交互服务组成：前者负责用户、配置与数据，后者负责实时语音交互。 [前后端分离部署](docs/deployment/frontend-backend.md)
+
 ## 文档与示例
 
 | 你想做什么 | 从这里开始 |

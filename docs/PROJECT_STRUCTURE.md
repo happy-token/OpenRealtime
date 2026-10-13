@@ -1,10 +1,11 @@
 # Project structure
 
-Updated 2026-10-11. This is an orientation map of the current source tree, not an assertion that every optional adapter is production-ready. No source directories were moved by this documentation update.
+Updated 2026-10-13. This is an orientation map of the current source tree, not an assertion that every optional adapter is production-ready. No source directories were moved by this documentation update.
 
 ```text
 OpenRealtime/
-├── server/                 Python runtime and integration package
+├── apps/backend/           Session management service (backend): API routes and initialization
+├── server/                 Voice interaction service (backend): Python runtime and integrations
 │   ├── application/        Composition root and durable application services
 │   ├── voice_session/      Session lifecycle, recovery and admission
 │   ├── realtime/           Cascaded engine, coordination capabilities, speech and protocol
@@ -20,7 +21,7 @@ OpenRealtime/
 │   ├── transport/          Transport adapters and framing
 │   └── observability/      Runtime diagnostics and telemetry
 ├── src/
-│   ├── app/                Next.js routes, API endpoints and server-side page composition
+│   ├── app/                Frontend routes, page composition and local API forwarding
 │   ├── components/         Conversation UI, roles, resources, settings and documentation
 │   ├── voice/              Browser input/output and session runtime
 │   ├── hooks/              Application/session hooks
@@ -36,6 +37,8 @@ OpenRealtime/
 ├── tests-e2e/              Browser journeys
 └── docs/                   Guides, architecture, decisions and versioned evidence
 ```
+
+Both the session management service and voice interaction service belong to the backend; `src/app` owns the frontend. See the [deployment guide](deployment/frontend-backend.md) for their build and execution boundaries.
 
 The runtime and the reference application share this repository. Current Web turn coordination lives under `server/realtime/capabilities/` with decisions and policies in `server/turn_policy/`; the historical five-state FSM is background, not a complete map of the current coordinated runtime.
 
